@@ -23,6 +23,9 @@
  *        source_name, source_url, image_url, status, quality_score (float 0–100),
  *        read_time (minuti), views, reactions, excerpt (già calcolato: summary o
  *        content tagliato a 30 parole), published_at, created_at ('Y-m-d H:i:s') }
+ *      v1.0.1 (opzionale, se il serializer la aggiungerà): wp_post_id (int) e
+ *      post_permalink (string). admin.js legge i campi in modo difensivo e mostra
+ *      il badge/link "Post WP" SOLO se wp_post_id > 0 (fallback href: /?p={id}).
  *
  * 2) RIGA CODA — per ogni articolo dentro #nxa-queue-list
  *    (clonare #nxa-queue-row-tpl o generare markup con gli STESSI selettori):
@@ -37,6 +40,9 @@
  *        > .nxa-qa-read-time  → "{read_time} min di lettura"
  *        > .nxa-qa-date       → equivalente JS di Nexus_Utils::time_ago_it(created_at)
  *        > .nxa-qa-source     → <a href="{source_url}" target="_blank" rel="noopener noreferrer">{source_name}</a>
+ *        > .nxa-qa-wp-link    → (opzionale, v1.0.1) badge/link "Post WP" se wp_post_id > 0;
+ *                               renderizzato da admin.js come .nxa-badge.nxa-badge--primary
+ *                               con href = post_permalink (fallback: /?p={wp_post_id})
  *        > .nxa-qa-excerpt    → excerpt (fornito dalla REST); fallback summary
  *        > .nxa-qa-actions    → bottoni azione (punto 3)
  *

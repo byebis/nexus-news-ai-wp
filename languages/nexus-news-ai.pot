@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.0.0\n"
+"Project-Id-Version: Nexus News AI 1.0.1\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -93,4 +93,45 @@ msgstr ""
 
 #: public/class-nexus-shortcodes.php
 msgid "Leggi l'articolo"
+msgstr ""
+
+# v1.0.1 — Pubblicazione WordPress & SEO
+#: admin/views/settings.php
+msgid "Pubblicazione WordPress & SEO"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblica come post WordPress reali (CPT nexus_article)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Stato dei post creati"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Genera immagini in evidenza con l'AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modello immagini (vuoto = default)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Dimensione immagini"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ottimizzazione SEO"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Genera meta title/description con l'AI"
+msgstr ""
+
+#: admin/views/dashboard.php admin/views/queue.php
+msgid "Post WP"
+msgstr ""
+
+#: includes/class-nexus-cpt.php
+msgid "Redazione AI"
 msgstr ""

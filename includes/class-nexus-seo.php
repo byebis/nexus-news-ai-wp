@@ -1,0 +1,415 @@
+<?php
+/**
+ * Nexus SEO — ottimizzazione SEO degli articoli pubblicati come post
+ * WordPress reali (CPT nexus_article): meta description, Open Graph base,
+ * JSON-LD NewsArticle e title tag personalizzati.
+ *
+ * Implementa la sezione SEO del contratto v1.0.1 (§4 "Contenuti Veri").
+ *
+ * CONTRATTO PUBBLICO (usato dagli altri moduli):
+ * Nexus_SEO::init()                          — registra gli hook front-end:
+ *                                              wp_head (priorità 1) → print_head_meta,
+ *                                              pre_get_document_title (priorità 20) → filter_title.
+ *                                              Da chiamare UNA sola volta al bootstrap del plugin.
+ * Nexus_SEO::optimize( $article, $post_id )  — genera title + description SEO per un articolo Nexus
+ *                                              e li salva come post meta. Ritorna SEMPRE un array:
+ *                                              array( 'title' => string, 'description' => string, 'source' => 'ai'|'fallback' )
+ *                                              oppure array() se la SEO è disabilitata (enable_seo != 1).
+ *                                              Mai fatale, mai eccezioni: in caso di problemi usa il fallback locale.
+ * Nexus_SEO::print_head_meta()               — hook wp_head: meta description + Open Graph base + blocco
+ *                                              JSON-LD @type NewsArticle, SOLO su single nexus_article.
+ * Nexus_SEO::filter_title( $title )          — hook pre_get_document_title: su single nexus_article usa
+ *                                              _nexus_seo_title se presente, altrimenti "Titolo | Nome sito"
+ *                                              (separatore ' | ').
+ *
+ * WIRING (nota per l'integratore, in nexus-news-ai.php):
+ *   require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
+ *   // e, dopo i require, una sola volta:
+ *   Nexus_SEO::init();
+ *   // L'integratore (publisher) chiama invece, dentro un guard class_exists,
+ *   // Nexus_SEO::optimize( $article, $post_id ) subito dopo il wp_insert_post riuscito.
+ *
+ * Settings usati (Nexus_DB::get_settings()): enable_seo, seo_generate, ai_api_key.
+ * Meta scritti sul post: _nexus_seo_title, _nexus_seo_description
+ *                        (+ _yoast_wpseo_title/_yoast_wpseo_metadesc se Yoast è attivo,
+ *                         + rank_math_title/rank_math_description se RankMath è attivo).
+ * Meta letti dal post:   _nexus_article_id (per risalire ad articolo/agente Nexus).
+ *
+ * @package Nexus_News_AI
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+class Nexus_SEO {
+
+        /**
+         * Registra gli hook front-end della SEO.
+         *
+         * - wp_head con priorità 1 (bassa): i meta devono uscire prima di quelli
+         *   del tema/plugin per evitare duplicati di description/OG.
+         * - pre_get_document_title con priorità 20: gira DOPO i filtri dei plugin
+         *   SEO (es. Yoast a 15); il titolo generato da Nexus è comunque quello
+         *   ufficiale perché viene replicato anche nei meta di Yoast/RankMath.
+         *
+         * @return void
+         */
+        public static function init() {
+                add_action( 'wp_head', array( __CLASS__, 'print_head_meta' ), 1 );
+                add_filter( 'pre_get_document_title', array( __CLASS__, 'filter_title' ), 20 );
+        }
+
+        /**
+         * Genera (via AI o fallback locale) e salva title + description SEO
+         * per un articolo Nexus pubblicato come post WordPress.
+         *
+         * Contratto v1.0.1 §4: al massimo UNA chiamata a Nexus_AI_Engine::chat(),
+         * con risposta JSON {'title': ≤60 char, 'description': ≤155 char} in italiano.
+         * Se l'AI non è disponibile/disabilitata o il JSON non è recuperabile, si
+         * usa il fallback locale (titolo articolo + summary troncata a 155).
+         *
+         * @param array|object $article Articolo Nexus (row di wp_nexus_articles o array equivalente).
+         * @param int          $post_id  ID del post WordPress (CPT nexus_article).
+         * @return array array( 'title' => string, 'description' => string, 'source' => 'ai'|'fallback' )
+         *               oppure array() se la SEO è disabilitata.
+         */
+        public static function optimize( $article, $post_id ) {
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return array();
+                }
+
+                $post_id = (int) $post_id;
+
+                // Guard: SEO disabilitata → nessun lavoro, nessun salvataggio.
+                $settings = Nexus_DB::get_settings();
+                if ( ! is_array( $settings ) ) {
+                        return array();
+                }
+                $enable_seo = isset( $settings['enable_seo'] ) ? (int) $settings['enable_seo'] : 0;
+                if ( 1 !== $enable_seo ) {
+                        return array();
+                }
+
+                // Fallback locale: titolo articolo + summary troncata a 155 caratteri.
+                $fallback_title = self::clean_text( self::field( $article, 'title' ), 0 );
+                $fallback_description = self::clean_text( self::field( $article, 'summary' ), 155 );
+
+                if ( '' === $fallback_title && $post_id > 0 ) {
+                        $fallback_title = self::clean_text( get_the_title( $post_id ), 0 );
+                }
+                if ( '' === $fallback_description && $post_id > 0 ) {
+                        $fallback_description = self::clean_text( get_post_field( 'post_excerpt', $post_id ), 155 );
+                }
+
+                $title       = $fallback_title;
+                $description = $fallback_description;
+                $source      = 'fallback';
+
+                // Generazione AI: solo se seo_generate=1, chiave API presente ed engine caricato.
+                $seo_generate = isset( $settings['seo_generate'] ) ? (int) $settings['seo_generate'] : 0;
+                $api_key      = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+
+                if ( 1 === $seo_generate && '' !== $api_key && class_exists( 'Nexus_AI_Engine' ) ) {
+                        $category = self::clean_text( self::field( $article, 'category' ), 0 );
+
+                        // Il sistema chiede ESCLUSIVAMENTE JSON, niente testo attorno.
+                        $system_message = 'Sei un esperto di SEO editoriale per un magazine di notizie in italiano. Riceverai i dati di un articolo. Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo, nel formato esatto: {"title": "...", "description": "..."}. Il campo "title" è il titolo SEO dell\'articolo: massimo 60 caratteri, in italiano, accattivante ma fedele al contenuto, senza clickbait ingannevoli. Il campo "description" è la meta description: massimo 155 caratteri, in italiano, riassume il contenuto con le parole chiave più pertinenti. Nessun altro campo, nessun commento, nessun markdown.';
+
+                        $user_message = 'Titolo articolo: ' . $fallback_title . "\n"
+                                . 'Sommario: ' . $fallback_description . "\n"
+                                . 'Categoria: ' . $category;
+
+                        // UNA sola chiamata AI, parametri sobri (risposta breve).
+                        $response = Nexus_AI_Engine::chat(
+                                array(
+                                        array(
+                                                'role'    => 'system',
+                                                'content' => $system_message,
+                                        ),
+                                        array(
+                                                'role'    => 'user',
+                                                'content' => $user_message,
+                                        ),
+                                ),
+                                array(
+                                        'temperature' => 0.4,
+                                        'max_tokens'  => 300,
+                                )
+                        );
+
+                        if ( is_array( $response ) && ! empty( $response['ok'] ) && isset( $response['content'] ) ) {
+                                $data = Nexus_AI_Engine::extract_json( $response['content'] );
+
+                                if ( is_array( $data ) ) {
+                                        $ai_title = isset( $data['title'] ) ? self::clean_text( $data['title'], 60 ) : '';
+                                        $ai_desc  = isset( $data['description'] ) ? self::clean_text( $data['description'], 155 ) : '';
+
+                                        // Almeno un campo utile: usa l'AI riempiendo i buchi col fallback.
+                                        if ( '' !== $ai_title || '' !== $ai_desc ) {
+                                                if ( '' !== $ai_title ) {
+                                                        $title = $ai_title;
+                                                }
+                                                if ( '' !== $ai_desc ) {
+                                                        $description = $ai_desc;
+                                                }
+                                                $source = 'ai';
+                                        }
+                                }
+                        }
+                }
+
+                // Se manca ancora qualcosa, rientra il fallback (mai campi vuoti se l'articolo ha dati).
+                if ( '' === $title ) {
+                        $title = $fallback_title;
+                }
+                if ( '' === $description ) {
+                        $description = $fallback_description;
+                }
+
+                // Salvataggio sui meta del post (solo con post_id valido).
+                if ( $post_id > 0 && ( '' !== $title || '' !== $description ) ) {
+                        update_post_meta( $post_id, '_nexus_seo_title', $title );
+                        update_post_meta( $post_id, '_nexus_seo_description', $description );
+
+                        // Compatibilità Yoast SEO: replica i valori nei suoi meta.
+                        if ( class_exists( 'WPSEO_Options' ) ) {
+                                update_post_meta( $post_id, '_yoast_wpseo_title', $title );
+                                update_post_meta( $post_id, '_yoast_wpseo_metadesc', $description );
+                        }
+
+                        // Compatibilità RankMath: replica i valori nei suoi meta.
+                        if ( class_exists( 'RankMath' ) ) {
+                                update_post_meta( $post_id, 'rank_math_title', $title );
+                                update_post_meta( $post_id, 'rank_math_description', $description );
+                        }
+                }
+
+                return array(
+                        'title'       => $title,
+                        'description' => $description,
+                        'source'      => $source,
+                );
+        }
+
+        /**
+         * Hook wp_head (priorità 1): meta description, Open Graph base e JSON-LD
+         * NewsArticle, SOLO sulle pagine single del post type nexus_article.
+         *
+         * @return void
+         */
+        public static function print_head_meta() {
+                if ( ! is_singular( 'nexus_article' ) ) {
+                        return;
+                }
+
+                $post_id = get_queried_object_id();
+                if ( $post_id <= 0 ) {
+                        return;
+                }
+
+                $post = get_post( $post_id );
+                if ( ! $post instanceof WP_Post ) {
+                        return;
+                }
+
+                // Articolo Nexus di origine (se collegato via meta _nexus_article_id).
+                $article = null;
+                if ( class_exists( 'Nexus_DB' ) ) {
+                        $article_id = (int) get_post_meta( $post_id, '_nexus_article_id', true );
+                        if ( $article_id > 0 ) {
+                                $article = Nexus_DB::get_article( $article_id );
+                        }
+                }
+
+                // Title/description: SEO meta se presenti, altrimenti titolo/riassunto del post.
+                $seo_title = get_post_meta( $post_id, '_nexus_seo_title', true );
+                if ( ! is_string( $seo_title ) || '' === trim( $seo_title ) ) {
+                        $seo_title = get_the_title( $post_id );
+                }
+                $seo_description = get_post_meta( $post_id, '_nexus_seo_description', true );
+                if ( ! is_string( $seo_description ) || '' === trim( $seo_description ) ) {
+                        // Il publisher salva il summary nel post_excerpt.
+                        $seo_description = get_post_field( 'post_excerpt', $post_id );
+                }
+                $seo_title       = self::clean_text( $seo_title, 0 );
+                $seo_description = self::clean_text( $seo_description, 155 );
+
+                // URL canonico del post.
+                $permalink = get_permalink( $post_id );
+                if ( ! is_string( $permalink ) || '' === $permalink ) {
+                        $permalink = '';
+                }
+
+                // Immagine: featured image del post, altrimenti image_url dell'articolo Nexus.
+                $image_url = get_the_post_thumbnail_url( $post_id, 'large' );
+                if ( ! is_string( $image_url ) || '' === $image_url ) {
+                        $image_url = self::clean_text( self::field( $article, 'image_url' ), 0 );
+                }
+
+                // Data di pubblicazione in formato ISO 8601.
+                $published = get_the_date( 'c', $post );
+
+                // Autore: nome dell'agente Nexus che ha generato l'articolo, con fallback.
+                $author_name = '';
+                if ( $article && ! empty( $article->agent_id ) && class_exists( 'Nexus_DB' ) ) {
+                        $agent = Nexus_DB::get_agent( (int) $article->agent_id );
+                        if ( $agent && ! empty( $agent->name ) ) {
+                                $author_name = (string) $agent->name;
+                        }
+                }
+                if ( '' === $author_name ) {
+                        $author_id = (int) get_post_field( 'post_author', $post_id );
+                        if ( $author_id > 0 ) {
+                                $author_name = get_the_author_meta( 'display_name', $author_id );
+                        }
+                }
+                if ( '' === $author_name ) {
+                        $author_name = get_bloginfo( 'name' );
+                }
+                $author_name = self::clean_text( $author_name, 0 );
+
+                // Uscita anticipata se non c'è proprio nulla di utile da stampare.
+                if ( '' === $seo_title && '' === $seo_description && '' === $permalink ) {
+                        return;
+                }
+
+                echo "\n" . '<!-- SEO Nexus News AI -->' . "\n";
+
+                // Meta description.
+                if ( '' !== $seo_description ) {
+                        echo '<meta name="description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                }
+
+                // Open Graph base.
+                if ( '' !== $seo_title ) {
+                        echo '<meta property="og:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
+                }
+                if ( '' !== $seo_description ) {
+                        echo '<meta property="og:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                }
+                echo '<meta property="og:type" content="article">' . "\n";
+                if ( '' !== $permalink ) {
+                        echo '<meta property="og:url" content="' . esc_url( $permalink ) . '">' . "\n";
+                }
+                if ( '' !== $image_url ) {
+                        echo '<meta property="og:image" content="' . esc_url( $image_url ) . '">' . "\n";
+                }
+                if ( '' !== $published ) {
+                        echo '<meta property="article:published_time" content="' . esc_attr( $published ) . '">' . "\n";
+                }
+
+                // JSON-LD NewsArticle (dati strutturati per i motori di ricerca).
+                $ld_headline       = '' !== $seo_title ? $seo_title : self::clean_text( get_the_title( $post_id ), 0 );
+                $ld_description    = $seo_description;
+                $ld_published      = self::clean_text( $published, 0 );
+
+                $schema = array(
+                        '@context'         => 'https://schema.org',
+                        '@type'            => 'NewsArticle',
+                        'headline'         => $ld_headline,
+                        'description'      => $ld_description,
+                        'mainEntityOfPage' => array(
+                                '@type' => 'WebPage',
+                                '@id'   => $permalink,
+                        ),
+                        'author'           => array(
+                                '@type' => 'Person',
+                                'name'  => $author_name,
+                        ),
+                );
+
+                if ( '' !== $ld_published ) {
+                        $schema['datePublished'] = $ld_published;
+                }
+                // "image" viene incluso solo se disponibile (valori vuoti non ammessi da schema.org).
+                if ( '' !== $image_url ) {
+                        $schema['image'] = $image_url;
+                }
+
+                $json = wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                if ( is_string( $json ) && '' !== $json ) {
+                        // Previene l'interruzione del tag <script> se il testo contiene '</'.
+                        $json = str_replace( '</', '<\\/', $json );
+                        echo '<script type="application/ld+json">' . $json . '</script>' . "\n";
+                }
+
+                echo '<!-- /SEO Nexus News AI -->' . "\n";
+        }
+
+        /**
+         * Hook pre_get_document_title: title tag per le single nexus_article.
+         *
+         * Usa _nexus_seo_title se presente; altrimenti "Titolo post | Nome sito"
+         * con separatore ' | '. Su ogni altra pagina restituisce $title intatto.
+         *
+         * @param string $title Title corrente passato da WordPress.
+         * @return string
+         */
+        public static function filter_title( $title ) {
+                if ( ! is_singular( 'nexus_article' ) ) {
+                        return $title;
+                }
+
+                $post_id = get_queried_object_id();
+                if ( $post_id <= 0 ) {
+                        return $title;
+                }
+
+                // Priorità al titolo SEO generato (meta _nexus_seo_title).
+                $seo_title = get_post_meta( $post_id, '_nexus_seo_title', true );
+                if ( is_string( $seo_title ) && '' !== trim( $seo_title ) ) {
+                        return self::clean_text( $seo_title, 0 );
+                }
+
+                // Fallback: titolo del post + separatore ' | ' + nome del sito.
+                $post_title = get_the_title( $post_id );
+                if ( '' === trim( (string) $post_title ) ) {
+                        return $title;
+                }
+
+                return self::clean_text( $post_title, 0 ) . ' | ' . get_bloginfo( 'name' );
+        }
+
+        /**
+         * Legge un campo da un articolo in formato oggetto (row DB) o array.
+         *
+         * @param array|object|null $article Articolo Nexus.
+         * @param string            $key     Nome del campo.
+         * @return string Valore come stringa ('' se assente).
+         */
+        private static function field( $article, $key ) {
+                if ( is_object( $article ) && isset( $article->{$key} ) ) {
+                        return (string) $article->{$key};
+                }
+                if ( is_array( $article ) && isset( $article[ $key ] ) ) {
+                        return (string) $article[ $key ];
+                }
+                return '';
+        }
+
+        /**
+         * Ripulisce un testo per l'uso in meta tag e JSON-LD: rimuove i tag HTML,
+         * collassa spazi/newline in spazi singoli e tronca alla lunghezza massima
+         * (multibyte quando disponibile, come in Nexus_AI_Engine::clip()).
+         *
+         * @param string $text Testo di partenza.
+         * @param int    $max  Lunghezza massima in caratteri (0 = nessun troncamento).
+         * @return string
+         */
+        private static function clean_text( $text, $max = 0 ) {
+                $text = trim( wp_strip_all_tags( (string) $text ) );
+                // I meta tag non devono contenere newline: collassa gli spazi bianchi.
+                $text = trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
+
+                if ( $max > 0 && '' !== $text ) {
+                        if ( function_exists( 'mb_substr' ) ) {
+                                $text = mb_substr( $text, 0, (int) $max );
+                        } else {
+                                $text = substr( $text, 0, (int) $max );
+                        }
+                        $text = trim( $text );
+                }
+
+                return $text;
+        }
+}
+

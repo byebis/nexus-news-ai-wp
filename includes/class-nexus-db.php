@@ -61,6 +61,16 @@ class Nexus_DB {
                         'ai_model'           => 'openai/gpt-4o-mini',
                         // Qualità minima per auto-approvazione in modalità fully_autonomous.
                         'auto_approve_score' => 75,
+                        // v1.0.1 — Post WordPress reali (CPT nexus_article).
+                        'enable_wp_posts'    => 1, // 1 = pubblica post WP reali, 0 = solo front-end Nexus legacy
+                        'post_status'        => 'publish', // publish | draft (stato del post WP creato)
+                        // v1.0.1 — Immagini in evidenza.
+                        'enable_ai_images'   => 1,
+                        'image_model'        => '', // vuoto = default del provider
+                        'image_size'         => '1024x1024',
+                        // v1.0.1 — SEO.
+                        'enable_seo'         => 1,
+                        'seo_generate'       => 1, // genera meta title/description con l'AI alla pubblicazione
                 );
         }
 
@@ -104,6 +114,7 @@ class Nexus_DB {
                                 source_name VARCHAR(255) NOT NULL DEFAULT '',
                                 source_url TEXT NULL,
                                 image_url TEXT NULL,
+                                wp_post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 status VARCHAR(30) NOT NULL DEFAULT 'draft',
                                 quality_score DECIMAL(5,2) NOT NULL DEFAULT 0,
                                 read_time INT NOT NULL DEFAULT 3,
@@ -115,7 +126,8 @@ class Nexus_DB {
                                 PRIMARY KEY  (id),
                                 KEY status (status(30)),
                                 KEY category (category(100)),
-                                KEY agent_id (agent_id)
+                                KEY agent_id (agent_id),
+                                KEY wp_post_id (wp_post_id)
                         ) {$charset};",
                         "CREATE TABLE {$plogs} (
                                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -397,7 +409,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'image_url', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
+                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'image_url', 'wp_post_id', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -406,7 +418,7 @@ class Nexus_DB {
                         $allowed['content'] = wp_kses_post( $allowed['content'] );
                 }
                 $allowed['updated_at'] = current_time( 'mysql' );
-                $int_fields = array( 'agent_id', 'read_time', 'views' );
+                $int_fields = array( 'agent_id', 'read_time', 'views', 'wp_post_id' );
                 $float_fields = array( 'quality_score' );
                 $nonce_fields = array( 'published_at' );
                 $formats = array();

@@ -4,11 +4,11 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma.
+Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI e SEO automatico.
 
 == Description ==
 
@@ -30,7 +30,7 @@ Nexus News AI è il giornale di nuova generazione, scritto da intelligenze artif
 2. **Valutazione**: ogni notizia riceve un punteggio di qualità (0-100).
 3. **Riscrittura AI**: le bozze migliori vengono riscritte in stile editoriale dal modello AI configurato (OpenRouter-compatible).
 4. **Approvazione**: in modalità semi-autonoma l'articolo entra in coda di approvazione e aspetta un revisore umano; in modalità completamente autonoma viene auto-approvato se supera la soglia di qualità.
-5. **Pubblicazione multi-piattaforma**: per **blog la pubblicazione è reale** (l'articolo vive nel database Nexus, URL di riferimento `/?nexus_article={id}` nei log); i canali social **Twitter/X, Facebook, LinkedIn e Instagram sono simulati in modo onesto**, con log consultabili per ogni articolo.
+5. **Pubblicazione multi-piattaforma**: per **blog la pubblicazione è reale** — dalla 1.0.1 l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `/nexus/{slug}/`), collegato al database Nexus e con fallback legacy `/?nexus_article={id}`; i canali social **Twitter/X, Facebook, LinkedIn e Instagram sono simulati in modo onesto**, con log consultabili per ogni articolo.
 
 Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di approvazione, attività, Nexus Wire, impostazioni) e fruibile in frontend con uno **shortcode magazine** moderno, reazioni emoji e modal di lettura.
 
@@ -46,7 +46,10 @@ Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di ap
 * **Shortcode**: [nexus_magazine], [nexus_articles category="Tecnologia" limit="6" layout="list"], [nexus_wire].
 * **Cron automatico**: WP-Cron pianifica raccolta, valutazione, riscrittura e pubblicazione secondo l'intervallo configurato.
 * **REST API nexus/v1**: tutti i dati e le azioni della redazione sono esposti via REST (agents, articles, approve/reject, pipeline collect/run, settings, activity, stats, wire, route pubbliche per il magazine, health).
-* **Pubblicazione multi-piattaforma**: blog reale (`/?nexus_article={id}`) + social simulati in modo dichiarato (Twitter/X, Facebook, LinkedIn, Instagram) — log onesti e consultabili per ogni articolo.
+* **Pubblicazione come post WordPress reali**: CPT `nexus_article` con permalink `/nexus/{slug}/`, categorie e tag native e template single dedicato (fallback al front-end Nexus legacy).
+* **Immagini in evidenza AI**: featured image generata con l'AI (modello e dimensione configurabili), con fallback su immagine articolo e placeholder locale.
+* **SEO**: meta title/description generate con l'AI, Open Graph, JSON-LD NewsArticle e compatibilità Yoast SEO / RankMath.
+* **Pubblicazione multi-piattaforma**: blog reale (post WP del CPT `nexus_article`, fallback legacy `/?nexus_article={id}`) + social simulati in modo dichiarato (Twitter/X, Facebook, LinkedIn, Instagram) — log onesti e consultabili per ogni articolo.
 * **Nexus Wire**: redazione collettiva multi-agente (raccolta candidati → selezione → dossier → bozza → revisioni → editor).
 * **Nessuna dipendenza esterna**: solo PHP puro + vanilla JS, nessun framework da compilare.
 * **Pronto per la traduzione**: text domain `nexus-news-ai` con file .pot incluso.
@@ -79,9 +82,14 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 = I dati vengono cancellati quando disattivo il plugin? =
 
-**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 5 tabelle `wp_nexus_*`, le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs` e i transients `nexus_rss_*`. Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
+**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 5 tabelle `wp_nexus_*`, le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
 == Changelog ==
+
+= 1.0.1 =
+* Pubblicazione come post WordPress reali: nuovo CPT `nexus_article` (permalink `/nexus/{slug}/`, categorie e tag native, template single dedicato) con fallback al front-end Nexus legacy.
+* Immagini in evidenza generate con l'AI (modello e dimensione configurabili), con fallback su immagine articolo e placeholder locale.
+* SEO: meta title/description AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast SEO / RankMath. 7 nuovi setting nella sezione "Pubblicazione WordPress & SEO".
 
 = 1.0.0 =
 * Prima versione: porting WordPress dell'app Next.js "Nexus News AI".
@@ -92,6 +100,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+"Contenuti veri": gli articoli diventano post WordPress reali (CPT `nexus_article`) con permalink `/nexus/{slug}/`, immagini in evidenza AI e SEO automatico compatibile con Yoast e RankMath.
 
 = 1.0.0 =
 Prima versione del plugin WordPress.

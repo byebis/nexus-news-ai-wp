@@ -9,6 +9,12 @@
  *     .nxa-wire-run a[data-article-id]   sezioni Wire (stesso comportamento delle card)
  *   #nxa-modal-root                      contenitore vuoto per il modal
  *
+ * Pagina single (v1.0.1 — templates/single-nexus_article.php):
+ *   .nexus-single-reactions[data-article-id]  barra reazioni (data-article-id = ID
+ *                                             Nexus, stesso markup dei bottoni modal)
+ *   .nexus-single-reaction-hint               messaggi di stato delle reazioni
+ *   .nexus-single-views                       contatore letture (aggiornato dal POST view)
+ *
  * Config iniettata da PHP: window.NexusPublicData = { restUrl, nonce, emojis: [6 emoji] }
  *
  * Espone una sola variabile globale: window.NexusPublic = { open, close } (debug).
@@ -445,10 +451,12 @@
                         '</article>';
         }
 
-        function applyReactions(reactions, articleId) {
+        /** scope: radice della barra reazioni (modal di default; barra single in pagina). */
+        function applyReactions(reactions, articleId, scope) {
                 var counts = (reactions && typeof reactions === 'object') ? reactions : {};
                 var mine = getMine(articleId);
-                var btns = modal.scroll.querySelectorAll('.nxa-reaction-btn');
+                var root = scope || modal.scroll;
+                var btns = root.querySelectorAll('.nxa-reaction-btn');
                 for (var i = 0; i < btns.length; i++) {
                         var btn = btns[i];
                         var emoji = btn.getAttribute('data-emoji') || '';
@@ -873,6 +881,17 @@
                         return;
                 }
 
+                // pagina single (template single-nexus_article): reazioni gestite in pagina
+                var singleWrap = e.target.closest('.nexus-single-reactions');
+                if (singleWrap) {
+                        var sbtn = e.target.closest('.nxa-reaction-btn');
+                        if (sbtn && single.articleId) {
+                                e.preventDefault();
+                                onSingleReactionClick(sbtn);
+                        }
+                        return; // nessun click dentro il contenitore deve aprire il modal
+                }
+
                 // apertura modal (card + wire): qualsiasi elemento [data-article-id]
                 var artEl = e.target.closest('[data-article-id]');
                 if (artEl) {
@@ -968,6 +987,110 @@
         }
 
         /* ================================================================
+         * Pagina single (templates/single-nexus_article.php)
+         * Stesso contratto del modal: bottoni .nxa-reaction-btn[data-emoji]
+         * con contatore .nxa-reaction-count, throttle e dedup via localStorage.
+         * Il contenitore porta data-article-id = ID Nexus (NON l'id post WP).
+         * ================================================================ */
+
+        var single = {
+                reactions: null,   // .nexus-single-reactions
+                articleId: null,   // ID Nexus (riga wp_nexus_articles)
+                viewsEl: null,     // .nexus-single-views (opzionale)
+                busyReaction: false,
+                lastReactionAt: 0,
+                hintTimer: null
+        };
+
+        /** Messaggio di stato sotto la barra reazioni single. */
+        function singleHint(message) {
+                if (!single.reactions) return;
+                var hint = single.reactions.querySelector('.nexus-single-reaction-hint');
+                if (!hint) return;
+                if (single.hintTimer) { clearTimeout(single.hintTimer); single.hintTimer = null; }
+                hint.textContent = message;
+                hint.hidden = false;
+                single.hintTimer = setTimeout(function () { hint.hidden = true; }, 2600);
+        }
+
+        /** Sincronizza lo stato "premuto" dei bottoni single dal localStorage (i conteggi restano quelli server). */
+        function syncSinglePressed() {
+                if (!single.reactions) return;
+                var mine = getMine(single.articleId);
+                var btns = single.reactions.querySelectorAll('.nxa-reaction-btn');
+                for (var i = 0; i < btns.length; i++) {
+                        var pressed = mine.indexOf(btns[i].getAttribute('data-emoji') || '') !== -1;
+                        btns[i].classList.toggle('nxa-pressed', pressed);
+                        btns[i].setAttribute('aria-pressed', pressed ? 'true' : 'false');
+                }
+        }
+
+        /** Click su una reazione nella pagina single: throttle + dedup + rollback, come nel modal. */
+        function onSingleReactionClick(btn) {
+                var emoji = btn.getAttribute('data-emoji') || '';
+                var articleId = single.articleId;
+                if (!emoji || !articleId || single.busyReaction) return;
+                if (Date.now() - single.lastReactionAt < REACTION_THROTTLE_MS) return; // doppio click rapido
+                single.lastReactionAt = Date.now();
+
+                if (getMine(articleId).indexOf(emoji) !== -1) {
+                        singleHint('Hai già reagito con questa emoji a questo articolo.');
+                        return;
+                }
+
+                var countEl = btn.querySelector('.nxa-reaction-count');
+                var before = countEl ? (parseInt(countEl.textContent, 10) || 0) : 0;
+
+                // aggiornamento ottimistico
+                single.busyReaction = true;
+                btn.classList.add('nxa-pressed');
+                btn.setAttribute('aria-pressed', 'true');
+                if (countEl) countEl.textContent = String(before + 1);
+
+                apiPost('/public/articles/' + encodeURIComponent(articleId) + '/reaction', { emoji: emoji })
+                        .then(function (data) {
+                                addMine(articleId, emoji);
+                                if (data && data.reactions) applyReactions(data.reactions, articleId, single.reactions);
+                                singleHint('Grazie per la tua reazione!');
+                        })
+                        .catch(function () {
+                                // rollback
+                                if (countEl) countEl.textContent = String(before);
+                                var stillMine = getMine(articleId).indexOf(emoji) !== -1;
+                                btn.classList.toggle('nxa-pressed', stillMine);
+                                btn.setAttribute('aria-pressed', stillMine ? 'true' : 'false');
+                                singleHint('Reazione non registrata, riprova.');
+                        })
+                        .then(function () { single.busyReaction = false; });
+        }
+
+        /** Al primo caricamento di sessione della pagina single: POST view (best effort). */
+        function trackSingleView() {
+                if (!single.articleId || hasViewed(single.articleId)) return;
+                markViewed(single.articleId);
+                apiPost('/public/articles/' + encodeURIComponent(single.articleId) + '/view', {})
+                        .then(function (data) {
+                                if (data && typeof data.views !== 'undefined' && single.viewsEl) {
+                                        single.viewsEl.textContent = viewsLabel(data.views);
+                                }
+                        })
+                        .catch(function () { /* silenzioso: il conteggio viste non è critico */ });
+        }
+
+        /** Init pagina single: aggancia la barra reazioni e il contatore letture se presenti. */
+        function initSingle() {
+                var wrap = document.querySelector('.nexus-single-reactions[data-article-id]');
+                if (!wrap) return;
+                var id = String(wrap.getAttribute('data-article-id') || '').trim();
+                if (!id) return;
+                single.reactions = wrap;
+                single.articleId = id;
+                single.viewsEl = document.querySelector('.nexus-single-views');
+                syncSinglePressed();
+                trackSingleView();
+        }
+
+        /* ================================================================
          * Boot
          * ================================================================ */
 
@@ -985,6 +1108,7 @@
                 injectCss();
                 var mags = document.querySelectorAll('.nxa-magazine');
                 for (var i = 0; i < mags.length; i++) initMagazine(mags[i]);
+                initSingle();
                 bindGlobal();
         }
 

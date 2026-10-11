@@ -1075,3 +1075,344 @@ body:has(.nxa-modal-overlay) {
 .nxa-sep {
   opacity: 0.5;
 }
+
+/* ================================================================
+   Single Article (v1.0.1) — templates/single-nexus_article.php
+   Pagina articolo singolo (CPT "nexus_article") integrata col tema
+   via get_header()/get_footer(). Il wrapper è una card autosufficiente
+   che riusa i token --nxa-* della sezione 1 e i bottoni reazione
+   .nxa-reactions/.nxa-reaction-btn della sezione 9.
+   Contratto con nexus-public.js:
+     .nexus-single-reactions[data-article-id] → barra reazioni (ID Nexus)
+     .nexus-single-reaction-hint              → messaggi di stato
+     .nexus-single-views                      → contatore letture
+   ================================================================ */
+
+.nexus-single,
+.nexus-single * {
+  box-sizing: border-box;
+}
+
+.nexus-single {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(16px, 3vw, 36px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: var(--nxa-radius-lg);
+  background:
+    radial-gradient(1100px 420px at 85% -8%, rgba(6, 182, 212, 0.07), transparent 60%),
+    radial-gradient(900px 400px at 0% 0%, rgba(124, 58, 237, 0.1), transparent 55%),
+    var(--nxa-bg);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.55;
+  box-shadow: var(--nxa-shadow);
+  isolation: isolate;
+  -webkit-font-smoothing: antialiased;
+}
+
+.nexus-single [hidden] {
+  display: none !important;
+}
+
+.nexus-single ::selection {
+  background: rgba(124, 58, 237, 0.45);
+  color: #f8fafc;
+}
+
+/* ---------- Hero: categoria, titolo, meta ---------- */
+
+.nexus-single-hero {
+  padding: clamp(20px, 3.5vw, 34px);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  background:
+    radial-gradient(900px 320px at 12% -20%, rgba(124, 58, 237, 0.22), transparent 60%),
+    radial-gradient(700px 300px at 96% -10%, rgba(6, 182, 212, 0.16), transparent 55%),
+    var(--nxa-surface);
+}
+
+.nexus-single-cat {
+  display: inline-block;
+  padding: 3px 12px;
+  border: 1px solid var(--nxa-cat-line);
+  border-radius: 999px;
+  background: var(--nxa-cat-soft);
+  color: var(--nxa-cat);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nexus-single-title {
+  margin: 12px 0 0;
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--nxa-text);
+}
+
+.nexus-single-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: var(--nxa-muted);
+}
+
+.nexus-single-views {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Byline: avatar tondo emoji + agente + badge ---------- */
+
+.nexus-single-byline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--nxa-border-soft);
+}
+
+.nexus-single-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  line-height: 1;
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border);
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.4);
+  overflow: hidden;
+}
+
+.nexus-single-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nexus-single-agent-name {
+  font-weight: 700;
+  color: var(--nxa-text);
+}
+
+.nexus-single-agent-cat {
+  font-size: 0.78rem;
+  color: var(--nxa-muted);
+}
+
+.nexus-single-badge {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--nxa-accent-grad);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ---------- Immagine in evidenza + contenuto ---------- */
+
+.nexus-single-media {
+  margin: 22px 0 0;
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  background: var(--nxa-surface);
+  overflow: hidden;
+}
+
+.nexus-single-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.nexus-single-content {
+  margin-top: 24px;
+  font-size: 1.02rem;
+  line-height: 1.75;
+  color: var(--nxa-text-body);
+  overflow-wrap: break-word;
+}
+
+.nexus-single-content p {
+  margin: 0 0 1.1em;
+}
+
+.nexus-single-content h2,
+.nexus-single-content h3,
+.nexus-single-content h4 {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+  font-weight: 700;
+  color: var(--nxa-text);
+}
+
+.nexus-single-content a {
+  color: var(--nxa-accent-2);
+  text-decoration: underline;
+}
+
+.nexus-single-content a:hover {
+  color: var(--nxa-focus);
+}
+
+.nexus-single-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--nxa-radius-sm);
+}
+
+.nexus-single-content figure {
+  margin: 1.4em 0;
+}
+
+.nexus-single-content blockquote {
+  margin: 1.4em 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--nxa-accent-1);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface);
+  font-style: italic;
+  color: var(--nxa-text);
+}
+
+.nexus-single-content ul,
+.nexus-single-content ol {
+  margin: 0 0 1.1em;
+  padding-left: 1.4em;
+}
+
+.nexus-single-content code {
+  padding: 2px 6px;
+  border: 1px solid var(--nxa-border);
+  border-radius: 6px;
+  background: var(--nxa-surface-2);
+  font-size: 0.9em;
+}
+
+.nexus-single-content pre {
+  margin: 0 0 1.1em;
+  padding: 14px 16px;
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+  overflow-x: auto;
+}
+
+.nexus-single-content pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.nexus-single-pages {
+  margin-top: 18px;
+  font-size: 0.9rem;
+  color: var(--nxa-muted);
+}
+
+/* ---------- Box fonti ---------- */
+
+.nexus-single-sources {
+  margin-top: 26px;
+  padding: 16px 18px;
+  border: 1px solid var(--nxa-border);
+  border-left: 3px solid var(--nxa-accent-2);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface);
+  font-size: 0.9rem;
+  color: var(--nxa-text-body);
+  word-break: break-word;
+}
+
+.nexus-single-sources-title {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nxa-muted);
+}
+
+.nexus-single-source-link {
+  color: var(--nxa-accent-2);
+  text-decoration: underline;
+}
+
+.nexus-single-source-link:hover {
+  color: var(--nxa-focus);
+}
+
+/* ---------- Reazioni single (bottoni riusati dalla sezione 9) ---------- */
+
+.nexus-single-reactions {
+  margin-top: 26px;
+}
+
+.nexus-single-reactions .nxa-reactions {
+  margin: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--nxa-border-soft);
+}
+
+.nexus-single-reaction-hint {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  color: var(--nxa-muted);
+}
+
+/* ---------- Focus coerente col magazine ---------- */
+
+.nexus-single a:focus-visible,
+.nexus-single button:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .nexus-single-badge {
+    margin-left: 0;
+  }
+}
+
+@media print {
+  .nexus-single-reactions,
+  .nexus-single-badge {
+    display: none !important;
+  }
+
+  .nexus-single {
+    background: #fff !important;
+    color: #111 !important;
+    border: none;
+    box-shadow: none;
+  }
+
+  .nexus-single-title,
+  .nexus-single-agent-name,
+  .nexus-single-content h2,
+  .nexus-single-content h3 {
+    color: #111;
+  }
+
+  .nexus-single-content,
+  .nexus-single-meta,
+  .nexus-single-agent-cat {
+    color: #444;
+  }
+}

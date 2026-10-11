@@ -1198,6 +1198,13 @@ class Nexus_Rest {
                         'ai_base_url'          => 'esc_url_raw',
                         'ai_model'             => 'sanitize_text_field',
                         'auto_approve_score'   => 'absint',
+                        'enable_wp_posts'      => 'absint',
+                        'post_status'          => 'sanitize_key',
+                        'enable_ai_images'     => 'absint',
+                        'image_model'          => 'sanitize_text_field',
+                        'image_size'           => 'sanitize_text_field',
+                        'enable_seo'           => 'absint',
+                        'seo_generate'         => 'absint',
                 );
 
                 $out = array();
@@ -1209,7 +1216,16 @@ class Nexus_Rest {
                 }
 
                 // Normalizza i flag booleani a 0/1.
-                foreach ( array( 'auto_collect', 'auto_evaluate', 'auto_rewrite', 'auto_publish' ) as $flag ) {
+                foreach ( array(
+                        'auto_collect',
+                        'auto_evaluate',
+                        'auto_rewrite',
+                        'auto_publish',
+                        'enable_wp_posts',
+                        'enable_ai_images',
+                        'enable_seo',
+                        'seo_generate',
+                ) as $flag ) {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
                         }
@@ -1220,6 +1236,24 @@ class Nexus_Rest {
                         return self::err(
                                 'nexus_rest_invalid_mode',
                                 __( 'Modalità non valida. Valori ammessi: semi_autonomous, fully_autonomous.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                // Valida lo stato dei post WordPress creati dal publisher.
+                if ( isset( $out['post_status'] ) && ! in_array( $out['post_status'], array( 'publish', 'draft' ), true ) ) {
+                        return self::err(
+                                'nexus_rest_invalid_post_status',
+                                __( 'Stato post non valido. Valori ammessi: publish, draft.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                // Valida la dimensione richiesta per le immagini AI.
+                if ( isset( $out['image_size'] ) && ! in_array( $out['image_size'], array( '1024x1024', '1792x1024', '1024x1792' ), true ) ) {
+                        return self::err(
+                                'nexus_rest_invalid_image_size',
+                                __( 'Dimensione immagini non valida. Valori ammessi: 1024x1024, 1792x1024, 1024x1792.', 'nexus-news-ai' ),
                                 400
                         );
                 }
@@ -1257,10 +1291,29 @@ class Nexus_Rest {
         }
 
         /**
+         * Permalink del post WordPress collegato a un articolo Nexus (se esiste).
+         *
+         * @param int $wp_post_id ID del post WP.
+         * @return string Permalink sicuro o stringa vuota.
+         */
+        private static function wp_post_permalink( $wp_post_id ) {
+                if ( $wp_post_id <= 0 || ! function_exists( 'get_permalink' ) ) {
+                        return '';
+                }
+                $post = get_post( $wp_post_id );
+                if ( ! $post instanceof WP_Post ) {
+                        return '';
+                }
+                $link = get_permalink( $post );
+                return is_string( $link ) && '' !== $link ? esc_url_raw( $link ) : '';
+        }
+
+        /**
          * Serializza un articolo per la risposta JSON.
          *
          * Aggiunge agent_name, agent_avatar, reactions (JSON decodificato),
-         * source_url e excerpt (wp_trim_words 30 parole su summary o content).
+         * source_url, excerpt (wp_trim_words 30 parole su summary o content),
+         * wp_post_id e post_permalink (v1.0.1, post WordPress reale).
          *
          * @param object $a             Riga articolo.
          * @param bool   $with_content  Includere il contenuto completo (default true).
@@ -1287,6 +1340,8 @@ class Nexus_Rest {
                         'source_name'   => (string) ( $a->source_name ?? '' ),
                         'source_url'    => esc_url_raw( (string) ( $a->source_url ?? '' ) ),
                         'image_url'     => esc_url_raw( (string) ( $a->image_url ?? '' ) ),
+                        'wp_post_id'    => (int) ( $a->wp_post_id ?? 0 ),
+                        'post_permalink' => self::wp_post_permalink( (int) ( $a->wp_post_id ?? 0 ) ),
                         'status'        => (string) $a->status,
                         'quality_score' => (float) $a->quality_score,
                         'read_time'     => (int) $a->read_time,

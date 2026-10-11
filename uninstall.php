@@ -12,6 +12,11 @@
  * con fallback robusto su __DIR__; se la classe non è caricabile si passa
  * alle query DROP TABLE dirette via $wpdb.
  *
+ * Dalla v1.0.1 rimuove anche i post WordPress reali del CPT nexus_article
+ * (wp_delete_post con force_delete, che elimina post e meta associati) e i
+ * meta Nexus residui sui post (_nexus_article_id, _nexus_seo_title,
+ * _nexus_seo_description) via delete_post_meta_by_key.
+ *
  * @package Nexus_News_AI
  */
 
@@ -51,6 +56,39 @@ function nexus_uninstall_delete_transients() {
 }
 
 /**
+ * Elimina tutti i post WordPress reali del CPT nexus_article (v1.0.1)
+ * e i meta Nexus correlati.
+ *
+ * wp_delete_post() con force_delete=true bypassa il cestino e rimuove
+ * il post insieme ai suoi meta. delete_post_meta_by_key() viene poi
+ * eseguita comunque: è sicura anche a post già eliminati (meta orfani).
+ *
+ * @return void
+ */
+function nexus_uninstall_delete_wp_posts() {
+        global $wpdb;
+
+        // Tutti i post del CPT nexus_article: cancellazione definitiva.
+        $post_ids = $wpdb->get_col(
+                $wpdb->prepare(
+                        "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s",
+                        'nexus_article'
+                )
+        );
+
+        if ( ! empty( $post_ids ) ) {
+                foreach ( $post_ids as $post_id ) {
+                        wp_delete_post( (int) $post_id, true ); // force_delete: bypassa il cestino.
+                }
+        }
+
+        // Meta Nexus sui post (residui o orfani): pulizia per chiave.
+        delete_post_meta_by_key( '_nexus_article_id' );
+        delete_post_meta_by_key( '_nexus_seo_title' );
+        delete_post_meta_by_key( '_nexus_seo_description' );
+}
+
+/**
  * Drop diretto delle 5 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
  *
  * @return void
@@ -69,6 +107,10 @@ function nexus_uninstall_drop_tables_direct() {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
         }
 }
+
+/* ---------------- 0) Post WordPress reali (CPT nexus_article, v1.0.1) ---------------- */
+
+nexus_uninstall_delete_wp_posts();
 
 /* ---------------- 1) Try via Nexus_DB ---------------- */
 

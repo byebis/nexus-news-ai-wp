@@ -268,6 +268,21 @@
                         Math.round( value ) + '%</span>';
         }
 
+        /**
+         * Badge "Post WP" (v1.0.1): link al post WordPress quando l'articolo è
+         * stato pubblicato come post reale (wp_post_id > 0). La REST potrebbe
+         * non restituire ancora i campi: lettura difensiva, mai crash.
+         */
+        function wpPostBadge( a ) {
+                var row = a || {};
+                var wpId = num( row.wp_post_id || row.wpPostId || 0 );
+                if ( wpId <= 0 ) {
+                        return '';
+                }
+                var href = row.post_permalink || row.permalink || ( '/?p=' + wpId );
+                return '<a class="nxa-badge nxa-badge--primary" href="' + esc( href ) + '" target="_blank" rel="noopener noreferrer" title="Post WordPress #' + wpId + '">Post WP ↗</a>';
+        }
+
         function actionMeta( action ) {
                 return ACTION_META[ String( action || '' ).toLowerCase() ] || ACTION_DEFAULT;
         }
@@ -616,7 +631,7 @@
                         var sourceName = pick( a, 'source_name', 'sourceName' ) || '';
                         var sourceUrl = pick( a, 'source_url', 'sourceUrl' ) || '';
                         var html = '' +
-                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + '</div>' +
+                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + wpPostBadge( a ) + '</div>' +
                                 '<h3 style="margin:0 0 4px;font-size:20px;line-height:1.3">' + esc( pick( a, 'title' ) ) + '</h3>' +
                                 ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 10px;color:#475569;font-size:14px">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                                 '<p style="font-size:12px;color:#64748b;margin:0 0 14px">' +
@@ -935,6 +950,7 @@
                                 categoryChip( pick( a, 'category' ) ) +
                                 badge( status ) +
                                 scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
+                                wpPostBadge( a ) +
                                 '<span style="font-size:12px;color:#64748b">✍️ ' + esc( articleAgentName( a ) ) + '</span>' +
                                 '<span style="font-size:11px;color:#94a3b8;margin-left:auto">' + esc( timeAgoIt( pick( a, 'created_at', 'createdAt' ) ) ) + '</span>' +
                         '</div>' +
@@ -1115,8 +1131,8 @@
                 var payload = {};
                 var i;
 
-                // campi testuali / select / number per nome
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model' ];
+                // campi testuali / select per nome (v1.0.1: + post_status, image_model, image_size)
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -1138,6 +1154,16 @@
                         var boxes = qsa( 'input[name="' + autos[ i ] + '"]', form );
                         if ( boxes.length ) {
                                 payload[ autos[ i ] ] = boxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // checkbox pubblicazione WordPress & SEO (v1.0.1): presenti → 1, assenti → 0
+                // (se i campi non sono ancora in settings.php, qsa torna [] e il payload li omette)
+                var wpFlags = [ 'enable_wp_posts', 'enable_ai_images', 'enable_seo', 'seo_generate' ];
+                for ( i = 0; i < wpFlags.length; i++ ) {
+                        var flagBoxes = qsa( 'input[name="' + wpFlags[ i ] + '"]', form );
+                        if ( flagBoxes.length ) {
+                                payload[ wpFlags[ i ] ] = flagBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 

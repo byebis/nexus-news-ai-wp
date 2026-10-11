@@ -27,6 +27,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 11. [Installazione](#installazione)
 12. [FAQ tecniche](#faq-tecniche)
 13. [Licenza e crediti](#licenza-e-crediti)
+14. [Changelog](#changelog)
 
 ---
 
@@ -42,9 +43,12 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Cron automatico** con intervallo configurabile e limite giornaliero di articoli.
 - **REST API `nexus/v1`**: dati e azioni della redazione accessibili programmaticamente.
 - **Nexus Wire**: pipeline multi-agente (raccolta candidati → selezione fonti → dossier del ricercatore → bozza del redattore → revisioni a 2 voci → editor finale) con storia delle run e bacheca commenti.
+- **Pubblicazione come post WordPress reali** (v1.0.1): gli articoli approvati diventano POST veri del CPT `nexus_article`, con categorie e tag nativi di WordPress e permalink `/nexus/{slug}/`; in fallback resta il front-end Nexus legacy (`/?nexus_article={id}`).
+- **Immagini in evidenza AI** (v1.0.1): featured image generata con l'AI (modello e dimensione configurabili) con fallback sull'immagine dell'articolo e infine su un placeholder locale; la pubblicazione non si blocca mai per un'immagine.
+- **SEO automatico** (v1.0.1): meta title/description generate con l'AI, meta description + Open Graph + JSON-LD `NewsArticle` sul single, compatibilità con Yoast SEO e RankMath.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
-- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle, opzioni e transients.
+- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle, opzioni, transients e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
 
 ---
 
@@ -71,7 +75,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 ```
 nexus-news-ai/
 ├── nexus-news-ai.php              # Bootstrap: header plugin, costanti, require, hook attivazione/disattivazione
-├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_*, opzioni, transients
+├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_*, opzioni, transients, post nexus_article + meta
 ├── readme.txt                     # Readme formato WordPress (repository.org)
 ├── README.md                      # Questo file
 ├── LICENSE                        # Licenza MIT
@@ -82,7 +86,10 @@ nexus-news-ai/
 │   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
 │   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair (nessun contenuto finto: senza chiave ritorna errore)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
-│   ├── class-nexus-publisher.php  # Pubblicazione: blog reale + social simulati, log in publish_logs
+│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress reali (CPT nexus_article, v1.0.1) + fallback legacy + social simulati, log in publish_logs
+│   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus»
+│   ├── class-nexus-image.php      # v1.0.1 — Immagini in evidenza: generazione AI con fallback, sideload in media library, set_post_thumbnail
+│   ├── class-nexus-seo.php        # v1.0.1 — SEO: meta AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast/RankMath, title tag
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
 │   └── index.php                  # Guardia "Silence is golden"
@@ -108,6 +115,9 @@ nexus-news-ai/
 ├── assets/                        # Asset condivisi admin
 │   ├── js/                        # admin.js: script dell'interfaccia admin (vanilla JS, consuma le REST route nexus/v1)
 │   └── index.php
+│
+├── templates/                     # Template front-end per i post WordPress reali (v1.0.1)
+│   └── single-nexus_article.php   # Single del CPT nexus_article: header/footer del tema, byline agente, contenuto, fonti, reazioni Nexus
 │
 └── languages/                     # Internazionalizzazione
     ├── nexus-news-ai.pot          # Template di traduzione (gettext)
@@ -144,7 +154,7 @@ La pipeline è orchestrata da `class-nexus-pipeline.php` (contratto: `collect`, 
 4. **Approvazione (approve)** —
    - *Modalità semi-autonoma* (default): l'articolo passa a `pending_approval` e compare nella **coda di approvazione**; il revisore umano può approvare o rifiutare con nota (tabella `wp_nexus_approval_logs`).
    - *Modalità completamente autonoma*: gli articoli con `quality_score >= auto_approve_score` vengono auto-approvati, gli altri restano in coda come rete di sicurezza.
-5. **Pubblicazione multi-piattaforma** — l'articolo approvato viene inviato alle piattaforme abilitate in `social_platforms`: per **blog la pubblicazione è reale** (l'articolo vive nel database Nexus, con URL di riferimento `/?nexus_article={id}` registrato nei log), i canali **social sono simulati in modo onesto** (post_id e URL demo dichiarati come tali) e ogni invio genera una riga in `wp_nexus_publish_logs`.
+5. **Pubblicazione multi-piattaforma** — l'articolo approvato viene inviato alle piattaforme abilitate in `social_platforms`: per **blog la pubblicazione è reale** (dalla v1.0.1 l'articolo diventa un post WordPress del CPT `nexus_article` con permalink `/nexus/{slug}/`; in fallback resta nel database Nexus con URL legacy `/?nexus_article={id}` registrato nei log), i canali **social sono simulati in modo onesto** (post_id e URL demo dichiarati come tali) e ogni invio genera una riga in `wp_nexus_publish_logs`.
 
 Stati dell'articolo: `draft` → `pending_approval` → `approved` → `published` (o `rejected`).
 
@@ -183,6 +193,8 @@ La bacheca del **Nexus Wire**: storico delle run della redazione collettiva (arg
 ```
 [nexus_wire]
 ```
+
+> **Nota (v1.0.1):** gli articoli pubblicati come **post WordPress reali** non passano dagli shortcode: ogni post del CPT `nexus_article` è servito dal template dedicato del plugin (`templates/single-nexus_article.php`), che usa header e footer del tema attivo e mostra byline dell'agente, contenuto, fonti e reazioni Nexus, con permalink `/nexus/{slug}/`. Lo shortcode `[nexus_magazine]` continua invece a leggere il database Nexus (articoli legacy e magazine).
 
 ---
 
@@ -253,6 +265,15 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `ai_base_url` | `https://openrouter.ai/api/v1` | Base URL dell'API AI (compatibile OpenAI/OpenRouter) |
 | `ai_model` | `openai/gpt-4o-mini` | Modello usato per riscrittura e Nexus Wire |
 | `auto_approve_score` | `75` | Punteggio minimo per l'auto-approvazione in `fully_autonomous` |
+| `enable_wp_posts` | `1` | Pubblica gli articoli approvati come post WordPress reali (CPT `nexus_article`); `0` = solo front-end Nexus legacy |
+| `post_status` | `publish` | Stato dei post creati: `publish` oppure `draft` |
+| `enable_ai_images` | `1` | Genera l'immagine in evidenza con l'AI (fallback: immagine dell'articolo → placeholder locale) |
+| `image_model` | (vuoto) | Modello immagini AI; vuoto = modello di default del provider configurato |
+| `image_size` | `1024x1024` | Dimensione delle immagini generate: `1024x1024`, `1792x1024`, `1024x1792` |
+| `enable_seo` | `1` | Ottimizzazione SEO: meta description, Open Graph, JSON-LD `NewsArticle` |
+| `seo_generate` | `1` | Genera meta title/description con l'AI (fallback: titolo articolo + riassunto) |
+
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO.
 
 ---
 
@@ -277,7 +298,7 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 
 ## Pubblicazione multi-piattaforma
 
-> **Nota onesta (simulazione):** per **blog la pubblicazione è reale** — l'articolo vive nel database Nexus e l'URL di riferimento registrato nei log è `home_url('/?nexus_article={id}')`. I canali **Twitter/X, Facebook, LinkedIn e Instagram sono invece simulati**: il plugin non ha credenziali API social, quindi registra in `wp_nexus_publish_logs` un post_id e un URL demo, dichiarati come simulati (nota: «Pubblicazione simulata (demo): nessuna API social configurata») invece di fingere chiamate reali. È la stessa filosofia dell'app Next.js originale. Per pubblicazioni social vere servirebbe integrare le API ufficiali di ciascuna piattaforma (OAuth, token, revisori) — volutamente fuori scope per mantenere il plugin senza dipendenze e senza credenziali sensibili.
+> **Nota onesta (simulazione):** per **blog la pubblicazione è reale** — dalla v1.0.1 l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `home_url('/nexus/{slug}/')`, collegato al record Nexus via meta `_nexus_article_id`); solo in caso di errore (o con `enable_wp_posts=0`) si ricade sul front-end Nexus legacy con URL `home_url('/?nexus_article={id}')`. I canali **Twitter/X, Facebook, LinkedIn e Instagram sono invece simulati**: il plugin non ha credenziali API social, quindi registra in `wp_nexus_publish_logs` un post_id e un URL demo, dichiarati come simulati (nota: «Pubblicazione simulata (demo): nessuna API social configurata») invece di fingere chiamate reali. È la stessa filosofia dell'app Next.js originale. Per pubblicazioni social vere servirebbe integrare le API ufficiali di ciascuna piattaforma (OAuth, token, revisori) — volutamente fuori scope per mantenere il plugin senza dipendenze e senza credenziali sensibili.
 
 ---
 
@@ -302,10 +323,10 @@ Per tutto ciò che non produce contenuti: magazine, admin panel, coda di approva
 Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di default (`https://openrouter.ai/api/v1`) ma anche OpenAI, Groq, Ollama locale, ecc. — basta cambiare `ai_base_url` e `ai_model`.
 
 **Dove sono salvati i dati?**
-Nelle 5 tabelle `wp_nexus_*` con prefisso del tuo WordPress + l'option `nexus_settings`. Gli articoli **non** diventano `wp_posts`: il magazine è autonomo, così la pipeline non inquina il blog.
+Nelle 5 tabelle `wp_nexus_*` con prefisso del tuo WordPress + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
 
 **La disattivazione cancella i dati?**
-No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina tabelle, opzioni e transients.
+No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina tabelle, opzioni, transients e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
 
 **Posso modificare gli articoli generati?**
 Sì, dalla coda di approvazione prima della pubblicazione; via REST puoi approvare, rifiutare o eliminare (`POST /articles/{id}/approve`, `POST /articles/{id}/reject`, `DELETE /articles/{id}`).
@@ -323,3 +344,20 @@ Sì: non usa sessioni né stato globale; le risposte REST pubbliche sono cacheab
 Rilasciato sotto **licenza MIT** (vedi `LICENSE`). © 2026 **byebis**.
 
 Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso spirito, stessa redazione di intelligenze artificiali, nuova casa in `wp-content/plugins`.
+
+---
+
+## Changelog
+
+### 1.0.1 — «Contenuti veri»
+
+- **Pubblicazione come post WordPress reali**: nuovo CPT `nexus_article` (permalink `/nexus/{slug}/`, categorie e tag nativi, template single dedicato, meta box «Nexus»); il publisher crea/aggiorna il post via `wp_insert_post`/`wp_update_post` e collega `wp_post_id` all'articolo Nexus, con fallback legacy `/?nexus_article={id}` in caso di errore o con `enable_wp_posts=0`.
+- **Immagini in evidenza AI**: generazione della featured image con l'AI (modello e dimensione configurabili), fallback sull'immagine dell'articolo e infine placeholder SVG locale; sideload nella media library; la pubblicazione non si blocca mai se l'immagine fallisce.
+- **SEO**: meta title/description generate con l'AI (fallback su titolo e riassunto), meta description + Open Graph + JSON-LD `NewsArticle` sul single `nexus_article`, title tag dedicato, compatibilità Yoast SEO e RankMath.
+- **7 nuovi setting** (sezione admin «Pubblicazione WordPress & SEO»): `enable_wp_posts`, `post_status`, `enable_ai_images`, `image_model`, `image_size`, `enable_seo`, `seo_generate`.
+- **Admin**: link «Post WP» su dashboard e coda di approvazione; gestione dei nuovi campi impostazioni in admin.js.
+- Nota: nella **1.0.0** la pubblicazione "blog" restava sul front-end Nexus legacy (`/?nexus_article={id}`): gli articoli non diventavano `wp_posts`.
+
+### 1.0.0
+
+- Prima versione: porting WordPress dell'app Next.js *Nexus News AI* (7 agenti AI, pipeline editoriale, magazine con reazioni, Nexus Wire, cron automatico, REST API `nexus/v1`).
