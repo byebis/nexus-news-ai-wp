@@ -379,6 +379,19 @@ class Nexus_DB {
                 return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", absint( $id ) ) );
         }
 
+        /**
+         * Ritorna l'agente con la categoria indicata (case-insensitive, la colonna è UNIQUE), o null.
+         * Usato da REST v1.0.7 per validare categoria in create/update/clone.
+         *
+         * @param string $category Categoria da cercare.
+         * @return object|null
+         */
+        public static function get_agent_by_category( $category ) {
+                global $wpdb;
+                $table = self::tables()['agents'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE LOWER(category) = LOWER(%s) LIMIT 1", (string) $category ) );
+        }
+
         public static function update_agent( $id, $fields ) {
                 global $wpdb;
                 $allowed = array_intersect_key(

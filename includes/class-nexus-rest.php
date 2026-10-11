@@ -134,6 +134,60 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.0.7: creazione agente (editor completo).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_create' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.0.7: aggiornamento completo agente (tutti i campi dell'editor).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents/(?P<id>[0-9]+)/update',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::EDITABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_update' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                // v1.0.7: clona un agente esistente (nome e categoria resi univoci).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents/(?P<id>[0-9]+)/clone',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_clone' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                // v1.0.7: modelli disponibili dal provider AI (auto-load da chiave API).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/models',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_ai_models' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
                 /* ---------------- ADMIN: ARTICOLI ---------------- */
 
                 register_rest_route(
@@ -782,6 +836,308 @@ class Nexus_Rest {
                 Nexus_DB::insert_activity( $id, 'agent_model', sprintf( 'Modello AI aggiornato: %s', '' !== $model ? $model : '(globale)' ), 'info' );
                 $updated = Nexus_DB::get_agent( $id );
                 return rest_ensure_response( self::serialize_agent( $updated ) );
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: AGENTI v1.0.7 (editor completo, clone, modelli AI)
+         * ======================================================================= */
+
+        /**
+         * Normalizza i campi dell'editor agente in un array sicuro per il DB.
+         * Regole: name max 100, category max 100, ai_model max 100, status in
+         * active|paused (error non è impostabile a mano), testi sanitizzati.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return array Campi pronti per insert/update.
+         */
+        private static function agent_fields_from_request( $request ) {
+                $fields = array();
+
+                if ( null !== $request->get_param( 'name' ) ) {
+                        $fields['name'] = sanitize_text_field( (string) $request->get_param( 'name' ) );
+                }
+                if ( null !== $request->get_param( 'avatar' ) ) {
+                        $fields['avatar'] = sanitize_text_field( (string) $request->get_param( 'avatar' ) );
+                }
+                if ( null !== $request->get_param( 'category' ) ) {
+                        $fields['category'] = sanitize_text_field( (string) $request->get_param( 'category' ) );
+                }
+                if ( null !== $request->get_param( 'description' ) ) {
+                        $fields['description'] = sanitize_textarea_field( (string) $request->get_param( 'description' ) );
+                }
+                if ( null !== $request->get_param( 'personality' ) ) {
+                        $fields['personality'] = sanitize_textarea_field( (string) $request->get_param( 'personality' ) );
+                }
+                if ( null !== $request->get_param( 'ai_model' ) ) {
+                        $fields['ai_model'] = sanitize_text_field( trim( (string) $request->get_param( 'ai_model' ) ) );
+                }
+                if ( null !== $request->get_param( 'status' ) ) {
+                        $status = sanitize_key( (string) $request->get_param( 'status' ) );
+                        $fields['status'] = in_array( $status, array( 'active', 'paused' ), true ) ? $status : 'paused';
+                }
+
+                // Limiti di lunghezza coerenti con lo schema (VARCHAR 100).
+                foreach ( array( 'name', 'category', 'ai_model' ) as $short ) {
+                        if ( isset( $fields[ $short ] ) && mb_strlen( $fields[ $short ] ) > 100 ) {
+                                $fields[ $short ] = mb_substr( $fields[ $short ], 0, 100 );
+                        }
+                }
+
+                return $fields;
+        }
+
+        /**
+         * POST /agents — crea un nuovo agente (v1.0.7).
+         * Richiede name e category; la categoria deve essere unica.
+         */
+        public static function rest_agent_create( $request ) {
+                $fields = self::agent_fields_from_request( $request );
+
+                if ( '' === ( $fields['name'] ?? '' ) ) {
+                        return self::err( 'nexus_rest_agent_name_required', __( 'Il nome dell\'agente è obbligatorio.', 'nexus-news-ai' ), 400 );
+                }
+                if ( '' === ( $fields['category'] ?? '' ) ) {
+                        return self::err( 'nexus_rest_agent_category_required', __( 'La categoria dell\'agente è obbligatoria.', 'nexus-news-ai' ), 400 );
+                }
+                $existing = Nexus_DB::get_agent_by_category( $fields['category'] );
+                if ( $existing ) {
+                        return self::err(
+                                'nexus_rest_agent_category_taken',
+                                sprintf( __( 'Categoria già in uso dall\'agente "%s". Scegiline un\'altra.', 'nexus-news-ai' ), $existing->name ),
+                                400
+                        );
+                }
+
+                $fields['status'] = $fields['status'] ?? 'active';
+                $new_id           = Nexus_DB::insert_agent( $fields );
+                if ( ! $new_id ) {
+                        return self::err( 'nexus_rest_agent_create_failed', __( 'Impossibile creare l\'agente (verifica nome e categoria).', 'nexus-news-ai' ), 500 );
+                }
+
+                Nexus_DB::insert_activity( $new_id, 'agent_create', sprintf( 'Agente "%s" creato via editor.', $fields['name'] ), 'info' );
+
+                return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $new_id ) ) );
+        }
+
+        /**
+         * PUT/POST /agents/{id}/update — aggiornamento completo di un agente (v1.0.7).
+         * Tutti i campi sono opzionali: vengono aggiornati solo quelli presenti nel body.
+         */
+        public static function rest_agent_update( $request ) {
+                $id    = absint( $request->get_param( 'id' ) );
+                $agent = Nexus_DB::get_agent( $id );
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $fields = self::agent_fields_from_request( $request );
+                if ( ! $fields ) {
+                        return self::err( 'nexus_rest_agent_no_fields', __( 'Nessun campo da aggiornare.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( isset( $fields['name'] ) && '' === $fields['name'] ) {
+                        return self::err( 'nexus_rest_agent_name_required', __( 'Il nome dell\'agente non può essere vuoto.', 'nexus-news-ai' ), 400 );
+                }
+                if ( isset( $fields['category'] ) && '' === $fields['category'] ) {
+                        return self::err( 'nexus_rest_agent_category_required', __( 'La categoria dell\'agente non può essere vuota.', 'nexus-news-ai' ), 400 );
+                }
+                if ( isset( $fields['category'] ) ) {
+                        $clash = Nexus_DB::get_agent_by_category( $fields['category'] );
+                        if ( $clash && (int) $clash->id !== $id ) {
+                                return self::err(
+                                        'nexus_rest_agent_category_taken',
+                                        sprintf( __( 'Categoria già in uso dall\'agente "%s". Scegiline un\'altra.', 'nexus-news-ai' ), $clash->name ),
+                                        400
+                                );
+                        }
+                }
+
+                Nexus_DB::update_agent( $id, $fields );
+                Nexus_DB::insert_activity( $id, 'agent_update', sprintf( 'Agente "%s" aggiornato via editor (%s).', $fields['name'] ?? $agent->name, implode( ', ', array_keys( $fields ) ) ), 'info' );
+
+                return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $id ) ) );
+        }
+
+        /**
+         * POST /agents/{id}/clone — duplica un agente esistente (v1.0.7).
+         * Nome: "{name} (copia)"; categoria: "{category}-copia", poi -copia-2, -3…
+         * Il clone nasce in pausa per non partire a sorpresa con la pipeline.
+         */
+        public static function rest_agent_clone( $request ) {
+                $id    = absint( $request->get_param( 'id' ) );
+                $agent = Nexus_DB::get_agent( $id );
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $new_name = mb_substr( trim( (string) $agent->name ) . ' (copia)', 0, 100 );
+
+                $base_cat = trim( (string) $agent->category );
+                $suffix_n = 0;
+                do {
+                        $candidate = 0 === $suffix_n ? $base_cat . '-copia' : $base_cat . '-copia-' . ( $suffix_n + 1 );
+                        $candidate = mb_substr( $candidate, 0, 100 );
+                        ++$suffix_n;
+                } while ( Nexus_DB::get_agent_by_category( $candidate ) && $suffix_n < 50 );
+
+                $new_id = Nexus_DB::insert_agent(
+                        array(
+                                'name'        => $new_name,
+                                'avatar'      => (string) $agent->avatar,
+                                'category'    => $candidate,
+                                'description' => (string) $agent->description,
+                                'status'      => 'paused',
+                                'personality' => (string) $agent->personality,
+                                'ai_model'    => (string) $agent->ai_model,
+                        )
+                );
+                if ( ! $new_id ) {
+                        return self::err( 'nexus_rest_agent_clone_failed', __( 'Impossibile clonare l\'agente.', 'nexus-news-ai' ), 500 );
+                }
+
+                Nexus_DB::insert_activity( $new_id, 'agent_clone', sprintf( 'Agente clonato da "%s" (id %d) come "%s".', $agent->name, (int) $agent->id, $new_name ), 'info' );
+
+                return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $new_id ) ) );
+        }
+
+        /**
+         * GET /ai/models — elenco modelli disponibili dal provider AI (v1.0.7).
+         * Auto-load: chiamata a {ai_base_url}/models con la chiave configurata,
+         * risposta normalizzata e cachata in transient per 12 ore (chiave per base URL).
+         * Errori onesti: mai modelli inventati.
+         */
+        public static function rest_ai_models( $request ) {
+                unset( $request );
+
+                $settings = Nexus_DB::get_settings();
+                $api_key  = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+                $base_url = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
+
+                if ( '' === $api_key ) {
+                        return self::err(
+                                'nexus_rest_ai_key_missing',
+                                __( 'Chiave API AI non configurata: salva prima la chiave nelle Impostazioni.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+                if ( '' === $base_url ) {
+                        $base_url = 'https://openrouter.ai/api/v1';
+                }
+
+                $transient = 'nexus_ai_models_' . md5( $base_url );
+                $cached    = get_transient( $transient );
+                if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+                        $cached['cached'] = true;
+                        return rest_ensure_response( $cached );
+                }
+
+                $endpoint = untrailingslashit( $base_url ) . '/models';
+                $response = wp_remote_get(
+                        $endpoint,
+                        array(
+                                'timeout' => 30,
+                                'headers' => array(
+                                        'Authorization' => 'Bearer ' . $api_key,
+                                        'Accept'        => 'application/json',
+                                        'HTTP-Referer'  => home_url( '/' ),
+                                        'X-Title'       => 'Nexus News AI',
+                                ),
+                        )
+                );
+
+                if ( is_wp_error( $response ) ) {
+                        return self::err(
+                                'nexus_rest_ai_models_unreachable',
+                                __( 'Errore di connessione al provider AI: ', 'nexus-news-ai' ) . $response->get_error_message(),
+                                502
+                        );
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+                $raw  = (string) wp_remote_retrieve_body( $response );
+
+                if ( 200 !== $code ) {
+                        $detail = '';
+                        $data   = json_decode( $raw, true );
+                        if ( is_array( $data ) ) {
+                                foreach ( array( 'message', 'error' ) as $k ) {
+                                        if ( ! empty( $data[ $k ] ) && is_string( $data[ $k ] ) ) {
+                                                $detail = $data[ $k ];
+                                                break;
+                                        }
+                                }
+                        }
+                        if ( 401 === $code || 403 === $code ) {
+                                return self::err( 'nexus_rest_ai_models_auth', __( 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica la chiave nelle Impostazioni.', 'nexus-news-ai' ), 502 );
+                        }
+                        return self::err(
+                                'nexus_rest_ai_models_http',
+                                __( 'Il provider AI ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' ), 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $models = self::normalize_ai_models_body( $raw );
+                if ( ! $models ) {
+                        return self::err(
+                                'nexus_rest_ai_models_unparsable',
+                                __( 'Il provider AI non ha restituito un elenco di modelli riconoscibile.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $payload = array(
+                        'models'    => $models,
+                        'base_url'  => $base_url,
+                        'cached'    => false,
+                        'count'     => count( $models ),
+                        'fetched_at'=> current_time( 'mysql' ),
+                );
+                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
+
+                return rest_ensure_response( $payload );
+        }
+
+        /**
+         * Estrae e normalizza gli id dei modelli da un body /models.
+         * Formati supportati: {data:[{id}]} (OpenAI/OpenRouter), {data:["id"]},
+         * {models:[{id|name}]} (alcuni gateway), ["id"].
+         *
+         * @param string $raw Body JSON.
+         * @return array Lista di id (stringhe), ordinata, senza duplicati.
+         */
+        private static function normalize_ai_models_body( $raw ) {
+                $data = json_decode( (string) $raw, true );
+                if ( ! is_array( $data ) ) {
+                        return array();
+                }
+
+                $list = array();
+                if ( isset( $data['data'] ) && is_array( $data['data'] ) ) {
+                        $list = $data['data'];
+                } elseif ( isset( $data['models'] ) && is_array( $data['models'] ) ) {
+                        $list = $data['models'];
+                } else {
+                        $list = $data;
+                }
+
+                $ids = array();
+                foreach ( $list as $item ) {
+                        if ( is_string( $item ) ) {
+                                $ids[] = trim( $item );
+                        } elseif ( is_array( $item ) ) {
+                                foreach ( array( 'id', 'name', 'model' ) as $k ) {
+                                        if ( ! empty( $item[ $k ] ) && is_string( $item[ $k ] ) ) {
+                                                $ids[] = trim( $item[ $k ] );
+                                                break;
+                                        }
+                                }
+                        }
+                }
+
+                $ids = array_values( array_unique( array_filter( $ids ) ) );
+                sort( $ids, SORT_STRING );
+                return array_slice( $ids, 0, 500 );
         }
 
         /* =========================================================================

@@ -23,6 +23,17 @@
  * (.nxa-skeleton) ed empty state no-JS (.nxa-empty) con dashicon. Nessuna
  * modifica a id, data-* e selettori consumati da admin.js.
  *
+ * v1.0.7 — fix overflow mobile view-level (CONTRATTO-v1.0.7.md §2 T-07): il
+ * container #nxa-wire-runs porta anche la classe condivisa .nxa-table-wrap
+ * (wrapper contrattuale definito dal task T-04 in admin/css/nexus-admin.css:
+ * overflow-x auto, scroll touch, max-width 100%). La vista non contiene
+ * tabelle dati: il wrapper agisce da contenimento scrollabile per la lista
+ * dei run generata via REST (topic lunghi, errori, URL articolo), che scrolla
+ * dentro il contenitore invece di spingere la pagina in orizzontale. L'input
+ * #nxa-wire-topic (regular-text, 25em) è coperto su mobile dalla regola
+ * condivisa max-width:100% di T-04. Nessun id, data-* e selettore consumato
+ * da admin.js modificato; nessuno style inline nuovo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -42,7 +53,7 @@ defined( 'ABSPATH' ) || exit;
 	<h2><?php esc_html_e( 'Storico delle redazioni collettive', 'nexus-news-ai' ); ?></h2>
 
 	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
-	<div id="nxa-wire-runs" class="nxa-wire-runs" aria-live="polite" aria-busy="true">
+	<div id="nxa-wire-runs" class="nxa-wire-runs nxa-table-wrap" aria-live="polite" aria-busy="true">
 		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento dello storico…', 'nexus-news-ai' ); ?></p>
 		<div class="nxa-skeleton"></div>
 		<div class="nxa-skeleton"></div>

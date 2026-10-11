@@ -29,12 +29,15 @@
  *   9. Coda editoriale (.nxa-queue-list)
  *  10. Activity feed
  *  11. Settings form + toggle switch
+ * 11b. Accordion impostazioni (v1.0.7)
  *  12. Nexus Wire runs
  *  13. Toast
  *  14. Modale admin (riusa stile pubblico)
+ * 14b. Modal editor agenti (v1.0.7)
  *  15. Spinner
  *  16. Accessibilita' (focus, reduced-motion)
  *  17. Stampa
+ *  18. Fix overflow mobile + wrapper tabelle (v1.0.7)
  */
 
 /* -------------------------------------------------------------------------
@@ -602,21 +605,15 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
  * ---------------------------------------------------------------------- */
 .nxa-agents-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  /* v1.0.7 FIX OVERFLOW MOBILE (contratto T-04 §3): colonne fluide auto-fill
+   * con minimo 280px ma mai piu' larghe del contenitore (min(100%, 280px)):
+   * le card si adattano a ogni larghezza e non traboccano mai in orizzontale.
+   * Sostituisce le colonne fisse 1/2/3 della 1.0.6 (i due media query con
+   * repeat(2)/repeat(3) vengono rimossi: sostituzione autorizzata dal
+   * contratto); gap, margini e tutte le altre proprieta' restano invariati. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 14px;
   margin: 14px 0;
-}
-
-@media (min-width: 782px) {
-  .nxa-agents-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1100px) {
-  .nxa-agents-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
 }
 
 .nxa-agent-card {
@@ -1044,6 +1041,123 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 /* -------------------------------------------------------------------------
+ * 11b. Accordion impostazioni (v1.0.7) — contratto T-01 settings.php
+ *      Tutti i valori passano dai token: il tema scuro eredita dagli override
+ *      gia' presenti su body.nexus-theme-dark senza regole aggiuntive.
+ * ---------------------------------------------------------------------- */
+
+/* Titolo di gruppo (h2 esterno alle card accordion): margine top generoso,
+ * gerarchia sopra i titoli di sezione storici. L'underline ::after eredita
+ * dalla regola condivisa di h1/h2. */
+.wrap.nexus-admin .nxa-settings-group-title {
+  margin: 36px 0 14px;
+  font-size: 1.22rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--nxa-heading);
+}
+
+/* Card accordion: superficie, bordo e raggio come le card del pannello.
+ * Niente overflow:hidden (taglierebbe l'anello di focus del toggle): il
+ * bottone arrotonda da se' i propri angoli superiori. */
+.nxa-acc {
+  margin: 0 0 14px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+}
+
+.nxa-acc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 15px 18px;
+  border: 0;
+  border-radius: calc(var(--nxa-radius) - 1px) calc(var(--nxa-radius) - 1px) 0 0;
+  background: transparent;
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.nxa-acc-toggle:hover {
+  background: var(--nxa-row-hover-bg);
+}
+
+/* Anello dentro il bordo della card (specificita' sopra la regola generica
+ * di sezione 16, che altrimenti vincerebbe a parita' per ordine). */
+.nxa-acc .nxa-acc-toggle:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: -2px;
+}
+
+.nxa-acc-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Chevron CSS puro (border right+bottom ruotati): punta in basso da chiuso,
+ * in alto da aperto. currentColor segue il tema attivo. */
+.nxa-acc-chevron {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.nxa-acc-toggle[aria-expanded="true"] .nxa-acc-chevron {
+  transform: rotate(225deg);
+}
+
+.nxa-acc-panel {
+  padding: 2px 18px 20px;
+  border-top: 1px solid var(--nxa-border);
+}
+
+/* OBBLIGATORIA (contratto T-04): il pannello chiuso esce dal layout anche se
+ * la lettura UA di [hidden] venisse meno. */
+.nxa-acc-panel[hidden] {
+  display: none;
+}
+
+/* La form-table WP ospitata nel pannello non aggiunge margini propri: il
+ * padding del pannello e' gia' la spaziatura corretta. */
+.wrap.nexus-admin .nxa-acc-panel .form-table {
+  margin: 0;
+}
+
+/* Status del caricamento modelli AI (aria-live, accanto al bottone). */
+.nxa-ai-models-status {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-acc-chevron {
+    transition: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
  * 12. Nexus Wire runs
  * ---------------------------------------------------------------------- */
 .nxa-wire-runs {
@@ -1327,6 +1441,199 @@ body.nxa-lock-scroll {
 }
 
 /* -------------------------------------------------------------------------
+ * 14b. Modal editor agenti (v1.0.7) — contratto T-02 agents.php / T-04 §2
+ *      Le modal servite come class="nxa-modal" + role="dialog" (editor
+ *      agenti #nxa-agent-modal e modale articolo admin.js #nxa-modal) sono
+ *      overlay full-screen: il fallback inline di admin.js da' gia'
+ *      position:fixed + flex; qui si neutralizzano le proprieta' da
+ *      "superficie" della regola base 14 quando l'elemento fa da overlay e
+ *      si tematizza lo sfondo con il token overlay (chiaro + scuro). Il
+ *      pannello interno (.nxa-modal-panel) e' l'unica superficie visibile.
+ * ---------------------------------------------------------------------- */
+.nxa-modal[role="dialog"] {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
+  padding: 16px;
+  background: var(--nxa-overlay);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: nxa-fade-in 0.2s ease both;
+}
+
+/* Guardia: l'attributo hidden vince sempre sulla display:flex dell'overlay
+ * (le regole autore prevalgono su quella UA; il fallback inline di admin.js
+ * ha il refuso ".nxa-modalidden]" e non copre). */
+.nxa-modal[role="dialog"][hidden] {
+  display: none;
+}
+
+/* Superficie del pannello editor: scrolla lei, l'overlay resta fermo. */
+.nxa-modal-panel {
+  position: relative;
+  width: min(92vw, 640px);
+  max-width: 100%;
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 26px clamp(18px, 4vw, 30px) 28px;
+  color: var(--nxa-text);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+  box-shadow: var(--nxa-shadow-lg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--nxa-scroll-thumb) transparent;
+  animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nxa-modal-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.nxa-modal-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nxa-modal-panel::-webkit-scrollbar-thumb {
+  background: var(--nxa-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Titolo del pannello: respiro alto ridotto (e' dentro una modal) e spazio
+ * per la X di chiusura in alto a destra. Vince sulla regola h2 di sezione 4
+ * per ordine di dichiarazione. */
+.nxa-modal-panel > h2 {
+  margin: 0 0 14px;
+  padding-right: 44px;
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+.nxa-agent-form {
+  margin: 0;
+}
+
+/* Griglia form agenti: 2 colonne (minmax(0,1fr) evita il blowout dei campi
+ * lunghi); 1 colonna sotto i 600px (sezione 18). */
+.nxa-agent-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin: 0 0 4px;
+}
+
+.nxa-agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.nxa-agent-field label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--nxa-text);
+}
+
+.nxa-agent-field input,
+.nxa-agent-field select,
+.nxa-agent-field textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--nxa-input-line);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-input-bg);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  box-shadow: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* Il campo modello mantiene il rendering monospace richiesto dalla vista
+ * (class="code" WP): la font-family: inherit qui sopra lo spegnerebbe. */
+.nxa-agent-field input.code {
+  font-family: Consolas, Monaco, "Andale Mono", "DejaVu Sans Mono", monospace;
+}
+
+.nxa-agent-field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.nxa-agent-field input:focus,
+.nxa-agent-field select:focus,
+.nxa-agent-field textarea:focus {
+  border-color: var(--nxa-accent-1);
+  box-shadow: var(--nxa-ring-accent);
+  outline: none;
+}
+
+.nxa-agent-field input:focus-visible,
+.nxa-agent-field select:focus-visible,
+.nxa-agent-field textarea:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+.nxa-agent-field--full {
+  grid-column: 1 / -1;
+}
+
+.nxa-agent-field-hint {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+.nxa-agent-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--nxa-border-soft);
+}
+
+/* Status aria-live a destra, discreto e wrap-safe. */
+.nxa-agent-form-actions span[aria-live="polite"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 8px;
+  font-size: 0.76rem;
+  color: var(--nxa-muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-modal-panel {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
  * 15. Spinner
  * ---------------------------------------------------------------------- */
 .nxa-spinner {
@@ -1489,5 +1796,179 @@ body.nxa-lock-scroll {
   .nxa-agent-meta,
   .nxa-form-hint {
     color: var(--nxa-print-muted);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 18. Fix overflow mobile + wrapper tabelle (v1.0.7) — contratto T-04 §3
+ *     Requisito cliente: nessun elemento deve traboccare su mobile, card
+ *     agenti incluse. Le regole su elementi WP/generici restano dentro lo
+ *     scope .wrap.nexus-admin (mai impatti fuori dal plugin); le classi
+ *     nxa-prefissate (wrapper tabelle, card agenti) sono sicure anche dove
+ *     le viste usano root diverse (.wrap.nxa-an, .wrap.nxa-tools, .wrap.nxa-jb).
+ *     Dark theme: solo token, eredita dagli override su body.nexus-theme-dark.
+ * ---------------------------------------------------------------------- */
+
+/* Wrapper contrattuale per T-06/T-07: le tabelle dati scorrono in orizzontale
+ * dentro il wrapper invece di spingere la pagina. Nessuna superficie/bordo
+ * proprio: le .widefat portano gia' il loro (comportamento allineato ai
+ * fallback locali gia' presenti nelle viste). Scrollbar sottile curata. */
+.nxa-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--nxa-scroll-thumb) transparent;
+}
+
+.nxa-table-wrap::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.nxa-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nxa-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--nxa-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Testi delle card agente sempre a capo (vale anche per i <p> generati da
+ * admin.js grazie all'ereditarieta' di overflow-wrap dalla card). */
+.nxa-agent-card,
+.nxa-agent-name,
+.nxa-agent-description,
+.nxa-agent-persona {
+  overflow-wrap: anywhere;
+}
+
+/* Riga azioni card (noscript): wrap garantito, stesso comportamento del
+ * contenitore inline che admin.js usa nelle card JS. */
+.nxa-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Input modello nelle card: max-width sempre (il width:25em di WP su
+ * .regular-text e' neutralizzato dal flex inline; il tetto qui e' la
+ * retroguardia se il contesto flex venisse meno). */
+.nxa-agent-model {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Media e codice non spingono mai il pannello in orizzontale. */
+.wrap.nexus-admin img,
+.wrap.nexus-admin video,
+.wrap.nexus-admin iframe {
+  max-width: 100%;
+}
+
+.wrap.nexus-admin code {
+  overflow-wrap: anywhere;
+}
+
+.wrap.nexus-admin pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 782px) {
+  /* Toolbar: gia' in wrap dalla 1.0.6; qui row-gap dedicato e bottoni su una
+   * riga ciascuno (il wrap avviene tra bottoni, non dentro l'etichetta). */
+  .wrap.nexus-admin .nxa-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .wrap.nexus-admin .nxa-toolbar .nxa-btn {
+    white-space: nowrap;
+  }
+
+  /* Nessun input WP o Nexus puo' eccedere il contenitore (incluse le
+   * .regular-text da 25em di WP e i campi form-row con tetto 440px). */
+  .wrap.nexus-admin input.regular-text,
+  .wrap.nexus-admin input[type="text"],
+  .wrap.nexus-admin input[type="email"],
+  .wrap.nexus-admin input[type="url"],
+  .wrap.nexus-admin input[type="password"],
+  .wrap.nexus-admin input[type="number"],
+  .wrap.nexus-admin input[type="search"],
+  .wrap.nexus-admin select,
+  .wrap.nexus-admin textarea {
+    max-width: 100%;
+  }
+
+  .wrap.nexus-admin .nxa-form-row input[type="text"],
+  .wrap.nexus-admin .nxa-form-row input[type="email"],
+  .wrap.nexus-admin .nxa-form-row input[type="url"],
+  .wrap.nexus-admin .nxa-form-row input[type="password"],
+  .wrap.nexus-admin .nxa-form-row input[type="number"],
+  .wrap.nexus-admin .nxa-form-row select,
+  .wrap.nexus-admin .nxa-form-row textarea {
+    max-width: 100%;
+  }
+
+  /* Stat: 2 colonne (base mobile-first confermata al breakpoint WP). */
+  .wrap.nexus-admin .nxa-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Badge/chip/categorie/punteggi: le etichette lunghe vanno a capo invece
+   * di spingere la riga. */
+  .wrap.nexus-admin .nxa-badge,
+  .wrap.nexus-admin .nxa-agent-cat,
+  .wrap.nexus-admin .nxa-score,
+  .wrap.nexus-admin .nxa-wire-agents span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Input modello nelle card: fallback full-width su mobile (contratto). */
+  .wrap.nexus-admin .nxa-agent-model {
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Stat: una colonna sola sui telefoni. */
+  .wrap.nexus-admin .nxa-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Etichette (incl. eventuali barre analytics): sempre a capo. */
+  .wrap.nexus-admin label {
+    white-space: normal;
+  }
+
+  /* Overlay modal: padding compatto da contratto (12px). */
+  .nxa-modal-overlay,
+  .nxa-modal[role="dialog"] {
+    padding: 12px;
+  }
+
+  /* Superfici modal: padding ridotto. */
+  .nxa-modal,
+  .nxa-modal-panel {
+    padding: 20px 16px 22px;
+  }
+
+  /* Editor agenti: una colonna sola sui telefoni. */
+  .nxa-agent-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Status del form editor: riga intera sotto i bottoni, allineato a sinistra. */
+  .nxa-agent-form-actions span[aria-live="polite"] {
+    flex-basis: 100%;
+    margin-left: 0;
+    text-align: left;
   }
 }

@@ -23,6 +23,16 @@
  * empty state no-JS (.nxa-empty) con dashicon. Nessuna modifica a id,
  * data-* e selettori consumati da admin.js.
  *
+ * v1.0.7 — fix overflow mobile view-level (CONTRATTO-v1.0.7.md §2 T-07): il
+ * container #nxa-activity-list porta anche la classe condivisa
+ * .nxa-table-wrap (wrapper contrattuale definito dal task T-04 in
+ * admin/css/nexus-admin.css: overflow-x auto, scroll touch, max-width 100%).
+ * La vista non contiene tabelle dati: il wrapper agisce da contenimento
+ * scrollabile per la timeline generata via REST (dettagli evento con testi
+ * lunghi), che scrolla dentro il contenitore invece di spingere la pagina in
+ * orizzontale. Nessun id, data-* e selettore consumato da admin.js
+ * modificato; nessuno style inline nuovo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -34,7 +44,7 @@ defined( 'ABSPATH' ) || exit;
 	<p class="nxa-page-subtitle"><?php esc_html_e( 'Cronologia del lavoro degli agenti: raccolte, valutazioni, riscritture e pubblicazioni.', 'nexus-news-ai' ); ?></p>
 
 	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal primo render di admin.js (GET /activity?limit=50). -->
-	<div id="nxa-activity-list" class="nxa-activity-feed" aria-live="polite" aria-busy="true">
+	<div id="nxa-activity-list" class="nxa-activity-feed nxa-table-wrap" aria-live="polite" aria-busy="true">
 		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
 		<div class="nxa-skeleton"></div>
 		<div class="nxa-skeleton"></div>

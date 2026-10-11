@@ -62,6 +62,16 @@
  * del foglio di stile. Nessuna modifica a id, data-* e selettori consumati
  * da admin.js.
  *
+ * v1.0.7 — fix overflow mobile view-level (CONTRATTO-v1.0.7.md §2 T-07): il
+ * container #nxa-queue-list porta anche la classe condivisa .nxa-table-wrap
+ * (wrapper contrattuale definito dal task T-04 in admin/css/nexus-admin.css:
+ * overflow-x auto, scroll touch, max-width 100%). Se una riga generata da
+ * admin.js (titolo, URL fonte, chip) supera la larghezza disponibile, scrolla
+ * dentro il contenitore invece di spingere la pagina in orizzontale. Il
+ * markup delle righe resta generato da admin.js (fuori scope): il word-break
+ * dei titoli/fonti è demandato al CSS condiviso di T-04. Nessun id, data-* e
+ * selettore consumato da admin.js modificato; nessuno style inline nuovo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -95,7 +105,7 @@ defined( 'ABSPATH' ) || exit;
 
 	<!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.
 	     Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
-	<div id="nxa-queue-list" class="nxa-queue-list" aria-live="polite" aria-busy="true">
+	<div id="nxa-queue-list" class="nxa-queue-list nxa-table-wrap" aria-live="polite" aria-busy="true">
 		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?></p>
 		<div class="nxa-skeleton"></div>
 		<div class="nxa-skeleton"></div>

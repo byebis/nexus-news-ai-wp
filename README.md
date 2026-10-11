@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.0.6-blue)
+![Versione](https://img.shields.io/badge/versione-1.0.7-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -29,10 +29,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 12. [Scala & Pro (v1.0.4)](#scala--pro-v104)
 13. [Strumenti, API pubblica, Multisite, Admin bilingue (v1.0.5)](#v105--strumenti-api-pubblica-multisite-admin-bilingue)
 14. [UI chiara & curata (v1.0.6)](#v106--ui-chiara--curata)
-15. [Installazione](#installazione)
-16. [FAQ tecniche](#faq-tecniche)
-17. [Licenza e crediti](#licenza-e-crediti)
-18. [Changelog](#changelog)
+15. [Impostazioni & Agenti Pro (v1.0.7)](#v107--impostazioni--agenti-pro)
+16. [Installazione](#installazione)
+17. [FAQ tecniche](#faq-tecniche)
+18. [Licenza e crediti](#licenza-e-crediti)
+19. [Changelog](#changelog)
 
 ---
 
@@ -68,6 +69,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Multisite** (v1.0.5): installazione automatica delle tabelle sui nuovi siti della rete (hook `wp_initialize_site`) e comandi `wp nexus multisite status|install [--sites=1,2]`; ogni sito ha tabelle e impostazioni proprie.
 - **Admin bilingue** (v1.0.5, sperimentale): lingua dell'interfaccia admin (Automatica/Italiano/English) con traduzione delle etichette principali lato PHP (viste) e lato JS (contenuti dinamici).
 - **UI chiara & curata** (v1.0.6): pannello admin con **tema chiaro di default** e tema scuro opzionale (`admin_theme` in Impostazioni → Interfaccia); frontend pubblico stilizzato dal foglio **light editoriale** `public/css/nexus-public.css` (caricato solo dove shortcode/blocchi Nexus renderizzano): card articoli con griglia responsive 1/2/3 colonne, form iscrizione curato, tipografia di lettura sulla pagina articolo, empty state e dettagli curati.
+- **Impostazioni & Agenti Pro** (v1.0.7): Impostazioni riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con sezioni ad accordion e stato aperto/chiuso ricordato nel browser; **modelli AI auto-load** dal provider (endpoint compatibile OpenAI `{base_url}/models`) con lista suggerita nei campi modello (anche nell'editor agenti) e cache 12 ore; **editor agenti completo** (creare nuovi agenti, modificare tutti i campi, clonare — il clone nasce in pausa con categoria resa univoca); **diagnostica AI** in Strumenti (la chiave non viene mai mostrata) e **fix overflow mobile** (griglia agenti fluida, tabelle scrollabili, toolbar a capo, input full-width).
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -145,8 +147,8 @@ nexus-news-ai/
 │   │   ├── activity.php           # Feed attività
 │   │   ├── wire.php               # Nexus Wire (redazione collettiva)
 │   │   ├── analytics.php          # v1.0.4 — Analytics: serie giornaliera, costi AI, per piattaforma/agente, top articoli, iscritti
-│   │   ├── tools.php              # v1.0.5 — Strumenti: informazioni di sistema, esporta/importa configurazione, API pubblica (chiave)
-│   │   └── settings.php           # Impostazioni
+│   │   ├── tools.php              # v1.0.5 — Strumenti: informazioni di sistema, esporta/importa configurazione, API pubblica (chiave), diagnostica AI (v1.0.7)
+│   │   └── settings.php           # Impostazioni: 4 gruppi con sezioni ad accordion (v1.0.7)
 │   └── index.php
 │
 ├── public/                        # Front-end magazine
@@ -173,7 +175,7 @@ Ogni directory contiene un `index.php` di silenzio per impedire il directory lis
 
 ## I 7 agenti giornalisti
 
-Gli agenti vengono inseriti automaticamente alla prima attivazione (solo se la tabella è vuota) e sono modificabili dall'admin panel.
+Gli agenti vengono inseriti automaticamente alla prima attivazione (solo se la tabella è vuota) e sono modificabili dall'admin panel: dalla **1.0.7** si gestiscono dall'editor della pagina Agenti — si creano nuovi agenti, si modificano tutti i campi e si clonano quelli esistenti (il clone nasce in pausa). Dettagli nella sezione [Impostazioni & Agenti Pro](#v107--impostazioni--agenti-pro).
 
 | Agente | Emoji | Categoria | Personalità |
 |---|---|---|---|
@@ -262,9 +264,13 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 
 | Metodo | Endpoint | Descrizione |
 |---|---|---|
-| GET | `/agents` | Lista dei 7 agenti (nome, emoji, categoria, personalità, stato, last_run) |
+| GET | `/agents` | Lista degli agenti (nome, emoji, categoria, personalità, stato, last_run) |
 | POST | `/agents/{id}/status` | Cambia stato agente: body `{ "status": "active\|paused\|error" }` |
 | POST | `/agents/{id}/model` | Imposta il modello AI dedicato dell'agente (v1.0.3): body `{ "model": "openai/gpt-4o-mini" }` (stringa vuota = torna al modello globale) |
+| POST | `/agents` | Crea un nuovo agente (v1.0.7): body `{ "name", "category", "avatar", "status", "ai_model", "description", "personality" }` (nome e categoria obbligatori, categoria unica per agente) |
+| PUT | `/agents/{id}/update` | Aggiorna un agente (v1.0.7): stessi campi, tutti opzionali (vengono aggiornati solo quelli presenti nel body); la categoria deve restare unica |
+| POST | `/agents/{id}/clone` | Clona un agente (v1.0.7): nome «{originale} (copia)», categoria `{categoria}-copia` (poi `-copia-2`, `-copia-3`…), il clone nasce **in pausa** |
+| GET | `/ai/models` | Modelli disponibili dal provider AI (v1.0.7): chiama `{ai_base_url}/models` con la chiave salvata, cache 12 ore per base URL → `{ models, count, cached }` |
 | GET | `/articles` | Lista articoli; filtri `status`, `category`, `agent_id`, `search`, `page`, `per_page` |
 | GET | `/articles/{id}` | Dettaglio articolo (inclusi log pubblicazione) |
 | DELETE | `/articles/{id}` | Elimina l'articolo e i log correlati |
@@ -374,7 +380,7 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `public_api_key` | (vuota) | Chiave API pubblica; si genera dalla pagina **Strumenti → API pubblica** (v1.0.5) |
 | `admin_theme` | `light` | Tema dell'interfaccia admin (v1.0.6): `light` (chiaro, consigliato) oppure `dark` (aspetto notturno delle versioni precedenti); selezione in Impostazioni → Interfaccia |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)). Nella v1.0.6 si aggiunge la sezione **«Interfaccia»** con la chiave `admin_theme` della tabella sopra: tema chiaro attivo di default, dark opzionale (dettagli nella sezione [UI chiara & curata](#v106--ui-chiara--curata)).
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)). Nella v1.0.6 si aggiunge la sezione **«Interfaccia»** con la chiave `admin_theme` della tabella sopra: tema chiaro attivo di default, dark opzionale (dettagli nella sezione [UI chiara & curata](#v106--ui-chiara--curata)). Nella v1.0.7 nessun setting nuovo: le sezioni esistenti sono riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con pannelli ad accordion e stato aperto/chiuso ricordato dal browser (dettagli nella sezione [Impostazioni & Agenti Pro](#v107--impostazioni--agenti-pro)).
 
 ---
 
@@ -630,6 +636,42 @@ Dalla v1.0.6 tutta l'interfaccia del plugin passa a un tema **chiaro e curato ne
 
 ---
 
+## v1.0.7 — Impostazioni & Agenti Pro
+
+Dalla v1.0.7 il pannello admin si comanda al dettaglio: le **Impostazioni** si leggono per gruppi con sezioni ad accordion, i **modelli AI** si caricano direttamente dal provider, gli **agenti** si creano, si modificano e si clonano da un editor dedicato, la pagina **Strumenti** guadagna la **diagnostica AI** e griglie e tabelle del pannello non traboccano più su mobile.
+
+### Impostazioni in 4 gruppi, con accordion
+
+- Le sezioni di **Impostazioni** sono riorganizzate in **4 gruppi**: **Pipeline editoriale** (Pipeline editoriale, Limiti e qualità), **Intelligenza artificiale** (Configurazione AI, Redazione intelligente), **Pubblicazione & distribuzione** (Pubblicazione WordPress & SEO, Pubblicazione social, Distribuzione sociale, Newsletter, Indicizzazione) e **Sito & sistema** (Identità del sito, Scala & Pro, Lingua e API pubblica, Interfaccia).
+- Ogni sezione è un **pannello ad accordion**: si apre e si chiude con un click, i campi continuano a essere inviati anche con il pannello chiuso e lo **stato aperto/chiuso viene ricordato dal browser** (localStorage): tornando in pagina si ritrova ogni gruppo come lo si era lasciato.
+- **Nessun setting nuovo**: nomi, default e comportamento delle chiavi esistenti non cambiano (la tabella [Impostazioni](#impostazioni) resta valida così com'è).
+
+### Modelli AI auto-load dal provider
+
+- In Impostazioni → Configurazione AI il bottone **«Carica modelli»** interroga il provider all'endpoint compatibile OpenAI **`{ai_base_url}/models`** con la chiave salvata e riporta quanti modelli sono disponibili; l'elenco si aggiorna anche **automaticamente all'uscita (blur) dal campo chiave**.
+- I modelli diventano **suggerimenti (datalist)** nel campo «Modello globale» e nel campo «Modello AI» dell'editor agenti: si digita e si sceglie dall'elenco reale del proprio provider invece di digitare l'id a memoria.
+- La risposta è **cacheata 12 ore per base URL**: le richieste ripetute non toccano il provider. Gli errori sono **onesti** e mostrati così come arrivano (chiave mancante da salvare, provider non raggiungibile, risposta HTTP in errore): mai modelli inventati.
+
+### Editor agenti: creare, modificare, clonare
+
+- Nella pagina **Agenti** il bottone **«Nuovo agente»** apre un editor dedicato: nome, avatar (emoji), **categoria (unica per agente)**, stato, modello AI, descrizione e personalità.
+- Ogni agente esistente è **modificabile in tutti i campi** dal bottone «Modifica» sulla card; i 7 agenti predefiniti restano naturalmente editabili.
+- Il bottone **«Clona»** duplica l'agente: il clone nasce con nome «{originale} (copia)», **categoria resa univoca** (`{categoria}-copia`, poi `-copia-2`, `-copia-3`…) e **stato «in pausa»**, per non partire a sorpresa con la pipeline.
+- Le stesse operazioni sono disponibili via REST admin: `POST /agents`, `PUT /agents/{id}/update`, `POST /agents/{id}/clone` (vedi la tabella [Route admin](#route-admin-manage_options)).
+
+### Diagnostica AI in Strumenti
+
+- La pagina **Strumenti** aggiunge la card **«Diagnostica AI»**: mostra il provider configurato (URL base API o default OpenRouter), il modello globale e il modello economico e lo **stato della chiave** («Configurata» / «Mancante») — **la chiave non viene mai mostrata**, nemmeno in parte.
+- Il bottone **«Testa provider AI»** chiama `GET /ai/models` e riporta l'esito: il numero di modelli esposti dal provider (con anteprima dei primi id) e la nota «dalla cache, 12h» quando la risposta arriva dalla cache; in caso di errore il messaggio del provider viene riportato così com'è.
+
+### Fix overflow mobile
+
+- **Griglia agenti fluida**: le card si distribuiscono con `repeat(auto-fill, minmax(...))` e si adattano a qualunque larghezza, senza overflow orizzontale né righe spezzate.
+- **Tabelle scrollabili**: le tabelle di dati del pannello vivono dentro wrapper `.nxa-table-wrap` con scroll orizzontale touch su mobile, invece di spingere il layout oltre lo schermo.
+- **Toolbar e campi**: le toolbar vanno a capo (flex-wrap) e input, select e textarea passano a larghezza piena (`max-width: 100%`) sotto i breakpoint WordPress (782px/600px).
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -676,6 +718,14 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.7 — «Impostazioni & Agenti Pro»
+
+- **Impostazioni in 4 gruppi con accordion**: le sezioni sono raggruppate in Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione e Sito & sistema; ogni sezione si apre e chiude con un click, i valori restano inviati anche a pannello chiuso e lo stato aperto/chiuso è ricordato dal browser (localStorage). Nessun setting nuovo.
+- **Modelli AI auto-load dal provider**: bottone «Carica modelli» in Impostazioni → Configurazione AI e auto-load al blur del campo chiave; l'elenco arriva dall'endpoint compatibile OpenAI `{ai_base_url}/models` con la chiave salvata, popola i suggerimenti (datalist) del campo modello globale e del campo modello nell'editor agenti, con cache 12 ore per base URL ed errori onesti (chiave mancante, provider non raggiungibile, risposta in errore).
+- **Editor agenti completo**: bottone «Nuovo agente» e modal editor per creare un agente (nome, avatar, categoria unica, stato, modello, descrizione, personalità), modificare in tutti i campi quelli esistenti e clonarli; il clone nasce in pausa con nome «{originale} (copia)» e categoria resa univoca (`-copia`, `-copia-2`, …). Nuove rotte REST admin: `POST /agents`, `PUT /agents/{id}/update`, `POST /agents/{id}/clone` e `GET /ai/models`.
+- **Diagnostica AI in Strumenti**: card con provider configurato (URL base, modello globale ed economico) e stato della chiave (mai mostrata), più bottone «Testa provider AI» che chiama `GET /ai/models` e mostra quanti modelli espone il provider (con nota cache 12h).
+- **Fix overflow mobile**: griglia agenti fluida auto-fill, tabelle dati in wrapper scrollabili `.nxa-table-wrap`, toolbar a capo e input full-width su mobile (breakpoint 782px/600px).
 
 ### 1.0.6 — «UI chiara & curata»
 

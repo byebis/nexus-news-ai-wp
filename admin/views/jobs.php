@@ -38,6 +38,17 @@
  * italiano; errori di fetch con toast rosso. L'auto-refresh silenzioso non genera
  * toast ripetuti ogni 15 secondi.
  *
+ * v1.0.7 — fix overflow mobile view-level (CONTRATTO-v1.0.7.md §2 T-07): il
+ * wrapper della tabella porta anche la classe condivisa .nxa-table-wrap
+ * (definita dal task T-04 in admin/css/nexus-admin.css: overflow-x auto,
+ * scroll touch, max-width 100%) accanto alla .nxa-jb-table-wrap locale, che
+ * resta il target degli stili di questa vista. Le parole lunghe (hook del
+ * lavoro in <code>, testo errore) vanno a capo via overflow-wrap invece di
+ * spingere le colonne; su schermi <=600px l'errore troncato passa a wrapping
+ * completo. Nessuna width/min-width fissa eccessiva presente nel markup o
+ * nello stile locale (verificato). Nessun id/data-*/selettore consumato dallo
+ * script inline modificato; nessuno style inline nuovo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -104,7 +115,7 @@ defined( 'ABSPATH' ) || exit;
         </div>
 
         <!-- TABELLA CODA: tbody riempito dallo script inline (GET /jobs?per_page=50). -->
-        <div class="nxa-jb-table-wrap">
+        <div class="nxa-jb-table-wrap nxa-table-wrap">
                 <table class="widefat striped nxa-jb-table">
                         <thead>
                                 <tr>
@@ -269,6 +280,7 @@ defined( 'ABSPATH' ) || exit;
     border-radius: 6px;
     background: var(--nxa-surface-2);
     color: var(--nxa-text-body);
+    overflow-wrap: anywhere;
   }
   .nxa-jb-table-wrap::-webkit-scrollbar {
     width: 8px;
@@ -283,6 +295,21 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-jb-table-wrap::-webkit-scrollbar-thumb:hover {
     background: var(--nxa-muted);
+  }
+
+  /* v1.0.7 — overflow mobile: token lunghi (hook, errori, argomenti job) vanno
+     a capo dentro le celle invece di spingere la tabella oltre il wrapper
+     scrollabile; su schermi molto stretti l'errore troncato abbandona l'ellissi
+     e si avvolge (il testo completo resta nell'attributo title). */
+  .nxa-jb-table td {
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 600px) {
+    .nxa-jb-err {
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
   }
 
   .nxa-jb-badge {

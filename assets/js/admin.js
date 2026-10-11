@@ -1091,9 +1091,15 @@
                                 '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
                                 '<button type="button" class="button nxa-agent-model-save" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Salva modello</button>' +
                         '</div>' +
-                        '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
-                                ( isActive ? 'Metti in pausa' : 'Riattiva' ) +
-                        '</button>' +
+                        // v1.0.7: riga azioni in contenitore flex wrap: i nuovi
+                        // "Modifica"/"Clona" + il toggle di stato preesistente.
+                        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                                '<button type="button" class="button nxa-agent-edit" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Modifica</button>' +
+                                '<button type="button" class="button nxa-agent-clone" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Clona</button>' +
+                                '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
+                                        ( isActive ? 'Metti in pausa' : 'Riattiva' ) +
+                                '</button>' +
+                        '</div>' +
                 '</div>';
         }
 
@@ -1176,6 +1182,289 @@
                                         setBtnLoading( btn, false );
                                 } );
                         } );
+                } );
+
+                // v1.0.7: binding dell'editor agenti (modal + nuovo/modifica/clona).
+                bindAgentEditor();
+        }
+
+        /* ------------------- EDITOR AGENTE (v1.0.7) ------------------- */
+
+        /**
+         * v1.0.7: apre l'editor agenti #nxa-agent-modal (markup statico
+         * servito da agents.php). agent = riga di agentsCache oppure null
+         * per "nuovo agente". Markup/campo mancante → warn silenzioso ed exit.
+         */
+        function openAgentEditor( agent ) {
+                var modal = qs( '#nxa-agent-modal' );
+                if ( ! modal ) {
+                        window.console.warn( '[Nexus News AI] Editor agenti: #nxa-agent-modal non trovato (markup agents.php assente).' );
+                        return;
+                }
+                var title = qs( '#nxa-agent-modal-title', modal );
+                var idField = qs( '#nxa-agent-id', modal );
+                var nameField = qs( '#nxa-agent-name', modal );
+                var avatarField = qs( '#nxa-agent-avatar', modal );
+                var catField = qs( '#nxa-agent-category', modal );
+                var statusField = qs( '#nxa-agent-status', modal );
+                var modelField = qs( '#nxa-agent-model', modal );
+                var descField = qs( '#nxa-agent-description', modal );
+                var persField = qs( '#nxa-agent-personality', modal );
+                if ( ! title || ! idField || ! nameField || ! avatarField || ! catField || ! statusField || ! modelField || ! descField || ! persField ) {
+                        window.console.warn( '[Nexus News AI] Editor agenti: markup del form incompleto, apertura annullata.' );
+                        return;
+                }
+                var a = agent || {};
+                var currentStatus = String( pick( a, 'status' ) || 'active' );
+                idField.value = String( num( pick( a, 'id' ) ) || 0 );
+                nameField.value = String( pick( a, 'name' ) || '' );
+                avatarField.value = String( pick( a, 'avatar' ) || '' );
+                catField.value = String( pick( a, 'category' ) || '' );
+                statusField.value = currentStatus === 'paused' ? 'paused' : 'active';
+                modelField.value = String( pick( a, 'ai_model' ) || '' );
+                descField.value = String( pick( a, 'description' ) || '' );
+                persField.value = String( pick( a, 'personality' ) || '' );
+                title.textContent = num( pick( a, 'id' ) ) > 0
+                        ? 'Modifica agente: ' + String( pick( a, 'name' ) || '' )
+                        : 'Nuovo agente';
+                var statusBox = qs( '#nxa-agent-form-status', modal );
+                if ( statusBox ) {
+                        statusBox.textContent = '';
+                }
+                modal.hidden = false;
+                document.body.style.overflow = 'hidden';
+                fillModelDatalists(); // v1.0.7: solo cache, nessun fetch dal modal
+                nameField.focus();
+        }
+
+        /** v1.0.7: chiude l'editor agenti, ripristina lo scroll e pulisce lo stato. */
+        function closeAgentEditor() {
+                var modal = qs( '#nxa-agent-modal' );
+                if ( modal ) {
+                        modal.hidden = true;
+                }
+                document.body.style.overflow = '';
+                var statusBox = qs( '#nxa-agent-form-status' );
+                if ( statusBox ) {
+                        statusBox.textContent = '';
+                }
+        }
+
+        /**
+         * v1.0.7: binding dell'editor — chiamata da bindAgents() (nessun
+         * tocco a LOADERS/boot). Copre: nuovo, modifica (cache o reload),
+         * clona, submit del form, annulla, × [data-nxa-agent-close] e tasto
+         * ESC quando la modal è aperta.
+         */
+        function bindAgentEditor() {
+                var grid = qs( '#nxa-agents-grid' );
+                if ( grid ) {
+                        // v1.0.7: "Modifica" — l'agente arriva da agentsCache.list;
+                        // cache vuota/scaduta → getAgents( true ) e riprova.
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var editBtn = ev.target.closest ? ev.target.closest( '.nxa-agent-edit' ) : null;
+                                if ( ! editBtn || editBtn.disabled ) {
+                                        return;
+                                }
+                                var editId = num( editBtn.getAttribute( 'data-agent-id' ) );
+                                var agent = agentById( editId );
+                                if ( agent ) {
+                                        openAgentEditor( agent );
+                                        return;
+                                }
+                                getAgents( true ).then( function ( agents ) {
+                                        var found = null;
+                                        for ( var i = 0; i < agents.length; i++ ) {
+                                                if ( num( agents[ i ].id ) === editId ) {
+                                                        found = agents[ i ];
+                                                        break;
+                                                }
+                                        }
+                                        if ( found ) {
+                                                openAgentEditor( found );
+                                        } else {
+                                                toast( 'Agente non trovato: ricarica la pagina.', 'error', 'Editor agente' );
+                                        }
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Impossibile caricare gli agenti' );
+                                } );
+                        } );
+
+                        // v1.0.7: "Clona" → POST /agents/{id}/clone; il clone nasce
+                        // sempre in pausa lato server, la griglia si ricarica.
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var cloneBtn = ev.target.closest ? ev.target.closest( '.nxa-agent-clone' ) : null;
+                                if ( ! cloneBtn || cloneBtn.disabled ) {
+                                        return;
+                                }
+                                var cloneId = num( cloneBtn.getAttribute( 'data-agent-id' ) );
+                                setBtnLoading( cloneBtn, true, 'Clono…' );
+                                api( 'agents/' + cloneId + '/clone', { method: 'POST' } ).then( function () {
+                                        toast( 'Agente clonato: nasce in pausa.', 'success' );
+                                        return loadAgents( true );
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Clonazione non riuscita' );
+                                } ).then( function () {
+                                        setBtnLoading( cloneBtn, false );
+                                } );
+                        } );
+                }
+
+                // v1.0.7: bottone toolbar "Nuovo agente".
+                var newBtn = qs( '#nxa-agent-new' );
+                if ( newBtn ) {
+                        newBtn.addEventListener( 'click', function () {
+                                openAgentEditor( null );
+                        } );
+                }
+                // v1.0.7: chiusure — "Annulla", × [data-nxa-agent-close], tasto ESC.
+                var cancelBtn = qs( '#nxa-agent-cancel' );
+                if ( cancelBtn ) {
+                        cancelBtn.addEventListener( 'click', closeAgentEditor );
+                }
+                var closeBtn = qs( '[data-nxa-agent-close]' );
+                if ( closeBtn ) {
+                        closeBtn.addEventListener( 'click', closeAgentEditor );
+                }
+                document.addEventListener( 'keydown', function ( ev ) {
+                        var modal = qs( '#nxa-agent-modal' );
+                        if ( modal && ! modal.hidden && ev.key === 'Escape' ) {
+                                closeAgentEditor();
+                        }
+                } );
+
+                // v1.0.7: submit → id > 0: PUT /agents/{id}/update; id = 0: POST /agents.
+                var form = qs( '#nxa-agent-form' );
+                if ( ! form ) {
+                        return;
+                }
+                form.addEventListener( 'submit', function ( ev ) {
+                        ev.preventDefault();
+                        var idField = qs( '#nxa-agent-id', form );
+                        var agentId = num( idField ? idField.value : 0 );
+                        var readField = function ( selector ) {
+                                var field = qs( selector, form );
+                                return field ? String( field.value || '' ).trim() : '';
+                        };
+                        var fields = {
+                                name: readField( '#nxa-agent-name' ),
+                                avatar: readField( '#nxa-agent-avatar' ),
+                                category: readField( '#nxa-agent-category' ),
+                                status: readField( '#nxa-agent-status' ),
+                                ai_model: readField( '#nxa-agent-model' ),
+                                description: readField( '#nxa-agent-description' ),
+                                personality: readField( '#nxa-agent-personality' )
+                        };
+                        if ( ! fields.status ) {
+                                fields.status = 'active';
+                        }
+                        var statusBox = qs( '#nxa-agent-form-status', form );
+                        if ( ! fields.name || ! fields.category ) {
+                                if ( statusBox ) {
+                                        statusBox.textContent = 'Nome e categoria sono obbligatori.';
+                                }
+                                return;
+                        }
+                        if ( statusBox ) {
+                                statusBox.textContent = '';
+                        }
+                        var saveBtn = qs( '#nxa-agent-save', form );
+                        setBtnLoading( saveBtn, true, 'Salvo…' );
+                        var request = agentId > 0
+                                ? api( 'agents/' + agentId + '/update', { method: 'PUT', body: fields } )
+                                : api( 'agents', { method: 'POST', body: fields } );
+                        request.then( function () {
+                                toast( 'Agente salvato.', 'success', 'Fatto' );
+                                closeAgentEditor();
+                                return loadAgents( true );
+                        } ).catch( function ( err ) {
+                                apiErrorToast( err, 'Salvataggio agente fallito' );
+                                var box = qs( '#nxa-agent-form-status', form );
+                                if ( box ) {
+                                        box.textContent = ( err && err.message ) ? err.message : 'Salvataggio non riuscito';
+                                }
+                        } ).then( function () {
+                                setBtnLoading( saveBtn, false );
+                        } );
+                } );
+        }
+
+        /* ==================================================================
+         * 9-bis. MODELLI AI PROVIDER (v1.0.7)
+         * ================================================================== */
+
+        /**
+         * v1.0.7: cache client dei modelli esposti dal provider (GET /ai/models).
+         * Il bottone in Impostazioni forza la chiamata; il modal agenti legge
+         * SOLO questa cache (fillModelDatalists, nessun fetch automatico).
+         */
+        var aiModelsCache = { list: null, at: 0, ttl: 60000 };
+
+        /** v1.0.7: svuota e riempie un <datalist> con <option value="id">. */
+        function fillDatalist( node, models ) {
+                if ( ! node ) {
+                        return;
+                }
+                node.innerHTML = '';
+                for ( var i = 0; i < models.length; i++ ) {
+                        var modelId = String( models[ i ] || '' ).trim();
+                        if ( ! modelId ) {
+                                continue;
+                        }
+                        var option = document.createElement( 'option' );
+                        option.setAttribute( 'value', modelId );
+                        node.appendChild( option );
+                }
+        }
+
+        /** v1.0.7: riempie i datalist (Impostazioni + editor agente) dalla cache. */
+        function fillModelDatalists() {
+                if ( ! aiModelsCache.list ) {
+                        return;
+                }
+                fillDatalist( qs( '#nxa-ai-models-datalist' ), aiModelsCache.list );
+                fillDatalist( qs( '#nxa-agent-model-datalist' ), aiModelsCache.list );
+        }
+
+        /** v1.0.7: stato leggibile accanto al bottone "Carica modelli". */
+        function setModelsStatus( text ) {
+                var node = qs( '#nxa-ai-models-status' );
+                if ( node ) {
+                        node.textContent = text;
+                }
+        }
+
+        /**
+         * v1.0.7: GET /ai/models → datalist + stato "{count} modelli
+         * disponibili dal provider" (+ " (cache)" se il provider serve la sua).
+         * Errori onesti: toast + err.message nello stato (chiave assente, HTTP
+         * errato, …); chiave non ancora salvata → invito esplicito a salvare.
+         */
+        function loadAiModels( force ) {
+                var fresh = aiModelsCache.list && ( Date.now() - aiModelsCache.at ) < aiModelsCache.ttl;
+                if ( fresh && ! force ) {
+                        fillModelDatalists();
+                        return Promise.resolve();
+                }
+                var loadBtn = qs( '#nxa-ai-models-load' );
+                setBtnLoading( loadBtn, true, 'Carico…' );
+                return api( 'ai/models' ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        var models = Array.isArray( data.models ) ? data.models : getList( payload, [ 'models', 'items', 'list' ] );
+                        aiModelsCache.list = models;
+                        aiModelsCache.at = Date.now();
+                        fillModelDatalists();
+                        var count = num( data.count ) || models.length;
+                        setModelsStatus( count + ' modelli disponibili dal provider' + ( data.cached ? ' (cache)' : '' ) );
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Caricamento modelli fallito' );
+                        var message = ( err && err.message ) ? err.message : 'Operazione non riuscita';
+                        if ( message.indexOf( 'salva prima la chiave' ) !== -1 ) {
+                                message += ' Salva le impostazioni e riprova.';
+                        }
+                        setModelsStatus( message );
+                } ).then( function () {
+                        setBtnLoading( loadBtn, false );
                 } );
         }
 
@@ -1505,6 +1794,25 @@
                                 setBtnLoading( submit, false );
                         } );
                 } );
+
+                // v1.0.7: modelli AI provider — click sul bottone "Carica modelli"
+                // e precarico al blur della chiave (solo se compilata e i datalist
+                // sono ancora vuoti; il server legge la chiave SALVATA).
+                var modelsBtn = qs( '#nxa-ai-models-load' );
+                if ( modelsBtn ) {
+                        modelsBtn.addEventListener( 'click', function () {
+                                loadAiModels( true );
+                        } );
+                }
+                var apiKeyField = qs( '#nxa-ai-api-key' );
+                if ( apiKeyField ) {
+                        apiKeyField.addEventListener( 'blur', function () {
+                                var modelsList = qs( '#nxa-ai-models-datalist' );
+                                if ( String( apiKeyField.value || '' ).trim() !== '' && ( ! modelsList || ! modelsList.firstChild ) ) {
+                                        loadAiModels( true );
+                                }
+                        } );
+                }
         }
 
         /* ==================================================================

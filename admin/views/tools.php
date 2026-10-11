@@ -16,6 +16,14 @@
  * .nxa-btn-primary del foglio condiviso. Nuovo in 1.0.6: bottone #nxa-tools-key-copy
  * (IIFE separata in fondo: il blocco JS preesistente è intatto al byte).
  *
+ * CONTRATTO v1.0.7 ("Impostazioni & Agenti Pro"): nuova card "Diagnostica AI"
+ * (SEZIONE 1b, tra informazioni di sistema ed Esporta): righe informative
+ * server-side da Nexus_DB::get_settings() (URL base API, modello globale,
+ * modello economico se presente, stato chiave come booleano — la chiave non è
+ * MAI stampata, nemmeno parzialmente) + bottone #nxa-tools-ai-test con IIFE
+ * separata aggiuntiva (i blocchi JS preesistenti restano intatti al byte) che
+ * chiama GET {restUrl}/ai/models (cache transient 12 ore lato server).
+ *
  * CONTRATTO REST (rotte definite nel §2 T-03, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/export        → { version, exported_at, site_url, settings, agents }
  *                                  ATTENZIONE: il file esportato contiene segreti
@@ -24,6 +32,9 @@
  *                                  → { settings_updated, agents_updated,
  *                                      agents_inserted, errors: [] }
  * - POST {restUrl}/tools/api-key → { api_key } (la chiave precedente diventa invalida)
+ * - GET  {restUrl}/ai/models     → { models:[id...], base_url, cached, count,
+ *                                  fetched_at } (v1.0.7; errori: 400 key_missing,
+ *                                  502 con messaggio onesto dal provider)
  * Autenticazione: header X-WP-Nonce = NexusAdminData.nonce (localizzato lato admin).
  *
  * CONTRATTO DOM (selettori fissi consumati dallo script inline in fondo al file):
@@ -35,6 +46,9 @@
  * - #nxa-tools-keygen         bottone "Genera nuova chiave" (con window.confirm).
  * - #nxa-tools-key-copy       bottone "Copia" (v1.0.6): copia #nxa-tools-key negli
  *                             appunti; stato "Copiata" temporaneo sul bottone.
+ * - #nxa-tools-ai-test        bottone "Testa provider AI" (v1.0.7, Diagnostica AI).
+ * - #nxa-tools-ai-result      box esito del test (aria-live="polite"; classi
+ *                             nxa-tools-ai-result + modificatore --ok / --err).
  * - Toast: .nxa-tools-toast (--success / --error) su body, rimosso dopo 4 secondi.
  *
  * NOTE: la sezione 1 usa SOLO PHP (nessun fetch): versione plugin/WP/PHP, locale,
@@ -64,6 +78,13 @@ if ( class_exists( 'Nexus_DB' ) ) {
 /* API pubblica: stato e chiave corrente (sezione 4). */
 $api_enabled = ! empty( $settings['enable_public_api'] );
 $api_key     = isset( $settings['public_api_key'] ) ? (string) $settings['public_api_key'] : '';
+
+/* Diagnostica AI (v1.0.7): configurazione AI corrente. La chiave non viene MAI
+   esposta (nemmeno parzialmente): solo un booleano configurata/manca. */
+$ai_base   = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
+$ai_model  = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
+$ai_cheap  = isset( $settings['ai_model_cheap'] ) ? trim( (string) $settings['ai_model_cheap'] ) : '';
+$ai_key_ok = isset( $settings['ai_api_key'] ) && '' !== trim( (string) $settings['ai_api_key'] );
 
 /* Riga ambiente: ini_get può ritornare false o '' (mostro un trattino). */
 $mem_raw   = ini_get( 'memory_limit' );
@@ -190,6 +211,37 @@ $queue_rows = array(
                                 </div>
                         <?php endforeach; ?>
                 </dl>
+        </div>
+
+        <!-- SEZIONE 1b: diagnostica AI (v1.0.7) — configurazione AI e test provider.
+             La chiave API non compare MAI in questa card: solo il badge di stato. -->
+        <div class="nxa-tools-section">
+                <h2 class="nxa-tools-section-title"><?php esc_html_e( 'Diagnostica AI', 'nexus-news-ai' ); ?></h2>
+                <p class="nxa-tools-desc"><?php esc_html_e( 'Mostra a quale provider è connesso il plugin e quanti modelli espone.', 'nexus-news-ai' ); ?></p>
+                <dl class="nxa-tools-defs">
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'URL base API AI', 'nexus-news-ai' ); ?></dt>
+                                <dd><code><?php echo esc_html( '' !== $ai_base ? $ai_base : __( 'Predefinito OpenRouter', 'nexus-news-ai' ) ); ?></code></dd>
+                        </div>
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'Modello globale', 'nexus-news-ai' ); ?></dt>
+                                <dd><code><?php echo esc_html( '' !== $ai_model ? $ai_model : __( 'Non impostato', 'nexus-news-ai' ) ); ?></code></dd>
+                        </div>
+                        <?php if ( '' !== $ai_cheap ) : ?>
+                                <div class="nxa-tools-def">
+                                        <dt><?php esc_html_e( 'Modello economico (screening)', 'nexus-news-ai' ); ?></dt>
+                                        <dd><code><?php echo esc_html( $ai_cheap ); ?></code></dd>
+                                </div>
+                        <?php endif; ?>
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'Chiave API AI', 'nexus-news-ai' ); ?></dt>
+                                <dd><span class="nxa-tools-badge nxa-tools-badge--<?php echo esc_attr( $ai_key_ok ? 'on' : 'off' ); ?>"><?php echo esc_html( $ai_key_ok ? __( 'Configurata', 'nexus-news-ai' ) : __( 'Mancante', 'nexus-news-ai' ) ); ?></span></dd>
+                        </div>
+                </dl>
+                <p class="nxa-tools-actions">
+                        <button type="button" id="nxa-tools-ai-test" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Testa provider AI', 'nexus-news-ai' ); ?></button>
+                </p>
+                <div id="nxa-tools-ai-result" class="nxa-tools-ai-result" aria-live="polite"></div>
         </div>
 
         <!-- SEZIONE 2: esporta configurazione (GET /export → download JSON lato client). -->
@@ -566,6 +618,65 @@ $queue_rows = array(
     border-color: var(--nxa-err-line);
     background: var(--nxa-err-bg);
     color: var(--nxa-err-text);
+  }
+
+  /* Diagnostica AI (v1.0.7): box esito del test provider, nascosto finché vuoto.
+     Stessi token di .nxa-tools-result: chiaro default, scuro via flip variabili. */
+  .nxa-tools-ai-result {
+    margin: 4px 0 0;
+    padding: 10px 14px;
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .nxa-tools-ai-result:empty {
+    display: none;
+  }
+
+  .nxa-tools-ai-result--ok {
+    border-color: var(--nxa-ok-line);
+    background: var(--nxa-ok-bg);
+    color: var(--nxa-ok-text);
+  }
+
+  .nxa-tools-ai-result--err {
+    border-color: var(--nxa-err-line);
+    background: var(--nxa-err-bg);
+    color: var(--nxa-err-text);
+  }
+
+  .nxa-tools-ai-line {
+    margin: 0;
+  }
+
+  /* Nota cache inline dopo il conteggio: leggermente più piccola, colore ereditato. */
+  .nxa-tools-ai-cache {
+    font-size: 12px;
+  }
+
+  /* Primi 8 id modello come chip <code> (stile ereditato da .nxa-tools-section code). */
+  .nxa-tools-ai-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .nxa-tools-ai-list li {
+    margin: 0;
+  }
+
+  .nxa-tools-ai-endpoint {
+    display: block;
+    margin: 8px 0 0;
+    font-size: 12px;
+    word-break: break-word;
   }
 
   /* Toast appeso a body: figlio di body, eredita i token (chiaro e scuro). */
@@ -991,6 +1102,140 @@ $queue_rows = array(
                                         markCopied();
                                 }
                         }
+                });
+        })();
+
+        /* DIAGNOSTICA AI (v1.0.7): IIFE separata — i blocchi sopra restano intatti
+           al byte. Test del provider: GET {restUrl}/ai/models con X-WP-Nonce (stesso
+           pattern della IIFE principale). Successo: conteggio modelli, primi 8 id in
+           lista <code>, nota cache (12 ore) e base_url usato. Errore: messaggio
+           onesto dal body WP {code,message,data.status} nel box (stile errore) +
+           toast. La chiave non tocca mai il browser: la usa solo il server. */
+        (function () {
+                'use strict';
+
+                if (!window.NexusAdminData || !window.NexusAdminData.restUrl || !window.NexusAdminData.nonce) {
+                        if (window.console && window.console.warn) {
+                                window.console.warn('[Nexus News AI] NexusAdminData non disponibile: diagnostica AI non inizializzata.');
+                        }
+                        return;
+                }
+
+                var testBtn = document.getElementById('nxa-tools-ai-test');
+                var resultBox = document.getElementById('nxa-tools-ai-result');
+
+                if (!testBtn || !resultBox) {
+                        return;
+                }
+
+                var base = String(window.NexusAdminData.restUrl).replace(/\/+$/, '');
+                var nonce = window.NexusAdminData.nonce;
+                var originalLabel = testBtn.textContent;
+                var busy = false;
+                var toastEl = null;
+                var toastTimer = null;
+
+                /* Escape di ogni valore dinamico prima di innerHTML. */
+                function esc(value) {
+                        return String(value === null || value === undefined ? '' : value)
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/\x22/g, '&quot;')
+                                .replace(/\x27/g, '&#039;');
+                }
+
+                /* Toast flottante identico alla IIFE principale (4 secondi). */
+                function toast(message, tipo) {
+                        if (!toastEl) {
+                                toastEl = document.createElement('div');
+                                document.body.appendChild(toastEl);
+                        }
+                        toastEl.className = 'nxa-tools-toast ' + (tipo === 'error' ? 'nxa-tools-toast--error' : 'nxa-tools-toast--success');
+                        toastEl.textContent = String(message);
+                        if (toastTimer) {
+                                window.clearTimeout(toastTimer);
+                        }
+                        toastTimer = window.setTimeout(function () {
+                                if (toastEl && toastEl.parentNode) {
+                                        toastEl.parentNode.removeChild(toastEl);
+                                }
+                                toastEl = null;
+                                toastTimer = null;
+                        }, 4000);
+                }
+
+                /* Box esito: classe base + modificatore di stato (ok / err). */
+                function renderBox(html, tipo) {
+                        resultBox.className = 'nxa-tools-ai-result' + (tipo === 'ok' ? ' nxa-tools-ai-result--ok' : (tipo === 'err' ? ' nxa-tools-ai-result--err' : ''));
+                        resultBox.innerHTML = html;
+                }
+
+                testBtn.addEventListener('click', function () {
+                        if (busy) {
+                                return;
+                        }
+                        busy = true;
+                        testBtn.disabled = true;
+                        testBtn.textContent = 'Testo…';
+
+                        function finish() {
+                                busy = false;
+                                testBtn.disabled = false;
+                                testBtn.textContent = originalLabel;
+                        }
+
+                        fetch(base + '/ai/models', {
+                                method: 'GET',
+                                headers: { 'X-WP-Nonce': nonce, 'Accept': 'application/json' },
+                                credentials: 'same-origin'
+                        }).then(function (response) {
+                                return response.text().then(function (text) {
+                                        var data = null;
+                                        try {
+                                                data = text ? JSON.parse(text) : null;
+                                        } catch (parseError) {
+                                                data = null;
+                                        }
+                                        if (!response.ok) {
+                                                var message = 'Errore HTTP ' + response.status;
+                                                if (data && data.message) {
+                                                        message = String(data.message);
+                                                }
+                                                throw new Error(message);
+                                        }
+                                        return data;
+                                });
+                        }).then(function (data) {
+                                var models = data && data.models && data.models.length ? data.models : [];
+                                var count = data && typeof data.count !== 'undefined' && data.count !== null ? parseInt(data.count, 10) : models.length;
+                                if (isNaN(count)) {
+                                        count = models.length;
+                                }
+                                var cached = !!(data && data.cached);
+                                var providerBase = data && data.base_url ? String(data.base_url) : '';
+                                var html = '<p class="nxa-tools-ai-line">' + esc(count) + ' modelli disponibili' + (cached ? ' <span class="nxa-tools-ai-cache">(dalla cache, 12 ore)</span>' : '') + '</p>';
+                                var max = models.length < 8 ? models.length : 8;
+                                var i;
+                                if (max > 0) {
+                                        html += '<ul class="nxa-tools-ai-list">';
+                                        for (i = 0; i < max; i++) {
+                                                html += '<li><code>' + esc(models[i]) + '</code></li>';
+                                        }
+                                        html += '</ul>';
+                                }
+                                if (providerBase) {
+                                        html += '<span class="nxa-tools-ai-endpoint">Endpoint: ' + esc(providerBase) + '</span>';
+                                }
+                                renderBox(html, 'ok');
+                                toast(count + ' modelli disponibili dal provider AI', 'success');
+                                finish();
+                        }).catch(function (error) {
+                                var message = error && error.message ? String(error.message) : 'errore sconosciuto';
+                                renderBox('<p class="nxa-tools-ai-line">Test provider AI non riuscito: ' + esc(message) + '</p>', 'err');
+                                toast('Test provider AI non riuscito: ' + message, 'error');
+                                finish();
+                        });
                 });
         })();
 </script>

@@ -25,9 +25,18 @@
  *   altezza %, legenda), tabelle per piattaforma / per agente / top articoli in
  *   pannelli curati, contatori iscritti. Empty state IT: "Nessun dato nel periodo".
  *
+ * v1.0.7 — Fix overflow mobile (contratto §2 T-06): le 3 tabelle dati sono
+ * avvolte in <div class="nxa-table-wrap"> (wrapper overflow-x:auto definito da
+ * T-04 nel CSS condiviso, con fallback locale identico per restare
+ * autosufficiente), le celle hanno word-break (overflow-wrap:anywhere) per
+ * titoli/nomi/URL lunghi e il grafico a barre su mobile stretto scorre in
+ * orizzontale invece di schiacciare le colonne. Id e data-* invariati.
+ *
  * @package Nexus_News_AI
  * @since   1.0.4
  * @since   1.0.6 Tema chiaro: stile convertito ai token §1 del contratto v1.0.6.
+ * @since   1.0.7 Overflow mobile: wrapper .nxa-table-wrap sulle tabelle dati,
+ *          word-break sulle celle e grafico a barre scrollabile su <=600px.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -68,47 +77,53 @@ defined( 'ABSPATH' ) || exit;
 
         <h2><?php echo esc_html__( 'Pubblicazioni per piattaforma', 'nexus-news-ai' ); ?></h2>
         <div class="nxa-an-panel">
-                <table class="widefat striped" id="nxa-an-platform">
-                        <thead>
-                                <tr>
-                                        <th><?php echo esc_html__( 'Piattaforma', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Falliti', 'nexus-news-ai' ); ?></th>
-                                </tr>
-                        </thead>
-                        <tbody></tbody>
-                </table>
+                <div class="nxa-table-wrap">
+                        <table class="widefat striped nxa-an-table" id="nxa-an-platform">
+                                <thead>
+                                        <tr>
+                                                <th><?php echo esc_html__( 'Piattaforma', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Falliti', 'nexus-news-ai' ); ?></th>
+                                        </tr>
+                                </thead>
+                                <tbody></tbody>
+                        </table>
+                </div>
         </div>
 
         <h2><?php echo esc_html__( 'Attività per agente', 'nexus-news-ai' ); ?></h2>
         <div class="nxa-an-panel">
-                <table class="widefat striped" id="nxa-an-agents">
-                        <thead>
-                                <tr>
-                                        <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Creati', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></th>
-                                </tr>
-                        </thead>
-                        <tbody></tbody>
-                </table>
+                <div class="nxa-table-wrap">
+                        <table class="widefat striped nxa-an-table" id="nxa-an-agents">
+                                <thead>
+                                        <tr>
+                                                <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Creati', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></th>
+                                        </tr>
+                                </thead>
+                                <tbody></tbody>
+                        </table>
+                </div>
         </div>
 
         <h2><?php echo esc_html__( 'Articoli più visti', 'nexus-news-ai' ); ?></h2>
         <div class="nxa-an-panel">
-                <table class="widefat striped" id="nxa-an-top">
-                        <thead>
-                                <tr>
-                                        <th><?php echo esc_html__( 'Titolo', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Reazioni', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Stato', 'nexus-news-ai' ); ?></th>
-                                        <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
-                                </tr>
-                        </thead>
-                        <tbody></tbody>
-                </table>
+                <div class="nxa-table-wrap">
+                        <table class="widefat striped nxa-an-table" id="nxa-an-top">
+                                <thead>
+                                        <tr>
+                                                <th><?php echo esc_html__( 'Titolo', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Reazioni', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Stato', 'nexus-news-ai' ); ?></th>
+                                                <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
+                                        </tr>
+                                </thead>
+                                <tbody></tbody>
+                        </table>
+                </div>
         </div>
 
         <h2><?php echo esc_html__( 'Iscritti newsletter', 'nexus-news-ai' ); ?></h2>
@@ -374,6 +389,40 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-an-muted {
     color: var(--nxa-muted, rgba(92, 107, 132, 1));
+  }
+  /* v1.0.7 — overflow mobile: le tabelle dati scorrono in orizzontale dentro
+   * il wrapper .nxa-table-wrap (contratto CSS condiviso di T-04; il blocco qui
+   * sotto è il fallback locale identico che tiene la vista autosufficiente
+   * anche senza il foglio condiviso) e le celle vanno a capo su titoli, nomi
+   * e URL lunghi senza forzare la larghezza delle colonne. */
+  .nxa-an-panel .nxa-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nxa-an-panel .nxa-an-table th,
+  .nxa-an-panel .nxa-an-table td {
+    overflow-wrap: anywhere;
+  }
+  /* Mobile stretto: il grafico a barre scorre in orizzontale invece di
+   * schiacciare le colonne (larghezza minima per giornata; con serie corte le
+   * colonne si distendono comunque grazie a flex-grow). justify-content passa
+   * a flex-start perché con contenuto in overflow space-around lo farebbe
+   * uscire da entrambi i lati, rendendo il primo giorno irraggiungibile. Il
+   * tooltip CSS è disattivo qui per non essere troncato dallo scroll: resta
+   * il tooltip nativo del title, come già avviene sui touch. */
+  @media (max-width: 600px) {
+    .nxa-an-chart {
+      justify-content: flex-start;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .nxa-an-day {
+      min-width: 14px;
+    }
+    .nxa-an-day::after {
+      display: none;
+    }
   }
   @media (max-width: 782px) {
     .nxa-an-chart {

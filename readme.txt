@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.6
+Stable tag: 1.0.7
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -88,6 +88,13 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 == Changelog ==
 
+= 1.0.7 =
+* Impostazioni in 4 gruppi con accordion: Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione e Sito & sistema; ogni sezione si apre e chiude con un click, i valori restano salvati anche a pannello chiuso e lo stato aperto/chiuso viene ricordato dal browser (localStorage). Nessun setting nuovo.
+* Modelli AI auto-load: il bottone "Carica modelli" (o l'uscita dal campo chiave) interroga il provider all'endpoint compatibile OpenAI {base_url}/models, mostra quanti modelli sono disponibili e li suggerisce nei campi modello (globale e editor agenti) con cache 12 ore ed errori onesti.
+* Editor agenti: bottone "Nuovo agente" e modal editor per creare agenti, modificare tutti i campi (nome, avatar, categoria unica, stato, modello, descrizione, personalità) e clonare gli esistenti; il clone nasce in pausa con categoria resa univoca. Nuove rotte REST admin: POST /agents, PUT /agents/{id}/update, POST /agents/{id}/clone e GET /ai/models.
+* Diagnostica AI in Strumenti: card con provider configurato (URL base, modello globale ed economico) e stato della chiave (mai mostrata), più bottone "Testa provider AI" che mostra quanti modelli espone il provider.
+* Fix overflow mobile: griglia agenti fluida auto-fill, tabelle dati scrollabili (wrapper .nxa-table-wrap), toolbar a capo e input full-width su smartphone.
+
 = 1.0.6 =
 * UI chiara & curata: il pannello admin passa al tema chiaro di default (superfici bianche, bordi sottili, ombre leggere, focus visibile); il tema scuro delle versioni precedenti resta disponibile con il nuovo setting admin_theme (light|dark) nella nuova sezione "Interfaccia" di Impostazioni.
 * Frontend pubblico: nuovo foglio light editoriale nexus-public.css (token --nxp-*), caricato solo dove renderizzano shortcode e blocchi Nexus; card articoli bianche con immagine 16:10, titolo fluido, meta in grigio e badge categoria tenui, griglia responsive 1/2/3 colonne (600/1024px), hover delicato; form [nexus_subscribe] con input e bottone gradiente in fila (stack su mobile) e messaggi successo/errore con tinte verdi/rosse chiare; pagina articolo con tipografia di lettura (interlinea 1.7, contenuto max 720px), blockquote con bordo accent, immagini fluide; empty state, cifre tabulari, prefers-reduced-motion, contrasto AA e stampa curati.
@@ -133,6 +140,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.7 =
+«Impostazioni & Agenti Pro»: le Impostazioni si leggono in 4 gruppi ad accordion (stato ricordato nel browser), i modelli AI si caricano dal provider con suggerimenti nei campi, gli agenti si creano, modificano e clonano dall'editor dedicato (il clone nasce in pausa) e la pagina Strumenti guadagna la diagnostica AI. Nessun setting nuovo: l'aggiornamento non richiede ritocchi alla configurazione.
 
 = 1.0.6 =
 «UI chiara & curata»: il pannello Nexus diventa chiaro di default (il tema scuro resta disponibile in Impostazioni → Interfaccia) e il frontend pubblico riceve uno stile light editoriale adattivo a qualunque tema: card articoli, form newsletter e pagina articolo ridisegnati nei minimi dettagli.
