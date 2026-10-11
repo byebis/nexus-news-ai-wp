@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.0.4-blue)
+![Versione](https://img.shields.io/badge/versione-1.0.5-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale).
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -27,10 +27,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 10. [Pubblicazione multi-piattaforma](#pubblicazione-multi-piattaforma)
 11. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
 12. [Scala & Pro (v1.0.4)](#scala--pro-v104)
-13. [Installazione](#installazione)
-14. [FAQ tecniche](#faq-tecniche)
-15. [Licenza e crediti](#licenza-e-crediti)
-16. [Changelog](#changelog)
+13. [Strumenti, API pubblica, Multisite, Admin bilingue (v1.0.5)](#v105--strumenti-api-pubblica-multisite-admin-bilingue)
+14. [Installazione](#installazione)
+15. [FAQ tecniche](#faq-tecniche)
+16. [Licenza e crediti](#licenza-e-crediti)
+17. [Changelog](#changelog)
 
 ---
 
@@ -61,6 +62,10 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **WP-CLI** (v1.0.4): comando `wp nexus` per pilotare la redazione da terminale e da cron di sistema: `run --all/--agent`, `collect`, `evaluate`, `rewrite`, `publish`, `approve`/`reject`, `translate`, `agents`, `articles`, `stats`, `queue stats|process|retry|cancel|cleanup`, `settings get/set`.
 - **Blocchi Gutenberg** (v1.0.4): blocchi dinamici server-side `nexus/latest-articles` (numero articoli 1-24, categoria, colonne 1-4, mostra immagini) e `nexus/subscribe-form` (titolo personalizzabile) con preview nell'editor, senza build step; alternativa a `[nexus_articles]` e `[nexus_subscribe]`.
 - **Analytics** (v1.0.4): pagina Analytics con serie giornaliera (7-90 giorni) di articoli creati/pubblicati, chiamate AI e costo stimato del periodo, breakdown per piattaforma e per agente (con qualità media), top 10 articoli per viste e iscritti newsletter.
+- **Strumenti** (v1.0.5): pagina nel menu con informazioni di sistema (versioni, 9 tabelle con righe, eventi WP-Cron con prossima esecuzione, stat coda lavori), esporta configurazione JSON (avviso: contiene chiavi API e token) e importa configurazione (match agenti per categoria, sovrascrive impostazioni e agenti).
+- **API pubblica** (v1.0.5): namespace REST `nexus-public/v1` con articoli pubblicati, agenti e statistiche; autenticazione header `X-Api-Key` (o `?api_key=`), rate limit 120 richieste/minuto (HTTP 429) e CORS aperto.
+- **Multisite** (v1.0.5): installazione automatica delle tabelle sui nuovi siti della rete (hook `wp_initialize_site`) e comandi `wp nexus multisite status|install [--sites=1,2]`; ogni sito ha tabelle e impostazioni proprie.
+- **Admin bilingue** (v1.0.5, sperimentale): lingua dell'interfaccia admin (Automatica/Italiano/English) con traduzione delle etichette principali lato PHP (viste) e lato JS (contenuti dinamici).
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -118,6 +123,11 @@ nexus-news-ai/
 │   ├── class-nexus-cli.php             # v1.0.4 — WP-CLI: comando wp nexus (run, collect, evaluate, rewrite, publish, approve, reject, translate, agents, articles, stats, queue, settings)
 │   ├── class-nexus-blocks.php          # v1.0.4 — Blocchi Gutenberg server-side: nexus/latest-articles e nexus/subscribe-form
 │   ├── class-nexus-analytics.php       # v1.0.4 — Analytics: overview() con serie giornaliera, costi AI, per piattaforma, per agente, top articoli, iscritti
+│   ├── class-nexus-i18n.php            # v1.0.5 — Admin bilingue IT/EN: Nexus_I18n (current_lang, translate_html sulle viste, enqueue di i18n.js)
+│   ├── class-nexus-i18n-dict.php       # v1.0.5 — Dizionario i18n base: nexus_i18n_default_dict() con le voci IT=>EN dell'admin
+│   ├── class-nexus-i18n-dict-extra.php # v1.0.5 — Dizionario i18n esteso: nexus_i18n_extra_dict() con voci aggiuntive (caricato da Nexus_I18n)
+│   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS
+│   ├── class-nexus-multisite.php       # v1.0.5 — Multisite: installazione tabelle sui nuovi siti (wp_initialize_site), status(), install_all()
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
 │   └── index.php                  # Guardia "Silence is golden"
@@ -133,6 +143,7 @@ nexus-news-ai/
 │   │   ├── activity.php           # Feed attività
 │   │   ├── wire.php               # Nexus Wire (redazione collettiva)
 │   │   ├── analytics.php          # v1.0.4 — Analytics: serie giornaliera, costi AI, per piattaforma/agente, top articoli, iscritti
+│   │   ├── tools.php              # v1.0.5 — Strumenti: informazioni di sistema, esporta/importa configurazione, API pubblica (chiave)
 │   │   └── settings.php           # Impostazioni
 │   └── index.php
 │
@@ -143,7 +154,7 @@ nexus-news-ai/
 │   └── index.php
 │
 ├── assets/                        # Asset condivisi admin
-│   ├── js/                        # admin.js (interfaccia admin) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) — vanilla JS, consuma le REST route nexus/v1
+│   ├── js/                        # admin.js (interfaccia admin) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) + i18n.js (v1.0.5: traduzione IT→EN dei contenuti dinamici admin) — vanilla JS, consuma le REST route nexus/v1
 │   └── index.php
 │
 ├── templates/                     # Template front-end per i post WordPress reali (v1.0.1)
@@ -274,6 +285,9 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | POST | `/jobs/{id}/retry` | Riprova un lavoro: solo da `failed`/`cancelled`/`complete` → `pending` |
 | POST | `/jobs/{id}/cancel` | Annulla un lavoro: solo se `pending` → `cancelled` |
 | GET | `/analytics` | Analytics della redazione (v1.0.4); arg `days` (default 30, cap 90) |
+| GET | `/export` | Esporta la configurazione (v1.0.5): `{ version, exported_at, site_url, settings, agents }`. ATTENZIONE: il file contiene chiavi API e token |
+| POST | `/import` | Importa una configurazione (v1.0.5): body JSON `{ "settings": {…}, "agents": […] }`, agenti abbinati per `category` (aggiornati) o creati se mancanti → `{ settings_updated, agents_updated, agents_inserted, errors }` |
+| POST | `/tools/api-key` | Genera una nuova chiave API pubblica (v1.0.5): la salva in `public_api_key` invalidando la precedente → `{ "api_key": "…" }` |
 
 ### Route pubbliche
 
@@ -353,8 +367,11 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `enable_queue` | `0` | Usa la coda lavori (stile Action Scheduler): le azioni pesanti vengono accodate in `wp_nexus_jobs` ed eseguite in batch ogni 60 secondi dal runner WP-Cron |
 | `queue_batch_size` | `5` | Lavori per batch del runner della coda (1-50) |
 | `queue_max_attempts` | `3` | Tentativi massimi per lavoro prima di passare a `failed` (1-10) |
+| `admin_language` | `auto` | Lingua dell'interfaccia admin (v1.0.5, sperimentale): `auto` (segue la lingua del sito), `it` o `en` |
+| `enable_public_api` | `0` | Attiva la REST pubblica `nexus-public/v1` (v1.0.5): articoli pubblicati, agenti e statistiche con autenticazione `X-Api-Key` |
+| `public_api_key` | (vuota) | Chiave API pubblica; si genera dalla pagina **Strumenti → API pubblica** (v1.0.5) |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)).
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)).
 
 ---
 
@@ -515,6 +532,80 @@ Nuova pagina **Analytics** nel menu **Nexus News** (tra Nexus Wire e Impostazion
 
 ---
 
+## v1.0.5 — Strumenti, API pubblica, Multisite, Admin bilingue
+
+Dalla v1.0.5 la redazione si governa meglio e si apre al mondo: una pagina **Strumenti** per diagnostica, backup e ripristino della configurazione, una **API pubblica** con chiave per consumare articoli e statistiche da qualunque applicazione, il supporto **multisite** e un'interfaccia admin **bilingue** (italiano/inglese, sperimentale).
+
+### Strumenti
+
+Nuova pagina **Strumenti** nel menu **Nexus News** (tra Analytics e Impostazioni), in quattro sezioni:
+
+- **Informazioni di sistema**: versione del plugin, di WordPress e di PHP, locale, multisite (sì/no), `memory_limit`, `max_execution_time`, stato delle **9 tabelle** `wp_nexus_*` (presenza e numero di righe per ognuna), eventi WP-Cron con la **prossima esecuzione** (`nexus_cron_tick`, `nexus_queue_runner`, `nexus_weekly_digest`, `nexus_ping_article`) e statistiche della coda lavori.
+- **Esporta configurazione**: scarica un file JSON (`nexus-config-AAAA-MM-GG.json`) con versione, data di esportazione, URL del sito, **impostazioni e agenti** (NON include articoli, iscritti o log).
+
+  > **Attenzione:** il file esportato contiene **chiavi API e token**: conservalo in modo sicuro.
+
+- **Importa configurazione**: carica un file JSON esportato; le impostazioni vengono **sovrascritte** e gli agenti vengono abbinati per **categoria** (l'agente esistente con la stessa categoria viene aggiornato, le categorie mancanti creano nuovi agenti). Esito: «Impostazioni aggiornate: N · Agenti aggiornati: N · Agenti creati: N».
+- **API pubblica**: stato corrente (attiva/disattivata), chiave corrente in un campo di sola lettura e bottone **Genera nuova chiave** (crea una chiave nuova e **invalida la precedente**).
+
+Le stesse operazioni sono disponibili via REST admin: `GET /export`, `POST /import`, `POST /tools/api-key` (vedi la tabella [Route admin](#route-admin-manage_options)).
+
+### API pubblica (`nexus-public/v1`)
+
+Namespace REST **`/wp-json/nexus-public/v1/`** (classe `Nexus_Public_API` in `class-nexus-public-api.php`) per consumare i contenuti del giornale da app esterne, widget o automazioni.
+
+- **Attivazione**: **Impostazioni → Lingua e API pubblica → «Attiva API pubblica»** (`enable_public_api`).
+- **Chiave**: si genera dalla pagina **Strumenti → API pubblica** e viene salvata nel setting `public_api_key`.
+- **Autenticazione**: header **`X-Api-Key`** oppure query string **`?api_key=`** (da JavaScript cross-origin è la via più semplice, perché un header custom può richiedere il preflight).
+- **Rate limit**: **120 richieste al minuto per chiave** (finestra fissa di 60 secondi); oltre la soglia la risposta è HTTP **429** con header `Retry-After: 60`.
+- **CORS**: dopo l'autenticazione la risposta porta `Access-Control-Allow-Origin: *` — i dati sono pubblici e aperti a qualunque origine.
+- **Errori**: `503` API disattivata, `401` chiave mancante o non valida, `503` chiave non configurata (va generata in Strumenti).
+
+| Metodo | Endpoint | Descrizione |
+|---|---|---|
+| GET | `/articles` | Articoli `published`; args `page` (default 1), `per_page` (default 12, **max 50**), `category` → `{ items, total, page, pages }` |
+| GET | `/articles/{id}` | Dettaglio di un articolo pubblicato (titolo, sottotitolo, riassunto, contenuto, categoria, agente, URL, punteggi qualità/fact-check); 404 se inesistente o non pubblicato |
+| GET | `/agents` | Agenti attivi con il numero di articoli pubblicati |
+| GET | `/stats` | Contatori pubblici della redazione: articoli totali, pubblicati, agenti attivi, viste |
+
+Esempi concreti:
+
+```bash
+# Lista articoli pubblicati (paginata, filtrata per categoria)
+curl -H "X-Api-Key: LA_TUA_CHIAVE" "https://tuosito.it/wp-json/nexus-public/v1/articles?page=1&per_page=12&category=Economia"
+
+# Dettaglio di un singolo articolo
+curl -H "X-Api-Key: LA_TUA_CHIAVE" "https://tuosito.it/wp-json/nexus-public/v1/articles/42"
+
+# Statistiche pubbliche della redazione
+curl -H "X-Api-Key: LA_TUA_CHIAVE" "https://tuosito.it/wp-json/nexus-public/v1/stats"
+```
+
+### Multisite
+
+Su installazioni **WordPress multisite** (`is_multisite`) il plugin gestisce la rete:
+
+- **Nuovo sito della rete** → installazione **automatica** delle tabelle Nexus e seed agenti all'evento `wp_initialize_site` (hook `Nexus_Multisite::on_new_site`): nessun passaggio manuale.
+- **Comandi WP-CLI**:
+
+  ```bash
+  # Stato della rete: per ogni sito, tabelle presenti (n/9), agenti, impostazioni
+  wp nexus multisite status
+
+  # Installa tabelle e agenti sui siti indicati (senza --sites: tutti i siti)
+  wp nexus multisite install --sites=1,2
+  ```
+
+- **Nota**: ogni sito della rete ha **tabelle e impostazioni proprie** (option `nexus_settings` separata per blog): configurazioni e chiavi restano indipendenti.
+
+### Admin bilingue (sperimentale)
+
+- **Impostazioni → Lingua e API pubblica → «Lingua dell'interfaccia admin»** (`admin_language`): `Automatica` (segue la lingua del sito: italiano se `get_locale()` inizia per `it`, altrimenti inglese), `Italiano`, `English`.
+- **Come funziona**: un dizionario di traduzione IT→EN (base + esteso, filtrabile) applicato a due livelli — lato **PHP** sull'HTML renderizzato dalle viste admin (`Nexus_I18n::translate_html()`) e lato **JS** sui contenuti dinamici generati da admin.js (MutationObserver in `assets/js/i18n.js`). Copre le etichette principali: menu, bottoni, stati, colonne, messaggi e toast.
+- **Sperimentale**: le stringhe non presenti nel dizionario restano in italiano; la lingua del frontend e dei contenuti editoriali non cambia.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -561,6 +652,15 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.5 — «Strumenti, API pubblica, Multisite, Admin bilingue»
+
+- **Strumenti**: nuova pagina nel menu **Nexus News** con informazioni di sistema (versioni plugin/WordPress/PHP, 9 tabelle `wp_nexus_*` con numero di righe, eventi WP-Cron con prossima esecuzione, stat della coda lavori), **esporta configurazione** in JSON (attenzione: il file contiene chiavi API e token) e **importa configurazione** (impostazioni sovrascritte, agenti abbinati per categoria: aggiornati o creati).
+- **API pubblica**: nuovo namespace REST **`nexus-public/v1`** (classe `Nexus_Public_API`) con `GET /articles` (`page`, `per_page` max 50, `category`), `GET /articles/{id}`, `GET /agents` e `GET /stats`; autenticazione via header `X-Api-Key` (o `?api_key=`), **rate limit 120 richieste al minuto** (HTTP 429 con `Retry-After: 60`) e **CORS aperto**; si attiva da Impostazioni → Lingua e API pubblica, la chiave si genera in Strumenti → API pubblica.
+- **Multisite**: nuova classe `Nexus_Multisite` con installazione automatica delle tabelle sui nuovi siti della rete (hook `wp_initialize_site`) e comando WP-CLI **`wp nexus multisite status|install [--sites=1,2]`**; ogni sito ha tabelle e impostazioni proprie.
+- **Admin bilingue (sperimentale)**: nuova classe `Nexus_I18n` con dizionario IT→EN (base + esteso) applicato lato **PHP** all'HTML delle viste admin e lato **JS** ai contenuti dinamici (`assets/js/i18n.js` con MutationObserver); selezione lingua in Impostazioni → Lingua e API pubblica (`admin_language`: Automatica/Italiano/English).
+- **3 nuove rotte REST admin**: `GET /export` (configurazione in JSON), `POST /import` (ripristino, match agenti per categoria), `POST /tools/api-key` (generazione chiave API pubblica).
+- **3 nuovi setting** nella sezione admin «Lingua e API pubblica»: `admin_language`, `enable_public_api`, `public_api_key`.
 
 ### 1.0.4 — «Scala & Pro»
 

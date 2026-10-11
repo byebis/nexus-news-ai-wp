@@ -19,6 +19,7 @@
  *     ├── Attività           slug nexus-activity  → admin/views/activity.php
  *     ├── Nexus Wire         slug nexus-wire      → admin/views/wire.php
  *     ├── Analytics          slug nexus-analytics → admin/views/analytics.php
+ *     ├── Strumenti          slug nexus-tools     → admin/views/tools.php
  *     └── Impostazioni       slug nexus-settings  → admin/views/settings.php
  *
  * @package Nexus_News_AI
@@ -52,6 +53,7 @@ class Nexus_Admin {
                         'nexus-activity'  => 'activity',
                         'nexus-wire'      => 'wire',
                         'nexus-analytics' => 'analytics',
+                        'nexus-tools'     => 'tools',
                         'nexus-settings'  => 'settings',
                 );
         }
@@ -80,6 +82,7 @@ class Nexus_Admin {
                         'nexus-activity'  => __( 'Attività', 'nexus-news-ai' ),
                         'nexus-wire'      => __( 'Nexus Wire', 'nexus-news-ai' ),
                         'nexus-analytics' => __( 'Analytics', 'nexus-news-ai' ),
+                        'nexus-tools'     => __( 'Strumenti', 'nexus-news-ai' ),
                         'nexus-settings'  => __( 'Impostazioni', 'nexus-news-ai' ),
                 );
 
@@ -191,6 +194,16 @@ class Nexus_Admin {
                         return;
                 }
 
+                ob_start();
                 include $file;
+                $out = ob_get_clean();
+
+                /* Gancio i18n (v1.0.5): l'HTML della vista è bufferizzato per poter
+                 * applicare Nexus_I18n::translate_html quando il modulo è attivo. */
+                if ( class_exists( 'Nexus_I18n' ) && method_exists( 'Nexus_I18n', 'translate_html' ) ) {
+                        $out = Nexus_I18n::translate_html( $out );
+                }
+
+                echo $out; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         }
 }

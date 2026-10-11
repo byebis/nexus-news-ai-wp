@@ -108,6 +108,10 @@ class Nexus_DB {
                         'enable_queue'       => 0, // 1 = le azioni pesanti passano dalla coda wp_nexus_jobs
                         'queue_batch_size'   => 5, // lavori eseguiti per ogni runner tick
                         'queue_max_attempts' => 3, // tentativi massimi per lavoro prima di 'failed'
+                        // v1.0.5 — Strumenti, API pubblica, bilingue.
+                        'admin_language'     => 'auto', // auto | it | en (traduzione interfaccia admin)
+                        'enable_public_api'  => 0, // 1 = REST pubblica nexus-public/v1 attiva
+                        'public_api_key'     => '', // chiave generata dalla pagina Strumenti
                 );
         }
 
@@ -388,6 +392,33 @@ class Nexus_DB {
                         $formats[ count( $allowed ) - 1 ] = 'NULL';
                 }
                 return $wpdb->update( self::tables()['agents'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+        }
+
+        /**
+         * Inserisce un agente (usato da import configurazione, v1.0.5). Ritorna id o 0.
+         *
+         * @param array $data name (richiesto), avatar, category, description, status, personality, ai_model.
+         * @return int
+         */
+        public static function insert_agent( $data ) {
+                global $wpdb;
+                $now = current_time( 'mysql' );
+                $row = array(
+                        'name'        => sanitize_text_field( $data['name'] ?? '' ),
+                        'avatar'      => sanitize_text_field( $data['avatar'] ?? '' ),
+                        'category'    => sanitize_text_field( $data['category'] ?? '' ),
+                        'description' => sanitize_textarea_field( $data['description'] ?? '' ),
+                        'status'      => sanitize_key( $data['status'] ?? 'active' ),
+                        'personality' => sanitize_textarea_field( $data['personality'] ?? '' ),
+                        'ai_model'    => sanitize_text_field( $data['ai_model'] ?? '' ),
+                        'created_at'  => $now,
+                        'updated_at'  => $now,
+                );
+                if ( '' === $row['name'] || '' === $row['category'] ) {
+                        return 0;
+                }
+                $ok = $wpdb->insert( self::tables()['agents'], $row );
+                return $ok ? (int) $wpdb->insert_id : 0;
         }
 
         /* ============ ARTICLES ============ */

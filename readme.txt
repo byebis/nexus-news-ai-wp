@@ -4,11 +4,11 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.4
+Stable tag: 1.0.5
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST. Dalla 1.0.4 la redazione scala: coda lavori stile Action Scheduler con retry automatico e pagina «Coda Lavori», comandi WP-CLI (`wp nexus`), blocchi Gutenberg nativi (ultimi articoli e form newsletter) e pagina Analytics (serie giornaliera, costi AI, breakdown per piattaforma e per agente, top articoli, iscritti).
+Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST. Dalla 1.0.4 la redazione scala: coda lavori stile Action Scheduler con retry automatico e pagina «Coda Lavori», comandi WP-CLI (`wp nexus`), blocchi Gutenberg nativi (ultimi articoli e form newsletter) e pagina Analytics (serie giornaliera, costi AI, breakdown per piattaforma e per agente, top articoli, iscritti). Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** con informazioni di sistema, esporta/importa configurazione JSON e gestione della chiave, **API pubblica** `nexus-public/v1` (articoli, agenti e statistiche con chiave `X-Api-Key` e rate limit 120 richieste/minuto), supporto **multisite** con installazione automatica delle tabelle sui nuovi siti e interfaccia admin **bilingue** italiano/inglese (sperimentale).
 
 == Description ==
 
@@ -88,6 +88,14 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 == Changelog ==
 
+= 1.0.5 =
+* Strumenti: nuova pagina admin nel menu Nexus News con informazioni di sistema (versioni plugin/WordPress/PHP, 9 tabelle wp_nexus_* con numero di righe, eventi WP-Cron con prossima esecuzione, stat della coda lavori), esporta configurazione in JSON (attenzione: il file contiene chiavi API e token) e importa configurazione (impostazioni sovrascritte, agenti abbinati per categoria: aggiornati o creati).
+* API pubblica: nuovo namespace REST nexus-public/v1 (classe Nexus_Public_API) con GET /articles (page, per_page max 50, category), GET /articles/{id}, GET /agents e GET /stats; autenticazione via header X-Api-Key (o ?api_key=), rate limit 120 richieste al minuto per chiave (HTTP 429 con Retry-After: 60) e CORS aperto; attivazione in Impostazioni → Lingua e API pubblica, chiave generata in Strumenti → API pubblica.
+* Multisite: installazione automatica delle tabelle sui nuovi siti della rete (hook wp_initialize_site) e comando WP-CLI `wp nexus multisite status|install [--sites=1,2]`; ogni sito ha tabelle e impostazioni proprie.
+* Admin bilingue (sperimentale): nuova sezione «Lingua e API pubblica» con la lingua dell'interfaccia admin (Automatica/Italiano/English) e traduzione delle etichette principali dell'admin lato PHP (viste) e lato JS (contenuti dinamici, assets/js/i18n.js).
+* 3 nuove rotte REST admin: GET /export, POST /import, POST /tools/api-key.
+* 3 nuovi setting nella sezione admin «Lingua e API pubblica»: admin_language, enable_public_api, public_api_key.
+
 = 1.0.4 =
 * Coda lavori stile Action Scheduler: tabella wp_nexus_jobs con claim atomico, retry automatico con backoff esponenziale (60s*2^n, cap 1 ora), requeue dei lavori bloccati oltre 30 minuti e pulizia automatica dei lavori finiti da più di 7 giorni; runner WP-Cron ogni 60 secondi (solo con enable_queue=1), hook accodabili (pipeline_run_full, pipeline_collect, pipeline_evaluate, pipeline_rewrite, pipeline_publish, pipeline_wire_run, article_translate, pipeline_cron_tick) e nuova pagina admin «Coda Lavori» con stat, filtri di stato, riprova/annulla, «Processa ora», pulizia manuale e auto-refresh ogni 15 secondi.
 * WP-CLI: comando `wp nexus` con run (--agent/--all), collect, evaluate, rewrite, publish, approve/reject con nota, translate --lang, agents, articles, stats, queue stats|process|retry|cancel|cleanup e settings get/set.
@@ -120,6 +128,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.5 =
+«Strumenti, API pubblica, Multisite, Admin bilingue»: dalla nuova pagina Strumenti esporti e importi la configurazione (attenzione: il JSON contiene chiavi API e token), la REST pubblica nexus-public/v1 espone articoli, agenti e statistiche con chiave X-Api-Key (rate limit 120 richieste/minuto), i nuovi siti multisite ricevono le tabelle in automatico e l'interfaccia admin diventa bilingue italiano/inglese (sperimentale).
 
 = 1.0.4 =
 «Scala & Pro»: attiva la coda lavori stile Action Scheduler con retry automatico, guida la redazione da terminale con `wp nexus`, inserisci articoli e newsletter come blocchi Gutenberg e misura tutto dalla nuova pagina Analytics.

@@ -672,6 +672,100 @@ class Nexus_CLI {
                 WP_CLI::error( 'Uso: wp nexus settings get [chiave] oppure wp nexus settings set <chiave> <valore>.' );
         }
 
+        /* ========================= MULTISITE ========================= */
+
+        /**
+         * Gestione multisite: stato o installazione tabelle sui siti della rete.
+         *
+         * Sottocomandi:
+         *   status               — tabella siti della rete (tabelle "n/9", agenti, impostazioni).
+         *   install [--sites=..] — installa tabelle+seed sui siti indicati o su tutti.
+         *
+         * @subcommand multisite
+         * @synopsis <action> [--sites=<ids>]   action: status | install
+         *
+         * @param array $args       Argomenti posizionali.
+         * @param array $assoc_args Argomenti associativi (--chiave=valore).
+         */
+        public static function multisite( $args, $assoc_args ) {
+                if ( ! is_multisite() ) {
+                        WP_CLI::error( 'Questo comando è disponibile solo su installazioni multisite.' );
+                }
+
+                $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : '';
+
+                if ( '' === $action ) {
+                        WP_CLI::error( 'Uso: wp nexus multisite status|install [--sites=<ids>].' );
+                }
+
+                if ( 'status' === $action ) {
+                        if ( ! class_exists( 'Nexus_Multisite' ) || ! method_exists( 'Nexus_Multisite', 'status' ) ) {
+                                WP_CLI::error( 'Modulo multisite non disponibile: la classe Nexus_Multisite non è caricata.' );
+                        }
+
+                        $rows = array();
+                        foreach ( (array) Nexus_Multisite::status() as $row ) {
+                                $rows[] = array(
+                                        'Blog ID'      => (int) ( isset( $row['blog_id'] ) ? $row['blog_id'] : 0 ),
+                                        'URL'          => isset( $row['url'] ) ? (string) $row['url'] : '',
+                                        'Tabelle'      => isset( $row['tables'] ) ? (string) $row['tables'] : '0/9',
+                                        'Agenti'       => (int) ( isset( $row['agents'] ) ? $row['agents'] : 0 ),
+                                        'Impostazioni' => ! empty( $row['settings'] ) ? 'Sì' : 'No',
+                                );
+                        }
+
+                        \WP_CLI\Utils\format_items( 'table', $rows, array( 'Blog ID', 'URL', 'Tabelle', 'Agenti', 'Impostazioni' ) );
+                        return;
+                }
+
+                if ( 'install' === $action ) {
+                        if ( ! class_exists( 'Nexus_Multisite' ) || ! method_exists( 'Nexus_Multisite', 'install_all' ) ) {
+                                WP_CLI::error( 'Modulo multisite non disponibile: la classe Nexus_Multisite non è caricata.' );
+                        }
+
+                        $ids = array();
+                        if ( isset( $assoc_args['sites'] ) && '' !== trim( (string) $assoc_args['sites'] ) ) {
+                                foreach ( explode( ',', (string) $assoc_args['sites'] ) as $piece ) {
+                                        $id = absint( trim( $piece ) );
+
+                                        if ( $id > 0 ) {
+                                                $ids[ $id ] = $id;
+                                        }
+                                }
+
+                                $ids = array_values( $ids );
+
+                                if ( empty( $ids ) ) {
+                                        WP_CLI::error( 'Valore --sites non valido: specificare ID di sito separati da virgola (es. --sites=1,2).' );
+                                }
+                        }
+
+                        try {
+                                $result = Nexus_Multisite::install_all( $ids );
+                        } catch ( Throwable $e ) {
+                                WP_CLI::error( 'Installazione multisite fallita: ' . $e->getMessage() );
+                        }
+
+                        foreach ( (array) ( isset( $result['details'] ) ? $result['details'] : array() ) as $detail ) {
+                                $url = isset( $detail['url'] ) && '' !== (string) $detail['url'] ? (string) $detail['url'] : sprintf( 'sito #%d', isset( $detail['blog_id'] ) ? (int) $detail['blog_id'] : 0 );
+
+                                WP_CLI::log( sprintf( 'Sito %s: %s', $url, ! empty( $detail['ok'] ) ? 'OK' : 'errore' ) );
+                        }
+
+                        $installed = isset( $result['installed'] ) ? (int) $result['installed'] : 0;
+                        $failed    = isset( $result['failed'] ) ? (int) $result['failed'] : 0;
+
+                        if ( $failed > 0 ) {
+                                WP_CLI::error( sprintf( 'Installazione completata con errori: %d siti OK, %d falliti.', $installed, $failed ) );
+                        }
+
+                        WP_CLI::success( sprintf( 'Installazione completata su %d siti.', $installed ) );
+                        return;
+                }
+
+                WP_CLI::error( sprintf( 'Azione multisite non riconosciuta: «%s». Azioni ammesse: status, install.', $action ) );
+        }
+
         /* ========================= HELPER PRIVATI ========================= */
 
         /**

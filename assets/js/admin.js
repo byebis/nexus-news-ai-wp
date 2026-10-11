@@ -1420,7 +1420,8 @@
                 // (v1.0.3: + redazione intelligente: ai_model_cheap, budget_action,
                 //  translation_langs; factcheck_min_score e monthly_budget_usd sono
                 //  anche nel blocco numerico sotto per essere inviati come numeri)
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs' ];
+                // (v1.0.5: + admin_language, sezione "Lingua e API pubblica")
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -1477,8 +1478,9 @@
                 }
 
                 // checkbox scala & pro (v1.0.4): presenti → 1, assenti → 0
+                // (v1.0.5: + enable_public_api, sezione "Lingua e API pubblica")
                 // (stesso pattern dei blocchi wpFlags/distribFlags/intelFlags sopra)
-                var scalaFlags = [ 'enable_queue' ];
+                var scalaFlags = [ 'enable_queue', 'enable_public_api' ];
                 for ( i = 0; i < scalaFlags.length; i++ ) {
                         var scalaBoxes = qsa( 'input[name="' + scalaFlags[ i ] + '"]', form );
                         if ( scalaBoxes.length ) {

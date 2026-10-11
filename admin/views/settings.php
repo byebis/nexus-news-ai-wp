@@ -45,6 +45,12 @@
  *   numerici (queue_batch_size, queue_max_attempts) raccolti nel blocco
  *   numbers. Campi precompilati con get_settings() (value / checked) come
  *   le sezioni esistenti.
+ * - CONTRATTO v1.0.5 ("Lingua e API pubblica"): 1 select simple
+ *   (admin_language: auto|it|en) raccolto da admin.js nell'array simple;
+ *   1 toggle checkbox value="1" (enable_public_api) serializzato da admin.js
+ *   nel blocco scalaFlags come 0/1 (0 quando deselezionato), stesso pattern
+ *   dei toggle esistenti. Campi precompilati con get_settings() (selected /
+ *   checked, con fallback ?? sulle chiavi nuove) come le sezioni esistenti.
  *
  * @package Nexus_News_AI
  */
@@ -559,6 +565,35 @@ $social_platforms = array(
                         </tbody>
                 </table>
                 <p class="description"><?php esc_html_e( 'Vedi la pagina Coda Lavori per statistiche, retry e pulizia. I comandi WP-CLI wp nexus queue stats|process sono disponibili.', 'nexus-news-ai' ); ?></p>
+
+                <?php /* Sezione v1.0.5 "Lingua e API pubblica": select admin_language (blocco simple) + toggle enable_public_api (blocco scalaFlags). */ ?>
+                <h2 class="title"><?php esc_html_e( 'Lingua e API pubblica', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><label for="nxa-admin-language"><?php esc_html_e( "Lingua dell'interfaccia admin", 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <select name="admin_language" id="nxa-admin-language">
+                                                        <option value="auto" <?php selected( $settings['admin_language'] ?? 'auto', 'auto' ); ?>><?php esc_html_e( 'Automatica (segue la lingua del sito)', 'nexus-news-ai' ); ?></option>
+                                                        <option value="it" <?php selected( $settings['admin_language'] ?? 'auto', 'it' ); ?>><?php esc_html_e( 'Italiano', 'nexus-news-ai' ); ?></option>
+                                                        <option value="en" <?php selected( $settings['admin_language'] ?? 'auto', 'en' ); ?>><?php esc_html_e( 'English', 'nexus-news-ai' ); ?></option>
+                                                </select>
+                                                <p class="description"><?php esc_html_e( "Traduzione dell'interfaccia admin in inglese (sperimentale): copre etichette e messaggi principali dell'admin Nexus.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'API pubblica', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-public-api">
+                                                        <input type="checkbox" name="enable_public_api" id="nxa-enable-public-api" value="1" <?php checked( (int) ( $settings['enable_public_api'] ?? 0 ), 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva API pubblica (nexus-public/v1)', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Espone articoli pubblicati, agenti e statistiche via REST pubblica con autenticazione X-Api-Key (rate limit 120 richieste/minuto). Genera la chiave nella pagina Strumenti.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+                <p class="description"><?php esc_html_e( 'La chiave si genera nella pagina Strumenti → API pubblica.', 'nexus-news-ai' ); ?></p>
 
                 <p class="submit">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>

@@ -27,6 +27,8 @@
  *   GET    /nexus/v1/wire/runs                     args: limit
  *   GET    /nexus/v1/jobs, /nexus/v1/jobs/stats; POST /nexus/v1/jobs/process, /nexus/v1/jobs/cleanup, /nexus/v1/jobs/{id}/retry, /nexus/v1/jobs/{id}/cancel (v1.0.4)
  *   GET    /nexus/v1/analytics                     args: days (7..90) (v1.0.4)
+ *   GET    /nexus/v1/export, POST /nexus/v1/import (config: impostazioni + agenti) (v1.0.5)
+ *   POST   /nexus/v1/tools/api-key (v1.0.5) — ATTENZIONE: /export include segreti (chiavi API/token)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -648,6 +650,44 @@ class Nexus_Rest {
                                                         'sanitize_callback' => 'absint',
                                                 ),
                                         ),
+                                ),
+                        )
+                );
+
+                /* ---------------- ADMIN: STRUMENTI (v1.0.5) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/export',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_export' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/import',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_import' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/tools/api-key',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_tools_api_key' ),
+                                        'permission_callback' => $admin_permission,
                                 ),
                         )
                 );
@@ -1867,5 +1907,162 @@ class Nexus_Rest {
                         'created_at'   => (string) ( $job->created_at ?? '' ),
                         'updated_at'   => (string) ( $job->updated_at ?? '' ),
                 );
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: STRUMENTI (v1.0.5)
+         * ======================================================================= */
+
+        /**
+         * GET /export — esporta impostazioni e agenti come JSON (v1.0.5).
+         *
+         * ATTENZIONE: il file esportato contiene segreti (chiavi API e token):
+         * conservalo in modo sicuro. Non include articoli, iscritti o log.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_export( $request ) {
+                unset( $request );
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $agents = array();
+                foreach ( Nexus_DB::agents() as $agent ) {
+                        $agents[] = array(
+                                'name'        => (string) $agent->name,
+                                'avatar'      => (string) $agent->avatar,
+                                'category'    => (string) $agent->category,
+                                'description' => (string) $agent->description,
+                                'status'      => (string) $agent->status,
+                                'personality' => (string) $agent->personality,
+                                'ai_model'    => (string) ( $agent->ai_model ?? '' ),
+                        );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'version'     => defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '',
+                                'exported_at' => current_time( 'mysql' ),
+                                'site_url'    => home_url( '/' ),
+                                'settings'    => Nexus_DB::get_settings(),
+                                'agents'      => $agents,
+                        )
+                );
+        }
+
+        /**
+         * POST /import — importa impostazioni e agenti da un export JSON (v1.0.5).
+         *
+         * Body: JSON prodotto da GET /export; "settings" e "agents" sono entrambi
+         * opzionali. settings: applicate solo le chiavi ammesse da default_settings();
+         * agents: match per categoria ESATTA → update, altrimenti insert.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_import( $request ) {
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $body = $request->get_json_params();
+                if ( ! is_array( $body ) ) {
+                        return self::err( 'nexus_import_invalid', __( 'Corpo JSON non valido.', 'nexus-news-ai' ), 400 );
+                }
+
+                // Validazione: "settings" (se presente) deve essere un array.
+                if ( isset( $body['settings'] ) && ! is_array( $body['settings'] ) ) {
+                        return self::err( 'nexus_import_invalid_settings', __( 'Il campo "settings" deve essere un array.', 'nexus-news-ai' ), 400 );
+                }
+
+                // Validazione: "agents" (se presente) deve essere una lista di array.
+                if ( isset( $body['agents'] ) && ! is_array( $body['agents'] ) ) {
+                        return self::err( 'nexus_import_invalid_agents', __( 'Il campo "agents" deve essere una lista di array.', 'nexus-news-ai' ), 400 );
+                }
+
+                $settings_updated = 0;
+                $agents_updated   = 0;
+                $agents_inserted  = 0;
+                $errors           = array();
+
+                // Impostazioni: whitelist sulle chiavi dei default, poi update.
+                if ( ! empty( $body['settings'] ) ) {
+                        $keys     = array_keys( Nexus_DB::default_settings() );
+                        $filtered = array_intersect_key( $body['settings'], array_flip( $keys ) );
+
+                        if ( $filtered ) {
+                                Nexus_DB::update_settings( $filtered );
+                        }
+                        $settings_updated = count( $filtered );
+                }
+
+                // Agenti: match per categoria esatta → update, altrimenti insert.
+                $allowed = array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model' );
+                if ( ! empty( $body['agents'] ) ) {
+                        foreach ( array_values( $body['agents'] ) as $agent ) {
+                                if ( ! is_array( $agent ) ) {
+                                        continue;
+                                }
+
+                                $fields = array_intersect_key( $agent, array_flip( $allowed ) );
+                                $name   = isset( $agent['name'] ) ? (string) $agent['name'] : '';
+                                $cat    = isset( $agent['category'] ) ? (string) $agent['category'] : '';
+
+                                // Cerca un agente esistente con la stessa categoria ESATTA.
+                                $existing_id = 0;
+                                if ( '' !== $cat ) {
+                                        foreach ( Nexus_DB::agents() as $existing ) {
+                                                if ( (string) $existing->category === $cat ) {
+                                                        $existing_id = (int) $existing->id;
+                                                        break;
+                                                }
+                                        }
+                                }
+
+                                if ( $existing_id > 0 ) {
+                                        Nexus_DB::update_agent( $existing_id, $fields );
+                                        $agents_updated++;
+                                        continue;
+                                }
+
+                                $inserted = (int) Nexus_DB::insert_agent( $fields );
+                                if ( $inserted > 0 ) {
+                                        $agents_inserted++;
+                                } else {
+                                        $errors[] = 'Agente non valido: ' . sanitize_text_field( $name );
+                                }
+                        }
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'settings_updated' => $settings_updated,
+                                'agents_updated'   => $agents_updated,
+                                'agents_inserted'  => $agents_inserted,
+                                'errors'           => $errors,
+                        )
+                );
+        }
+
+        /**
+         * POST /tools/api-key — genera una nuova chiave per l'API pubblica (v1.0.5).
+         *
+         * La nuova chiave sostituisce la precedente, che diventa invalida.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_tools_api_key( $request ) {
+                unset( $request );
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $key = bin2hex( random_bytes( 24 ) );
+                Nexus_DB::update_settings( array( 'public_api_key' => $key ) );
+
+                return rest_ensure_response( array( 'api_key' => $key ) );
         }
 }
