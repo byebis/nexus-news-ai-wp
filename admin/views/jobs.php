@@ -1,11 +1,14 @@
 <?php
 /**
- * Vista Admin: "Coda Lavori" (pagina "jobs") — v1.0.4 "Scala & Pro".
+ * Vista Admin: "Coda Lavori" (pagina "jobs") — v1.0.6 "UI chiara & curata".
  *
- * SELF-CONTAINED (contratto CONTRATTO-v1.0.4.md §2 T-05): markup + <style> inline
- * (SOLO classi prefisso .nxa-jb-, nessun tocco a admin/css/nexus-admin.css) e
- * <script> IIFE ES2019 inline (nessun tocco ad assets/js/admin.js). Tutta la logica
- * vive qui: fetch REST, rendering, azioni di riga, toast, auto-refresh.
+ * SELF-CONTAINED (contratto CONTRATTO-v1.0.4.md §2 T-05; restyle token-driven
+ * CONTRATTO-v1.0.6.md §2 T-04): markup + <style> inline (SOLO classi prefisso
+ * .nxa-jb-, colori/raggi/ombre al 100% via token del design system §1: tema
+ * chiaro default, scuro opzionale su body.nexus-theme-dark; nessun tocco a
+ * admin/css/nexus-admin.css) e <script> IIFE ES2019 inline (nessun tocco ad
+ * assets/js/admin.js). Tutta la logica vive qui: fetch REST, rendering,
+ * azioni di riga, toast, auto-refresh.
  *
  * CONTRATTO REST (rotte definite nel §2 T-06, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/jobs?per_page=50[&status=pending|running|complete|failed|cancelled]
@@ -26,7 +29,9 @@
  *   #nxa-jb-cleanup (con window.confirm), #nxa-jb-auto (auto-refresh 15s).
  * - Tabella: tbody#nxa-jb-rows riempito da JS; azioni per riga tramite
  *   [data-nxa-jb-action="retry|cancel"][data-nxa-jb-id] con listener delegato.
- * - Toast: .nxa-jb-toast (--success / --error) su body, rimosso dopo 4 secondi.
+ * - Toast: .nxa-jb-toast (--success / --error) su body, rimosso dopo 4 secondi;
+ *   colori via token del tema (leggibile su chiaro e su scuro: i token valgono
+ *   su body e la variante body.nexus-theme-dark è inclusa nello style inline).
  *
  * NOTE: date formattate IT (gg/mm/aa HH:MM) da 'Y-m-d H:i:s'; errore di riga
  * troncato a 60 caratteri con testo completo nell'attributo title; empty state
@@ -71,7 +76,7 @@ defined( 'ABSPATH' ) || exit;
         </div>
 
         <!-- TOOLBAR: filtro stato, process batch, pulizia, auto-refresh. -->
-        <div class="nxa-jb-toolbar">
+        <div class="nxa-jb-toolbar nxa-toolbar">
                 <label class="screen-reader-text" for="nxa-jb-status">
                         <?php esc_html_e( 'Filtra lavori per stato', 'nexus-news-ai' ); ?>
                 </label>
@@ -135,172 +140,279 @@ defined( 'ABSPATH' ) || exit;
 </div>
 
 <style>
-        /* Stile locale della vista Coda Lavori: SOLO classi prefisso .nxa-jb- (contratto §2 T-05). */
-        .nxa-jb-note {
-                max-width: 780px;
-                margin: 8px 0 16px;
-                color: #50575e;
-        }
-        .nxa-jb-cards {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 12px;
-                margin: 0 0 16px;
-        }
-        .nxa-jb-card {
-                flex: 1 1 170px;
-                min-width: 160px;
-                padding: 12px 14px;
-                background: #fff;
-                border: 1px solid #dcdcde;
-                border-left: 4px solid #646970;
-                border-radius: 4px;
-                box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
-        }
-        .nxa-jb-card-value {
-                display: block;
-                font-size: 26px;
-                font-weight: 600;
-                line-height: 1.2;
-                color: #1d2327;
-        }
-        .nxa-jb-card-label {
-                display: block;
-                margin-top: 2px;
-                font-size: 12px;
-                letter-spacing: 0.03em;
-                text-transform: uppercase;
-                color: #646970;
-        }
-        .nxa-jb-card--pending {
-                border-left-color: #f59e0b;
-        }
-        .nxa-jb-card--pending .nxa-jb-card-value {
-                color: #f59e0b;
-        }
-        .nxa-jb-card--running {
-                border-left-color: #2271b1;
-        }
-        .nxa-jb-card--running .nxa-jb-card-value {
-                color: #2271b1;
-        }
-        .nxa-jb-card--complete {
-                border-left-color: #22c55e;
-        }
-        .nxa-jb-card--complete .nxa-jb-card-value {
-                color: #22c55e;
-        }
-        .nxa-jb-card--failed {
-                border-left-color: #ef4444;
-        }
-        .nxa-jb-card--failed .nxa-jb-card-value {
-                color: #ef4444;
-        }
-        .nxa-jb-card--total {
-                border-left-color: #646970;
-        }
-        .nxa-jb-card--total .nxa-jb-card-value {
-                color: #646970;
-        }
+  /* Stile locale della vista Coda Lavori — v1.0.6 "UI chiara & curata".
+     SOLO classi prefisso .nxa-jb- (contratto CONTRATTO-v1.0.6.md §2 T-04):
+     nessun colore fisso, tutto via token del design system §1 (tema chiaro
+     default; il tema scuro ridefinisce i token su body.nexus-theme-dark). */
+  .nxa-jb-note {
+    max-width: 780px;
+    margin: 8px 0 16px;
+    color: var(--nxa-muted);
+  }
+  .nxa-jb-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0 0 16px;
+  }
+  .nxa-jb-card {
+    flex: 1 1 170px;
+    min-width: 160px;
+    padding: 12px 14px;
+    background: var(--nxa-surface);
+    border: 1px solid var(--nxa-border);
+    border-left-width: 4px;
+    border-radius: var(--nxa-radius-sm);
+    box-shadow: var(--nxa-shadow);
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  }
+  .nxa-jb-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--nxa-shadow-lg);
+  }
+  .nxa-jb-card-value {
+    display: block;
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: var(--nxa-text);
+  }
+  .nxa-jb-card-label {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--nxa-muted);
+  }
+  .nxa-jb-card--pending {
+    border-left-color: var(--nxa-muted);
+  }
+  .nxa-jb-card--pending .nxa-jb-card-value {
+    color: var(--nxa-muted);
+  }
+  .nxa-jb-card--running {
+    border-left-color: var(--nxa-warn-text);
+  }
+  .nxa-jb-card--running .nxa-jb-card-value {
+    color: var(--nxa-warn-text);
+  }
+  .nxa-jb-card--complete {
+    border-left-color: var(--nxa-ok-text);
+  }
+  .nxa-jb-card--complete .nxa-jb-card-value {
+    color: var(--nxa-ok-text);
+  }
+  .nxa-jb-card--failed {
+    border-left-color: var(--nxa-err-text);
+  }
+  .nxa-jb-card--failed .nxa-jb-card-value {
+    color: var(--nxa-err-text);
+  }
+  .nxa-jb-card--total {
+    border-left-color: var(--nxa-accent-1);
+  }
+  .nxa-jb-card--total .nxa-jb-card-value {
+    color: var(--nxa-muted);
+  }
 
-        .nxa-jb-toolbar {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 10px;
-                margin: 0 0 12px;
-        }
-        .nxa-jb-auto-label {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                white-space: nowrap;
-        }
+  .nxa-jb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 16px;
+  }
+  .nxa-jb-auto-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    color: var(--nxa-text-body);
+  }
+  .nxa-jb-toolbar :focus-visible,
+  .nxa-jb-table :focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
 
-        .nxa-jb-table-wrap {
-                overflow-x: auto;
-                margin: 0 0 16px;
-        }
-        .nxa-jb-badge {
-                display: inline-block;
-                padding: 2px 10px;
-                border-radius: 999px;
-                border: 1px solid transparent;
-                font-size: 12px;
-                font-weight: 600;
-                line-height: 1.6;
-                white-space: nowrap;
-        }
-        .nxa-jb-badge--pending {
-                color: #92400e;
-                background: #fef3c7;
-                border-color: #f59e0b;
-        }
-        .nxa-jb-badge--running {
-                color: #0a4b78;
-                background: #e5f0f8;
-                border-color: #2271b1;
-        }
-        .nxa-jb-badge--complete {
-                color: #14532d;
-                background: #dcfce7;
-                border-color: #22c55e;
-        }
-        .nxa-jb-badge--failed {
-                color: #7f1d1d;
-                background: #fee2e2;
-                border-color: #ef4444;
-        }
-        .nxa-jb-badge--cancelled {
-                color: #3c434a;
-                background: #f0f0f1;
-                border-color: #949494;
-        }
-        .nxa-jb-err {
-                display: inline-block;
-                max-width: 260px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                vertical-align: middle;
-                color: #b32d2e;
-        }
-        .nxa-jb-empty td,
-        .nxa-jb-message td {
-                padding: 18px 10px;
-                text-align: center;
-                color: #646970;
-        }
-        .nxa-jb-empty td {
-                font-style: italic;
-        }
-        .nxa-jb-act {
-                margin-right: 4px;
-        }
-        .nxa-jb-act--cancel {
-                color: #b32d2e;
-                border-color: #b32d2e;
-        }
+  .nxa-jb-table-wrap {
+    overflow-x: auto;
+    margin: 0 0 16px;
+    background: var(--nxa-surface);
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    box-shadow: var(--nxa-shadow);
+  }
+  .nxa-jb-table {
+    border: 0;
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .nxa-jb-table thead th {
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+  }
+  .nxa-jb-table td {
+    color: var(--nxa-text-body);
+  }
+  .nxa-jb-table tbody tr:nth-child(odd) {
+    background: var(--nxa-surface-2);
+  }
+  .nxa-jb-table tbody tr:hover {
+    background: var(--nxa-surface-3);
+  }
+  .nxa-jb-table code {
+    padding: 2px 6px;
+    border: 1px solid var(--nxa-border);
+    border-radius: 6px;
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+  }
+  .nxa-jb-table-wrap::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .nxa-jb-table-wrap::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nxa-jb-table-wrap::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--nxa-border);
+  }
+  .nxa-jb-table-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--nxa-muted);
+  }
 
-        .nxa-jb-toast {
-                position: fixed;
-                right: 24px;
-                bottom: 24px;
-                z-index: 99999;
-                max-width: 360px;
-                padding: 10px 16px;
-                border-radius: 4px;
-                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-                color: #fff;
-                font-size: 13px;
-                line-height: 1.5;
-        }
-        .nxa-jb-toast--success {
-                background: #22c55e;
-        }
-        .nxa-jb-toast--error {
-                background: #ef4444;
-        }
+  .nxa-jb-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .nxa-jb-badge--pending {
+    color: var(--nxa-info-text);
+    background: var(--nxa-info-bg);
+    border-color: var(--nxa-info-line);
+  }
+  .nxa-jb-badge--running {
+    color: var(--nxa-warn-text);
+    background: var(--nxa-warn-bg);
+    border-color: var(--nxa-warn-line);
+  }
+  .nxa-jb-badge--complete {
+    color: var(--nxa-ok-text);
+    background: var(--nxa-ok-bg);
+    border-color: var(--nxa-ok-line);
+  }
+  .nxa-jb-badge--failed {
+    color: var(--nxa-err-text);
+    background: var(--nxa-err-bg);
+    border-color: var(--nxa-err-line);
+  }
+  .nxa-jb-badge--cancelled {
+    /* Annullato: famiglia neutra/muted del design system (cat = trio muted). */
+    color: var(--nxa-cat);
+    background: var(--nxa-cat-soft);
+    border-color: var(--nxa-cat-line);
+  }
+
+  .nxa-jb-err {
+    display: inline-block;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--nxa-err-text);
+  }
+  .nxa-jb-empty td,
+  .nxa-jb-message td {
+    padding: 24px 10px;
+    text-align: center;
+    color: var(--nxa-muted);
+  }
+  .nxa-jb-empty td {
+    font-style: italic;
+  }
+
+  .nxa-jb-act {
+    margin-right: 4px;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .nxa-jb-act--cancel {
+    color: var(--nxa-err-text);
+    border-color: var(--nxa-err-line);
+  }
+  .nxa-jb-act--cancel:hover {
+    background: var(--nxa-err-bg);
+    border-color: var(--nxa-err-text);
+  }
+
+  /* Toast appeso a BODY (fuori dal pannello): i token valgono comunque
+     perche' definiti su :root e ridefiniti su body.nexus-theme-dark. */
+  .nxa-jb-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 99999;
+    max-width: 360px;
+    padding: 12px 16px;
+    background: var(--nxa-surface);
+    border: 1px solid var(--nxa-border);
+    border-left: 4px solid var(--nxa-ok-text);
+    border-radius: var(--nxa-radius-sm);
+    box-shadow: var(--nxa-shadow-lg);
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .nxa-jb-toast--success {
+    color: var(--nxa-ok-text);
+    border-left-color: var(--nxa-ok-text);
+  }
+  .nxa-jb-toast--error {
+    color: var(--nxa-err-text);
+    border-left-color: var(--nxa-err-text);
+  }
+
+  /* Variante esplicita tema scuro: rinforza i token per il contrasto su body
+     (superficie, bordo e ombra scuri; testo di stato nelle tinte chiare). */
+  body.nexus-theme-dark .nxa-jb-toast {
+    background: var(--nxa-surface);
+    border-color: var(--nxa-border);
+    box-shadow: var(--nxa-shadow-lg);
+    color: var(--nxa-text-body);
+  }
+  body.nexus-theme-dark .nxa-jb-toast--success {
+    color: var(--nxa-ok-text);
+    border-left-color: var(--nxa-ok-text);
+  }
+  body.nexus-theme-dark .nxa-jb-toast--error {
+    color: var(--nxa-err-text);
+    border-left-color: var(--nxa-err-text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nxa-jb-card,
+    .nxa-jb-act {
+      transition: none;
+    }
+    .nxa-jb-card:hover {
+      transform: none;
+    }
+  }
+
+  @media print {
+    .nxa-jb-toast {
+      display: none;
+    }
+  }
 </style>
 
 <script>

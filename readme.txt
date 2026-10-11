@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -88,6 +88,11 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 == Changelog ==
 
+= 1.0.6 =
+* UI chiara & curata: il pannello admin passa al tema chiaro di default (superfici bianche, bordi sottili, ombre leggere, focus visibile); il tema scuro delle versioni precedenti resta disponibile con il nuovo setting admin_theme (light|dark) nella nuova sezione "Interfaccia" di Impostazioni.
+* Frontend pubblico: nuovo foglio light editoriale nexus-public.css (token --nxp-*), caricato solo dove renderizzano shortcode e blocchi Nexus; card articoli bianche con immagine 16:10, titolo fluido, meta in grigio e badge categoria tenui, griglia responsive 1/2/3 colonne (600/1024px), hover delicato; form [nexus_subscribe] con input e bottone gradiente in fila (stack su mobile) e messaggi successo/errore con tinte verdi/rosse chiare; pagina articolo con tipografia di lettura (interlinea 1.7, contenuto max 720px), blockquote con bordo accent, immagini fluide; empty state, cifre tabulari, prefers-reduced-motion, contrasto AA e stampa curati.
+* 1 nuovo setting nella sezione admin "Interfaccia": admin_theme.
+
 = 1.0.5 =
 * Strumenti: nuova pagina admin nel menu Nexus News con informazioni di sistema (versioni plugin/WordPress/PHP, 9 tabelle wp_nexus_* con numero di righe, eventi WP-Cron con prossima esecuzione, stat della coda lavori), esporta configurazione in JSON (attenzione: il file contiene chiavi API e token) e importa configurazione (impostazioni sovrascritte, agenti abbinati per categoria: aggiornati o creati).
 * API pubblica: nuovo namespace REST nexus-public/v1 (classe Nexus_Public_API) con GET /articles (page, per_page max 50, category), GET /articles/{id}, GET /agents e GET /stats; autenticazione via header X-Api-Key (o ?api_key=), rate limit 120 richieste al minuto per chiave (HTTP 429 con Retry-After: 60) e CORS aperto; attivazione in Impostazioni → Lingua e API pubblica, chiave generata in Strumenti → API pubblica.
@@ -128,6 +133,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.6 =
+«UI chiara & curata»: il pannello Nexus diventa chiaro di default (il tema scuro resta disponibile in Impostazioni → Interfaccia) e il frontend pubblico riceve uno stile light editoriale adattivo a qualunque tema: card articoli, form newsletter e pagina articolo ridisegnati nei minimi dettagli.
 
 = 1.0.5 =
 «Strumenti, API pubblica, Multisite, Admin bilingue»: dalla nuova pagina Strumenti esporti e importi la configurazione (attenzione: il JSON contiene chiavi API e token), la REST pubblica nexus-public/v1 espone articoli, agenti e statistiche con chiave X-Api-Key (rate limit 120 richieste/minuto), i nuovi siti multisite ricevono le tabelle in automatico e l'interfaccia admin diventa bilingue italiano/inglese (sperimentale).

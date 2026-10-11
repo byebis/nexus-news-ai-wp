@@ -47,17 +47,10 @@
          * 1. COSTANTI DI PRESENTAZIONE
          * ================================================================== */
 
-        /** Colore per categoria — identico alla mappa in Nexus_Utils (PHP). */
-        var CATEGORY_COLORS = {
-                tecnologia: '#38bdf8',
-                politica:   '#f59e0b',
-                economia:   '#34d399',
-                scienza:    '#a78bfa',
-                sport:      '#f87171',
-                cultura:    '#f472b6',
-                salute:     '#4ade80'
-        };
-        var CATEGORY_COLOR_DEFAULT = '#94a3b8';
+        /** Colore per categoria — dalla 1.0.6 delegato ai token CSS:
+         *  il chip porta l'attributo data-category e il foglio Nexus mappa
+         *  --nxa-cat/-soft/-line (palette chiara di default, override scuro
+         *  su body.nexus-theme-dark). Nessuna palette duplicata qui. */
 
         /** Stato → [ etichetta IT, variante badge ]. */
         var STATUS_META = {
@@ -230,28 +223,14 @@
                 }
         }
 
-        function categoryColor( category ) {
-                var key = String( category || '' ).toLowerCase().trim();
-                return CATEGORY_COLORS[ key ] || CATEGORY_COLOR_DEFAULT;
-        }
-
-        function hexToRgba( hex, alpha ) {
-                var clean = String( hex || '' ).replace( '#', '' );
-                if ( clean.length !== 6 ) {
-                        return 'rgba(148,163,184,' + alpha + ')';
-                }
-                var r = parseInt( clean.slice( 0, 2 ), 16 );
-                var g = parseInt( clean.slice( 2, 4 ), 16 );
-                var b = parseInt( clean.slice( 4, 6 ), 16 );
-                return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
-        }
-
-        /** Chip categoria colorata (colore = mappa Nexus_Utils). */
+        /** Chip categoria colorata: i colori vivono nel CSS (token --nxa-cat
+         *  mappati da [data-category]); qui solo attributo + struttura. */
         function categoryChip( category ) {
-                var color = categoryColor( category );
                 var label = category ? String( category ) : 'Generale';
-                return '<span class="nxa-chip" style="background:' + hexToRgba( color, 0.14 ) +
-                        ';color:' + color + ';border:1px solid ' + hexToRgba( color, 0.35 ) + '">' + esc( label ) + '</span>';
+                var attr  = category ? ' data-category="' + esc( String( category ) ) + '"' : '';
+                return '<span class="nxa-chip"' + attr +
+                        ' style="background:var(--nxa-cat-soft,rgba(100,116,139,.12));color:var(--nxa-cat,#64748b);border:1px solid var(--nxa-cat-line,rgba(100,116,139,.35))">' +
+                        esc( label ) + '</span>';
         }
 
         /** Badge di stato con classe colore. */
@@ -260,11 +239,12 @@
                 return '<span class="nxa-badge nxa-badge--' + meta[ 1 ] + '">' + esc( meta[ 0 ] ) + '</span>';
         }
 
-        /** Badge punteggio qualità: ≥75 verde, ≥50 giallo, altrimenti rosso. */
+        /** Badge punteggio qualità: ≥75 verde, ≥50 giallo, altrimenti rosso
+         *  (varianti token .nxa-score is-high/is-mid/is-low del design system). */
         function scoreBadge( score ) {
                 var value = num( score );
-                var color = value >= 75 ? '#22c55e' : ( value >= 50 ? '#f59e0b' : '#ef4444' );
-                return '<span class="nxa-badge" style="background:' + color + ';color:#fff" title="Punteggio qualità">' +
+                var cls   = value >= 75 ? 'is-high' : ( value >= 50 ? 'is-mid' : 'is-low' );
+                return '<span class="nxa-score ' + cls + '" title="Punteggio qualità">' +
                         Math.round( value ) + '%</span>';
         }
 
@@ -394,57 +374,57 @@
 
         var FALLBACK_CSS = [
                 '#nxa-toast-stack{position:fixed;right:16px;bottom:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:340px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
-                '.nxa-toast{display:flex;gap:10px;align-items:flex-start;background:#1e293b;color:#f8fafc;border-radius:10px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:13px;line-height:1.45;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}',
+                '.nxa-toast{display:flex;gap:10px;align-items:flex-start;background:var(--nxa-surface);color:var(--nxa-text-body);border-radius:10px;padding:12px 14px;box-shadow:var(--nxa-shadow-lg);font-size:13px;line-height:1.45;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}',
                 '.nxa-toast.nxa-toast--in{opacity:1;transform:none}',
                 '.nxa-toast.nxa-toast--out{opacity:0;transform:translateY(6px)}',
-                '.nxa-toast--success{border-left:4px solid #22c55e}',
-                '.nxa-toast--error{border-left:4px solid #ef4444}',
-                '.nxa-toast--info{border-left:4px solid #38bdf8}',
+                '.nxa-toast--success{border-left:4px solid var(--nxa-ok-text)}',
+                '.nxa-toast--error{border-left:4px solid var(--nxa-err-text)}',
+                '.nxa-toast--info{border-left:4px solid var(--nxa-info-text)}',
                 '.nxa-toast__title{font-weight:600;margin:0 0 2px}',
-                '.nxa-toast__msg{margin:0;color:#e2e8f0;word-break:break-word}',
+                '.nxa-toast__msg{margin:0;color:var(--nxa-muted);word-break:break-word}',
                 '.nxa-toast__close{background:none;border:0;color:inherit;cursor:pointer;font-size:16px;line-height:1;margin-left:auto;opacity:.7;padding:0 2px}',
                 '.nxa-spinner{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:nxa-spin .7s linear infinite;vertical-align:-2px}',
                 '@keyframes nxa-spin{to{transform:rotate(360deg)}}',
-                '.nxa-skeleton{background:linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 37%,#e2e8f0 63%);background-size:400% 100%;animation:nxa-shimmer 1.2s ease infinite;border-radius:6px;height:14px;margin:10px 0}',
+                '.nxa-skeleton{background:linear-gradient(90deg,var(--nxa-surface-3) 25%,var(--nxa-skeleton-hi) 37%,var(--nxa-surface-3) 63%);background-size:400% 100%;animation:nxa-shimmer 1.2s ease infinite;border-radius:6px;height:14px;margin:10px 0}',
                 '@keyframes nxa-shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}',
                 '.nxa-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600;line-height:1.6;white-space:nowrap}',
-                '.nxa-badge--success{background:#dcfce7;color:#166534}',
-                '.nxa-badge--warning{background:#fef3c7;color:#92400e}',
-                '.nxa-badge--error{background:#fee2e2;color:#991b1b}',
-                '.nxa-badge--info{background:#e0f2fe;color:#075985}',
-                '.nxa-badge--neutral{background:#f1f5f9;color:#475569}',
-                '.nxa-badge--primary{background:#ede9fe;color:#5b21b6}',
+                '.nxa-badge--success{background:var(--nxa-ok-bg);color:var(--nxa-ok-text)}',
+                '.nxa-badge--warning{background:var(--nxa-warn-bg);color:var(--nxa-warn-text)}',
+                '.nxa-badge--error{background:var(--nxa-err-bg);color:var(--nxa-err-text)}',
+                '.nxa-badge--info{background:var(--nxa-info-bg);color:var(--nxa-info-text)}',
+                '.nxa-badge--neutral{background:var(--nxa-surface-3);color:var(--nxa-text-body)}',
+                '.nxa-badge--primary{background:var(--nxa-accent-1-soft);color:var(--nxa-accent-1)}',
                 '.nxa-chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600;white-space:nowrap}',
                 '.nxa-dot{width:7px;height:7px;border-radius:50%;display:inline-block}',
-                '.nxa-empty{text-align:center;padding:44px 16px;color:#64748b;font-size:14px}',
+                '.nxa-empty{text-align:center;padding:44px 16px;color:var(--nxa-muted);font-size:14px}',
                 '.nxa-empty__icon{font-size:34px;margin-bottom:8px}',
-                '.nxa-empty__title{font-weight:600;font-size:16px;color:#334155;margin:0 0 4px}',
-                '.nxa-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px}',
-                '.nxa-queue-item{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin-bottom:12px}',
-                '.nxa-act-item{display:flex;gap:12px;padding:12px 4px;border-bottom:1px solid #eef2f7}',
+                '.nxa-empty__title{font-weight:600;font-size:16px;color:var(--nxa-text-body);margin:0 0 4px}',
+                '.nxa-card{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:16px}',
+                '.nxa-queue-item{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:14px 16px;margin-bottom:12px}',
+                '.nxa-act-item{display:flex;gap:12px;padding:12px 4px;border-bottom:1px solid var(--nxa-border-soft)}',
                 '.nxa-act-item:last-child{border-bottom:0}',
-                '.nxa-act-icon{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:17px}',
-                '.nxa-act-agent{font-weight:600;font-size:13px;color:#0f172a}',
-                '.nxa-act-detail{font-size:12.5px;color:#64748b;margin:3px 0 0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-                '.nxa-act-time{font-size:11px;color:#94a3b8;white-space:nowrap;margin-left:auto}',
-                '.nxa-modal{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.55);padding:24px}',
+                '.nxa-act-icon{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:17px}',
+                '.nxa-act-agent{font-weight:600;font-size:13px;color:var(--nxa-text)}',
+                '.nxa-act-detail{font-size:12.5px;color:var(--nxa-muted);margin:3px 0 0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+                '.nxa-act-time{font-size:11px;color:var(--nxa-muted);white-space:nowrap;margin-left:auto}',
+                '.nxa-modal{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,var(--nxa-overlay-alpha,.55));padding:24px}',
                 '.nxa-modal[hidden]{display:none}',
-                '.nxa-modal__box{background:#fff;color:#0f172a;max-width:760px;width:100%;max-height:85vh;overflow:auto;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
-                '.nxa-modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e2e8f0;position:sticky;top:0;background:#fff;z-index:1}',
+                '.nxa-modal__box{background:var(--nxa-surface);color:var(--nxa-text);max-width:760px;width:100%;max-height:85vh;overflow:auto;border-radius:14px;box-shadow:var(--nxa-shadow-lg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+                '.nxa-modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--nxa-border);position:sticky;top:0;background:var(--nxa-surface);z-index:1}',
                 '.nxa-modal__head h2{font-size:17px;margin:0}',
                 '.nxa-modal__body{padding:18px}',
-                '.nxa-modal__close{background:none;border:0;font-size:22px;line-height:1;cursor:pointer;color:#475569}',
+                '.nxa-modal__close{background:none;border:0;font-size:22px;line-height:1;cursor:pointer;color:var(--nxa-muted)}',
                 'body.nxa-modal-open{overflow:hidden}',
                 '.nxa-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}',
                 '.nxa-note-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}',
-                '.nxa-note-input{flex:1 1 220px;border:1px solid #cbd5e1;border-radius:8px;padding:6px 10px;font-size:13px}',
+                '.nxa-note-input{flex:1 1 220px;border:1px solid var(--nxa-input-line);border-radius:8px;padding:6px 10px;font-size:13px}',
                 '.nxa-mini-agents{display:flex;flex-wrap:wrap;gap:10px}',
-                '.nxa-mini-agent{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e2e8f0;border-radius:999px;padding:6px 12px 6px 6px;font-size:13px}',
-                '.nxa-mini-agent__avatar{width:30px;height:30px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:16px}',
-                '.nxa-wire-run{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}',
-                '.nxa-wire-status{margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:13px;color:#475569}',
-                '.nxa-idea{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:3px 10px;font-size:12px;color:#475569;cursor:pointer;margin:0 6px 6px 0}',
-                '.nxa-idea:hover{background:#f1f5f9}'
+                '.nxa-mini-agent{display:flex;align-items:center;gap:8px;background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:999px;padding:6px 12px 6px 6px;font-size:13px}',
+                '.nxa-mini-agent__avatar{width:30px;height:30px;border-radius:50%;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:16px}',
+                '.nxa-wire-run{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}',
+                '.nxa-wire-status{margin-top:12px;border:1px solid var(--nxa-border);border-radius:10px;background:var(--nxa-surface-2);padding:12px 14px;font-size:13px;color:var(--nxa-muted)}',
+                '.nxa-idea{border:1px solid var(--nxa-input-line);background:var(--nxa-surface);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--nxa-muted);cursor:pointer;margin:0 6px 6px 0}',
+                '.nxa-idea:hover{background:var(--nxa-surface-2)}'
         ].join( '\n' );
 
         function injectFallbackCss() {
@@ -633,8 +613,8 @@
                         var html = '' +
                                 '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + wpPostBadge( a ) + '</div>' +
                                 '<h3 style="margin:0 0 4px;font-size:20px;line-height:1.3">' + esc( pick( a, 'title' ) ) + '</h3>' +
-                                ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 10px;color:#475569;font-size:14px">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
-                                '<p style="font-size:12px;color:#64748b;margin:0 0 14px">' +
+                                ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 10px;color:var(--nxa-muted);font-size:14px">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
+                                '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 14px">' +
                                         esc( agentName ) + ' · ' + dateIt( pick( a, 'created_at', 'createdAt' ) ) +
                                         ' · ' + scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                         ( sourceUrl ? ' · <a href="' + esc( sourceUrl ) + '" target="_blank" rel="noopener noreferrer">' + esc( sourceName || sourceUrl ) + ' ↗</a>' : '' ) +
@@ -663,20 +643,20 @@
 
                         var logs = pick( a, 'publish_logs', 'publishLogs' );
                         if ( Array.isArray( logs ) && logs.length ) {
-                                html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Log di pubblicazione</h4>';
+                                html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Log di pubblicazione</h4>';
                                 logs.forEach( function ( log ) {
                                         html += '<p style="font-size:13px;margin:4px 0">' +
                                                 '<strong>' + esc( pick( log, 'platform' ) || 'blog' ) + '</strong> ' + badge( pick( log, 'status' ) ) +
                                                 ( pick( log, 'post_url' ) ? ' <a href="' + esc( pick( log, 'post_url' ) ) + '" target="_blank" rel="noopener noreferrer">vedi post ↗</a>' : '' ) +
-                                                ( pick( log, 'error' ) ? '<br><span style="color:#b91c1c">' + esc( pick( log, 'error' ) ) + '</span>' : '' ) +
+                                                ( pick( log, 'error' ) ? '<br><span style="color:var(--nxa-err-text)">' + esc( pick( log, 'error' ) ) + '</span>' : '' ) +
                                                 '</p>';
                                 } );
                         }
                         // Sezione "Traduci" (v1.0.3): lingue caricate in modo
                         // asincrono da GET /settings, fallback contrattuale en/es/fr.
-                        html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Traduci</h4>' +
+                        html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Traduci</h4>' +
                                 '<div class="nxa-translate-row" id="nxa-translate-row">' +
-                                        '<p style="font-size:12px;color:#94a3b8;margin:0">Caricamento lingue…</p>' +
+                                        '<p style="font-size:12px;color:var(--nxa-muted);margin:0">Caricamento lingue…</p>' +
                                 '</div>';
 
                         openModalBody( html );
@@ -734,10 +714,10 @@
                                 '</li>';
                 } ).join( '' );
 
-                return '<div class="nxa-factcheck-box" style="margin:16px 0 4px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc">' +
+                return '<div class="nxa-factcheck-box" style="margin:16px 0 4px;padding:12px 14px;border:1px solid var(--nxa-border);border-radius:10px;background:var(--nxa-surface-2)">' +
                                 ( badgeHtml ? '<div style="margin-bottom:' + ( citations.length ? '8px' : '0' ) + '">' + badgeHtml + '</div>' : '' ) +
                                 ( citations.length
-                                        ? '<h4 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Citazioni verificate</h4>' +
+                                        ? '<h4 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Citazioni verificate</h4>' +
                                           '<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">' + items + '</ul>'
                                         : '' ) +
                         '</div>';
@@ -971,7 +951,7 @@
                 var budget = num( panel.getAttribute( 'data-budget' ) );
                 var cost = num( totals.cost );
 
-                var html = '<div class="nxa-stats-grid" style="margin-bottom:14px">' +
+                var html = '<div class="nxa-stat-grid" style="margin-bottom:14px">' +
                                 '<div class="nxa-stat-card"><span class="nxa-stat-value">' + fmt( totals.calls ) + '</span><span class="nxa-stat-label">' + esc( 'Chiamate AI' ) + '</span></div>' +
                                 '<div class="nxa-stat-card"><span class="nxa-stat-value">' + fmt( totals.total_tokens ) + '</span><span class="nxa-stat-label">' + esc( 'Token totali' ) + '</span></div>' +
                                 '<div class="nxa-stat-card"><span class="nxa-stat-value">' + esc( fmtUsd( cost ) ) + '</span><span class="nxa-stat-label">' + esc( 'Costo stimato (mese)' ) + '</span></div>' +
@@ -980,13 +960,13 @@
                 // Budget mensile (se > 0): {cost} / {budget} USD, colore in base alla %.
                 if ( budget > 0 ) {
                         var pct = Math.min( 100, ( cost / budget ) * 100 );
-                        var barColor = pct < 60 ? '#22c55e' : ( pct < 90 ? '#f59e0b' : '#ef4444' );
+                        var barColor = pct < 60 ? 'var(--nxa-ok-text)' : ( pct < 90 ? 'var(--nxa-warn-text)' : 'var(--nxa-err-text)' );
                         html += '<div class="nxa-usage-budget" style="margin:0 0 14px">' +
-                                        '<p style="margin:0 0 6px;font-size:12.5px;color:#475569">' +
+                                        '<p style="margin:0 0 6px;font-size:12.5px;color:var(--nxa-muted)">' +
                                                 'Budget mensile: <strong style="color:' + barColor + '">' + esc( fmtUsd( cost ) ) + '</strong> / ' + esc( budget.toFixed( 2 ) ) + ' USD' +
                                                 ( pct >= 90 ? ' ⚠️' : '' ) +
                                         '</p>' +
-                                        '<div style="height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden" role="progressbar" aria-valuenow="' + Math.round( pct ) + '" aria-valuemin="0" aria-valuemax="100">' +
+                                        '<div style="height:10px;background:var(--nxa-border);border-radius:999px;overflow:hidden" role="progressbar" aria-valuenow="' + Math.round( pct ) + '" aria-valuemin="0" aria-valuemax="100">' +
                                                 '<div style="height:100%;width:' + pct.toFixed( 1 ) + '%;background:' + barColor + '"></div>' +
                                         '</div>' +
                                 '</div>';
@@ -999,18 +979,18 @@
                                         ? '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' + esc( pick( agent, 'name' ) || 'Agente' )
                                         : 'Agente #' + esc( pick( r, 'agent_id' ) );
                                 return '<tr>' +
-                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + label + '</td>' +
-                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + fmt( pick( r, 'calls' ) ) + '</td>' +
-                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + fmt( pick( r, 'total_tokens' ) ) + '</td>' +
-                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + esc( fmtUsd( pick( r, 'cost' ) ) ) + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid var(--nxa-border-soft)">' + label + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid var(--nxa-border-soft)">' + fmt( pick( r, 'calls' ) ) + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid var(--nxa-border-soft)">' + fmt( pick( r, 'total_tokens' ) ) + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid var(--nxa-border-soft)">' + esc( fmtUsd( pick( r, 'cost' ) ) ) + '</td>' +
                                 '</tr>';
                         } ).join( '' );
                         html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
                                         '<thead><tr>' +
-                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Agente</th>' +
-                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Chiamate</th>' +
-                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Token</th>' +
-                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Costo</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid var(--nxa-border);color:var(--nxa-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Agente</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid var(--nxa-border);color:var(--nxa-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Chiamate</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid var(--nxa-border);color:var(--nxa-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Token</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid var(--nxa-border);color:var(--nxa-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Costo</th>' +
                                         '</tr></thead>' +
                                         '<tbody>' + rows + '</tbody>' +
                                 '</table></div>';
@@ -1088,11 +1068,11 @@
         function agentCardHtml( agent ) {
                 var status = String( pick( agent, 'status' ) || 'paused' );
                 var isActive = status === 'active';
-                var dotColor = isActive ? '#22c55e' : ( status === 'error' ? '#ef4444' : '#f59e0b' );
+                var dotColor = isActive ? 'var(--nxa-ok-text)' : ( status === 'error' ? 'var(--nxa-err-text)' : 'var(--nxa-warn-text)' );
                 return '<div class="nxa-card nxa-agent-card" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">' +
                         '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">' +
                                 '<div style="display:flex;align-items:center;gap:10px;min-width:0">' +
-                                        '<span style="width:44px;height:44px;border-radius:12px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:22px" aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span>' +
+                                        '<span style="width:44px;height:44px;border-radius:12px;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:22px" aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span>' +
                                         '<div style="min-width:0">' +
                                                 '<strong style="display:block;font-size:14px">' + esc( pick( agent, 'name' ) || 'Agente' ) + '</strong>' +
                                                 '<span style="margin-top:2px;display:inline-block">' + categoryChip( pick( agent, 'category' ) ) + '</span>' +
@@ -1103,9 +1083,9 @@
                                         esc( STATUS_META[ status ] ? STATUS_META[ status ][ 0 ] : status ) +
                                 '</span>' +
                         '</div>' +
-                        '<p style="font-size:12.5px;color:#64748b;margin:10px 0 6px;line-height:1.55">' + esc( pick( agent, 'description' ) || '' ) + '</p>' +
-                        '<p style="font-size:12px;color:#475569;margin:0 0 10px"><em>“' + esc( pick( agent, 'personality' ) || '' ) + '”</em></p>' +
-                        '<p style="font-size:11.5px;color:#94a3b8;margin:0 0 12px">Ultimo run: ' + esc( timeAgoIt( pick( agent, 'last_run', 'lastRun' ) ) ) + '</p>' +
+                        '<p style="font-size:12.5px;color:var(--nxa-muted);margin:10px 0 6px;line-height:1.55">' + esc( pick( agent, 'description' ) || '' ) + '</p>' +
+                        '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 10px"><em>“' + esc( pick( agent, 'personality' ) || '' ) + '”</em></p>' +
+                        '<p style="font-size:11.5px;color:var(--nxa-muted);margin:0 0 12px">Ultimo run: ' + esc( timeAgoIt( pick( agent, 'last_run', 'lastRun' ) ) ) + '</p>' +
                         // Modello AI dedicato (v1.0.3): vuoto = modello globale da settings.
                         '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
                                 '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
@@ -1235,14 +1215,14 @@
                                 badge( status ) +
                                 scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                 wpPostBadge( a ) +
-                                '<span style="font-size:12px;color:#64748b">✍️ ' + esc( articleAgentName( a ) ) + '</span>' +
-                                '<span style="font-size:11px;color:#94a3b8;margin-left:auto">' + esc( timeAgoIt( pick( a, 'created_at', 'createdAt' ) ) ) + '</span>' +
+                                '<span style="font-size:12px;color:var(--nxa-muted)">✍️ ' + esc( articleAgentName( a ) ) + '</span>' +
+                                '<span style="font-size:11px;color:var(--nxa-muted);margin-left:auto">' + esc( timeAgoIt( pick( a, 'created_at', 'createdAt' ) ) ) + '</span>' +
                         '</div>' +
                         '<h3 style="margin:0 0 4px;font-size:15px;line-height:1.35">' +
                                 '<a href="#" class="nxa-detail" data-id="' + id + '" style="text-decoration:none;color:inherit">' + esc( pick( a, 'title' ) || '(senza titolo)' ) + '</a>' +
                         '</h3>' +
-                        ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 6px;font-size:13px;color:#475569">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
-                        ( summary ? '<p style="margin:0 0 8px;font-size:12.5px;color:#64748b;line-height:1.55">' + excerpt( summary, 220 ) + '</p>' : '' ) +
+                        ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 6px;font-size:13px;color:var(--nxa-muted)">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
+                        ( summary ? '<p style="margin:0 0 8px;font-size:12.5px;color:var(--nxa-muted);line-height:1.55">' + excerpt( summary, 220 ) + '</p>' : '' ) +
                         ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">🔗 <a href="' + esc( sourceUrl ) + '" target="_blank" rel="noopener noreferrer">' + esc( sourceName || sourceUrl ) + ' ↗</a></p>' : '' ) +
                         actions +
                 '</article>';
@@ -1421,7 +1401,8 @@
                 //  translation_langs; factcheck_min_score e monthly_budget_usd sono
                 //  anche nel blocco numerico sotto per essere inviati come numeri)
                 // (v1.0.5: + admin_language, sezione "Lingua e API pubblica")
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language' ];
+                // (v1.0.6: + admin_theme, sezione "Interfaccia" — select #nxa-admin-theme)
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -1579,12 +1560,12 @@
                         meta.push( 'agenti: ' + esc( run.agents.join( ', ' ) ) );
                 }
                 if ( run.error ) {
-                        meta.push( '<span style="color:#b91c1c">' + esc( run.error ) + '</span>' );
+                        meta.push( '<span style="color:var(--nxa-err-text)">' + esc( run.error ) + '</span>' );
                 }
                 return '<div class="nxa-wire-run">' +
                         '<div style="min-width:0;flex:1">' +
                                 '<strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc( run.topic ) + '</strong>' +
-                                '<span style="font-size:12px;color:#64748b">' + meta.join( ' · ' ) + '</span>' +
+                                '<span style="font-size:12px;color:var(--nxa-muted)">' + meta.join( ' · ' ) + '</span>' +
                         '</div>' +
                         '<div style="display:flex;align-items:center;gap:8px">' +
                                 ( run.articleId

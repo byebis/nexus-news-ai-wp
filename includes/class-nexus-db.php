@@ -112,6 +112,8 @@ class Nexus_DB {
                         'admin_language'     => 'auto', // auto | it | en (traduzione interfaccia admin)
                         'enable_public_api'  => 0, // 1 = REST pubblica nexus-public/v1 attiva
                         'public_api_key'     => '', // chiave generata dalla pagina Strumenti
+                        // v1.0.6 — Tema visuale del pannello admin.
+                        'admin_theme'        => 'light', // light | dark (chiaro di default dalla 1.0.6)
                 );
         }
 

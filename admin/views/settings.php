@@ -51,6 +51,12 @@
  *   nel blocco scalaFlags come 0/1 (0 quando deselezionato), stesso pattern
  *   dei toggle esistenti. Campi precompilati con get_settings() (selected /
  *   checked, con fallback ?? sulle chiavi nuove) come le sezioni esistenti.
+ * - CONTRATTO v1.0.6 ("UI chiara & curata"): 1 select simple (admin_theme:
+ *   light|dark, sezione "Interfaccia") raccolto da admin.js nell'array
+ *   simple leggendo il select #nxa-admin-theme; campo precompilato con
+ *   get_settings() (selected, con fallback ?? 'light') come le sezioni
+ *   esistenti. Il tema scuro aggiunge la classe nexus-theme-dark al body
+ *   dell'admin (filtro admin_body_class); il tema chiaro è il default.
  *
  * @package Nexus_News_AI
  */
@@ -546,6 +552,7 @@ $social_platforms = array(
                                                         <?php esc_html_e( 'Usa la coda lavori (stile Action Scheduler)', 'nexus-news-ai' ); ?>
                                                 </label>
                                                 <p class="description"><?php esc_html_e( 'Le azioni pesanti (raccolta, valutazione, pubblicazione, traduzioni) vengono accodate nella tabella nexus_jobs ed eseguite in batch ogni 60 secondi dal runner WP-Cron. Consigliato su siti con molto traffico o hosting lento. Lo stato live è visibile nella pagina Coda Lavori.', 'nexus-news-ai' ); ?></p>
+                                                <p class="description"><?php esc_html_e( 'Vedi la pagina Coda Lavori per statistiche, retry e pulizia. I comandi WP-CLI wp nexus queue stats|process sono disponibili.', 'nexus-news-ai' ); ?></p>
                                         </td>
                                 </tr>
                                 <tr>
@@ -564,7 +571,6 @@ $social_platforms = array(
                                 </tr>
                         </tbody>
                 </table>
-                <p class="description"><?php esc_html_e( 'Vedi la pagina Coda Lavori per statistiche, retry e pulizia. I comandi WP-CLI wp nexus queue stats|process sono disponibili.', 'nexus-news-ai' ); ?></p>
 
                 <?php /* Sezione v1.0.5 "Lingua e API pubblica": select admin_language (blocco simple) + toggle enable_public_api (blocco scalaFlags). */ ?>
                 <h2 class="title"><?php esc_html_e( 'Lingua e API pubblica', 'nexus-news-ai' ); ?></h2>
@@ -593,7 +599,23 @@ $social_platforms = array(
                                 </tr>
                         </tbody>
                 </table>
-                <p class="description"><?php esc_html_e( 'La chiave si genera nella pagina Strumenti → API pubblica.', 'nexus-news-ai' ); ?></p>
+
+                <?php /* Sezione v1.0.6 "Interfaccia": select admin_theme (blocco simple) — pannello chiaro di default dalla 1.0.6, tema scuro opzionale (body.nexus-theme-dark). */ ?>
+                <h2 class="title"><?php esc_html_e( 'Interfaccia', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><label for="nxa-admin-theme"><?php esc_html_e( 'Tema del pannello', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <select name="admin_theme" id="nxa-admin-theme">
+                                                        <option value="light" <?php selected( $settings['admin_theme'] ?? 'light', 'light' ); ?>><?php esc_html_e( 'Chiaro (consigliato)', 'nexus-news-ai' ); ?></option>
+                                                        <option value="dark" <?php selected( $settings['admin_theme'] ?? 'light', 'dark' ); ?>><?php esc_html_e( 'Scuro (aspetto delle versioni precedenti)', 'nexus-news-ai' ); ?></option>
+                                                </select>
+                                                <p class="description"><?php esc_html_e( "Dalla 1.0.6 il pannello Nexus è chiaro di default; scegli Scuro per tornare all'aspetto notturno della 1.0.5. Il tema si applica a tutte le pagine Nexus dopo il salvataggio.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
 
                 <p class="submit">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>

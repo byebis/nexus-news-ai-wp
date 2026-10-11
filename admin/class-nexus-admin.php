@@ -37,6 +37,44 @@ class Nexus_Admin {
         public static function init() {
                 add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
                 add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
+                add_filter( 'admin_body_class', array( __CLASS__, 'admin_body_class' ) );
+        }
+
+        /**
+         * Tema corrente del pannello admin (v1.0.6).
+         *
+         * Legge il setting admin_theme ('light' | 'dark'); light è il default
+         * dalla 1.0.6, dark mantiene l'aspetto notturno delle versioni precedenti.
+         *
+         * @return string 'light' oppure 'dark'.
+         */
+        public static function current_theme() {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        return 'light';
+                }
+
+                $settings = Nexus_DB::get_settings();
+                $theme    = isset( $settings['admin_theme'] ) ? (string) $settings['admin_theme'] : 'light';
+
+                return ( 'dark' === $theme ) ? 'dark' : 'light';
+        }
+
+        /**
+         * Applica la classe tema al body dell'admin (v1.0.6).
+         *
+         * Il CSS (admin/css/nexus-admin.css) usa i token su :root per il tema
+         * chiaro e l'override su body.nexus-theme-dark per quello scuro; gli
+         * elementi flottanti (modale, toast) ereditano il tema da body.
+         *
+         * @param string $classes Classi CSS già presenti sul body admin.
+         * @return string
+         */
+        public static function admin_body_class( $classes ) {
+                if ( 'dark' === self::current_theme() ) {
+                        $classes .= ' nexus-theme-dark';
+                }
+
+                return $classes;
         }
 
         /**
@@ -159,6 +197,7 @@ class Nexus_Admin {
                                 'nonce'   => wp_create_nonce( 'wp_rest' ),
                                 'version' => NEXUS_VERSION,
                                 'siteUrl' => home_url( '/' ),
+                                'theme'   => self::current_theme(),
                         )
                 );
         }

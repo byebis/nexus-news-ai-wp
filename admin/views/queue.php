@@ -3,89 +3,64 @@
  * Vista admin: "Coda di approvazione" — data-page="queue".
  *
  * SKELETON STATICO. La lista live NON viene renderizzata qui: la riempie
- * assets/js/admin.js (altro agente) via REST (namespace nexus/v1, header
- * X-WP-Nonce con NexusAdminData.nonce). Il <template> resta VOLUTAMENTE vuoto:
- * il contratto della riga è documentato nei commenti PHP di questo file
- * (nessun template tag JS complicato).
+ * assets/js/admin.js via REST (namespace nexus/v1, header X-WP-Nonce con
+ * NexusAdminData.nonce). Questo file fornisce solo:
+ *  - il guscio pagina con ID/classi/data-attributes FISSI (contratto sotto);
+ *  - la toolbar filtri/azioni (.nxa-toolbar);
+ *  - il placeholder .nxa-skeleton dentro la lista (rimpiazzato dal primo
+ *    render di admin.js).
  *
  * =====================================================================
- * CONTRATTO JS (admin.js) — PAGINA CODA DI APPROVAZIONE
+ * CONTRATTO JS (admin.js 1.0.5, verificato sul sorgente) — PAGINA CODA
  * =====================================================================
  *
- * 1) LETTURA LISTA
- *    GET /articles?status={valore di #nxa-queue-filter}
- *    (altre args supportate dalla REST: category, agent_id, search, page, per_page — default 12)
- *    Trigger:
- *      - evento "change" su #nxa-queue-filter → ricarica la lista col nuovo status;
- *      - click su button.nxa-queue-refresh    → ricarica la lista col status corrente.
- *    Risposta attesa (serializer di class-nexus-rest.php): array di articoli:
- *      { id, title, subtitle, summary, category, agent_id, agent_name, agent_avatar,
- *        source_name, source_url, image_url, status, quality_score (float 0–100),
- *        read_time (minuti), views, reactions, excerpt (già calcolato: summary o
- *        content tagliato a 30 parole), published_at, created_at ('Y-m-d H:i:s') }
- *      v1.0.1 (opzionale, se il serializer la aggiungerà): wp_post_id (int) e
- *      post_permalink (string). admin.js legge i campi in modo difensivo e mostra
- *      il badge/link "Post WP" SOLO se wp_post_id > 0 (fallback href: /?p={id}).
+ * 1) HOOK CONSUMATI dal markup statico di questa vista:
+ *      - .wrap.nexus-admin[data-page="queue"] → boot del pannello;
+ *      - #nxa-queue-filter (select) → evento "change": ricarica la lista con
+ *        GET /articles?per_page=20&page=1&status={value}; valore vuoto, "all"
+ *        o "any" = nessun filtro di stato;
+ *      - .nxa-queue-refresh (qsa: anche più bottoni) → ricarica la lista
+ *        con lo stato corrente del filtro;
+ *      - #nxa-queue-list → container lista: admin.js lo svuota, vi inietta
+ *        4 barre .nxa-skeleton (showSkeleton) e poi le righe; lista vuota o
+ *        errore REST → admin.js inserisce una .nxa-empty.
  *
- * 2) RIGA CODA — per ogni articolo dentro #nxa-queue-list
- *    (clonare #nxa-queue-row-tpl o generare markup con gli STESSI selettori):
- *      article.nxa-queue-row[data-article-id="{id}"][data-status="{status}"]
- *        > .nxa-qa-score      → badge numerico quality_score arrotondato all'intero;
- *                               classe consigliata: nxa-score-high (>= 75),
- *                               nxa-score-mid (>= 50), nxa-score-low (< 50)
- *        > .nxa-qa-title      → title
- *        > .nxa-qa-subtitle   → subtitle (se presente)
- *        > .nxa-qa-category   → category
- *        > .nxa-qa-agent      → agent_name (già incluso nella risposta REST)
- *        > .nxa-qa-read-time  → "{read_time} min di lettura"
- *        > .nxa-qa-date       → equivalente JS di Nexus_Utils::time_ago_it(created_at)
- *        > .nxa-qa-source     → <a href="{source_url}" target="_blank" rel="noopener noreferrer">{source_name}</a>
- *        > .nxa-qa-wp-link    → (opzionale, v1.0.1) badge/link "Post WP" se wp_post_id > 0;
- *                               renderizzato da admin.js come .nxa-badge.nxa-badge--primary
- *                               con href = post_permalink (fallback: /?p={wp_post_id})
- *        > .nxa-qa-excerpt    → excerpt (fornito dalla REST); fallback summary
- *        > .nxa-qa-actions    → bottoni azione (punto 3)
+ * 2) RIGA CODA (generata da admin.js dentro #nxa-queue-list):
+ *      article.nxa-queue-item[data-article-id="{id}"]
+ *        chip categoria (.nxa-chip, colore inline), badge stato
+ *        (.nxa-badge.nxa-badge--{variant}), punteggio qualità (badge inline
+ *        con percentuale; l'equivalente design system è .nxa-score.is-high /
+ *        .is-mid / .is-low), eventuale badge "Post WP" (.nxa-badge--primary),
+ *        nome agente, titolo come link .nxa-detail[data-id], sottotitolo,
+ *        estratto, fonte (link esterno) e azioni in .nxa-btn-row:
+ *          .nxa-approve[data-id]     → POST /articles/{id}/approve {note: ''}
+ *          .nxa-reject[data-id]      → apre il form nota inline .nxa-note-row:
+ *                                       input .nxa-note-input +
+ *                                       .nxa-reject-confirm[data-id] (POST
+ *                                       /articles/{id}/reject {note}) +
+ *                                       .nxa-reject-cancel (ripristina le azioni)
+ *          .nxa-publish-one[data-id] → (solo stato approved) POST
+ *                                       /pipeline/publish {article_id}
+ *          .nxa-detail[data-id]      → apre la modale di dettaglio (punto 3)
  *
- * 3) AZIONI (selettori FISSI; l'id articolo sta su data-article-id della riga):
- *      button.nxa-qa-approve → POST /articles/{id}/approve  body JSON { note: '' }
- *                              (nota facoltativa: si può riusare il pattern inline del rifiuto)
- *      button.nxa-qa-reject  → NON chiama subito la REST: mostra dentro la riga il blocco
- *                              inline .nxa-qa-note-wrap (creato/nascosto da JS) contenente:
- *                                textarea.nxa-qa-note            (placeholder "Nota del revisore…")
- *                                button.nxa-qa-reject-confirm    → POST /articles/{id}/reject  body { note }
- *                                button.nxa-qa-reject-cancel     → nasconde .nxa-qa-note-wrap
- *      button.nxa-qa-publish → POST /pipeline/publish  body JSON { article_id: id }
- *                              NOTA (verificato su class-nexus-rest.php): la route publish
- *                              NON esiste ancora — le route pipeline sono /pipeline/collect
- *                              e /pipeline/run (body {agent_id}). Quindi: provare
- *                              POST /pipeline/publish {article_id}; su 404 usare come
- *                              fallback POST /pipeline/run (passando l'agent_id dell'articolo).
- *      button.nxa-qa-detail  → apre #nxa-queue-modal e riempie #nxa-queue-modal-body
- *                              con GET /articles/{id}: title, subtitle, category, agente,
- *                              quality_score, read_time, source, summary/excerpt, content
- *                              (già sanitizzato wp_kses_post lato server) e publish_logs
- *                              (eventuale); data creazione con equivalente JS di
- *                              Nexus_Utils::time_ago_it.
- *                              Titolo dialog: <h2 id="nxa-queue-modal-title">{title}</h2>.
- *                              Chiusura: click su [data-nxa-close-modal] (backdrop o X).
+ * 3) MODALE DETTAGLIO: admin.js usa la SUA modale #nxa-modal (ensureModal,
+ *    appesa a body; openArticleModal → GET /articles/{id} e riempie il
+ *    corpo con chip/badge categoria e stato, titolo, meta, contenuto e
+ *    log di pubblicazione). Il blocco #nxa-queue-modal qui sotto resta
+ *    come hook di riserva NON consumato dall'attuale admin.js: id,
+ *    ruolo dialog e data-nxa-close-modal sono già al loro posto.
  *
- * 4) VISIBILITÀ AZIONI PER STATO (indicativa, a discrezione dell'integratore):
- *      pending_approval → Approva, Rifiuta, Dettaglio
- *      approved         → Pubblica, Rifiuta (opz.), Dettaglio
- *      published        → Dettaglio
- *      rejected / draft → Dettaglio (eventualmente Approva per le bozze)
+ * 4) HOOK DI RISERVA (non consumati da admin.js 1.0.5, mantenuti per
+ *    compatibilità con il contratto originale): #nxa-queue-count
+ *    (contatore "N articoli", aria-live) e #nxa-queue-row-tpl
+ *    (template volutamente vuoto: la riga è documentata al punto 2).
  *
- * 5) DOPO UN'AZIONE
- *    Ricaricare la lista (GET /articles?status=…) e aggiornare #nxa-queue-count
- *    con il totale mostrato (es. "7 articoli") — elemento opzionale ma fisso.
- *
- * 6) STATI DELLA LISTA
- *    - Loading: #nxa-queue-list contiene <p class="nxa-loading"> (spinner WP + testo
- *      "Caricamento articoli…", stessa convenzione di dashboard.php) e ha la classe
- *      .is-loading; JS svuota il container e rimuove .is-loading.
- *    - Lista vuota: inserire .nxa-queue-empty con testo "Nessun articolo in questo stato."
- *    - Errore REST: inserire .nxa-queue-error (o .notice.notice-error) con
- *      testo "Impossibile caricare la coda."
+ * v1.0.6 — markup allineato al design system a tema chiaro: sottotitolo di
+ * pagina, toolbar filtri (.nxa-toolbar), bottone .nxa-btn, placeholder
+ * .nxa-skeleton, empty state no-JS .nxa-empty con dashicon, modale
+ * riallineata alla famiglia .nxa-modal / .nxa-modal-close / .nxa-modal-body
+ * del foglio di stile. Nessuna modifica a id, data-* e selettori consumati
+ * da admin.js.
  *
  * @package Nexus_News_AI
  */
@@ -94,57 +69,62 @@ defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap nexus-admin" data-page="queue">
 
-        <div class="nxa-page-header">
-                <h1 class="nxa-page-title"><?php esc_html_e( 'Coda di approvazione', 'nexus-news-ai' ); ?></h1>
+	<h1><?php esc_html_e( 'Coda di approvazione', 'nexus-news-ai' ); ?></h1>
 
-                <label class="screen-reader-text" for="nxa-queue-filter">
-                        <?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
-                </label>
-                <select id="nxa-queue-filter" class="nxa-queue-filter">
-                        <option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
-                        <option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
-                        <option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
-                        <option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
-                        <option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
-                </select>
+	<p class="nxa-page-subtitle"><?php esc_html_e( 'Articoli proposti dagli agenti: valuta qualità e fonte, poi approva, rifiuta o pubblica.', 'nexus-news-ai' ); ?></p>
 
-                <button type="button" class="button button-secondary nxa-queue-refresh">
-                        <?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
-                </button>
+	<div class="nxa-toolbar">
+		<label class="screen-reader-text" for="nxa-queue-filter">
+			<?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
+		</label>
+		<select id="nxa-queue-filter" class="nxa-queue-filter">
+			<option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
+			<option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
+			<option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
+			<option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
+			<option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
+		</select>
 
-                <!-- Hook fisso opzionale per il conteggio ("7 articoli"), gestito da admin.js. -->
-                <span id="nxa-queue-count" class="nxa-queue-count" aria-live="polite"></span>
-        </div>
+		<button type="button" class="nxa-btn nxa-queue-refresh">
+			<?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
+		</button>
 
-        <!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa. -->
-        <div id="nxa-queue-list" class="nxa-queue-list is-loading">
-                <p class="nxa-loading">
-                        <span class="spinner is-active"></span>
-                        <?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?>
-                </p>
-        </div>
+		<!-- Hook fisso opzionale per il conteggio ("N articoli"), aria-live. -->
+		<span id="nxa-queue-count" class="nxa-queue-count" aria-live="polite"></span>
+	</div>
 
-        <?php /* Contratto riga coda: vedi sezione 2 del docblock in testa al file. Il template resta vuoto. */ ?>
-        <template id="nxa-queue-row-tpl"></template>
+	<!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.
+	     Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
+	<div id="nxa-queue-list" class="nxa-queue-list" aria-live="polite" aria-busy="true">
+		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?></p>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+	</div>
 
-        <!-- MODAL DETTAGLIO ARTICOLO (button.nxa-qa-detail → GET /articles/{id}). Contratto sezione 3. -->
-        <div id="nxa-queue-modal" class="nxa-modal" hidden>
-                <div class="nxa-modal__backdrop" data-nxa-close-modal></div>
-                <div class="nxa-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="nxa-queue-modal-title">
-                        <button type="button" class="nxa-modal__close" data-nxa-close-modal aria-label="<?php esc_attr_e( 'Chiudi', 'nexus-news-ai' ); ?>">&times;</button>
-                        <div id="nxa-queue-modal-body" class="nxa-modal__body">
-                                <p class="nxa-loading">
-                                        <span class="spinner is-active"></span>
-                                        <?php esc_html_e( 'Caricamento dettaglio…', 'nexus-news-ai' ); ?>
-                                </p>
-                        </div>
-                </div>
-        </div>
+	<?php /* Hook di riserva (contratto riga coda: punto 2 del docblock). Il template resta vuoto. */ ?>
+	<template id="nxa-queue-row-tpl"></template>
 
-        <noscript>
-                <div class="notice notice-warning">
-                        <p><?php esc_html_e( 'JavaScript è disattivato: la coda di approvazione richiede JavaScript per caricare gli articoli.', 'nexus-news-ai' ); ?></p>
-                </div>
-        </noscript>
+	<!-- MODALE DETTAGLIO ARTICOLO (hook di riserva: la modale viva è #nxa-modal di admin.js,
+	     vedi punto 3 del docblock). Contratto selettori: id modale/corpo, data-nxa-close-modal. -->
+	<div id="nxa-queue-modal" class="nxa-modal" hidden role="dialog" aria-modal="true" aria-labelledby="nxa-queue-modal-title">
+		<button type="button" class="nxa-modal-close" data-nxa-close-modal aria-label="<?php esc_attr_e( 'Chiudi', 'nexus-news-ai' ); ?>">&times;</button>
+		<h2 id="nxa-queue-modal-title" class="screen-reader-text"><?php esc_html_e( 'Dettaglio articolo', 'nexus-news-ai' ); ?></h2>
+		<div id="nxa-queue-modal-body" class="nxa-modal-body">
+			<p class="screen-reader-text"><?php esc_html_e( 'Caricamento dettaglio…', 'nexus-news-ai' ); ?></p>
+			<div class="nxa-skeleton is-title"></div>
+			<div class="nxa-skeleton"></div>
+			<div class="nxa-skeleton is-line"></div>
+		</div>
+	</div>
+
+	<noscript>
+		<div class="nxa-empty">
+			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
+			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+			<p><?php esc_html_e( 'La coda di approvazione richiede JavaScript per caricare gli articoli.', 'nexus-news-ai' ); ?></p>
+		</div>
+	</noscript>
 
 </div>

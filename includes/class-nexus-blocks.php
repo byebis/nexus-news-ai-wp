@@ -21,6 +21,9 @@
  *      un titolo <h3 class="nexus-block-subscribe-title"> quando l'attributo
  *      "title" non è vuoto. Nota: lo shortcode stampa già il proprio <h3> col
  *      titolo default; il wrapper del blocco aggiunge il titolo configurato.
+ *      Dalla v1.0.6 il render mette in enqueue lo stile pubblico
+ *      "nexus-public" (nexus-public.css, light editoriale) se registrato:
+ *      lo shortcode [nexus_subscribe] (Nexus_Newsletter) non provvede da sé.
  *
  * Contratto pubblico (CONTRATTO v1.0.4, §2 T-03):
  *   Nexus_Blocks::init()             → bootstrap: hook init (prio 20) + enqueue_block_editor_assets
@@ -156,6 +159,9 @@ class Nexus_Blocks {
 
                 // columns / show_images: nessun attributo corrispondente in render_articles
                 // → non passati (il layout resta 'grid' di default dello shortcode).
+                // Nota v1.0.6: lo stile pubblico "nexus-public" viene messo in enqueue
+                // dentro Nexus_Shortcodes::render_articles() (enqueue_assets), quindi
+                // nessun enqueue aggiuntivo è necessario per questo blocco.
                 return (string) Nexus_Shortcodes::render_articles( $atts );
         }
 
@@ -180,6 +186,14 @@ class Nexus_Blocks {
 
                 // Guard: il modulo newsletter potrebbe non essere caricato.
                 if ( class_exists( 'Nexus_Newsletter' ) ) {
+                        // v1.0.6: il form [nexus_subscribe] non fa enqueue del foglio
+                        // pubblico (lo fa Nexus_Shortcodes solo per i propri shortcode):
+                        // qui si mette in enqueue lo stile "nexus-public" già registrato
+                        // su wp_enqueue_scripts, così il blocco renderizza formattato.
+                        // Enqueue tardivo: WordPress stampa il CSS in footer (core).
+                        if ( wp_style_is( 'nexus-public', 'registered' ) ) {
+                                wp_enqueue_style( 'nexus-public' );
+                        }
                         $out = do_shortcode( '[nexus_subscribe]' );
                 }
 

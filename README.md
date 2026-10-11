@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.0.5-blue)
+![Versione](https://img.shields.io/badge/versione-1.0.6-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale).
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -28,10 +28,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 11. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
 12. [Scala & Pro (v1.0.4)](#scala--pro-v104)
 13. [Strumenti, API pubblica, Multisite, Admin bilingue (v1.0.5)](#v105--strumenti-api-pubblica-multisite-admin-bilingue)
-14. [Installazione](#installazione)
-15. [FAQ tecniche](#faq-tecniche)
-16. [Licenza e crediti](#licenza-e-crediti)
-17. [Changelog](#changelog)
+14. [UI chiara & curata (v1.0.6)](#v106--ui-chiara--curata)
+15. [Installazione](#installazione)
+16. [FAQ tecniche](#faq-tecniche)
+17. [Licenza e crediti](#licenza-e-crediti)
+18. [Changelog](#changelog)
 
 ---
 
@@ -66,6 +67,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **API pubblica** (v1.0.5): namespace REST `nexus-public/v1` con articoli pubblicati, agenti e statistiche; autenticazione header `X-Api-Key` (o `?api_key=`), rate limit 120 richieste/minuto (HTTP 429) e CORS aperto.
 - **Multisite** (v1.0.5): installazione automatica delle tabelle sui nuovi siti della rete (hook `wp_initialize_site`) e comandi `wp nexus multisite status|install [--sites=1,2]`; ogni sito ha tabelle e impostazioni proprie.
 - **Admin bilingue** (v1.0.5, sperimentale): lingua dell'interfaccia admin (Automatica/Italiano/English) con traduzione delle etichette principali lato PHP (viste) e lato JS (contenuti dinamici).
+- **UI chiara & curata** (v1.0.6): pannello admin con **tema chiaro di default** e tema scuro opzionale (`admin_theme` in Impostazioni → Interfaccia); frontend pubblico stilizzato dal foglio **light editoriale** `public/css/nexus-public.css` (caricato solo dove shortcode/blocchi Nexus renderizzano): card articoli con griglia responsive 1/2/3 colonne, form iscrizione curato, tipografia di lettura sulla pagina articolo, empty state e dettagli curati.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -134,7 +136,7 @@ nexus-news-ai/
 │
 ├── admin/                         # Back-end WordPress
 │   ├── class-nexus-admin.php      # Menu admin, enqueue assets, handler, gateway alle viste
-│   ├── css/                       # nexus-admin.css: stili delle pagine admin
+│   ├── css/                       # nexus-admin.css: stili delle pagine admin (tema chiaro di default, dark opzionale — v1.0.6)
 │   ├── views/                     # Template HTML delle pagine admin
 │   │   ├── dashboard.php          # Dashboard statistiche
 │   │   ├── agents.php             # Gestione agenti
@@ -149,7 +151,7 @@ nexus-news-ai/
 │
 ├── public/                        # Front-end magazine
 │   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue
-│   ├── css/                       # nexus-public.css: stili del magazine (classi nxa-*)
+│   ├── css/                       # nexus-public.css: stili light editoriali del frontend (token --nxp-*, classi nxa-*/nexus-* — v1.0.6)
 │   ├── js/                        # nexus-public.js: interazioni (modal, reazioni, categorie) via REST + nonce wp_rest
 │   └── index.php
 │
@@ -370,8 +372,9 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `admin_language` | `auto` | Lingua dell'interfaccia admin (v1.0.5, sperimentale): `auto` (segue la lingua del sito), `it` o `en` |
 | `enable_public_api` | `0` | Attiva la REST pubblica `nexus-public/v1` (v1.0.5): articoli pubblicati, agenti e statistiche con autenticazione `X-Api-Key` |
 | `public_api_key` | (vuota) | Chiave API pubblica; si genera dalla pagina **Strumenti → API pubblica** (v1.0.5) |
+| `admin_theme` | `light` | Tema dell'interfaccia admin (v1.0.6): `light` (chiaro, consigliato) oppure `dark` (aspetto notturno delle versioni precedenti); selezione in Impostazioni → Interfaccia |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)).
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)). Nella v1.0.6 si aggiunge la sezione **«Interfaccia»** con la chiave `admin_theme` della tabella sopra: tema chiaro attivo di default, dark opzionale (dettagli nella sezione [UI chiara & curata](#v106--ui-chiara--curata)).
 
 ---
 
@@ -606,6 +609,27 @@ Su installazioni **WordPress multisite** (`is_multisite`) il plugin gestisce la 
 
 ---
 
+## v1.0.6 — UI chiara & curata
+
+Dalla v1.0.6 tutta l'interfaccia del plugin passa a un tema **chiaro e curato nei minimi dettagli**: il pannello admin abbandona il dark di default (che resta disponibile come opzione) e il frontend pubblico riceve un foglio di stile light editoriale che si adatta a qualunque tema del sito.
+
+### Admin: tema chiaro di default, dark opzionale
+
+- Il tema chiaro è attivo **di default dalla 1.0.6**: tutti i componenti del pannello (bottoni, badge, tabelle, grafici, modale, toast) usano superfici bianche, bordi sottili e ombre leggere.
+- Il tema scuro delle versioni precedenti resta disponibile: **Impostazioni → Interfaccia → «Tema del pannello»** (setting `admin_theme`: `light` | `dark`), selezione precompilata server-side e salvata con le altre impostazioni.
+- Meccanica: token CSS su `:root` = light; override su `body.nexus-theme-dark` = dark. Gli elementi flottanti (modale, toast) sono figli del body ed ereditano automaticamente il tema attivo.
+
+### Frontend pubblico: `nexus-public.css`
+
+- Foglio **light editoriale** (`public/css/nexus-public.css`) per magazine, griglia articoli, Nexus Wire, form newsletter e pagina articolo singolo: superfici chiare, bordi sottili, raggi 14px, ombre leggere, accenti violet/cyan. Nessuno sfondo scuro forzato: ogni componente è una superficie chiara autosufficiente che si sposa con qualunque tema.
+- **Caricamento selettivo**: il foglio (handle `nexus-public`) viene messo in enqueue solo dove renderizzano gli shortcode/blocchi Nexus — `[nexus_magazine]`, `[nexus_articles]`, `[nexus_wire]`, blocco *Ultimi articoli*, blocco *Form iscrizione* — e nel template single; nessun CSS aggiuntivo sulle altre pagine.
+- **Griglia articoli**: card bianche con bordo sottile e angoli 14px, immagine 16:10 con `object-fit: cover`, titolo con dimensione fluida (`clamp`), excerpt su 3 righe, meta (data · agente · tempo · fact-check) in grigio, badge categoria con tinte tenui, hover delicato (lift + ombra leggera); griglia responsive a 1 colonna su mobile, 2 colonne da 600px, 3 da 1024px, con variante `layout="list"` orizzontale da 768px.
+- **Form iscrizione** (`[nexus_subscribe]` e blocco *Form iscrizione*): input e bottone in fila (incolonnati su mobile), bottone con gradiente brand `linear-gradient(135deg, #7c3aed, #06b6d4)`, messaggi di successo/errore con tinte verde/rosse chiare, label e placeholder curati, focus con anello visibile.
+- **Pagina articolo** (template single): tipografia di lettura (interlinea 1.7, contenuto max 720px), meta sopra il titolo, byline agente con badge «Redazione AI», blockquote con bordo accent, immagini fluide, box «Fonte originale» e «Fonti verificate» coordinati, reazioni coerenti col modal.
+- **Dettagli curati**: empty state con bordo tratteggiato, focus visibile ovunque (`:focus-visible`), numeri con cifre tabulari, spaziatura coerente, `prefers-reduced-motion` rispettato, contrasto AA, stili di stampa; i token del nuovo strato usano il prefisso `--nxp-*` (zero collisioni con i temi del sito), mentre le classi di markup esistenti (`nxa-*`, `nexus-single-*`, `nexus-news-*`) sono restilate in place perché fanno contratto con `nexus-public.js` e i template PHP.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -652,6 +676,13 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.6 — «UI chiara & curata»
+
+- **Admin chiaro di default**: tutto il pannello passa al tema chiaro (superfici bianche, bordi sottili, ombre leggere, focus visibile, reduced-motion); il dark delle versioni precedenti resta disponibile con il nuovo setting `admin_theme` (`light` | `dark`) in **Impostazioni → Interfaccia**; meccanica a token CSS (`:root` light, override su `body.nexus-theme-dark`).
+- **Frontend pubblico light editoriale**: nuovo `public/css/nexus-public.css` (token `--nxp-*`) che restyla magazine, griglia articoli (card bianche 14px, immagine 16:10, titolo fluido, meta in grigio, badge categoria tenui, hover delicato, griglia 1/2/3 colonne a 600/1024px, variante lista), Nexus Wire (card chiare e badge di stato in tinte light), form `[nexus_subscribe]` (input + bottone gradiente in fila, stack su mobile, messaggi successo/errore verdi/rossi chiari) e pagina articolo singolo (interlinea 1.7, contenuto max 720px, blockquote accent, meta sopra il titolo); empty state, cifre tabulari e stampa curati.
+- **Enqueue selettivo del foglio pubblico**: caricato solo dove renderizzano shortcode e blocchi Nexus (`Nexus_Shortcodes::enqueue_assets()` già operativo, nuovo enqueue con guardia in `Nexus_Blocks::render_subscribe()`, template single con hook dedicato); nessun peso aggiuntivo sulle altre pagine.
+- **1 nuovo setting** nella sezione admin «Interfaccia»: `admin_theme`.
 
 ### 1.0.5 — «Strumenti, API pubblica, Multisite, Admin bilingue»
 

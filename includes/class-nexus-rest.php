@@ -1619,6 +1619,8 @@ class Nexus_Rest {
                         'budget_action'        => 'sanitize_key',
                         'enable_translations'  => 'absint',
                         'translation_langs'    => 'sanitize_text_field',
+                        // Tema UI admin (v1.0.6).
+                        'admin_theme'          => 'sanitize_key',
                 );
 
                 $out = array();
@@ -1653,6 +1655,11 @@ class Nexus_Rest {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
                         }
+                }
+
+                // Tema admin: ammessi solo light | dark (v1.0.6), fallback chiaro.
+                if ( isset( $out['admin_theme'] ) && ! in_array( $out['admin_theme'], array( 'light', 'dark' ), true ) ) {
+                        $out['admin_theme'] = 'light';
                 }
 
                 // Chiave IndexNow: solo caratteri alfanumerici (formato richiesto dal protocollo).

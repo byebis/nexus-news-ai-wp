@@ -2,38 +2,129 @@
  * Nexus News AI — Foglio di stile admin panel (WordPress)
  *
  * Slug plugin: nexus-news-ai
- * Versione:    1.0.0
+ * Versione:    1.0.6
  *
- * Pannello dark editorial dentro .wrap.nexus-admin. I componenti "volanti"
- * (modale .nxa-modal/.nxa-modal-overlay e toast .nxa-toast, appesi al body)
- * sono stilizzati anche fuori da .nexus-admin: tutti i selettori sono
- * comunque prefissati nxa- per zero collisioni con il core.
+ * Tema CHIARO di default dalla 1.0.6: i token su :root descrivono la
+ * palette chiara (superfici bianche, bordi sottili, ombre leggere) e
+ * ogni componente e' restilizzato di conseguenza. Il tema scuro storico
+ * resta disponibile come opzione (setting admin_theme) tramite l'override
+ * su body.nexus-theme-dark, classe applicata al body admin dal filtro
+ * admin_body_class. Nessun colore hardcoded nei componenti: solo
+ * var(--nxa-*), cosi' gli elementi "volanti" appesi al body (modale
+ * .nxa-modal/.nxa-modal-overlay e toast .nxa-toast) ereditano
+ * automaticamente il tema attivo. Tutti i selettori restano prefissati
+ * nxa- per zero collisioni con il core.
  * Mobile-first: base = schermi stretti (sidebar WP collassata), breakpoint
  * a 782px (fold menu admin) e 1100px.
  *
  * Indice:
- *   1. Token di design
- *   2. Mapping categorie [data-category]
- *   3. Base pannello .wrap.nexus-admin
- *   4. Bottoni (.nxa-btn / .nxa-btn-primary)
- *   5. Badge (.nxa-badge) e punteggio (.nxa-score)
- *   6. Stat grid + actions row
- *   7. Agenti (.nxa-agents-grid)
- *   8. Coda editoriale (.nxa-queue-list)
- *   9. Activity feed
- *  10. Settings form + toggle switch
- *  11. Nexus Wire runs
- *  12. Toast
- *  13. Modale admin (riusa stile pubblico)
- *  14. Spinner
- *  15. Accessibilità (focus, reduced-motion)
- *  16. Stampa
+ *   1. Token di design (light default su :root) + override dark
+ *   2. Mapping categorie [data-category] (light + override dark)
+ *   3. Classi condivise: .nxa-toolbar, .nxa-empty, .nxa-skeleton
+ *   4. Base pannello .wrap.nexus-admin
+ *   5. Bottoni (.nxa-btn / .nxa-btn-primary)
+ *   6. Badge (.nxa-badge) e punteggio (.nxa-score)
+ *   7. Stat grid + actions row
+ *   8. Agenti (.nxa-agents-grid)
+ *   9. Coda editoriale (.nxa-queue-list)
+ *  10. Activity feed
+ *  11. Settings form + toggle switch
+ *  12. Nexus Wire runs
+ *  13. Toast
+ *  14. Modale admin (riusa stile pubblico)
+ *  15. Spinner
+ *  16. Accessibilita' (focus, reduced-motion)
+ *  17. Stampa
  */
 
 /* -------------------------------------------------------------------------
- * 1. Token di design
+ * 1. Token di design — tema CHIARO di default (contratto v1.0.6 §1)
  * ---------------------------------------------------------------------- */
 :root {
+  /* Superfici (light) */
+  --nxa-bg: #f6f8fc;
+  --nxa-surface: #ffffff;
+  --nxa-surface-2: #f2f5fa;
+  --nxa-surface-3: #eaeef6;
+  --nxa-border: #e2e8f2;
+  --nxa-border-soft: rgba(15, 23, 42, 0.08);
+  /* Testo */
+  --nxa-text: #0f1a33;
+  --nxa-text-body: #33415c;
+  --nxa-muted: #5c6b84;
+  /* Accenti brand (invariati dalla 1.0.0) */
+  --nxa-accent-1: #7c3aed;
+  --nxa-accent-2: #06b6d4;
+  --nxa-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
+  --nxa-focus: #0891b2;
+  /* Raggi */
+  --nxa-radius: 14px;
+  --nxa-radius-sm: 10px;
+  --nxa-radius-lg: 18px;
+  /* Ombre leggere */
+  --nxa-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.07);
+  --nxa-shadow-lg: 0 20px 56px rgba(15, 23, 42, 0.16);
+  /* Stato: testo / bg / bordo (light) */
+  --nxa-ok-text: #15803d;   --nxa-ok-bg: rgba(34, 197, 94, 0.12);    --nxa-ok-line: rgba(22, 163, 74, 0.35);
+  --nxa-warn-text: #b45309; --nxa-warn-bg: rgba(245, 158, 11, 0.15); --nxa-warn-line: rgba(217, 119, 6, 0.38);
+  --nxa-err-text: #b91c1c;  --nxa-err-bg: rgba(239, 68, 68, 0.10);   --nxa-err-line: rgba(220, 38, 38, 0.35);
+  --nxa-info-text: #0369a1; --nxa-info-bg: rgba(14, 165, 233, 0.12); --nxa-info-line: rgba(2, 132, 199, 0.35);
+  /* Categoria default */
+  --nxa-cat: #64748b;
+  --nxa-cat-soft: rgba(100, 116, 139, 0.12);
+  --nxa-cat-line: rgba(100, 116, 139, 0.35);
+}
+
+/* Token estesi (T-01): linee di dettaglio, bottoni, input, overlay,
+ * skeleton e stampa. Stessi valori del blocco contrattuale quando il
+ * tema non li differenzia; override in body.nexus-theme-dark altrimenti. */
+:root {
+  /* Bordi di dettaglio e titoli */
+  --nxa-panel-line: #e2e8f2;
+  --nxa-line-strong: #dbe3ef;
+  --nxa-heading: #0f1a33;
+  --nxa-link: #7c3aed;
+  --nxa-link-hover: #6d28d9;
+  --nxa-code-text: #6d28d9;
+  /* Bottoni */
+  --nxa-btn-bg: #ffffff;
+  --nxa-btn-bg-hover: #f2f5fa;
+  --nxa-btn-line-hover: rgba(124, 58, 237, 0.5);
+  --nxa-btn-text-hover: #0f1a33;
+  --nxa-on-accent: #ffffff;
+  --nxa-on-accent-soft: rgba(255, 255, 255, 0.35);
+  --nxa-accent-glow: rgba(124, 58, 237, 0.28);
+  --nxa-accent-glow-strong: rgba(124, 58, 237, 0.4);
+  /* Input */
+  --nxa-input-bg: #ffffff;
+  --nxa-input-line: #d8e0ee;
+  --nxa-ring-accent: 0 0 0 3px rgba(124, 58, 237, 0.16);
+  /* Superfici interattive e overlay */
+  --nxa-row-hover-bg: #f8fafd;
+  --nxa-overlay: rgba(15, 23, 42, 0.52);
+  --nxa-modal-close-bg: rgba(255, 255, 255, 0.92);
+  --nxa-spinner-track: rgba(100, 116, 139, 0.28);
+  --nxa-scroll-thumb: #c3cfe2;
+  --nxa-skeleton-hi: rgba(255, 255, 255, 0.7);
+  /* Aloni brand tenui (sfondo pannello, avatar, hover card) */
+  --nxa-glow-1: rgba(124, 58, 237, 0.05);
+  --nxa-glow-2: rgba(6, 182, 212, 0.05);
+  --nxa-accent-1-soft: rgba(124, 58, 237, 0.14);
+  --nxa-accent-2-soft: rgba(6, 182, 212, 0.12);
+  --nxa-accent-line: rgba(124, 58, 237, 0.45);
+  --nxa-accent2-line: rgba(6, 182, 212, 0.45);
+  /* Errore rafforzato (hover bottoni e chiusura modale) */
+  --nxa-err-bg-strong: rgba(239, 68, 68, 0.16);
+  --nxa-err-text-strong: #991b1b;
+  /* Stampa: colori fissi indipendenti dal tema attivo */
+  --nxa-print-bg: #ffffff;
+  --nxa-print-text: #111111;
+  --nxa-print-line: #d4d4d8;
+  --nxa-print-muted: #444444;
+}
+
+/* Override TEMA SCURO (opzionale via setting admin_theme): palette 1.0.5 */
+body.nexus-theme-dark {
   --nxa-bg: #0b0f17;
   --nxa-surface: #121826;
   --nxa-surface-2: #1a2234;
@@ -43,34 +134,145 @@
   --nxa-text: #e2e8f0;
   --nxa-text-body: #cbd5e1;
   --nxa-muted: #94a3b8;
-  --nxa-accent-1: #7c3aed;
-  --nxa-accent-2: #06b6d4;
-  --nxa-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
   --nxa-focus: #22d3ee;
-  --nxa-radius: 14px;
-  --nxa-radius-sm: 10px;
-  --nxa-radius-lg: 18px;
   --nxa-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
   --nxa-shadow-lg: 0 24px 64px rgba(2, 6, 23, 0.6);
-
+  /* Stato: varianti chiare su tinte trasparenti (come 1.0.5) */
+  --nxa-ok-text: #4ade80;   --nxa-ok-bg: rgba(74, 222, 128, 0.1);   --nxa-ok-line: rgba(74, 222, 128, 0.4);
+  --nxa-warn-text: #fbbf24; --nxa-warn-bg: rgba(251, 191, 36, 0.1); --nxa-warn-line: rgba(251, 191, 36, 0.4);
+  --nxa-err-text: #f87171;  --nxa-err-bg: rgba(248, 113, 113, 0.1); --nxa-err-line: rgba(248, 113, 113, 0.45);
+  --nxa-info-text: #22d3ee; --nxa-info-bg: rgba(34, 211, 238, 0.1); --nxa-info-line: rgba(34, 211, 238, 0.4);
   --nxa-cat: #94a3b8;
   --nxa-cat-soft: rgba(148, 163, 184, 0.14);
   --nxa-cat-line: rgba(148, 163, 184, 0.35);
+  /* Token estesi */
+  --nxa-panel-line: #1e293b;
+  --nxa-line-strong: #2a3550;
+  --nxa-heading: #f1f5f9;
+  --nxa-link: #7dd3fc;
+  --nxa-link-hover: #bae6fd;
+  --nxa-code-text: #a5b4fc;
+  --nxa-btn-bg: #1a2234;
+  --nxa-btn-bg-hover: #202a40;
+  --nxa-btn-line-hover: rgba(124, 58, 237, 0.6);
+  --nxa-btn-text-hover: #ffffff;
+  --nxa-input-bg: #0d1320;
+  --nxa-input-line: #232c42;
+  --nxa-ring-accent: 0 0 0 3px rgba(124, 58, 237, 0.22);
+  --nxa-row-hover-bg: #141b2c;
+  --nxa-overlay: rgba(4, 7, 14, 0.74);
+  --nxa-modal-close-bg: rgba(26, 34, 52, 0.88);
+  --nxa-spinner-track: rgba(148, 163, 184, 0.3);
+  --nxa-scroll-thumb: #2a3550;
+  --nxa-skeleton-hi: rgba(148, 163, 184, 0.14);
+  --nxa-glow-1: rgba(124, 58, 237, 0.12);
+  --nxa-glow-2: rgba(6, 182, 212, 0.08);
+  --nxa-accent-1-soft: rgba(124, 58, 237, 0.24);
+  --nxa-accent-2-soft: rgba(6, 182, 212, 0.24);
+  --nxa-accent-line: rgba(124, 58, 237, 0.5);
+  --nxa-accent-glow: rgba(124, 58, 237, 0.32);
+  --nxa-accent-glow-strong: rgba(124, 58, 237, 0.45);
+  --nxa-err-bg-strong: rgba(248, 113, 113, 0.2);
+  --nxa-err-text-strong: #ffffff;
 }
 
 /* -------------------------------------------------------------------------
- * 2. Mapping categorie (case-insensitive)
+ * 2. Mapping categorie (case-insensitive) — toni light leggibili,
+ *    override dark con i toni chiari della 1.0.5
  * ---------------------------------------------------------------------- */
-[data-category="tecnologia" i] { --nxa-cat: #38bdf8; --nxa-cat-soft: rgba(56, 189, 248, 0.14); --nxa-cat-line: rgba(56, 189, 248, 0.4); }
-[data-category="politica" i]   { --nxa-cat: #f59e0b; --nxa-cat-soft: rgba(245, 158, 11, 0.14); --nxa-cat-line: rgba(245, 158, 11, 0.4); }
-[data-category="economia" i]   { --nxa-cat: #34d399; --nxa-cat-soft: rgba(52, 211, 153, 0.14); --nxa-cat-line: rgba(52, 211, 153, 0.4); }
-[data-category="scienza" i]    { --nxa-cat: #a78bfa; --nxa-cat-soft: rgba(167, 139, 250, 0.15); --nxa-cat-line: rgba(167, 139, 250, 0.4); }
-[data-category="sport" i]      { --nxa-cat: #f87171; --nxa-cat-soft: rgba(248, 113, 113, 0.14); --nxa-cat-line: rgba(248, 113, 113, 0.4); }
-[data-category="cultura" i]    { --nxa-cat: #f472b6; --nxa-cat-soft: rgba(244, 114, 182, 0.14); --nxa-cat-line: rgba(244, 114, 182, 0.4); }
-[data-category="salute" i]     { --nxa-cat: #4ade80; --nxa-cat-soft: rgba(74, 222, 128, 0.13); --nxa-cat-line: rgba(74, 222, 128, 0.4); }
+[data-category="tecnologia" i] { --nxa-cat: #0369a1; --nxa-cat-soft: rgba(3, 105, 161, 0.12);  --nxa-cat-line: rgba(3, 105, 161, 0.35); }
+[data-category="politica" i]   { --nxa-cat: #b45309; --nxa-cat-soft: rgba(180, 83, 9, 0.12);   --nxa-cat-line: rgba(180, 83, 9, 0.35); }
+[data-category="economia" i]   { --nxa-cat: #047857; --nxa-cat-soft: rgba(4, 120, 87, 0.12);   --nxa-cat-line: rgba(4, 120, 87, 0.35); }
+[data-category="scienza" i]    { --nxa-cat: #6d28d9; --nxa-cat-soft: rgba(109, 40, 217, 0.12); --nxa-cat-line: rgba(109, 40, 217, 0.35); }
+[data-category="sport" i]      { --nxa-cat: #dc2626; --nxa-cat-soft: rgba(220, 38, 38, 0.12);  --nxa-cat-line: rgba(220, 38, 38, 0.35); }
+[data-category="cultura" i]    { --nxa-cat: #be185d; --nxa-cat-soft: rgba(190, 24, 93, 0.12);  --nxa-cat-line: rgba(190, 24, 93, 0.35); }
+[data-category="salute" i]     { --nxa-cat: #15803d; --nxa-cat-soft: rgba(21, 128, 61, 0.12);  --nxa-cat-line: rgba(21, 128, 61, 0.35); }
+
+body.nexus-theme-dark [data-category="tecnologia" i] { --nxa-cat: #38bdf8; --nxa-cat-soft: rgba(56, 189, 248, 0.14);  --nxa-cat-line: rgba(56, 189, 248, 0.4); }
+body.nexus-theme-dark [data-category="politica" i]   { --nxa-cat: #f59e0b; --nxa-cat-soft: rgba(245, 158, 11, 0.14);  --nxa-cat-line: rgba(245, 158, 11, 0.4); }
+body.nexus-theme-dark [data-category="economia" i]   { --nxa-cat: #34d399; --nxa-cat-soft: rgba(52, 211, 153, 0.14);  --nxa-cat-line: rgba(52, 211, 153, 0.4); }
+body.nexus-theme-dark [data-category="scienza" i]    { --nxa-cat: #a78bfa; --nxa-cat-soft: rgba(167, 139, 250, 0.15); --nxa-cat-line: rgba(167, 139, 250, 0.4); }
+body.nexus-theme-dark [data-category="sport" i]      { --nxa-cat: #f87171; --nxa-cat-soft: rgba(248, 113, 113, 0.14); --nxa-cat-line: rgba(248, 113, 113, 0.4); }
+body.nexus-theme-dark [data-category="cultura" i]    { --nxa-cat: #f472b6; --nxa-cat-soft: rgba(244, 114, 182, 0.14); --nxa-cat-line: rgba(244, 114, 182, 0.4); }
+body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa-cat-soft: rgba(74, 222, 128, 0.13);  --nxa-cat-line: rgba(74, 222, 128, 0.4); }
 
 /* -------------------------------------------------------------------------
- * 3. Base pannello
+ * 3. Classi condivise: toolbar, empty state, skeleton
+ * ---------------------------------------------------------------------- */
+.nxa-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.nxa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px;
+  margin: 14px 0;
+  text-align: center;
+  background: var(--nxa-surface);
+  border: 1px dashed var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  color: var(--nxa-muted);
+}
+
+.nxa-empty .dashicons {
+  width: 32px;
+  height: 32px;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--nxa-muted);
+}
+
+.nxa-empty p {
+  margin: 0;
+  color: inherit;
+}
+
+.nxa-empty strong {
+  color: var(--nxa-text);
+}
+
+.nxa-skeleton {
+  display: block;
+  width: 100%;
+  height: 14px;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+}
+
+.nxa-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--nxa-skeleton-hi), transparent);
+  animation: nxa-shimmer 1.6s ease-in-out infinite;
+}
+
+.nxa-skeleton.is-title {
+  height: 22px;
+}
+
+.nxa-skeleton.is-line {
+  height: 12px;
+}
+
+.nxa-skeleton.is-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Base pannello
  * ---------------------------------------------------------------------- */
 .wrap.nexus-admin,
 .wrap.nexus-admin * {
@@ -83,10 +285,10 @@
   padding: clamp(16px, 2.5vw, 28px);
   color: var(--nxa-text);
   background:
-    radial-gradient(900px 380px at 90% -10%, rgba(6, 182, 212, 0.08), transparent 60%),
-    radial-gradient(700px 320px at 0% 0%, rgba(124, 58, 237, 0.12), transparent 55%),
+    radial-gradient(900px 380px at 90% -10%, var(--nxa-glow-2), transparent 60%),
+    radial-gradient(700px 320px at 0% 0%, var(--nxa-glow-1), transparent 55%),
     var(--nxa-bg);
-  border: 1px solid #1e293b;
+  border: 1px solid var(--nxa-panel-line);
   border-radius: var(--nxa-radius-lg);
   font-size: 0.92rem;
   line-height: 1.55;
@@ -104,7 +306,15 @@
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.02em;
-  color: #f1f5f9;
+  color: var(--nxa-heading);
+}
+
+/* Sottotitolo di pagina (v1.0.6): frase introduttiva sotto l'h1. */
+.wrap.nexus-admin .nxa-page-subtitle {
+  margin: 0 0 10px;
+  color: var(--nxa-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .wrap.nexus-admin h2 {
@@ -115,6 +325,8 @@
   color: var(--nxa-text);
 }
 
+/* Underline accent condiviso da h1 e h2 */
+.wrap.nexus-admin h1::after,
 .wrap.nexus-admin h2::after {
   content: "";
   display: block;
@@ -130,7 +342,12 @@
 }
 
 .wrap.nexus-admin a {
-  color: #7dd3fc;
+  color: var(--nxa-link);
+  transition: color 0.15s ease;
+}
+
+.wrap.nexus-admin a:hover {
+  color: var(--nxa-link-hover);
 }
 
 .wrap.nexus-admin code {
@@ -138,12 +355,12 @@
   border-radius: 6px;
   background: var(--nxa-surface-3);
   border: 1px solid var(--nxa-border);
-  color: #a5b4fc;
+  color: var(--nxa-code-text);
   font-size: 0.82em;
 }
 
 /* -------------------------------------------------------------------------
- * 4. Bottoni
+ * 5. Bottoni
  * ---------------------------------------------------------------------- */
 .nxa-btn {
   display: inline-flex;
@@ -151,9 +368,9 @@
   justify-content: center;
   gap: 8px;
   padding: 9px 18px;
-  border: 1px solid #2a3550;
+  border: 1px solid var(--nxa-line-strong);
   border-radius: var(--nxa-radius-sm);
-  background: var(--nxa-surface-2);
+  background: var(--nxa-btn-bg);
   color: var(--nxa-text);
   font-family: inherit;
   font-size: 0.84rem;
@@ -169,9 +386,9 @@
 }
 
 .nxa-btn:hover {
-  border-color: rgba(124, 58, 237, 0.6);
-  background: #202a40;
-  color: #fff;
+  border-color: var(--nxa-btn-line-hover);
+  background: var(--nxa-btn-bg-hover);
+  color: var(--nxa-btn-text-hover);
   text-decoration: none;
 }
 
@@ -199,34 +416,34 @@
 }
 
 .nxa-btn.is-danger {
-  color: #fca5a5;
-  background: rgba(248, 113, 113, 0.08);
-  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
 }
 
 .nxa-btn.is-danger:hover {
-  color: #fff;
-  background: rgba(248, 113, 113, 0.2);
-  border-color: rgba(248, 113, 113, 0.65);
+  color: var(--nxa-err-text-strong);
+  background: var(--nxa-err-bg-strong);
+  border-color: var(--nxa-err-line);
 }
 
 .nxa-btn-primary {
   border-color: transparent;
   background: var(--nxa-accent-grad);
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.32);
+  color: var(--nxa-on-accent);
+  box-shadow: 0 6px 18px var(--nxa-accent-glow);
 }
 
 .nxa-btn-primary:hover {
   border-color: transparent;
   background: var(--nxa-accent-grad);
-  color: #fff;
+  color: var(--nxa-on-accent);
   filter: brightness(1.1);
-  box-shadow: 0 10px 26px rgba(124, 58, 237, 0.45);
+  box-shadow: 0 10px 26px var(--nxa-accent-glow-strong);
 }
 
 /* -------------------------------------------------------------------------
- * 5. Badge + punteggio
+ * 6. Badge + punteggio
  * ---------------------------------------------------------------------- */
 .nxa-badge {
   display: inline-flex;
@@ -253,21 +470,21 @@
 }
 
 .nxa-badge.is-active {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.1);
-  border-color: rgba(74, 222, 128, 0.4);
+  color: var(--nxa-ok-text);
+  background: var(--nxa-ok-bg);
+  border-color: var(--nxa-ok-line);
 }
 
 .nxa-badge.is-paused {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.4);
+  color: var(--nxa-warn-text);
+  background: var(--nxa-warn-bg);
+  border-color: var(--nxa-warn-line);
 }
 
 .nxa-badge.is-error {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
-  border-color: rgba(248, 113, 113, 0.45);
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
 }
 
 .nxa-badge.is-error::before {
@@ -296,25 +513,25 @@
 }
 
 .nxa-score.is-high {
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
-  border-color: rgba(52, 211, 153, 0.4);
+  color: var(--nxa-ok-text);
+  background: var(--nxa-ok-bg);
+  border-color: var(--nxa-ok-line);
 }
 
 .nxa-score.is-mid {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.4);
+  color: var(--nxa-warn-text);
+  background: var(--nxa-warn-bg);
+  border-color: var(--nxa-warn-line);
 }
 
 .nxa-score.is-low {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
-  border-color: rgba(248, 113, 113, 0.45);
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
 }
 
 /* -------------------------------------------------------------------------
- * 6. Stat grid + actions row
+ * 7. Stat grid + actions row
  * ---------------------------------------------------------------------- */
 .nxa-stat-grid {
   display: grid;
@@ -344,7 +561,7 @@
 }
 
 .nxa-stat-card:hover {
-  border-color: rgba(124, 58, 237, 0.45);
+  border-color: var(--nxa-accent-line);
   transform: translateY(-2px);
   box-shadow: var(--nxa-shadow);
 }
@@ -381,7 +598,7 @@
 }
 
 /* -------------------------------------------------------------------------
- * 7. Agenti
+ * 8. Agenti
  * ---------------------------------------------------------------------- */
 .nxa-agents-grid {
   display: grid;
@@ -414,7 +631,7 @@
 }
 
 .nxa-agent-card:hover {
-  border-color: rgba(124, 58, 237, 0.5);
+  border-color: var(--nxa-accent-line);
   transform: translateY(-2px);
   box-shadow: var(--nxa-shadow);
 }
@@ -427,9 +644,9 @@
   font-size: 1.85rem;
   line-height: 1;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.24), rgba(6, 182, 212, 0.24));
-  border: 1px solid rgba(124, 58, 237, 0.4);
-  box-shadow: inset 0 0 18px rgba(124, 58, 237, 0.12);
+  background: linear-gradient(135deg, var(--nxa-accent-1-soft), var(--nxa-accent-2-soft));
+  border: 1px solid var(--nxa-accent-line);
+  box-shadow: inset 0 0 18px var(--nxa-accent-1-soft);
 }
 
 .nxa-agent-name {
@@ -471,10 +688,11 @@
   border-top: 1px dashed var(--nxa-border-soft);
   font-size: 0.74rem;
   color: var(--nxa-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* -------------------------------------------------------------------------
- * 8. Coda editoriale
+ * 9. Coda editoriale
  * ---------------------------------------------------------------------- */
 .nxa-queue-list {
   display: flex;
@@ -496,8 +714,8 @@
 }
 
 .nxa-queue-row:hover {
-  border-color: rgba(124, 58, 237, 0.45);
-  background: #141b2c;
+  border-color: var(--nxa-accent-line);
+  background: var(--nxa-row-hover-bg);
 }
 
 .nxa-queue-main {
@@ -536,7 +754,7 @@
 }
 
 /* -------------------------------------------------------------------------
- * 9. Activity feed
+ * 10. Activity feed
  * ---------------------------------------------------------------------- */
 .nxa-activity-feed {
   display: flex;
@@ -597,25 +815,25 @@
 
 /* Varianti stato */
 .nxa-activity-item.is-success .nxa-activity-icon {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.1);
-  border-color: rgba(74, 222, 128, 0.35);
+  color: var(--nxa-ok-text);
+  background: var(--nxa-ok-bg);
+  border-color: var(--nxa-ok-line);
 }
 
 .nxa-activity-item.is-warning .nxa-activity-icon {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--nxa-warn-text);
+  background: var(--nxa-warn-bg);
+  border-color: var(--nxa-warn-line);
 }
 
 .nxa-activity-item.is-error .nxa-activity-icon {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
-  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
 }
 
 /* -------------------------------------------------------------------------
- * 10. Settings form + toggle switch
+ * 11. Settings form + toggle switch
  * ---------------------------------------------------------------------- */
 .nxa-settings-form {
   display: flex;
@@ -663,9 +881,9 @@
   width: 100%;
   max-width: 440px;
   padding: 9px 12px;
-  border: 1px solid var(--nxa-border);
+  border: 1px solid var(--nxa-input-line);
   border-radius: var(--nxa-radius-sm);
-  background: var(--nxa-surface-3);
+  background: var(--nxa-input-bg);
   color: var(--nxa-text);
   font-size: 0.88rem;
   line-height: 1.4;
@@ -693,7 +911,7 @@
 .wrap.nexus-admin .nxa-form-row select:focus,
 .wrap.nexus-admin .nxa-form-row textarea:focus {
   border-color: var(--nxa-accent-1);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.22);
+  box-shadow: var(--nxa-ring-accent);
   outline: none;
 }
 
@@ -724,7 +942,7 @@
   height: 26px;
   margin: 0;
   flex: 0 0 auto;
-  border: 1px solid #2a3550;
+  border: 1px solid var(--nxa-line-strong);
   border-radius: 999px;
   background: var(--nxa-surface-2);
   cursor: pointer;
@@ -752,7 +970,7 @@
 
 .wrap.nexus-admin input[type="checkbox"].nxa-switch:checked::before {
   transform: translate(20px, -50%);
-  background: #fff;
+  background: var(--nxa-on-accent);
 }
 
 .wrap.nexus-admin input[type="checkbox"].nxa-switch:focus-visible {
@@ -791,7 +1009,7 @@
   width: 46px;
   height: 26px;
   flex: 0 0 auto;
-  border: 1px solid #2a3550;
+  border: 1px solid var(--nxa-line-strong);
   border-radius: 999px;
   background: var(--nxa-surface-2);
   transition: background 0.2s ease, border-color 0.2s ease;
@@ -817,7 +1035,7 @@
 
 .wrap.nexus-admin label.nxa-switch input:checked + .nxa-switch-track::before {
   transform: translate(20px, -50%);
-  background: #fff;
+  background: var(--nxa-on-accent);
 }
 
 .wrap.nexus-admin label.nxa-switch input:focus-visible + .nxa-switch-track {
@@ -826,7 +1044,7 @@
 }
 
 /* -------------------------------------------------------------------------
- * 11. Nexus Wire runs
+ * 12. Nexus Wire runs
  * ---------------------------------------------------------------------- */
 .nxa-wire-runs {
   display: flex;
@@ -848,7 +1066,7 @@
 }
 
 .nxa-wire-run:hover {
-  border-color: rgba(6, 182, 212, 0.45);
+  border-color: var(--nxa-accent2-line);
 }
 
 .nxa-wire-topic {
@@ -888,9 +1106,9 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #22d3ee;
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: var(--nxa-info-text);
+  background: var(--nxa-info-bg);
+  border: 1px solid var(--nxa-info-line);
 }
 
 .nxa-wire-status::before {
@@ -902,13 +1120,13 @@
 }
 
 .nxa-wire-status.is-success,
-.nxa-wire-status.is-ok { color: #4ade80; background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.4); }
-.nxa-wire-status.is-warning { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.4); }
+.nxa-wire-status.is-ok { color: var(--nxa-ok-text); background: var(--nxa-ok-bg); border-color: var(--nxa-ok-line); }
+.nxa-wire-status.is-warning { color: var(--nxa-warn-text); background: var(--nxa-warn-bg); border-color: var(--nxa-warn-line); }
 .nxa-wire-status.is-error,
-.nxa-wire-status.is-failed { color: #f87171; background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.45); }
+.nxa-wire-status.is-failed { color: var(--nxa-err-text); background: var(--nxa-err-bg); border-color: var(--nxa-err-line); }
 
 /* -------------------------------------------------------------------------
- * 12. Toast
+ * 13. Toast
  * ---------------------------------------------------------------------- */
 .nxa-toast {
   position: fixed;
@@ -922,7 +1140,7 @@
   padding: 12px 18px;
   border-radius: 12px;
   background: var(--nxa-surface);
-  border: 1px solid #2a3550;
+  border: 1px solid var(--nxa-line-strong);
   color: var(--nxa-text);
   font-size: 0.84rem;
   line-height: 1.45;
@@ -931,18 +1149,18 @@
 }
 
 .nxa-toast.is-success {
-  border-color: rgba(74, 222, 128, 0.45);
-  box-shadow: inset 3px 0 0 #4ade80, var(--nxa-shadow-lg);
+  border-color: var(--nxa-ok-line);
+  box-shadow: inset 3px 0 0 var(--nxa-ok-text), var(--nxa-shadow-lg);
 }
 
 .nxa-toast.is-error {
-  border-color: rgba(248, 113, 113, 0.5);
-  box-shadow: inset 3px 0 0 #f87171, var(--nxa-shadow-lg);
+  border-color: var(--nxa-err-line);
+  box-shadow: inset 3px 0 0 var(--nxa-err-text), var(--nxa-shadow-lg);
 }
 
 .nxa-toast.is-info {
-  border-color: rgba(6, 182, 212, 0.5);
-  box-shadow: inset 3px 0 0 #06b6d4, var(--nxa-shadow-lg);
+  border-color: var(--nxa-info-line);
+  box-shadow: inset 3px 0 0 var(--nxa-info-text), var(--nxa-shadow-lg);
 }
 
 .nxa-toast .nxa-toast-close {
@@ -977,7 +1195,7 @@
 }
 
 /* -------------------------------------------------------------------------
- * 13. Modale admin (stessa geometria di quella pubblica)
+ * 14. Modale admin (stessa geometria di quella pubblica)
  * ---------------------------------------------------------------------- */
 .nxa-modal-overlay {
   position: fixed;
@@ -987,7 +1205,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(4, 7, 14, 0.74);
+  background: var(--nxa-overlay);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   animation: nxa-fade-in 0.2s ease both;
@@ -1009,8 +1227,24 @@
   border-radius: 20px;
   box-shadow: var(--nxa-shadow-lg);
   scrollbar-width: thin;
-  scrollbar-color: var(--nxa-border) transparent;
+  scrollbar-color: var(--nxa-scroll-thumb) transparent;
   animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Scrollbar discreta (webkit) nel contenitore scrollabile */
+.nxa-modal::-webkit-scrollbar {
+  width: 10px;
+}
+
+.nxa-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nxa-modal::-webkit-scrollbar-thumb {
+  background: var(--nxa-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .nxa-modal-close {
@@ -1026,7 +1260,7 @@
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--nxa-border);
-  background: rgba(26, 34, 52, 0.88);
+  background: var(--nxa-modal-close-bg);
   color: var(--nxa-muted);
   font-size: 1.05rem;
   line-height: 1;
@@ -1037,9 +1271,9 @@
 }
 
 .nxa-modal-close:hover {
-  color: #fff;
-  background: rgba(248, 113, 113, 0.16);
-  border-color: rgba(248, 113, 113, 0.5);
+  color: var(--nxa-on-accent);
+  background: var(--nxa-err-bg-strong);
+  border-color: var(--nxa-err-line);
 }
 
 .nxa-modal-body {
@@ -1063,6 +1297,19 @@
   margin: 0 0 1em;
 }
 
+.nxa-modal-body a {
+  color: var(--nxa-link);
+}
+
+.nxa-modal-body code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--nxa-surface-3);
+  border: 1px solid var(--nxa-border);
+  color: var(--nxa-code-text);
+  font-size: 0.82em;
+}
+
 .nxa-modal-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1072,6 +1319,7 @@
   border-top: 1px solid var(--nxa-border-soft);
   font-size: 0.74rem;
   color: var(--nxa-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 body.nxa-lock-scroll {
@@ -1079,14 +1327,14 @@ body.nxa-lock-scroll {
 }
 
 /* -------------------------------------------------------------------------
- * 14. Spinner
+ * 15. Spinner
  * ---------------------------------------------------------------------- */
 .nxa-spinner {
   display: inline-block;
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  border: 2px solid rgba(148, 163, 184, 0.3);
+  border: 2px solid var(--nxa-spinner-track);
   border-top-color: var(--nxa-accent-2);
   border-radius: 50%;
   vertical-align: -3px;
@@ -1101,14 +1349,16 @@ body.nxa-lock-scroll {
 }
 
 .nxa-btn .nxa-spinner {
-  border-color: rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border-color: var(--nxa-on-accent-soft);
+  border-top-color: var(--nxa-on-accent);
 }
 
 /* -------------------------------------------------------------------------
- * 15. Accessibilità
+ * 16. Accessibilita' (focus, reduced-motion)
  * ---------------------------------------------------------------------- */
-.wrap.nexus-admin :focus-visible {
+.wrap.nexus-admin :focus-visible,
+.nxa-modal :focus-visible,
+.nxa-toast :focus-visible {
   outline: 2px solid var(--nxa-focus);
   outline-offset: 2px;
 }
@@ -1149,9 +1399,14 @@ body.nxa-lock-scroll {
   50% { opacity: 0.45; transform: scale(0.8); }
 }
 
+@keyframes nxa-shimmer {
+  to { transform: translateX(100%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nxa-spinner,
-  .nxa-badge.is-error::before {
+  .nxa-badge.is-error::before,
+  .nxa-skeleton::after {
     animation: none;
   }
 
@@ -1166,7 +1421,8 @@ body.nxa-lock-scroll {
   .nxa-stat-card,
   .nxa-queue-row,
   .nxa-wire-run,
-  .nxa-modal-close {
+  .nxa-modal-close,
+  .wrap.nexus-admin a {
     transition: none;
   }
 
@@ -1177,11 +1433,13 @@ body.nxa-lock-scroll {
 }
 
 /* -------------------------------------------------------------------------
- * 16. Stampa
+ * 17. Stampa
  * ---------------------------------------------------------------------- */
 @media print {
   .nxa-actions-row,
   .nxa-queue-actions,
+  .nxa-toolbar,
+  .nxa-skeleton,
   .nxa-toast,
   .nxa-toast-stack,
   .nxa-modal-overlay,
@@ -1190,12 +1448,17 @@ body.nxa-lock-scroll {
   }
 
   .wrap.nexus-admin {
-    background: #fff !important;
-    color: #111 !important;
+    background: var(--nxa-print-bg) !important;
+    color: var(--nxa-print-text) !important;
     border: none;
     border-radius: 0;
     margin: 0;
     padding: 0;
+  }
+
+  .wrap.nexus-admin h1::after,
+  .wrap.nexus-admin h2::after {
+    background: var(--nxa-print-text);
   }
 
   .nxa-stat-card,
@@ -1203,15 +1466,20 @@ body.nxa-lock-scroll {
   .nxa-queue-row,
   .nxa-activity-feed,
   .nxa-wire-run,
-  .nxa-settings-form {
-    background: #fff;
-    border-color: #d4d4d8;
+  .nxa-settings-form,
+  .nxa-empty {
+    background: var(--nxa-print-bg);
+    border-color: var(--nxa-print-line);
     box-shadow: none;
     break-inside: avoid;
   }
 
+  .nxa-empty {
+    color: var(--nxa-print-muted);
+  }
+
   .nxa-stat-value {
-    color: #111;
+    color: var(--nxa-print-text);
     -webkit-text-fill-color: currentColor;
   }
 
@@ -1220,6 +1488,6 @@ body.nxa-lock-scroll {
   .nxa-activity-time,
   .nxa-agent-meta,
   .nxa-form-hint {
-    color: #444;
+    color: var(--nxa-print-muted);
   }
 }

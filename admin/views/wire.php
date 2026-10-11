@@ -10,11 +10,18 @@
  *   #nxa-wire-topic ed esegue POST /wire/run (nexus/v1) con body { topic },
  *   mostrando lo spinner "Redazione al lavoro… 3 agenti + direttore" fino
  *   alla risposta (durata: i 3 agenti propongono + il direttore AI fonde).
+ *   admin.js inserisce dopo l'input i suggerimenti (#nxa-wire-ideas) e,
+ *   durante l'esecuzione, il box fasi (.nxa-wire-status) dentro il form.
  * - #nxa-wire-runs.nxa-wire-runs: admin.js esegue GET /wire/runs (nexus/v1)
  *   e renderizza la lista dei run, ognuno con: topic, status (badge),
  *   agenti coinvolti, articolo collegato (link) e data (Nexus_Utils::time_ago_it).
- * - Le card .nxa-skeleton-* sono placeholder statici di caricamento,
- *   sostituite dal primo render di admin.js.
+ * - Le righe .nxa-skeleton sono placeholder statici di caricamento,
+ *   sostituiti dal primo render di admin.js.
+ *
+ * v1.0.6 — markup allineato al design system a tema chiaro: bottone
+ * .nxa-btn-primary, sezione storico con intestazione h2, skeleton
+ * (.nxa-skeleton) ed empty state no-JS (.nxa-empty) con dashicon. Nessuna
+ * modifica a id, data-* e selettori consumati da admin.js.
  *
  * @package Nexus_News_AI
  */
@@ -29,22 +36,24 @@ defined( 'ABSPATH' ) || exit;
 	<form id="nxa-wire-form" class="nxa-wire-form">
 		<label class="screen-reader-text" for="nxa-wire-topic"><?php esc_html_e( 'Tema da sviluppare', 'nexus-news-ai' ); ?></label>
 		<input type="text" id="nxa-wire-topic" name="topic" class="nxa-wire-topic regular-text" maxlength="200" autocomplete="off" placeholder="<?php esc_attr_e( "Tema da sviluppare (es. l'impatto dell'AI sulle notizie elettorali)", 'nexus-news-ai' ); ?>" />
-		<button type="submit" class="button button-primary"><?php esc_html_e( 'Avvia redazione collettiva', 'nexus-news-ai' ); ?></button>
+		<button type="submit" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Avvia redazione collettiva', 'nexus-news-ai' ); ?></button>
 	</form>
 
-	<!-- SKELETON: card statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
+	<h2><?php esc_html_e( 'Storico delle redazioni collettive', 'nexus-news-ai' ); ?></h2>
+
+	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
 	<div id="nxa-wire-runs" class="nxa-wire-runs" aria-live="polite" aria-busy="true">
-		<div class="nxa-wire-run nxa-skeleton-card">
-			<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-			<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-		</div>
-		<div class="nxa-wire-run nxa-skeleton-card">
-			<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-			<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-		</div>
-		<div class="nxa-wire-run nxa-skeleton-card">
-			<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-			<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-		</div>
+		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento dello storico…', 'nexus-news-ai' ); ?></p>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
 	</div>
+
+	<noscript>
+		<div class="nxa-empty">
+			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
+			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+			<p><?php esc_html_e( 'Attiva JavaScript per avviare la redazione collettiva e visualizzare lo storico.', 'nexus-news-ai' ); ?></p>
+		</div>
+	</noscript>
 </div>

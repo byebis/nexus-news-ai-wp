@@ -352,6 +352,14 @@ class Nexus_Newsletter {
          * @return string
          */
         public static function render_subscribe_form( $atts = array() ) {
+                // v1.0.6: il form renderizzato via shortcode bare non eredita
+                // l'enqueue dello stile pubblico (lo fa Nexus_Shortcodes solo per
+                // i propri shortcode e il blocco subscribe): qui lo mettiamo in
+                // coda se registrato, così il form esce formattato anche qui.
+                if ( wp_style_is( 'nexus-public', 'registered' ) ) {
+                        wp_enqueue_style( 'nexus-public' );
+                }
+
                 $atts = shortcode_atts(
                         array(
                                 'title'       => __( 'Iscriviti alla newsletter', 'nexus-news-ai' ),

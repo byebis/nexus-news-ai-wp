@@ -9,14 +9,19 @@
  * - Contenitore pagina: <div class="wrap nexus-admin" data-page="activity">.
  * - #nxa-activity-list.nxa-activity-feed: admin.js esegue GET /activity?limit=50
  *   (nexus/v1) e renderizza la timeline dentro questo container, sostituendo
- *   le righe skeleton (.nxa-skeleton-* → placeholder statici di caricamento).
+ *   le righe skeleton (.nxa-skeleton → placeholder statici di caricamento).
  * - Ogni evento della timeline deve mostrare:
- *   - icona azione:  collecting 📡 | evaluating ⚖️ | rewriting ✍️ | publishing 🚀 | wire 🕸️
+ *   - icona azione:  collecting | evaluating | rewriting | publishing | wire
  *   - nome agente (o "Sistema" se agent_id = 0)
  *   - detail (testo descrittivo dell'evento)
  *   - badge status → etichetta italiana: info → "Info", success → "Completato",
  *     warning → "Attenzione", error → "Errore"
  *   - data relativa calcolata con Nexus_Utils::time_ago_it().
+ *
+ * v1.0.6 — markup allineato al design system a tema chiaro: skeleton
+ * (.nxa-skeleton) al posto delle righe decorative, sottotitolo di pagina e
+ * empty state no-JS (.nxa-empty) con dashicon. Nessuna modifica a id,
+ * data-* e selettori consumati da admin.js.
  *
  * @package Nexus_News_AI
  */
@@ -26,28 +31,23 @@ defined( 'ABSPATH' ) || exit;
 <div class="wrap nexus-admin" data-page="activity">
 	<h1><?php esc_html_e( 'Feed attività', 'nexus-news-ai' ); ?></h1>
 
+	<p class="nxa-page-subtitle"><?php esc_html_e( 'Cronologia del lavoro degli agenti: raccolte, valutazioni, riscritture e pubblicazioni.', 'nexus-news-ai' ); ?></p>
+
 	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal primo render di admin.js (GET /activity?limit=50). -->
 	<div id="nxa-activity-list" class="nxa-activity-feed" aria-live="polite" aria-busy="true">
-		<div class="nxa-activity-item nxa-skeleton-item">
-			<span class="nxa-activity-icon nxa-skeleton-icon" aria-hidden="true"></span>
-			<div class="nxa-activity-body">
-				<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-				<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-			</div>
-		</div>
-		<div class="nxa-activity-item nxa-skeleton-item">
-			<span class="nxa-activity-icon nxa-skeleton-icon" aria-hidden="true"></span>
-			<div class="nxa-activity-body">
-				<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-				<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-			</div>
-		</div>
-		<div class="nxa-activity-item nxa-skeleton-item">
-			<span class="nxa-activity-icon nxa-skeleton-icon" aria-hidden="true"></span>
-			<div class="nxa-activity-body">
-				<span class="nxa-skeleton-line nxa-skeleton-line--title"></span>
-				<span class="nxa-skeleton-line nxa-skeleton-line--detail"></span>
-			</div>
-		</div>
+		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
+		<div class="nxa-skeleton"></div>
 	</div>
+
+	<noscript>
+		<div class="nxa-empty">
+			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
+			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+			<p><?php esc_html_e( 'Attiva JavaScript per visualizzare lo storico delle attività.', 'nexus-news-ai' ); ?></p>
+		</div>
+	</noscript>
 </div>
