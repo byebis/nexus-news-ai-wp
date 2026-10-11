@@ -4,11 +4,11 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST.
+Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST. Dalla 1.0.4 la redazione scala: coda lavori stile Action Scheduler con retry automatico e pagina «Coda Lavori», comandi WP-CLI (`wp nexus`), blocchi Gutenberg nativi (ultimi articoli e form newsletter) e pagina Analytics (serie giornaliera, costi AI, breakdown per piattaforma e per agente, top articoli, iscritti).
 
 == Description ==
 
@@ -88,6 +88,13 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 == Changelog ==
 
+= 1.0.4 =
+* Coda lavori stile Action Scheduler: tabella wp_nexus_jobs con claim atomico, retry automatico con backoff esponenziale (60s*2^n, cap 1 ora), requeue dei lavori bloccati oltre 30 minuti e pulizia automatica dei lavori finiti da più di 7 giorni; runner WP-Cron ogni 60 secondi (solo con enable_queue=1), hook accodabili (pipeline_run_full, pipeline_collect, pipeline_evaluate, pipeline_rewrite, pipeline_publish, pipeline_wire_run, article_translate, pipeline_cron_tick) e nuova pagina admin «Coda Lavori» con stat, filtri di stato, riprova/annulla, «Processa ora», pulizia manuale e auto-refresh ogni 15 secondi.
+* WP-CLI: comando `wp nexus` con run (--agent/--all), collect, evaluate, rewrite, publish, approve/reject con nota, translate --lang, agents, articles, stats, queue stats|process|retry|cancel|cleanup e settings get/set.
+* Blocchi Gutenberg: nexus/latest-articles (numero articoli 1-24, categoria, colonne 1-4, mostra immagini) e nexus/subscribe-form (titolo personalizzabile), dinamici server-side con preview nell'editor e nessun build step; alternativa a [nexus_articles] e [nexus_subscribe].
+* Analytics: nuova pagina con serie giornaliera 7-90 giorni (creati/pubblicati), chiamate AI e costo stimato del periodo, breakdown per piattaforma di pubblicazione e per agente (qualità media), top 10 articoli per viste e iscritti newsletter (confermati/pending/nuovi nel periodo).
+* 3 nuovi setting nella sezione admin «Scala & Pro»: enable_queue, queue_batch_size, queue_max_attempts.
+
 = 1.0.3 =
 * «Redazione intelligente»: modello AI per-agente (POST /agents/{id}/model, campo «Modello AI» nella pagina Agenti) e modello economico per screening/valutazione/fact-check; anti-duplicato via hash del titolo in fase di raccolta.
 * Uso AI sotto controllo: ogni chiamata logga token e costo stimato in USD (tabella wp_nexus_usage_logs), la dashboard mostra «Uso AI» del mese e il budget mensile (monthly_budget_usd) con azione stop o warn protegge le spese.
@@ -113,6 +120,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.4 =
+«Scala & Pro»: attiva la coda lavori stile Action Scheduler con retry automatico, guida la redazione da terminale con `wp nexus`, inserisci articoli e newsletter come blocchi Gutenberg e misura tutto dalla nuova pagina Analytics.
 
 = 1.0.3 =
 «Redazione intelligente»: scegli il modello AI di ogni agente, contieni i costi col modello economico per lo screening e il budget mensile (stop o warn), pubblica solo articoli verificati dal fact-check con il blocco «Fonti verificate» e apri il magazine alle traduzioni AI multi-lingua via REST.

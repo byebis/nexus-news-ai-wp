@@ -112,10 +112,11 @@ function nexus_uninstall_delete_wp_posts() {
 function nexus_uninstall_clear_cron_events() {
         wp_clear_scheduled_hook( 'nexus_weekly_digest' );
         wp_clear_scheduled_hook( 'nexus_ping_article' );
+        wp_clear_scheduled_hook( 'nexus_queue_runner' ); // v1.0.4 — runner coda lavori
 }
 
 /**
- * Drop diretto delle 8 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
+ * Drop diretto delle 9 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
  *
  * @return void
  */
@@ -131,6 +132,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_subscribers',
                 $prefix . 'nexus_usage_logs',   // v1.0.3 — tracking uso AI
                 $prefix . 'nexus_translations', // v1.0.3 — traduzioni AI degli articoli
+                $prefix . 'nexus_jobs',         // v1.0.4 — coda lavori Scala & Pro
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -165,9 +167,9 @@ foreach ( array_unique( $candidates ) as $db_class_file ) {
 }
 
 if ( $loaded && class_exists( 'Nexus_DB' ) ) {
-        // Nexus_DB::drop_tables() fa il drop delle 8 tabelle wp_nexus_* (inclusa
+        // Nexus_DB::drop_tables() fa il drop delle 9 tabelle wp_nexus_* (inclusa
         // nexus_subscribers dalla v1.0.2, nexus_usage_logs e nexus_translations
-        // dalla v1.0.3) e cancella le opzioni nexus_settings,
+        // dalla v1.0.3, nexus_jobs dalla v1.0.4) e cancella le opzioni nexus_settings,
         // nexus_db_version e nexus_wire_runs.
         Nexus_DB::drop_tables();
 

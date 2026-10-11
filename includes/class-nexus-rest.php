@@ -25,6 +25,8 @@
  *   GET    /nexus/v1/stats
  *   POST   /nexus/v1/wire/run                      body {topic} (obbligatorio, max 200 char)
  *   GET    /nexus/v1/wire/runs                     args: limit
+ *   GET    /nexus/v1/jobs, /nexus/v1/jobs/stats; POST /nexus/v1/jobs/process, /nexus/v1/jobs/cleanup, /nexus/v1/jobs/{id}/retry, /nexus/v1/jobs/{id}/cancel (v1.0.4)
+ *   GET    /nexus/v1/analytics                     args: days (7..90) (v1.0.4)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -514,6 +516,138 @@ class Nexus_Rest {
                                         'methods'             => WP_REST_Server::READABLE,
                                         'callback'            => array( __CLASS__, 'rest_health' ),
                                         'permission_callback' => '__return_true',
+                                ),
+                        )
+                );
+
+                /* ---------------- ADMIN: CODA LAVORI (v1.0.4) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_jobs' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'status'            => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'hook'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'page'              => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 1,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'per_page'          => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 50,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs/stats',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_jobs_stats' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs/process',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_jobs_process' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs/cleanup',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_jobs_cleanup' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'days'              => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 7,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs/(?P<id>[0-9]+)/retry',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_job_retry' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/jobs/(?P<id>[0-9]+)/cancel',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_job_cancel' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                /* ---------------- ADMIN: ANALYTICS (v1.0.4) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/analytics',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_analytics' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'days'              => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 30,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
                                 ),
                         )
                 );
@@ -1079,6 +1213,173 @@ class Nexus_Rest {
         }
 
         /* =========================================================================
+         * CALLBACK — ADMIN: CODA LAVORI (v1.0.4)
+         * ======================================================================= */
+
+        /**
+         * GET /jobs — elenco lavori della coda con filtri e paginazione (v1.0.4).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_jobs( $request ) {
+                $page     = max( 1, absint( $request->get_param( 'page' ) ) );
+                $per_page = min( 200, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
+                $args     = array(
+                        'status' => (string) $request->get_param( 'status' ),
+                        'hook'   => (string) $request->get_param( 'hook' ),
+                        'limit'  => $per_page,
+                        'offset' => ( $page - 1 ) * $per_page,
+                );
+
+                $rows  = Nexus_DB::jobs( $args );
+                $total = (int) Nexus_DB::count_jobs( array( 'status' => $args['status'], 'hook' => $args['hook'] ) );
+
+                return rest_ensure_response(
+                        array(
+                                'items' => array_map( array( __CLASS__, 'serialize_job' ), $rows ),
+                                'total' => $total,
+                                'pages' => (int) ceil( $total / $per_page ),
+                                'stats' => Nexus_DB::job_stats(),
+                        )
+                );
+        }
+
+        /**
+         * GET /jobs/stats — statistiche aggregate della coda (v1.0.4).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_jobs_stats( $request ) {
+                unset( $request );
+                return rest_ensure_response( Nexus_DB::job_stats() );
+        }
+
+        /**
+         * POST /jobs/process — esegue subito un batch della coda (v1.0.4).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_jobs_process( $request ) {
+                unset( $request );
+                if ( ! class_exists( 'Nexus_Queue' ) || ! method_exists( 'Nexus_Queue', 'run_batch' ) ) {
+                        return self::err( 'nexus_not_available', __( 'Coda lavori non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $res = Nexus_Queue::run_batch();
+                $res = is_array( $res ) ? $res : array();
+
+                return rest_ensure_response(
+                        array(
+                                'processed' => (int) ( $res['processed'] ?? 0 ),
+                                'failed'    => (int) ( $res['failed'] ?? 0 ),
+                        )
+                );
+        }
+
+        /**
+         * POST /jobs/cleanup — elimina i lavori conclusi più vecchi di N giorni (v1.0.4).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_jobs_cleanup( $request ) {
+                $days    = min( 90, max( 1, absint( $request->get_param( 'days' ) ) ) );
+                $deleted = (int) Nexus_DB::cleanup_jobs( $days );
+
+                return rest_ensure_response( array( 'deleted' => $deleted ) );
+        }
+
+        /**
+         * POST /jobs/{id}/retry — rimette in coda un lavoro concluso o fallito (v1.0.4).
+         *
+         * Stati ammessi per il retry: complete, failed, cancelled → pending.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_job_retry( $request ) {
+                if ( ! class_exists( 'Nexus_Queue' ) || ! method_exists( 'Nexus_Queue', 'retry' ) ) {
+                        return self::err( 'nexus_not_available', __( 'Coda lavori non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $id  = absint( $request->get_param( 'id' ) );
+                $job = Nexus_DB::get_job( $id );
+                if ( ! $job ) {
+                        return self::err( 'nexus_rest_job_not_found', __( 'Lavoro non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $allowed = array( 'complete', 'failed', 'cancelled' );
+                if ( ! in_array( (string) $job->status, $allowed, true ) ) {
+                        return self::err( 'nexus_rest_invalid_job_status', __( 'Lo stato attuale non consente il retry.', 'nexus-news-ai' ), 400 );
+                }
+
+                $res = Nexus_Queue::retry( $id );
+
+                return rest_ensure_response(
+                        array(
+                                'success' => ! empty( $res ),
+                                'status'  => 'pending',
+                        )
+                );
+        }
+
+        /**
+         * POST /jobs/{id}/cancel — annulla un lavoro in attesa (v1.0.4).
+         *
+         * Solo i lavori pending possono essere annullati → cancelled.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_job_cancel( $request ) {
+                if ( ! class_exists( 'Nexus_Queue' ) || ! method_exists( 'Nexus_Queue', 'cancel' ) ) {
+                        return self::err( 'nexus_not_available', __( 'Coda lavori non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $id  = absint( $request->get_param( 'id' ) );
+                $job = Nexus_DB::get_job( $id );
+                if ( ! $job ) {
+                        return self::err( 'nexus_rest_job_not_found', __( 'Lavoro non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                if ( 'pending' !== (string) $job->status ) {
+                        return self::err( 'nexus_rest_invalid_job_status', __( 'Solo i lavori in attesa possono essere annullati.', 'nexus-news-ai' ), 400 );
+                }
+
+                $res = Nexus_Queue::cancel( $id );
+
+                return rest_ensure_response(
+                        array(
+                                'success' => ! empty( $res ),
+                                'status'  => 'cancelled',
+                        )
+                );
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: ANALYTICS (v1.0.4)
+         * ======================================================================= */
+
+        /**
+         * GET /analytics — overview analytics per periodo (v1.0.4).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_analytics( $request ) {
+                if ( ! class_exists( 'Nexus_Analytics' ) || ! method_exists( 'Nexus_Analytics', 'overview' ) ) {
+                        return self::err( 'nexus_not_available', __( 'Analytics non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $days = min( 90, max( 7, absint( $request->get_param( 'days' ) ) ) );
+
+                return rest_ensure_response( Nexus_Analytics::overview( $days ) );
+        }
+
+        /* =========================================================================
          * HELPER PRIVATI
          * ======================================================================= */
 
@@ -1533,5 +1834,38 @@ class Nexus_Rest {
                         self::$agent_cache[ $id ] = Nexus_DB::get_agent( $id );
                 }
                 return self::$agent_cache[ $id ];
+        }
+
+        /**
+         * Serializza un lavoro della coda per la risposta JSON (v1.0.4).
+         *
+         * args è decodificato dal JSON (array, fallback array vuoto);
+         * date e last_error null diventano stringa vuota.
+         *
+         * @param object $job Riga job.
+         * @return array
+         */
+        private static function serialize_job( $job ) {
+                if ( ! $job ) {
+                        return array();
+                }
+
+                $args = json_decode( (string) ( $job->args ?? '' ), true );
+
+                return array(
+                        'id'           => (int) $job->id,
+                        'hook'         => (string) $job->hook,
+                        'args'         => is_array( $args ) ? $args : array(),
+                        'status'       => (string) $job->status,
+                        'priority'     => (int) $job->priority,
+                        'attempts'     => (int) $job->attempts,
+                        'max_attempts' => (int) $job->max_attempts,
+                        'scheduled_at' => (string) ( $job->scheduled_at ?? '' ),
+                        'started_at'   => (string) ( $job->started_at ?? '' ),
+                        'completed_at' => (string) ( $job->completed_at ?? '' ),
+                        'last_error'   => (string) ( $job->last_error ?? '' ),
+                        'created_at'   => (string) ( $job->created_at ?? '' ),
+                        'updated_at'   => (string) ( $job->updated_at ?? '' ),
+                );
         }
 }

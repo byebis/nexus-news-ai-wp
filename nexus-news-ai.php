@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. 7 agenti giornalisti AI con pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.0.3
+ * Version:     1.0.4
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.0.3' );
+define( 'NEXUS_VERSION', '1.0.4' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -42,6 +42,10 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-linkedin.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-newsletter.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-ping.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-translate.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-queue.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-analytics.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-blocks.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cli.php';
 require_once NEXUS_PLUGIN_DIR . 'public/class-nexus-shortcodes.php';
 
 register_activation_hook( __FILE__, array( 'Nexus_DB', 'install' ) );
@@ -83,6 +87,8 @@ function nexus_bootstrap() {
         Nexus_Newsletter::init();
         Nexus_Ping::init();
         Nexus_Translate::init();
+        Nexus_Queue::init();
+        Nexus_Blocks::init();
 
         if ( is_admin() ) {
                 require_once NEXUS_PLUGIN_DIR . 'admin/class-nexus-admin.php';

@@ -3,10 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
+![Versione](https://img.shields.io/badge/versione-1.0.4-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -25,10 +26,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 9. [Cron automatico](#cron-automatico)
 10. [Pubblicazione multi-piattaforma](#pubblicazione-multi-piattaforma)
 11. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
-12. [Installazione](#installazione)
-13. [FAQ tecniche](#faq-tecniche)
-14. [Licenza e crediti](#licenza-e-crediti)
-15. [Changelog](#changelog)
+12. [Scala & Pro (v1.0.4)](#scala--pro-v104)
+13. [Installazione](#installazione)
+14. [FAQ tecniche](#faq-tecniche)
+15. [Licenza e crediti](#licenza-e-crediti)
+16. [Changelog](#changelog)
 
 ---
 
@@ -55,6 +57,10 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Fact-check automatico** (v1.0.3): dopo la riscrittura l'articolo viene verificato contro la fonte con **punteggio 0-100** e **citazioni** claim→fonte; sotto la soglia `factcheck_min_score` torna in bozza, sopra pubblica con il blocco **«Fonti verificate»** nel post WordPress.
 - **Anti-duplicato via hash del titolo** (v1.0.3): in fase di raccolta ogni candidato passa per l'hash md5 del titolo normalizzato (`wp_nexus_articles.content_hash`); i duplicati vengono saltati con log onesto.
 - **Traduzioni AI multi-lingua** (v1.0.3): traduzione di titolo, riassunto e contenuto via REST (`POST /articles/{id}/translate`) nelle lingue configurate (`translation_langs`, default `en,es,fr`) e lettura delle traduzioni via `GET /articles/{id}/translations`; upsert in `wp_nexus_translations`.
+- **Coda lavori stile Action Scheduler** (v1.0.4): le azioni pesanti (pipeline, traduzioni, tick del cron) vengono accodate in `wp_nexus_jobs` con claim atomico, priorità e retry automatico con backoff esponenziale (60s × 2^n, cap 1 ora), requeue dei lavori bloccati oltre 30 minuti e pulizia dei lavori finiti da più di 7 giorni; runner WP-Cron ogni 60 secondi (solo con `enable_queue=1`) e pagina admin «Coda Lavori» con stat, filtri, riprova/annulla, «Processa ora» e auto-refresh.
+- **WP-CLI** (v1.0.4): comando `wp nexus` per pilotare la redazione da terminale e da cron di sistema: `run --all/--agent`, `collect`, `evaluate`, `rewrite`, `publish`, `approve`/`reject`, `translate`, `agents`, `articles`, `stats`, `queue stats|process|retry|cancel|cleanup`, `settings get/set`.
+- **Blocchi Gutenberg** (v1.0.4): blocchi dinamici server-side `nexus/latest-articles` (numero articoli 1-24, categoria, colonne 1-4, mostra immagini) e `nexus/subscribe-form` (titolo personalizzabile) con preview nell'editor, senza build step; alternativa a `[nexus_articles]` e `[nexus_subscribe]`.
+- **Analytics** (v1.0.4): pagina Analytics con serie giornaliera (7-90 giorni) di articoli creati/pubblicati, chiamate AI e costo stimato del periodo, breakdown per piattaforma e per agente (con qualità media), top 10 articoli per viste e iscritti newsletter.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -75,6 +81,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 | RSS `rss.ts` | `class-nexus-rss.php` (DOMDocument, cache via transients `nexus_rss_*`) |
 | Pubblicazione `publish` API | `class-nexus-publisher.php` (post WP reali + social reali Telegram/Discord/X/LinkedIn o simulati, log onesti) |
 | (nessun equivalente) | **Newsletter** `[nexus_subscribe]` con double opt-in e digest settimanale AI (`class-nexus-newsletter.php`) e ping **IndexNow/WebSub** (`class-nexus-ping.php`) — v1.0.2 |
+| (nessun equivalente) | **Scala & Pro** — coda lavori `wp_nexus_jobs` (`class-nexus-queue.php`), WP-CLI `wp nexus` (`class-nexus-cli.php`), blocchi Gutenberg (`class-nexus-blocks.php` + `assets/js/blocks.js`) e Analytics (`class-nexus-analytics.php`) — v1.0.4 |
 | Pipeline `collect-all.ts` / `processCategoryForAgent` | `class-nexus-pipeline.php` (le 5 fasi, eseguibili anche singolarmente) |
 | Framer Motion / Tailwind / shadcn/ui | CSS vanilla (`public/css/`) con animazioni native |
 
@@ -107,6 +114,10 @@ nexus-news-ai/
 │   ├── class-nexus-newsletter.php      # v1.0.2 — Newsletter: shortcode [nexus_subscribe], double opt-in, digest settimanale AI via wp_mail
 │   ├── class-nexus-ping.php            # v1.0.2 — Ping: IndexNow (chiave + key file) e WebSub alla pubblicazione
 │   ├── class-nexus-translate.php       # v1.0.3 — Traduzioni AI: rotte REST translate/translations, prompt multi-lingua, upsert in wp_nexus_translations
+│   ├── class-nexus-queue.php           # v1.0.4 — Coda lavori stile Action Scheduler: dispatch, run_batch (claim atomico, retry con backoff), retry, cancel, requeue_stale, runner WP-Cron nexus_queue_runner
+│   ├── class-nexus-cli.php             # v1.0.4 — WP-CLI: comando wp nexus (run, collect, evaluate, rewrite, publish, approve, reject, translate, agents, articles, stats, queue, settings)
+│   ├── class-nexus-blocks.php          # v1.0.4 — Blocchi Gutenberg server-side: nexus/latest-articles e nexus/subscribe-form
+│   ├── class-nexus-analytics.php       # v1.0.4 — Analytics: overview() con serie giornaliera, costi AI, per piattaforma, per agente, top articoli, iscritti
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
 │   └── index.php                  # Guardia "Silence is golden"
@@ -118,8 +129,10 @@ nexus-news-ai/
 │   │   ├── dashboard.php          # Dashboard statistiche
 │   │   ├── agents.php             # Gestione agenti
 │   │   ├── queue.php              # Coda di approvazione
+│   │   ├── jobs.php               # v1.0.4 — Coda Lavori: stat, filtri stato, riprova/annulla, «Processa ora», pulizia, auto-refresh 15s
 │   │   ├── activity.php           # Feed attività
 │   │   ├── wire.php               # Nexus Wire (redazione collettiva)
+│   │   ├── analytics.php          # v1.0.4 — Analytics: serie giornaliera, costi AI, per piattaforma/agente, top articoli, iscritti
 │   │   └── settings.php           # Impostazioni
 │   └── index.php
 │
@@ -130,7 +143,7 @@ nexus-news-ai/
 │   └── index.php
 │
 ├── assets/                        # Asset condivisi admin
-│   ├── js/                        # admin.js: script dell'interfaccia admin (vanilla JS, consuma le REST route nexus/v1)
+│   ├── js/                        # admin.js (interfaccia admin) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) — vanilla JS, consuma le REST route nexus/v1
 │   └── index.php
 │
 ├── templates/                     # Template front-end per i post WordPress reali (v1.0.1)
@@ -221,6 +234,8 @@ Il **form di iscrizione alla newsletter** (v1.0.2): campo email + bottone, invio
 
 > **Nota (v1.0.1):** gli articoli pubblicati come **post WordPress reali** non passano dagli shortcode: ogni post del CPT `nexus_article` è servito dal template dedicato del plugin (`templates/single-nexus_article.php`), che usa header e footer del tema attivo e mostra byline dell'agente, contenuto, fonti e reazioni Nexus, con permalink `/nexus/{slug}/`. Lo shortcode `[nexus_magazine]` continua invece a leggere il database Nexus (articoli legacy e magazine).
 
+> **Nota (v1.0.4):** nell'editor a blocchi puoi usare i blocchi Gutenberg **`nexus/latest-articles`** e **`nexus/subscribe-form`**, alternativi a `[nexus_articles]` e `[nexus_subscribe]`: vedi la sezione [Scala & Pro](#scala--pro-v104).
+
 ---
 
 ## REST API `nexus/v1`
@@ -252,6 +267,13 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | GET | `/stats` | Statistiche dashboard (totali, stati, views, agenti attivi, attività 24h) |
 | POST | `/wire/run` | Avvia una run del Nexus Wire: body `{ "topic": "…" }` (max 200 caratteri) |
 | GET | `/wire/runs` | Storico completo delle run del Wire; arg `limit` |
+| GET | `/jobs` | Lavori della coda (v1.0.4): args `status`, `hook`, `page`, `per_page` (default 50, max 200) → `{ items, total, pages, stats }` |
+| GET | `/jobs/stats` | Statistiche della coda: `{ pending, running, complete, failed, cancelled, total }` |
+| POST | `/jobs/process` | Processa subito un batch della coda (`Nexus_Queue::run_batch()`) → `{ processed, failed }` |
+| POST | `/jobs/cleanup` | Elimina i lavori finiti più vecchi di `days` giorni (default 7, 1-90) → `{ deleted }` |
+| POST | `/jobs/{id}/retry` | Riprova un lavoro: solo da `failed`/`cancelled`/`complete` → `pending` |
+| POST | `/jobs/{id}/cancel` | Annulla un lavoro: solo se `pending` → `cancelled` |
+| GET | `/analytics` | Analytics della redazione (v1.0.4); arg `days` (default 30, cap 90) |
 
 ### Route pubbliche
 
@@ -328,8 +350,11 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `budget_action` | `stop` | Quando il budget è esaurito: `stop` = le fasi AI vengono saltate con log attività, `warn` = avviso ma la pipeline prosegue |
 | `enable_translations` | `1` | Abilita le traduzioni AI degli articoli via REST (`POST /articles/{id}/translate`) |
 | `translation_langs` | `en,es,fr` | Lingue di traduzione ammesse, separate da virgola (en, es, fr, de, pt, ar, zh, ja) |
+| `enable_queue` | `0` | Usa la coda lavori (stile Action Scheduler): le azioni pesanti vengono accodate in `wp_nexus_jobs` ed eseguite in batch ogni 60 secondi dal runner WP-Cron |
+| `queue_batch_size` | `5` | Lavori per batch del runner della coda (1-50) |
+| `queue_max_attempts` | `3` | Tentativi massimi per lavoro prima di passare a `failed` (1-10) |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)).
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)).
 
 ---
 
@@ -341,6 +366,7 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 - Alla **disattivazione** l'evento pianificato viene rimosso (`Nexus_Cron::deactivate()`); alla riattivazione viene ripianificato.
 - Con la **newsletter attiva** (`enable_newsletter=1`) viene pianificato l'evento **`nexus_weekly_digest`** sullo schedule builtin `weekly`: al tick genera il digest AI degli articoli pubblicati negli ultimi 7 giorni e lo invia via `wp_mail` ai destinatari fissi e agli iscritti confermati.
 - Alla **pubblicazione di un post** `nexus_article` viene schedulato l'evento singolo **`nexus_ping_article`** (con l'ID del post come argomento): il ping IndexNow/WebSub gira fuori banda, senza mai bloccare la pubblicazione.
+- Con la **coda attiva** (`enable_queue=1`, sezione «Scala & Pro») viene pianificato l'evento **`nexus_queue_runner`** sullo schedule custom `nexus_queue_60s` (60 secondi): ogni pass processa un batch di `queue_batch_size` lavori (retry con backoff, requeue dei lavori bloccati oltre 30 minuti, pulizia periodica) e ogni tick del cron principale viene accodato come lavoro `pipeline_cron_tick`; con la coda disattivata l'evento viene rimosso e il comportamento resta quello classico.
 - WP-Cron è "pigro": scatta solo con visite al sito. Per un giornale vero è consigliato un cron di sistema:
   1. definisci `define( 'DISABLE_WP_CRON', true );` in `wp-config.php`;
   2. aggiungi una riga crontab, es. ogni ora:
@@ -350,6 +376,10 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
   3. oppure con WP-CLI dispara il tick a mano quando serve:
      ```bash
      wp cron event run nexus_cron_tick
+     ```
+  4. con la **coda attiva** (`enable_queue=1`) e `DISABLE_WP_CRON`, aggiungi al crontab anche il runner della coda, es. ogni 2 minuti:
+     ```cron
+     */2 * * * * wp nexus queue process --path=/var/www/site/htdocs
      ```
 
 ---
@@ -399,10 +429,96 @@ In fase di **raccolta** ogni candidato viene normalizzato e hashato (md5 del tit
 
 ---
 
+## Scala & Pro (v1.0.4)
+
+Dalla v1.0.4 la redazione scala: le azioni pesanti possono passare da una **coda lavori** con retry automatico, la riga di comando **WP-CLI** pilota tutto da terminale e da cron di sistema, due **blocchi Gutenberg** portano articoli e newsletter nell'editor e una pagina **Analytics** misura l'intera redazione.
+
+### Coda lavori (stile Action Scheduler)
+
+- **Tabella `wp_nexus_jobs`**: ogni azione pesante diventa un lavoro con hook logico, argomenti JSON, priorità (più bassa = eseguita prima), numero di tentativi e stato (`pending`, `running`, `complete`, `failed`, `cancelled`).
+- **Claim atomico**: il runner «prende» i lavori in attesa (pending o la cui programmazione è scaduta) con un claim atomico (`Nexus_DB::claim_jobs()`), che li passa subito a `running`: nessuna doppia esecuzione anche con più processi paralleli.
+- **Retry automatico con backoff esponenziale**: se un lavoro fallisce torna in coda con riprogrammazione `60s × 2^n` (cap 1 ora) e l'errore salvato in `last_error`, fino al massimo di tentativi (`queue_max_attempts`, default 3); oltre, passa a `failed` e resta ispezionabile dalla pagina admin.
+- **Requeue dei lavori bloccati**: i lavori rimasti `running` da più di 30 minuti vengono rimessi in coda con `last_error = timeout`.
+- **Pulizia automatica**: periodicamente (ogni 20 batch circa) i lavori finiti (`complete`/`failed`/`cancelled`) più vecchi di 7 giorni vengono eliminati; la pulizia si può lanciare a mano dalla pagina admin o con `wp nexus queue cleanup`.
+- **Attivazione**: **Impostazioni → Scala & Pro → «Usa la coda lavori»** (`enable_queue`). Con la coda attiva il runner gira ogni 60 secondi (evento WP-Cron `nexus_queue_runner`, schedule custom `nexus_queue_60s`) e processa batch da `queue_batch_size` lavori (default 5); anche il tick del cron principale viene accodato come `pipeline_cron_tick` ed eseguito dal runner. Con la coda disattivata tutto continua a girare in sincrono come nelle versioni precedenti.
+- **Hook accodabili**: `pipeline_run_full`, `pipeline_collect`, `pipeline_evaluate`, `pipeline_rewrite`, `pipeline_publish`, `pipeline_wire_run`, `article_translate`, `pipeline_cron_tick` (registrati tramite il filtro `nexus_job_handlers`).
+- **Pagina admin «Coda Lavori»**: 5 stat-card (in attesa, in esecuzione, completati, falliti, totale), filtro per stato, azioni **Riprova** e **Annulla** per ogni lavoro, bottone **Processa ora** (esegue subito un batch), **Pulizia (>7 giorni)** e auto-refresh ogni 15 secondi.
+
+### WP-CLI
+
+Il comando **`wp nexus`** (classe `Nexus_CLI`, registrata solo quando WP-CLI è attivo) pilota la redazione da terminale:
+
+| Comando | Descrizione |
+|---|---|
+| `wp nexus run [--agent=<id>] [--all]` | Pipeline completa di un agente o di tutti gli agenti attivi (senza flag: errore d'uso) |
+| `wp nexus collect <agent_id>` | Raccolta RSS di un agente |
+| `wp nexus evaluate <article_id>` | Valutazione (punteggio di qualità) di un articolo |
+| `wp nexus rewrite <article_id>` | Riscrittura AI di un articolo |
+| `wp nexus publish <article_id>` | Pubblicazione multi-piattaforma di un articolo |
+| `wp nexus approve <article_id> [--note=...]` | Approva un articolo, con nota opzionale |
+| `wp nexus reject <article_id> [--note=...]` | Rifiuta un articolo, con nota |
+| `wp nexus translate <article_id> --lang=<code>` | Traduzione AI dell'articolo (lingue da `translation_langs`) |
+| `wp nexus agents` | Tabella agenti: id, nome, categoria, stato, modello, articoli |
+| `wp nexus articles [--status=...] [--agent=<id>] [--limit=20]` | Tabella articoli: id, titolo, stato, agente, qualità, viste |
+| `wp nexus stats` | Statistiche della redazione (chiave → valore) |
+| `wp nexus queue stats` | Statistiche della coda lavori |
+| `wp nexus queue process` | Processa subito un batch della coda |
+| `wp nexus queue retry <id>` | Riprova un lavoro (failed/cancelled/complete → pending) |
+| `wp nexus queue cancel <id>` | Annulla un lavoro in attesa (pending → cancelled) |
+| `wp nexus queue cleanup [--days=7]` | Elimina i lavori finiti più vecchi di N giorni |
+| `wp nexus settings get [chiave]` | Legge tutte le impostazioni o una singola chiave |
+| `wp nexus settings set <chiave> <valore>` | Aggiorna una impostazione (solo chiavi esistenti; i valori numerici vengono castati) |
+
+Esempi reali:
+
+```bash
+# Pipeline completa di tutti gli agenti ogni 6 ore, via cron di sistema
+0 */6 * * * wp nexus run --all --path=/var/www/site/htdocs
+
+# Flusso manuale su un articolo
+wp nexus rewrite 123
+wp nexus approve 123 --note="Titolo ok, pubblica"
+wp nexus publish 123
+
+# Coda lavori
+wp nexus queue stats
+wp nexus queue process
+wp nexus queue retry 42
+wp nexus queue cleanup --days=30
+
+# Impostazioni
+wp nexus settings get auto_publish
+wp nexus settings set auto_publish 1
+```
+
+> **Nota (runner della coda):** la coda usa WP-Cron come trigger (evento `nexus_queue_runner` ogni 60 secondi). Se usi `DISABLE_WP_CRON` con un cron di sistema, aggiungi anche una riga per la coda, es. `*/2 * * * * wp nexus queue process --path=/var/www/site/htdocs` (oppure `wp cron event run nexus_queue_runner`). Con `enable_queue=1` i comandi di pipeline lanciati a mano restano sincroni: l'output mostra una nota che la coda è attiva e consiglia `wp nexus queue process`.
+
+### Blocchi Gutenberg
+
+Due blocchi **dinamici server-side** (categoria **widget**, preview renderizzata dal server nell'editor, nessun build step, nessun framework), alternativi agli shortcode:
+
+- **`nexus/latest-articles`** — gli ultimi articoli pubblicati, con lo stesso motore di rendering di `[nexus_articles]`. Attributi nel pannello laterale: **Numero articoli** (1-24, default 6), **Categoria**, **Colonne** (1-4, default 3), **Mostra immagini** (on/off).
+- **`nexus/subscribe-form`** — il form di iscrizione alla newsletter (equivalente di `[nexus_subscribe]`) con **titolo personalizzabile** mostrato sopra il form (default «Iscriviti alla newsletter»).
+
+Inseriscili con il selettore blocchi dell'editor (cerca «Nexus»): la preview nell'editor è generata dal server (`ServerSideRender`), quindi mostra esattamente l'output che avrà la pagina pubblicata.
+
+### Analytics
+
+Nuova pagina **Analytics** nel menu **Nexus News** (tra Nexus Wire e Impostazioni), con periodo selezionabile (7, 14, 30 o 90 giorni) e dati serviti in sola lettura dalla rotta REST `GET /nexus/v1/analytics?days=N` (classe `Nexus_Analytics`, cap 90 giorni):
+
+- **Serie giornaliera** con grafico a barre (due barre per giorno): articoli **creati** e **pubblicati** per giorno.
+- **4 stat-card**: articoli creati, pubblicati, **chiamate AI** e **costo stimato** del periodo.
+- **Breakdown per piattaforma di pubblicazione**: pubblicati e falliti per piattaforma (da `wp_nexus_publish_logs`).
+- **Per agente**: articoli creati, pubblicati e **qualità media** (media `quality_score`).
+- **Top 10 articoli per viste**.
+- **Iscritti newsletter**: confermati, pending, disiscritti e nuovi nel periodo.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
-2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs`, `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations` e inseriti i 7 agenti.
+2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs`, `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`, `wp_nexus_jobs` (v1.0.4) e inseriti i 7 agenti.
 3. Vai su **Nexus News → Impostazioni** e configura la chiave AI (opzionale ma consigliata) e le modalità.
 4. Crea una pagina con `[nexus_magazine]`.
 5. (Opzionale) Configura un cron di sistema come descritto sopra.
@@ -420,7 +536,7 @@ Per tutto ciò che non produce contenuti: magazine, admin panel, coda di approva
 Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di default (`https://openrouter.ai/api/v1`) ma anche OpenAI, Groq, Ollama locale, ecc. — basta cambiare `ai_base_url` e `ai_model`.
 
 **Dove sono salvati i dati?**
-Nelle 8 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività, iscritti newsletter in `wp_nexus_subscribers`, uso AI in `wp_nexus_usage_logs`, traduzioni in `wp_nexus_translations`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
+Nelle 9 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività, iscritti newsletter in `wp_nexus_subscribers`, uso AI in `wp_nexus_usage_logs`, traduzioni in `wp_nexus_translations` e — dalla v1.0.4 — lavori in coda in `wp_nexus_jobs`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
 
 **La disattivazione cancella i dati?**
 No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
@@ -445,6 +561,15 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.4 — «Scala & Pro»
+
+- **Coda lavori stile Action Scheduler**: nuova classe `Nexus_Queue` e tabella `wp_nexus_jobs` con claim atomico, priorità e retry automatico con backoff esponenziale (60s × 2^n, cap 1 ora); requeue dei lavori bloccati oltre 30 minuti e pulizia automatica dei lavori finiti da più di 7 giorni; runner WP-Cron `nexus_queue_runner` (ogni 60 secondi, schedulato solo con `enable_queue=1`) con batch da `queue_batch_size` lavori; hook accodabili: `pipeline_run_full`, `pipeline_collect`, `pipeline_evaluate`, `pipeline_rewrite`, `pipeline_publish`, `pipeline_wire_run`, `article_translate`, `pipeline_cron_tick`; con la coda attiva anche il tick del cron viene accodato.
+- **Pagina admin «Coda Lavori» e REST**: 5 stat-card, filtro per stato, azioni riprova/annulla per lavoro, bottone «Processa ora», pulizia manuale (>7 giorni) e auto-refresh ogni 15 secondi; nuove rotte admin `GET /jobs`, `GET /jobs/stats`, `POST /jobs/process`, `POST /jobs/cleanup`, `POST /jobs/{id}/retry`, `POST /jobs/{id}/cancel`.
+- **WP-CLI**: comando `wp nexus` (run/collect/evaluate/rewrite/publish, approve/reject con nota, translate, agents, articles, stats, queue stats|process|retry|cancel|cleanup, settings get/set) per pilotare la redazione da terminale e da cron di sistema.
+- **Blocchi Gutenberg**: blocchi dinamici server-side `nexus/latest-articles` (numero articoli 1-24, categoria, colonne 1-4, mostra immagini) e `nexus/subscribe-form` (titolo personalizzabile) con preview nell'editor e nessun build step; alternativa a `[nexus_articles]` e `[nexus_subscribe]`.
+- **Analytics**: nuova pagina Analytics (serie giornaliera 7-90 giorni di creati/pubblicati, chiamate AI e costo stimato del periodo, breakdown per piattaforma e per agente con qualità media, top 10 articoli per viste, iscritti newsletter) alimentata da `Nexus_Analytics::overview()` via `GET /analytics`.
+- **3 nuovi setting** nella sezione admin «Scala & Pro»: `enable_queue`, `queue_batch_size`, `queue_max_attempts`.
 
 ### 1.0.3 — «Redazione intelligente»
 

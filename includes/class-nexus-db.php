@@ -104,6 +104,10 @@ class Nexus_DB {
                         'budget_action'      => 'stop', // stop | warn
                         'enable_translations' => 1,
                         'translation_langs'  => 'en,es,fr', // codici lingua separati da virgola
+                        // v1.0.4 — Scala & Pro: coda lavori (stile Action Scheduler).
+                        'enable_queue'       => 0, // 1 = le azioni pesanti passano dalla coda wp_nexus_jobs
+                        'queue_batch_size'   => 5, // lavori eseguiti per ogni runner tick
+                        'queue_max_attempts' => 3, // tentativi massimi per lavoro prima di 'failed'
                 );
         }
 
@@ -123,6 +127,7 @@ class Nexus_DB {
                 $subs    = $wpdb->prefix . 'nexus_subscribers';
                 $usage   = $wpdb->prefix . 'nexus_usage_logs';
                 $transl  = $wpdb->prefix . 'nexus_translations';
+                $jobs    = $wpdb->prefix . 'nexus_jobs';
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -242,6 +247,25 @@ class Nexus_DB {
                                 UNIQUE KEY article_lang (article_id, lang),
                                 KEY article_id (article_id)
                         ) {$charset};",
+                        "CREATE TABLE {$jobs} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                hook VARCHAR(100) NOT NULL DEFAULT '',
+                                args LONGTEXT NULL,
+                                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                                priority INT NOT NULL DEFAULT 10,
+                                attempts INT UNSIGNED NOT NULL DEFAULT 0,
+                                max_attempts INT UNSIGNED NOT NULL DEFAULT 3,
+                                scheduled_at DATETIME NOT NULL,
+                                started_at DATETIME NULL DEFAULT NULL,
+                                completed_at DATETIME NULL DEFAULT NULL,
+                                last_error TEXT NULL,
+                                created_at DATETIME NOT NULL,
+                                updated_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                KEY status_sched (status(20), scheduled_at),
+                                KEY hook (hook(100)),
+                                KEY priority (priority)
+                        ) {$charset};",
                 );
         }
 
@@ -286,6 +310,7 @@ class Nexus_DB {
                         'subscribers'   => $wpdb->prefix . 'nexus_subscribers',
                         'usage_logs'    => $wpdb->prefix . 'nexus_usage_logs',
                         'translations'  => $wpdb->prefix . 'nexus_translations',
+                        'jobs'          => $wpdb->prefix . 'nexus_jobs',
                 );
         }
 
@@ -968,6 +993,190 @@ class Nexus_DB {
                 $counts[ $emoji ] = ( isset( $counts[ $emoji ] ) ? (int) $counts[ $emoji ] : 0 ) + 1;
                 self::update_article( $id, array( 'reactions' => wp_json_encode( $counts ) ) );
                 return $counts;
+        }
+
+        /* ============ JOBS (coda, v1.0.4) ============ */
+
+        /**
+         * Inserisce un lavoro in coda. Ritorna id o 0.
+         *
+         * @param string $hook  Nome logico del lavoro (es. 'pipeline_run_full').
+         * @param array  $args  Argomenti serializzati passati all'handler.
+         * @param array  $opts  priority (int, min = primo), delay (secondi), max_attempts (int).
+         * @return int
+         */
+        public static function insert_job( $hook, $args = array(), $opts = array() ) {
+                global $wpdb;
+                $now   = current_time( 'mysql' );
+                $delay = isset( $opts['delay'] ) ? absint( $opts['delay'] ) : 0;
+                $ok    = $wpdb->insert(
+                        self::tables()['jobs'],
+                        array(
+                                'hook'         => substr( sanitize_key( (string) $hook ), 0, 100 ),
+                                'args'         => (string) wp_json_encode( (array) $args ),
+                                'status'       => 'pending',
+                                'priority'     => isset( $opts['priority'] ) ? absint( $opts['priority'] ) : 10,
+                                'max_attempts' => isset( $opts['max_attempts'] ) ? max( 1, absint( $opts['max_attempts'] ) ) : 3,
+                                'scheduled_at' => gmdate( 'Y-m-d H:i:s', strtotime( $now ) + $delay ),
+                                'created_at'   => $now,
+                                'updated_at'   => $now,
+                        ),
+                        array( '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        public static function get_job( $id ) {
+                global $wpdb;
+                $table = self::tables()['jobs'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", absint( $id ) ) );
+        }
+
+        /**
+         * Aggiorna un lavoro (solo colonne ammesse).
+         */
+        public static function update_job( $id, $fields ) {
+                global $wpdb;
+                $allowed = array_intersect_key(
+                        (array) $fields,
+                        array_flip( array( 'status', 'priority', 'attempts', 'max_attempts', 'scheduled_at', 'started_at', 'completed_at', 'last_error', 'args' ) )
+                );
+                if ( ! $allowed ) {
+                        return false;
+                }
+                $allowed['updated_at'] = current_time( 'mysql' );
+                $int_fields = array( 'priority', 'attempts', 'max_attempts' );
+                $formats    = array();
+                foreach ( $allowed as $k => $v ) {
+                        $formats[] = in_array( $k, $int_fields, true ) ? '%d' : '%s';
+                }
+                return $wpdb->update( self::tables()['jobs'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+        }
+
+        /**
+         * Claim atomico dei lavori pendenti in scadenza: li marca 'running' e li ritorna.
+         *
+         * @param int $limit Numero massimo di lavori da rivendicare.
+         * @return array
+         */
+        public static function claim_jobs( $limit = 5 ) {
+                global $wpdb;
+                $table = self::tables()['jobs'];
+                $now   = current_time( 'mysql' );
+                $limit = max( 1, absint( $limit ) );
+
+                $ids = $wpdb->get_col( $wpdb->prepare(
+                        "SELECT id FROM {$table} WHERE status = 'pending' AND scheduled_at <= %s ORDER BY priority ASC, id ASC LIMIT %d",
+                        $now,
+                        $limit
+                ) );
+                if ( empty( $ids ) ) {
+                        return array();
+                }
+
+                $ids_in = implode( ',', array_map( 'absint', $ids ) );
+                $claimed = $wpdb->query( $wpdb->prepare(
+                        "UPDATE {$table} SET status = 'running', started_at = %s, updated_at = %s WHERE id IN ({$ids_in}) AND status = 'pending'",
+                        $now,
+                        $now
+                ) ); // phpcs:ignore
+                if ( ! $claimed ) {
+                        return array();
+                }
+
+                return (array) $wpdb->get_results( "SELECT * FROM {$table} WHERE status = 'running' AND started_at = '{$now}' ORDER BY priority ASC, id ASC" ); // phpcs:ignore
+        }
+
+        /**
+         * Lista lavori con filtri base.
+         *
+         * @param array $args status, hook, limit, offset.
+         * @return array|null
+         */
+        public static function jobs( $args = array() ) {
+                global $wpdb;
+                $t      = self::tables()['jobs'];
+                $limit  = min( 500, max( 1, absint( $args['limit'] ?? 50 ) ) );
+                $offset = absint( $args['offset'] ?? 0 );
+                $status = sanitize_key( (string) ( $args['status'] ?? '' ) );
+                $hook   = sanitize_key( (string) ( $args['hook'] ?? '' ) );
+
+                $where  = array( '1=1' );
+                $params = array();
+                if ( '' !== $status ) {
+                        $where[]  = 'status = %s';
+                        $params[] = $status;
+                }
+                if ( '' !== $hook ) {
+                        $where[]  = 'hook = %s';
+                        $params[] = $hook;
+                }
+                $sql = "SELECT * FROM {$t} WHERE " . implode( ' AND ', $where ) . ' ORDER BY id DESC LIMIT %d OFFSET %d';
+                $params[] = $limit;
+                $params[] = $offset;
+                return $wpdb->get_results( $wpdb->prepare( $sql, ...$params ) );
+        }
+
+        /**
+         * Conta lavori con filtri base (status, hook).
+         */
+        public static function count_jobs( $args = array() ) {
+                global $wpdb;
+                $t      = self::tables()['jobs'];
+                $status = sanitize_key( (string) ( $args['status'] ?? '' ) );
+                $hook   = sanitize_key( (string) ( $args['hook'] ?? '' ) );
+
+                $where  = array( '1=1' );
+                $params = array();
+                if ( '' !== $status ) {
+                        $where[]  = 'status = %s';
+                        $params[] = $status;
+                }
+                if ( '' !== $hook ) {
+                        $where[]  = 'hook = %s';
+                        $params[] = $hook;
+                }
+                $sql = "SELECT COUNT(*) FROM {$t} WHERE " . implode( ' AND ', $where );
+                if ( $params ) {
+                        $sql = $wpdb->prepare( $sql, ...$params );
+                }
+                return (int) $wpdb->get_var( $sql );
+        }
+
+        /**
+         * Statistiche coda: conteggi per stato.
+         *
+         * @return array {pending, running, complete, failed, cancelled, total}
+         */
+        public static function job_stats() {
+                global $wpdb;
+                $t     = self::tables()['jobs'];
+                $rows  = $wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$t} GROUP BY status" ); // phpcs:ignore
+                $stats = array( 'pending' => 0, 'running' => 0, 'complete' => 0, 'failed' => 0, 'cancelled' => 0, 'total' => 0 );
+                foreach ( (array) $rows as $row ) {
+                        if ( isset( $stats[ $row->status ] ) ) {
+                                $stats[ $row->status ] = (int) $row->n;
+                        }
+                        $stats['total'] += (int) $row->n;
+                }
+                return $stats;
+        }
+
+        /**
+         * Elimina lavori completati/falliti/annullati più vecchi di N giorni.
+         *
+         * @param int $days Età minima in giorni (default 7).
+         * @return int Righe eliminate.
+         */
+        public static function cleanup_jobs( $days = 7 ) {
+                global $wpdb;
+                $t     = self::tables()['jobs'];
+                $days  = max( 1, absint( $days ) );
+                $limit = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $days * DAY_IN_SECONDS );
+                return (int) $wpdb->query( $wpdb->prepare(
+                        "DELETE FROM {$t} WHERE status IN ('complete','failed','cancelled') AND updated_at < %s",
+                        $limit
+                ) );
         }
 
         /* ============ UNINSTALL ============ */

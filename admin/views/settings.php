@@ -39,6 +39,12 @@
  *   intelFlags serializzandoli 0/1 (0 quando deselezionati), stesso pattern
  *   dei 16 toggle v1.0.2. Campi precompilati con get_settings() (value /
  *   checked / selected) come le sezioni esistenti.
+ * - CONTRATTO v1.0.4 ("Scala & Pro"): 1 toggle checkbox value="1"
+ *   (enable_queue) serializzato da admin.js nel blocco scalaFlags come 0/1
+ *   (0 quando deselezionato), stesso pattern dei toggle esistenti; 2 campi
+ *   numerici (queue_batch_size, queue_max_attempts) raccolti nel blocco
+ *   numbers. Campi precompilati con get_settings() (value / checked) come
+ *   le sezioni esistenti.
  *
  * @package Nexus_News_AI
  */
@@ -521,6 +527,38 @@ $social_platforms = array(
                                 </tr>
                         </tbody>
                 </table>
+
+                <?php /* Sezione v1.0.4 "Scala & Pro": coda lavori stile Action Scheduler (1 toggle scalaFlags + 2 numerici). */ ?>
+                <h2 class="title"><?php esc_html_e( 'Scala & Pro', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Coda lavori', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-queue">
+                                                        <input type="checkbox" name="enable_queue" id="nxa-enable-queue" value="1" <?php checked( (int) $settings['enable_queue'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Usa la coda lavori (stile Action Scheduler)', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Le azioni pesanti (raccolta, valutazione, pubblicazione, traduzioni) vengono accodate nella tabella nexus_jobs ed eseguite in batch ogni 60 secondi dal runner WP-Cron. Consigliato su siti con molto traffico o hosting lento. Lo stato live è visibile nella pagina Coda Lavori.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-queue-batch-size"><?php esc_html_e( 'Lavori per batch', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="number" name="queue_batch_size" id="nxa-queue-batch-size" value="<?php echo esc_attr( $settings['queue_batch_size'] ); ?>" min="1" max="50" step="1" class="small-text" />
+                                                <p class="description"><?php esc_html_e( 'Quanti lavori al massimo vengono eseguiti a ogni tick del runner (default 5).', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-queue-max-attempts"><?php esc_html_e( 'Tentativi massimi per lavoro', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="number" name="queue_max_attempts" id="nxa-queue-max-attempts" value="<?php echo esc_attr( $settings['queue_max_attempts'] ); ?>" min="1" max="10" step="1" class="small-text" />
+                                                <p class="description"><?php esc_html_e( "Dopo N fallimenti il lavoro viene marcato come Fallito (default 3). Tra un tentativo e l'altro il ritardo raddoppia (backoff esponenziale, max 1 ora).", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+                <p class="description"><?php esc_html_e( 'Vedi la pagina Coda Lavori per statistiche, retry e pulizia. I comandi WP-CLI wp nexus queue stats|process sono disponibili.', 'nexus-news-ai' ); ?></p>
 
                 <p class="submit">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>

@@ -1428,7 +1428,8 @@
                         }
                 }
 
-                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd' ];
+                // numerici (v1.0.4: + scala & pro: queue_batch_size, queue_max_attempts)
+                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd', 'queue_batch_size', 'queue_max_attempts' ];
                 for ( i = 0; i < numbers.length; i++ ) {
                         var numField = form.elements[ numbers[ i ] ];
                         if ( numField && numField.value !== undefined && String( numField.value ).trim() !== '' ) {
@@ -1472,6 +1473,16 @@
                         var intelBoxes = qsa( 'input[name="' + intelFlags[ i ] + '"]', form );
                         if ( intelBoxes.length ) {
                                 payload[ intelFlags[ i ] ] = intelBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // checkbox scala & pro (v1.0.4): presenti → 1, assenti → 0
+                // (stesso pattern dei blocchi wpFlags/distribFlags/intelFlags sopra)
+                var scalaFlags = [ 'enable_queue' ];
+                for ( i = 0; i < scalaFlags.length; i++ ) {
+                        var scalaBoxes = qsa( 'input[name="' + scalaFlags[ i ] + '"]', form );
+                        if ( scalaBoxes.length ) {
+                                payload[ scalaFlags[ i ] ] = scalaBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 
