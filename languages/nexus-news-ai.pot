@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.0.2\n"
+"Project-Id-Version: Nexus News AI 1.0.3\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -183,4 +183,53 @@ msgstr ""
 
 #: admin/views/settings.php
 msgid "Webhook Discord"
+msgstr ""
+
+# v1.0.3 — Redazione intelligente (settings, dashboard, traduzioni, fact-check)
+#: admin/views/settings.php
+msgid "Redazione intelligente"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modello economico (screening)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Fact-check automatico con citazioni"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Soglia minima fact-check (0-100)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Budget mensile AI (USD)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quando il budget è esaurito"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Traduzioni AI degli articoli"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lingue di traduzione"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Uso AI"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Costo stimato"
+msgstr ""
+
+#: assets/js/admin.js
+msgid "Traduzione completata"
+msgstr ""
+
+#: includes/class-nexus-publisher.php templates/single-nexus_article.php public/class-nexus-shortcodes.php
+msgid "Fonti verificate"
 msgstr ""

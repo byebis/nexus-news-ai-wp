@@ -654,6 +654,13 @@
                                 html += '<p style="line-height:1.7">' + esc( pick( a, 'summary' ) ) + '</p>';
                         }
 
+                        // Fact-check + citazioni (v1.0.3): campi difensivi, il valore
+                        // arriverà con l'integrazione REST di serialize_article.
+                        var factBox = factCheckBoxHtml( a );
+                        if ( factBox ) {
+                                html += factBox;
+                        }
+
                         var logs = pick( a, 'publish_logs', 'publishLogs' );
                         if ( Array.isArray( logs ) && logs.length ) {
                                 html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Log di pubblicazione</h4>';
@@ -665,9 +672,155 @@
                                                 '</p>';
                                 } );
                         }
+                        // Sezione "Traduci" (v1.0.3): lingue caricate in modo
+                        // asincrono da GET /settings, fallback contrattuale en/es/fr.
+                        html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Traduci</h4>' +
+                                '<div class="nxa-translate-row" id="nxa-translate-row">' +
+                                        '<p style="font-size:12px;color:#94a3b8;margin:0">Caricamento lingue…</p>' +
+                                '</div>';
+
                         openModalBody( html );
+                        bindTranslateButtons( qs( '#nxa-translate-row' ), num( pick( a, 'id' ) ) || num( id ) );
                 } ).catch( function ( err ) {
                         openModalBody( emptyState( '⚠️', 'Impossibile caricare l’articolo', err.message || '' ) );
+                } );
+        }
+
+        /* ==================================================================
+         * 6-bis. FACT-CHECK + TRADUZIONI (v1.0.3)
+         * ================================================================== */
+
+        /**
+         * Blocco "Fact-check" del modal articolo (v1.0.3).
+         * - badge punteggio: row.factcheck_score || 0 → nascosto se 0,
+         *   classe ok (verde) se >= 60, ko (rosso) altrimenti;
+         * - citazioni: row.citations è una STRINGA JSON [{claim, source}],
+         *   decodificata in modo difensivo (mai crash); source è un URL → <a>.
+         * Ritorna '' quando non c'è nulla da mostrare (box nascosto).
+         */
+        function factCheckBoxHtml( row ) {
+                var a = row || {};
+                var score = num( a.factcheck_score );
+                var badgeHtml = '';
+
+                if ( score > 0 ) {
+                        var ok = score >= 60;
+                        badgeHtml = '<span class="nxa-badge ' + ( ok ? 'nxa-fc-ok nxa-badge--success' : 'nxa-fc-ko nxa-badge--error' ) + '" title="Punteggio fact-check AI">Fact-check: ' + Math.round( score ) + '/100</span>';
+                }
+
+                var citations = [];
+                if ( a.citations ) {
+                        try {
+                                var parsed = ( typeof a.citations === 'string' ) ? JSON.parse( a.citations ) : a.citations;
+                                if ( Array.isArray( parsed ) ) {
+                                        citations = parsed;
+                                }
+                        } catch ( e ) {
+                                citations = []; // JSON corrotto: ignora senza bloccare il modal
+                        }
+                }
+                citations = citations.filter( function ( c ) {
+                        return c && ( c.claim || c.source );
+                } );
+
+                if ( ! badgeHtml && ! citations.length ) {
+                        return '';
+                }
+
+                var items = citations.map( function ( c ) {
+                        var source = String( c.source || '' );
+                        return '<li>' + esc( c.claim || '' ) +
+                                ( source ? ' — <a href="' + esc( source ) + '" target="_blank" rel="noopener noreferrer">' + esc( source ) + '</a>' : '' ) +
+                                '</li>';
+                } ).join( '' );
+
+                return '<div class="nxa-factcheck-box" style="margin:16px 0 4px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc">' +
+                                ( badgeHtml ? '<div style="margin-bottom:' + ( citations.length ? '8px' : '0' ) + '">' + badgeHtml + '</div>' : '' ) +
+                                ( citations.length
+                                        ? '<h4 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Citazioni verificate</h4>' +
+                                          '<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">' + items + '</ul>'
+                                        : '' ) +
+                        '</div>';
+        }
+
+        /** Etichetta bottone lingua → emoji bandiera + codice (il file usa già emoji). */
+        var TRANSLATE_META = {
+                en: '🇬🇧 EN', es: '🇪🇸 ES', fr: '🇫🇷 FR', de: '🇩🇪 DE',
+                pt: '🇵🇹 PT', ar: '🇸🇦 AR', zh: '🇨🇳 ZH', ja: '🇯🇵 JA'
+        };
+
+        /**
+         * Cache impostazioni per i bottoni "Traduci" (v1.0.3): GET /settings
+         * viene chiamata UNA sola volta per pagina; errore → null (fallback).
+         */
+        var settingsCache = null;
+        var settingsFetched = false;
+
+        function getSettingsOnce() {
+                if ( settingsFetched ) {
+                        return Promise.resolve( settingsCache );
+                }
+                settingsFetched = true;
+                return api( 'settings' ).then( function ( payload ) {
+                        settingsCache = unwrap( payload );
+                        return settingsCache;
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] settings (per traduzioni):', err );
+                        return null;
+                } );
+        }
+
+        /**
+         * Lingue dei bottoni "Traduci": settings.translation_langs se disponibile
+         * nello state (cache sopra), altrimenti fallback contrattuale ['en','es','fr'].
+         */
+        function translateLangs( settings ) {
+                var raw = settings ? String( pick( settings, 'translation_langs' ) || '' ) : '';
+                var seen = {};
+                var langs = raw.split( ',' ).map( function ( l ) {
+                        return String( l || '' ).trim().toLowerCase();
+                } ).filter( function ( l ) {
+                        if ( ! /^[a-z]{2}$/.test( l ) || seen[ l ] ) {
+                                return false;
+                        }
+                        seen[ l ] = true;
+                        return true;
+                } );
+                return langs.length ? langs : [ 'en', 'es', 'fr' ]; // fallback (contratto v1.0.3)
+        }
+
+        /**
+         * Riga bottoni "Traduci" nel modal articolo (v1.0.3).
+         * Click → POST /articles/{id}/translate {lang} con gli stessi header/nonce
+         * di api(); spinner/disabled durante la chiamata, esito in toast IT.
+         */
+        function bindTranslateButtons( container, articleId ) {
+                if ( ! container ) {
+                        return;
+                }
+                getSettingsOnce().then( function ( settings ) {
+                        if ( ! container.isConnected ) {
+                                return; // il modal è stato chiuso nel frattempo
+                        }
+                        container.innerHTML = translateLangs( settings ).map( function ( lang ) {
+                                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                                return '<button type="button" class="button nxa-translate" data-lang="' + esc( lang ) + '">' + label + '</button>';
+                        } ).join( '' );
+                } );
+                container.addEventListener( 'click', function ( ev ) {
+                        var btn = ev.target.closest ? ev.target.closest( '.nxa-translate' ) : null;
+                        if ( ! btn || btn.disabled ) {
+                                return;
+                        }
+                        var lang = btn.getAttribute( 'data-lang' ) || '';
+                        setBtnLoading( btn, true, 'Traduco…' );
+                        api( 'articles/' + num( articleId ) + '/translate', { method: 'POST', body: { lang: lang } } ).then( function () {
+                                toast( 'Traduzione completata (' + ( TRANSLATE_META[ lang ] || lang.toUpperCase() ) + ').', 'success', 'Traduzioni' );
+                        } ).catch( function ( err ) {
+                                apiErrorToast( err, 'Traduzione non riuscita' );
+                        } ).then( function () {
+                                setBtnLoading( btn, false );
+                        } );
                 } );
         }
 
@@ -698,6 +851,17 @@
                         }
                 }
                 return '';
+        }
+
+        /** Riga agente completa per id (v1.0.3: serve a tabella uso AI + modello). */
+        function agentById( agentId ) {
+                var list = agentsCache.list || [];
+                for ( var i = 0; i < list.length; i++ ) {
+                        if ( num( list[ i ].id ) === num( agentId ) ) {
+                                return list[ i ];
+                        }
+                }
+                return null;
         }
 
         function articleAgentName( a ) {
@@ -778,11 +942,92 @@
                 } );
         }
 
+        /** Costo USD con 4 decimali: "$12.3456" (contratto v1.0.3). */
+        function fmtUsd( value ) {
+                return '$' + num( value ).toFixed( 4 );
+        }
+
+        /**
+         * Pannello "Uso AI" (v1.0.3): legge il JSON stampato dalla view
+         * dashboard in #nexus-usage-panel[data-usage] (Nexus_DB::usage_stats('month'))
+         * e il budget mensile da [data-budget]. Renderizza stat-card + tabella
+         * per-agente + barra budget. ZERO rotte REST nuove: solo i nomi degli
+         * agenti dalla cache (se disponibili), altrimenti "Agente #id".
+         */
+        function renderUsagePanel() {
+                var panel = qs( '#nexus-usage-panel' );
+                if ( ! panel ) {
+                        return Promise.resolve();
+                }
+
+                var stats = null;
+                try {
+                        stats = JSON.parse( panel.getAttribute( 'data-usage' ) || 'null' );
+                } catch ( e ) {
+                        stats = null; // JSON corrotto: mostriamo comunque gli zeri
+                }
+                var totals = ( stats && stats.totals ) ? stats.totals : {};
+                var byAgent = ( stats && Array.isArray( stats.by_agent ) ) ? stats.by_agent : [];
+                var budget = num( panel.getAttribute( 'data-budget' ) );
+                var cost = num( totals.cost );
+
+                var html = '<div class="nxa-stats-grid" style="margin-bottom:14px">' +
+                                '<div class="nxa-stat-card"><span class="nxa-stat-value">' + fmt( totals.calls ) + '</span><span class="nxa-stat-label">' + esc( 'Chiamate AI' ) + '</span></div>' +
+                                '<div class="nxa-stat-card"><span class="nxa-stat-value">' + fmt( totals.total_tokens ) + '</span><span class="nxa-stat-label">' + esc( 'Token totali' ) + '</span></div>' +
+                                '<div class="nxa-stat-card"><span class="nxa-stat-value">' + esc( fmtUsd( cost ) ) + '</span><span class="nxa-stat-label">' + esc( 'Costo stimato (mese)' ) + '</span></div>' +
+                        '</div>';
+
+                // Budget mensile (se > 0): {cost} / {budget} USD, colore in base alla %.
+                if ( budget > 0 ) {
+                        var pct = Math.min( 100, ( cost / budget ) * 100 );
+                        var barColor = pct < 60 ? '#22c55e' : ( pct < 90 ? '#f59e0b' : '#ef4444' );
+                        html += '<div class="nxa-usage-budget" style="margin:0 0 14px">' +
+                                        '<p style="margin:0 0 6px;font-size:12.5px;color:#475569">' +
+                                                'Budget mensile: <strong style="color:' + barColor + '">' + esc( fmtUsd( cost ) ) + '</strong> / ' + esc( budget.toFixed( 2 ) ) + ' USD' +
+                                                ( pct >= 90 ? ' ⚠️' : '' ) +
+                                        '</p>' +
+                                        '<div style="height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden" role="progressbar" aria-valuenow="' + Math.round( pct ) + '" aria-valuemin="0" aria-valuemax="100">' +
+                                                '<div style="height:100%;width:' + pct.toFixed( 1 ) + '%;background:' + barColor + '"></div>' +
+                                        '</div>' +
+                                '</div>';
+                }
+
+                if ( byAgent.length ) {
+                        var rows = byAgent.map( function ( r ) {
+                                var agent = agentById( pick( r, 'agent_id' ) );
+                                var label = agent
+                                        ? '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' + esc( pick( agent, 'name' ) || 'Agente' )
+                                        : 'Agente #' + esc( pick( r, 'agent_id' ) );
+                                return '<tr>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + label + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + fmt( pick( r, 'calls' ) ) + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + fmt( pick( r, 'total_tokens' ) ) + '</td>' +
+                                        '<td style="padding:8px 10px;border-bottom:1px solid #eef2f7">' + esc( fmtUsd( pick( r, 'cost' ) ) ) + '</td>' +
+                                '</tr>';
+                        } ).join( '' );
+                        html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
+                                        '<thead><tr>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Agente</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Chiamate</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Token</th>' +
+                                                '<th align="left" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em">Costo</th>' +
+                                        '</tr></thead>' +
+                                        '<tbody>' + rows + '</tbody>' +
+                                '</table></div>';
+                } else {
+                        html += emptyState( '📊', 'Nessun consumo AI questo mese', 'Le chiamate AI degli agenti appariranno qui con il tracking v1.0.3.' );
+                }
+
+                panel.innerHTML = html;
+                return Promise.resolve();
+        }
+
         function refreshDashboardData() {
                 return Promise.all( [
                         loadStats().catch( function ( e ) { window.console.warn( '[Nexus] stats:', e ); } ),
                         loadDashboardFeed().catch( function ( e ) { window.console.warn( '[Nexus] feed:', e ); } ),
-                        loadAgentsMini().catch( function ( e ) { window.console.warn( '[Nexus] mini agenti:', e ); } )
+                        loadAgentsMini().catch( function ( e ) { window.console.warn( '[Nexus] mini agenti:', e ); } ),
+                        renderUsagePanel().catch( function ( e ) { window.console.warn( '[Nexus] uso AI:', e ); } )
                 ] );
         }
 
@@ -861,6 +1106,11 @@
                         '<p style="font-size:12.5px;color:#64748b;margin:10px 0 6px;line-height:1.55">' + esc( pick( agent, 'description' ) || '' ) + '</p>' +
                         '<p style="font-size:12px;color:#475569;margin:0 0 10px"><em>“' + esc( pick( agent, 'personality' ) || '' ) + '”</em></p>' +
                         '<p style="font-size:11.5px;color:#94a3b8;margin:0 0 12px">Ultimo run: ' + esc( timeAgoIt( pick( agent, 'last_run', 'lastRun' ) ) ) + '</p>' +
+                        // Modello AI dedicato (v1.0.3): vuoto = modello globale da settings.
+                        '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+                                '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
+                                '<button type="button" class="button nxa-agent-model-save" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Salva modello</button>' +
+                        '</div>' +
                         '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
                                 ( isActive ? 'Metti in pausa' : 'Riattiva' ) +
                         '</button>' +
@@ -901,6 +1151,40 @@
                                 } ).catch( function ( err ) {
                                         apiErrorToast( err, 'Impossibile aggiornare lo stato' );
                                         setBtnLoading( btn, false );
+                                } );
+                        } );
+
+                        // Salva modello AI dedicato (v1.0.3): POST /agents/{id}/model {model}
+                        // → risposta serialize_agent: aggiorna la riga locale (niente reload).
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var saveBtn = ev.target.closest ? ev.target.closest( '.nxa-agent-model-save' ) : null;
+                                if ( ! saveBtn || saveBtn.disabled ) {
+                                        return;
+                                }
+                                var id = num( saveBtn.getAttribute( 'data-agent-id' ) );
+                                var card = saveBtn.closest ? saveBtn.closest( '.nxa-agent-card' ) : null;
+                                var input = card ? qs( '.nxa-agent-model[data-agent-id="' + id + '"]', card ) : null;
+                                var model = input ? String( input.value || '' ).trim() : '';
+                                setBtnLoading( saveBtn, true, 'Salvo…' );
+                                api( 'agents/' + id + '/model', { method: 'POST', body: { model: model } } ).then( function ( payload ) {
+                                        var updated = unwrap( payload ) || {};
+                                        var newModel = pick( updated, 'ai_model' );
+                                        var value = ( newModel !== undefined ) ? newModel : model;
+                                        if ( agentsCache.list ) {
+                                                for ( var i = 0; i < agentsCache.list.length; i++ ) {
+                                                        if ( num( agentsCache.list[ i ].id ) === id ) {
+                                                                agentsCache.list[ i ].ai_model = value;
+                                                                break;
+                                                        }
+                                                }
+                                        }
+                                        if ( input ) {
+                                                input.value = value;
+                                        }
+                                        toast( model ? 'Modello "' + model + '" assegnato all\'agente.' : 'Modello dedicato rimosso: verrà usato il modello globale.', 'success', 'Modello aggiornato' );
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Salvataggio modello non riuscito' );
+                                        setBtnLoading( saveBtn, false );
                                 } );
                         } );
                 }
@@ -1133,7 +1417,10 @@
 
                 // campi testuali / select per nome (v1.0.1: + post_status, image_model, image_size)
                 // (v1.0.2: + credenziali social, newsletter_recipients, indexnow_key)
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key' ];
+                // (v1.0.3: + redazione intelligente: ai_model_cheap, budget_action,
+                //  translation_langs; factcheck_min_score e monthly_budget_usd sono
+                //  anche nel blocco numerico sotto per essere inviati come numeri)
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -1141,7 +1428,7 @@
                         }
                 }
 
-                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score' ];
+                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd' ];
                 for ( i = 0; i < numbers.length; i++ ) {
                         var numField = form.elements[ numbers[ i ] ];
                         if ( numField && numField.value !== undefined && String( numField.value ).trim() !== '' ) {
@@ -1175,6 +1462,16 @@
                         var distribBoxes = qsa( 'input[name="' + distribFlags[ i ] + '"]', form );
                         if ( distribBoxes.length ) {
                                 payload[ distribFlags[ i ] ] = distribBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // checkbox redazione intelligente (v1.0.3): presenti → 1, assenti → 0
+                // (stesso pattern dei blocchi wpFlags/distribFlags sopra)
+                var intelFlags = [ 'enable_factcheck', 'enable_translations' ];
+                for ( i = 0; i < intelFlags.length; i++ ) {
+                        var intelBoxes = qsa( 'input[name="' + intelFlags[ i ] + '"]', form );
+                        if ( intelBoxes.length ) {
+                                payload[ intelFlags[ i ] ] = intelBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 

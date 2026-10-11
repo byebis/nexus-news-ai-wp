@@ -15,6 +15,9 @@
  *    presenti: guard con class_exists + try/catch).
  *    Se wp_insert_post/wp_update_post fallisce: log 'failed' + secondo log legacy
  *    di fallback con l'URL front-end Nexus.
+ *    v1.0.3 — se l'articolo ha citazioni dal fact-check (colonna citations, JSON),
+ *    un blocco HTML "Fonti verificate" (max 8 voci, escape completo) viene incluso
+ *    nel contenuto iniziale del post, PRIMA di wp_insert_post/wp_update_post.
  *
  * Canali social REALI (v1.0.2 — "Distribuzione Reale"): telegram, discord, x
  * (con alias twitter) e linkedin vengono delegati, quando le relative classi
@@ -39,6 +42,7 @@
  * @package Nexus_News_AI
  * @since   1.0.1 Canale 'blog' con post WordPress reali (CPT nexus_article).
  * @since   1.0.2 Canali social reali (Telegram, Discord, X, LinkedIn) con fallback simulato.
+ * @since   1.0.3 Blocco "Fonti verificate" (nexus-citations) dal fact-check nel post WP reale.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -231,6 +235,8 @@ class Nexus_Publisher {
          * Sequenza (contratto v1.0.1 §2/§5): insert/update → categoria → meta di
          * collegamento → update_article( wp_post_id ) → Nexus_Image::ensure_featured()
          * → Nexus_SEO::optimize() → log. Le chiamate a image/SEO non bloccano mai.
+         * v1.0.3: il contenuto iniziale include il blocco citazioni del fact-check
+         * ("Fonti verificate", max 8) quando l'articolo ha citations non vuote.
          *
          * @param object $article    Articolo Nexus.
          * @param int    $article_id ID dell'articolo Nexus.
@@ -249,6 +255,15 @@ class Nexus_Publisher {
                 }
                 $content = isset( $article->content ) ? wp_kses_post( (string) $article->content ) : '';
                 $excerpt = isset( $article->summary ) ? wp_strip_all_tags( (string) $article->summary ) : '';
+
+                // v1.0.3 — Citazioni del fact-check: blocco "Fonti verificate" (max 8, escape
+                // completo) incluso nel contenuto iniziale, PRIMA di wp_insert_post/
+                // wp_update_post. Se il contenuto contiene già il blocco (aggiornamento del
+                // post) non viene duplicato. Nessun effetto sul resto del publisher v1.0.2.
+                $citations = self::citations_block( $article );
+                if ( '' !== $citations && false === strpos( $content, 'nexus-citations' ) ) {
+                        $content .= $citations;
+                }
 
                 // Stato del post ammesso: 'publish' | 'draft'.
                 $post_status = isset( $settings['post_status'] ) ? sanitize_key( (string) $settings['post_status'] ) : 'publish';
@@ -334,6 +349,60 @@ class Nexus_Publisher {
                                 'note'     => $note,
                         ),
                 );
+        }
+
+        /**
+         * Costruisce il blocco HTML "Fonti verificate" dalle citazioni del fact-check (v1.0.3).
+         *
+         * La colonna citations dell'articolo è una stringa JSON (generata dalla pipeline:
+         * array di oggetti {claim, source}). Decode difensivo: se il JSON è vuoto, non
+         * valido o l'array risultante è vuoto si ritorna una stringa vuota (nessun blocco).
+         * Massimo 8 citazioni; claim in esc_html, source in esc_url con rel noopener
+         * nofollow e target _blank.
+         *
+         * @param object $article Articolo Nexus (eventuale colonna citations).
+         * @return string Markup HTML del blocco (stringa vuota se nessuna citazione valida).
+         */
+        private static function citations_block( $article ) {
+                $raw = isset( $article->citations ) ? trim( (string) $article->citations ) : '';
+                if ( '' === $raw ) {
+                        return '';
+                }
+
+                $citations = json_decode( $raw, true );
+                if ( ! is_array( $citations ) || empty( $citations ) ) {
+                        return '';
+                }
+
+                $items = '';
+                $count = 0;
+                foreach ( $citations as $citation ) {
+                        if ( $count >= 8 ) {
+                                break; // Massimo 8 citazioni nel post.
+                        }
+
+                        $c      = is_array( $citation ) ? $citation : (array) $citation;
+                        $claim  = isset( $c['claim'] ) ? trim( wp_strip_all_tags( (string) $c['claim'] ) ) : '';
+                        $source = isset( $c['source'] ) ? trim( (string) $c['source'] ) : '';
+                        if ( '' === $claim || '' === $source ) {
+                                continue; // Citazione incompleta: scartata.
+                        }
+
+                        $url = esc_url_raw( $source );
+                        if ( '' === $url ) {
+                                continue; // URL non valido: scartata.
+                        }
+
+                        $items .= '<li>' . esc_html( $claim )
+                                . ' — <a href="' . esc_url( $url ) . '" rel="noopener nofollow" target="_blank">fonte</a></li>';
+                        $count++;
+                }
+
+                if ( '' === $items ) {
+                        return '';
+                }
+
+                return '<div class="nexus-citations"><h4>Fonti verificate</h4><ul>' . $items . '</ul></div>';
         }
 
         /**

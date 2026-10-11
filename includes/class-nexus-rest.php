@@ -110,6 +110,26 @@ class Nexus_Rest {
                         )
                 );
 
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents/(?P<id>[0-9]+)/model',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_model' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg + array(
+                                                'model'             => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
                 /* ---------------- ADMIN: ARTICOLI ---------------- */
 
                 register_rest_route(
@@ -563,6 +583,29 @@ class Nexus_Rest {
                 Nexus_DB::update_agent( $id, array( 'status' => $status ) );
                 Nexus_DB::insert_activity( $id, 'agent_status', sprintf( 'Stato agente aggiornato a "%s" via API.', $status ), 'info' );
 
+                $updated = Nexus_DB::get_agent( $id );
+                return rest_ensure_response( self::serialize_agent( $updated ) );
+        }
+
+        /**
+         * PUT/POST /agents/{id}/model — imposta il modello AI dedicato di un agente.
+         * Stringa vuota = usa il modello globale (v1.0.3).
+         */
+        public static function rest_agent_model( $request ) {
+                $id    = absint( $request->get_param( 'id' ) );
+                $model = trim( (string) $request->get_param( 'model' ) );
+                if ( $id <= 0 ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+                if ( mb_strlen( $model ) > 100 ) {
+                        return self::err( 'nexus_rest_invalid_model', __( 'Nome modello troppo lungo (max 100 caratteri).', 'nexus-news-ai' ), 400 );
+                }
+                $agent = Nexus_DB::get_agent( $id );
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+                Nexus_DB::update_agent( $id, array( 'ai_model' => $model ) );
+                Nexus_DB::insert_activity( $id, 'agent_model', sprintf( 'Modello AI aggiornato: %s', '' !== $model ? $model : '(globale)' ), 'info' );
                 $updated = Nexus_DB::get_agent( $id );
                 return rest_ensure_response( self::serialize_agent( $updated ) );
         }
@@ -1227,6 +1270,14 @@ class Nexus_Rest {
                         'enable_indexnow'      => 'absint',
                         'indexnow_key'         => 'sanitize_text_field',
                         'enable_websub'        => 'absint',
+                        // Redazione intelligente (v1.0.3).
+                        'ai_model_cheap'       => 'sanitize_text_field',
+                        'enable_factcheck'     => 'absint',
+                        'factcheck_min_score'  => 'absint',
+                        'monthly_budget_usd'   => 'sanitize_text_field',
+                        'budget_action'        => 'sanitize_key',
+                        'enable_translations'  => 'absint',
+                        'translation_langs'    => 'sanitize_text_field',
                 );
 
                 $out = array();
@@ -1255,6 +1306,8 @@ class Nexus_Rest {
                         'enable_digest',
                         'enable_indexnow',
                         'enable_websub',
+                        'enable_factcheck',
+                        'enable_translations',
                 ) as $flag ) {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
@@ -1264,6 +1317,25 @@ class Nexus_Rest {
                 // Chiave IndexNow: solo caratteri alfanumerici (formato richiesto dal protocollo).
                 if ( isset( $out['indexnow_key'] ) ) {
                         $out['indexnow_key'] = (string) preg_replace( '/[^a-zA-Z0-9]/', '', $out['indexnow_key'] );
+                }
+
+                // Budget mensile: float >= 0 (v1.0.3).
+                if ( isset( $out['monthly_budget_usd'] ) ) {
+                        $out['monthly_budget_usd'] = max( 0, (float) $out['monthly_budget_usd'] );
+                }
+
+                // Azione budget: stop | warn (v1.0.3).
+                if ( isset( $out['budget_action'] ) && ! in_array( $out['budget_action'], array( 'stop', 'warn' ), true ) ) {
+                        return self::err(
+                                'nexus_rest_invalid_budget_action',
+                                __( 'Azione budget non valida. Valori ammessi: stop, warn.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                // Soglia fact-check: 0-100 (v1.0.3).
+                if ( isset( $out['factcheck_min_score'] ) ) {
+                        $out['factcheck_min_score'] = min( 100, absint( $out['factcheck_min_score'] ) );
                 }
 
                 // Valida la modalità di autonomia.
@@ -1319,6 +1391,7 @@ class Nexus_Rest {
                         'description' => (string) $agent->description,
                         'status'      => (string) $agent->status,
                         'personality' => (string) $agent->personality,
+                        'ai_model'    => (string) ( $agent->ai_model ?? '' ),
                         'last_run'    => (string) ( $agent->last_run ?? '' ),
                         'created_at'  => (string) $agent->created_at,
                         'updated_at'  => (string) $agent->updated_at,
@@ -1377,6 +1450,8 @@ class Nexus_Rest {
                         'image_url'     => esc_url_raw( (string) ( $a->image_url ?? '' ) ),
                         'wp_post_id'    => (int) ( $a->wp_post_id ?? 0 ),
                         'post_permalink' => self::wp_post_permalink( (int) ( $a->wp_post_id ?? 0 ) ),
+                        'factcheck_score' => (float) ( $a->factcheck_score ?? 0 ),
+                        'citations'     => (string) ( $a->citations ?? '' ),
                         'status'        => (string) $a->status,
                         'quality_score' => (float) $a->quality_score,
                         'read_time'     => (int) $a->read_time,

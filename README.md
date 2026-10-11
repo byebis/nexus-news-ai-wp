@@ -6,7 +6,7 @@
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico e REST API.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -24,10 +24,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 8. [Impostazioni](#impostazioni)
 9. [Cron automatico](#cron-automatico)
 10. [Pubblicazione multi-piattaforma](#pubblicazione-multi-piattaforma)
-11. [Installazione](#installazione)
-12. [FAQ tecniche](#faq-tecniche)
-13. [Licenza e crediti](#licenza-e-crediti)
-14. [Changelog](#changelog)
+11. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
+12. [Installazione](#installazione)
+13. [FAQ tecniche](#faq-tecniche)
+14. [Licenza e crediti](#licenza-e-crediti)
+15. [Changelog](#changelog)
 
 ---
 
@@ -49,9 +50,14 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Pubblicazione social reale** (v1.0.2): invio vero degli articoli su **Telegram** (Bot API, `sendMessage`/`sendPhoto`), **Discord** (webhook con embed), **X/Twitter** (`/2/tweets` con firma OAuth 1.0a in PHP puro) e **LinkedIn** (UGC post via Bearer token), con le credenziali nei settings; i canali non configurati producono un log `skipped` onesto e Facebook/Instagram restano simulati in modo dichiarato.
 - **Newsletter con double opt-in** (v1.0.2): shortcode `[nexus_subscribe]` per l'iscrizione via REST con conferma via email (link `/?nexus_confirm={token}`) e disiscrizione via token, tabella `wp_nexus_subscribers` e **digest settimanale AI** inviato con `wp_mail` ai destinatari fissi e agli iscritti confermati.
 - **Ping di indicizzazione automatici** (v1.0.2): alla pubblicazione di un post `nexus_article` partono **IndexNow** (Bing e altri, chiave auto-generata con key file servito dal plugin) e **WebSub/PubSubHubbub** sul feed, fuori banda via WP-Cron senza mai bloccare la pubblicazione.
+- **Modello AI per-agente + modello economico** (v1.0.3): ogni agente può usare il proprio modello (`ai_model`, vuoto = modello globale) mentre raccolta (screening), valutazione e fact-check girano sul modello economico `ai_model_cheap` per contenere i costi.
+- **Tracking uso AI** (v1.0.3): ogni chiamata AI logga in `wp_nexus_usage_logs` i token (prompt/completion/total) e il **costo stimato in USD**; la dashboard mostra «Uso AI» del mese e il **budget mensile** (`monthly_budget_usd`) con azione `stop` (salta le fasi AI) o `warn` (avviso e prosegui).
+- **Fact-check automatico** (v1.0.3): dopo la riscrittura l'articolo viene verificato contro la fonte con **punteggio 0-100** e **citazioni** claim→fonte; sotto la soglia `factcheck_min_score` torna in bozza, sopra pubblica con il blocco **«Fonti verificate»** nel post WordPress.
+- **Anti-duplicato via hash del titolo** (v1.0.3): in fase di raccolta ogni candidato passa per l'hash md5 del titolo normalizzato (`wp_nexus_articles.content_hash`); i duplicati vengono saltati con log onesto.
+- **Traduzioni AI multi-lingua** (v1.0.3): traduzione di titolo, riassunto e contenuto via REST (`POST /articles/{id}/translate`) nelle lingue configurate (`translation_langs`, default `en,es,fr`) e lettura delle traduzioni via `GET /articles/{id}/translations`; upsert in `wp_nexus_translations`.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
-- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (inclusa `wp_nexus_subscribers`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
+- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
 
 ---
 
@@ -79,7 +85,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 ```
 nexus-news-ai/
 ├── nexus-news-ai.php              # Bootstrap: header plugin, costanti, require, hook attivazione/disattivazione
-├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_* (inclusa subscribers), opzioni, transients, eventi cron, post nexus_article + meta
+├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_* (incluse subscribers, usage_logs, translations), opzioni, transients, eventi cron, post nexus_article + meta
 ├── readme.txt                     # Readme formato WordPress (repository.org)
 ├── README.md                      # Questo file
 ├── LICENSE                        # Licenza MIT
@@ -88,7 +94,7 @@ nexus-news-ai/
 │   ├── class-nexus-db.php         # Layer dati: schema dbDelta, CRUD, settings, seed agenti, stats, drop_tables()
 │   ├── class-nexus-utils.php      # Utility condivise (sanitizzazione, slug, formattazioni)
 │   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
-│   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair (nessun contenuto finto: senza chiave ritorna errore)
+│   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair, tracking uso AI (token/costo stimato) e budget mensile, fact-check, estimate_cost (v1.0.3)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
 │   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress reali (CPT nexus_article, v1.0.1) + fallback legacy + social reali/simulati, log in publish_logs
 │   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus»
@@ -100,6 +106,7 @@ nexus-news-ai/
 │   ├── class-nexus-social-linkedin.php # v1.0.2 — LinkedIn: ugcPosts via Bearer token
 │   ├── class-nexus-newsletter.php      # v1.0.2 — Newsletter: shortcode [nexus_subscribe], double opt-in, digest settimanale AI via wp_mail
 │   ├── class-nexus-ping.php            # v1.0.2 — Ping: IndexNow (chiave + key file) e WebSub alla pubblicazione
+│   ├── class-nexus-translate.php       # v1.0.3 — Traduzioni AI: rotte REST translate/translations, prompt multi-lingua, upsert in wp_nexus_translations
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
 │   └── index.php                  # Guardia "Silence is golden"
@@ -229,11 +236,13 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 |---|---|---|
 | GET | `/agents` | Lista dei 7 agenti (nome, emoji, categoria, personalità, stato, last_run) |
 | POST | `/agents/{id}/status` | Cambia stato agente: body `{ "status": "active\|paused\|error" }` |
+| POST | `/agents/{id}/model` | Imposta il modello AI dedicato dell'agente (v1.0.3): body `{ "model": "openai/gpt-4o-mini" }` (stringa vuota = torna al modello globale) |
 | GET | `/articles` | Lista articoli; filtri `status`, `category`, `agent_id`, `search`, `page`, `per_page` |
 | GET | `/articles/{id}` | Dettaglio articolo (inclusi log pubblicazione) |
 | DELETE | `/articles/{id}` | Elimina l'articolo e i log correlati |
 | POST | `/articles/{id}/approve` | Approva l'articolo: body `{ "note": "…" }` opzionale |
 | POST | `/articles/{id}/reject` | Rifiuta l'articolo: body `{ "note": "…" }` |
+| POST | `/articles/{id}/translate` | Traduce l'articolo con l'AI (v1.0.3, registrata da `Nexus_Translate`): body `{ "lang": "en" }` (una delle lingue in `translation_langs`); ritorna titolo e riassunto tradotti |
 | POST | `/pipeline/collect` | Esegue la raccolta RSS: body `{ "agent_id": 0 }` (0 = tutti gli agenti attivi) |
 | POST | `/pipeline/run` | Esegue la pipeline completa per agente o per tutti |
 | POST | `/pipeline/publish` | Pubblica un singolo articolo approvato `{article_id}` |
@@ -255,6 +264,7 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | GET | `/public/wire/runs` | Run Wire completate, senza dati interni |
 | POST | `/subscribe` | Iscrizione newsletter: body `{ "email": "…", "nonce": "…" }` — invia l'email di conferma (double opt-in); registrata da `Nexus_Newsletter` |
 | POST | `/unsubscribe` | Disiscrizione newsletter: body (o query) `{ "token": "…" }`; registrata da `Nexus_Newsletter` |
+| GET | `/articles/{id}/translations` | Lista delle traduzioni disponibili per un articolo, senza il contenuto completo (v1.0.3); registrata da `Nexus_Translate` |
 | GET | `/health` | Stato del plugin (versione, tabelle, AI configurata) |
 
 Esempio:
@@ -311,8 +321,15 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `enable_indexnow` | `0` | Ping IndexNow (Bing e altri) alla pubblicazione dei post |
 | `indexnow_key` | (vuota) | Chiave IndexNow; generata automaticamente se vuota (key file servito dal plugin) |
 | `enable_websub` | `0` | Ping WebSub (PubSubHubbub) sul feed alla pubblicazione |
+| `ai_model_cheap` | (vuoto) | Modello economico per screening (raccolta), valutazione e fact-check; vuoto = usa `ai_model` |
+| `enable_factcheck` | `1` | Fact-check automatico dopo la riscrittura: punteggio 0-100 e citazioni salvati sull'articolo |
+| `factcheck_min_score` | `60` | Soglia minima fact-check (0-100): sotto soglia l'articolo torna in bozza |
+| `monthly_budget_usd` | `0` | Budget mensile AI in USD sul costo stimato delle chiamate; `0` = nessun limite |
+| `budget_action` | `stop` | Quando il budget è esaurito: `stop` = le fasi AI vengono saltate con log attività, `warn` = avviso ma la pipeline prosegue |
+| `enable_translations` | `1` | Abilita le traduzioni AI degli articoli via REST (`POST /articles/{id}/translate`) |
+| `translation_langs` | `en,es,fr` | Lingue di traduzione ammesse, separate da virgola (en, es, fr, de, pt, ar, zh, ja) |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro.
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)).
 
 ---
 
@@ -343,10 +360,49 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 
 ---
 
+## Redazione intelligente (v1.0.3)
+
+Dalla v1.0.3 la pipeline diventa una redazione «intelligente»: un modello su misura per ogni agente e per ogni compito, controllo dei costi, verifica dei fatti, duplicati bloccati e traduzioni automatiche.
+
+### Modelli AI per compito
+
+- **Modello per-agente**: ogni agente può dichiarare il proprio modello dalla pagina Agenti o via `POST /agents/{id}/model` (stringa vuota = modello globale `ai_model`); la fase di **riscrittura** usa il modello dell'agente, le altre fasi quello configurato a livello globale o economico.
+- **Modello economico** (`ai_model_cheap`): se impostato, le fasi a basso contenuto creativo — **raccolta (screening)**, **valutazione** e **fact-check** — girano su un modello più economico (es. `openai/gpt-4o-mini`), riducendo la spesa senza toccare la qualità editoriale.
+
+### Uso AI: token, costi, budget
+
+- Ogni chiamata AI registra in **`wp_nexus_usage_logs`** l'agente, l'azione (`collect|evaluate|rewrite|factcheck|translate|digest`), il modello, i token (prompt/completion/total) e il **costo stimato in USD** (mappa prezzi per 1M token, arrotondato a 4 decimali).
+- La **dashboard admin** mostra la sezione «Uso AI»: totale chiamate, token, costo stimato e ripartizione per agente del mese corrente.
+- **Budget mensile**: con `monthly_budget_usd > 0`, quando il costo stimato del mese raggiunge la soglia il plugin si comporta secondo `budget_action` — `stop`: le fasi AI della pipeline vengono saltate con log attività («Fase X saltata: budget mensile esaurito») e il tick continua con le fasi successive; `warn`: viene registrato un avviso ma la pipeline prosegue. `0` = nessun limite.
+
+### Fact-check automatico
+
+1. Dopo una **riscrittura** riuscita (se `enable_factcheck=1` e l'articolo ha una fonte) una chiamata AI con il modello economico valuta coerenza col testo originale, allucinazioni e dati non supportati.
+2. L'esito — **punteggio 0-100**, elenco problemi e **citazioni** claim→fonte — viene salvato sull'articolo (`factcheck_score`, `citations`).
+3. Se il punteggio è **sotto** `factcheck_min_score` l'articolo torna in **bozza** con log attività; sopra soglia prosegue nel flusso normale di approvazione/pubblicazione.
+4. Alla pubblicazione, gli articoli con citazioni mostrano il blocco **«Fonti verificate»** nel post WordPress (claim + link alla fonte con `rel="noopener nofollow"`), con badge fact-check nell'admin (modal articolo) e nel frontend (shortcode e single).
+
+### Anti-duplicato
+
+In fase di **raccolta** ogni candidato viene normalizzato e hashato (md5 del titolo in minuscolo, spazi compressi, tag rimossi): se l'hash è già presente in `wp_nexus_articles.content_hash` l'item viene **saltato** con log attività «duplicato».
+
+### Traduzioni AI multi-lingua
+
+- Con `enable_translations=1`, `POST /nexus/v1/articles/{id}/translate` con body `{"lang":"en"}` traduce titolo, riassunto e contenuto con l'AI e salva la traduzione in **`wp_nexus_translations`** (upsert per articolo+lingua); le lingue ammesse sono quelle di `translation_langs` (default `en,es,fr`; nomi supportati: en, es, fr, de, pt, ar, zh, ja).
+- `GET /nexus/v1/articles/{id}/translations` (pubblica) elenca le traduzioni disponibili senza il contenuto completo; dall'admin il modal articolo offre i bottoni «Traduci» per le lingue configurate con esito in italiano.
+
+### Nuove strutture dati (v1.0.3)
+
+- `wp_nexus_agents` + colonna `ai_model` (modello dedicato dell'agente).
+- `wp_nexus_articles` + colonne `content_hash` (anti-duplicato, indicizzata), `factcheck_score` (0-100) e `citations` (JSON claim/source).
+- Tabelle **`wp_nexus_usage_logs`** (uso AI per chiamata: agent_id, action, model, token, cost, created_at) e **`wp_nexus_translations`** (una riga per articolo+lingua, UNIQUE `article_lang`).
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
-2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs`, `wp_nexus_subscribers` e inseriti i 7 agenti.
+2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs`, `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations` e inseriti i 7 agenti.
 3. Vai su **Nexus News → Impostazioni** e configura la chiave AI (opzionale ma consigliata) e le modalità.
 4. Crea una pagina con `[nexus_magazine]`.
 5. (Opzionale) Configura un cron di sistema come descritto sopra.
@@ -364,10 +420,10 @@ Per tutto ciò che non produce contenuti: magazine, admin panel, coda di approva
 Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di default (`https://openrouter.ai/api/v1`) ma anche OpenAI, Groq, Ollama locale, ecc. — basta cambiare `ai_base_url` e `ai_model`.
 
 **Dove sono salvati i dati?**
-Nelle 6 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività e iscritti newsletter in `wp_nexus_subscribers`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
+Nelle 8 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività, iscritti newsletter in `wp_nexus_subscribers`, uso AI in `wp_nexus_usage_logs`, traduzioni in `wp_nexus_translations`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
 
 **La disattivazione cancella i dati?**
-No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 6 tabelle `wp_nexus_*` (inclusa `wp_nexus_subscribers`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
+No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
 **Posso modificare gli articoli generati?**
 Sì, dalla coda di approvazione prima della pubblicazione; via REST puoi approvare, rifiutare o eliminare (`POST /articles/{id}/approve`, `POST /articles/{id}/reject`, `DELETE /articles/{id}`).
@@ -389,6 +445,16 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.3 — «Redazione intelligente»
+
+- **Modello AI per-agente**: ogni agente può avere il proprio modello (`POST /agents/{id}/model`, campo «Modello AI» nella pagina Agenti; vuoto = modello globale); la riscrittura usa il modello dell'agente, mentre **raccolta (screening), valutazione e fact-check** girano sul modello economico `ai_model_cheap`.
+- **Uso AI e budget mensile**: ogni chiamata AI logga in `wp_nexus_usage_logs` i token (prompt/completion/total) e il **costo stimato in USD**; la dashboard mostra la sezione «Uso AI» (totale chiamate, token, costo, ripartizione per agente) e con `monthly_budget_usd` + `budget_action` (`stop`/`warn`) le fasi AI vengono saltate o avvisate quando il budget è esaurito.
+- **Fact-check automatico**: dopo la riscrittura una chiamata AI valuta coerenza con la fonte, allucinazioni e dati non supportati, salvando `factcheck_score` (0-100) e citazioni claim→fonte; sotto `factcheck_min_score` l'articolo torna in **bozza**, sopra la soglia il post WordPress pubblica con il blocco **«Fonti verificate»** (e badge fact-check in admin e frontend).
+- **Anti-duplicato via hash del titolo**: in raccolta l'hash md5 del titolo normalizzato (`content_hash`) blocca gli item già presenti con log «duplicato».
+- **Traduzioni AI multi-lingua**: nuova classe `Nexus_Translate` con `POST /articles/{id}/translate` (admin) e `GET /articles/{id}/translations` (pubblica); upsert in `wp_nexus_translations`, lingue ammesse da `translation_langs` (default `en,es,fr`).
+- **7 nuovi setting** nella sezione admin «Redazione intelligente»: `ai_model_cheap`, `enable_factcheck`, `factcheck_min_score`, `monthly_budget_usd`, `budget_action`, `enable_translations`, `translation_langs`.
+- **Uninstall**: drop delle nuove tabelle `wp_nexus_usage_logs` e `wp_nexus_translations`.
 
 ### 1.0.2 — «Distribuzione reale»
 

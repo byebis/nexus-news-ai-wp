@@ -20,6 +20,12 @@
  *   Autenticazione: header X-WP-Nonce con NexusAdminData.nonce.
  * - Feed attività: #nxa-activity-feed ← GET {restUrl}/activity (eventi recenti; admin.js sostituisce lo skeleton).
  * - Stato agenti:  #nxa-agents-mini    ← GET {restUrl}/agents   (griglia mini nome+stato; admin.js sostituisce lo skeleton).
+ * - Uso AI (v1.0.3): #nexus-usage-panel ← dati INLINE (zero rotte REST nuove):
+ *     data-usage = wp_json_encode( Nexus_DB::usage_stats('month') )  → {totals:{calls,prompt_tokens,completion_tokens,total_tokens,cost}, by_agent:[{agent_id,calls,total_tokens,cost}]}
+ *     data-budget = budget mensile corrente (settings monthly_budget_usd, 0 = nessun limite).
+ *   admin.js renderizza dentro il contenitore: stat-card (chiamate/token/costo
+ *   $X.XXXX), tabella per-agente (nomi/avatar dalla cache agenti, fallback
+ *   "Agente #id") e barra budget con soglie colore 60%/90%.
  * - Link "Vedi magazine": apre home_url('/') in nuova scheda (NexusAdminData.siteUrl).
  *
  * @package Nexus_News_AI
@@ -32,51 +38,79 @@ $nexus_tagline  = isset( $nexus_settings['site_tagline'] ) ? $nexus_settings['si
 ?>
 <div class="wrap nexus-admin" data-page="dashboard">
 
-	<h1><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
+        <h1><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
 
-	<?php if ( '' !== $nexus_tagline ) : ?>
-		<p class="nxa-tagline"><?php echo esc_html( $nexus_tagline ); ?></p>
-	<?php endif; ?>
+        <?php if ( '' !== $nexus_tagline ) : ?>
+                <p class="nxa-tagline"><?php echo esc_html( $nexus_tagline ); ?></p>
+        <?php endif; ?>
 
-	<div class="nxa-actions">
-		<button type="button" class="button button-primary nxa-run-pipeline"><?php echo esc_html__( 'Esegui pipeline completa', 'nexus-news-ai' ); ?></button>
-		<button type="button" class="button nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
-		<a class="button" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
-	</div>
+        <div class="nxa-actions">
+                <button type="button" class="button button-primary nxa-run-pipeline"><?php echo esc_html__( 'Esegui pipeline completa', 'nexus-news-ai' ); ?></button>
+                <button type="button" class="button nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
+                <a class="button" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
+        </div>
 
-	<div class="nxa-stats-grid">
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-published">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span></div>
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-pending">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'In attesa', 'nexus-news-ai' ); ?></span></div>
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-draft">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Bozze', 'nexus-news-ai' ); ?></span></div>
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-today">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Oggi', 'nexus-news-ai' ); ?></span></div>
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-agents">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Agenti attivi', 'nexus-news-ai' ); ?></span></div>
-		<div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-views">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Visualizzazioni', 'nexus-news-ai' ); ?></span></div>
-	</div>
+        <div class="nxa-stats-grid">
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-published">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-pending">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'In attesa', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-draft">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Bozze', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-today">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Oggi', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-agents">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Agenti attivi', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-stat-card"><span class="nxa-stat-value" id="nxa-stat-views">—</span><span class="nxa-stat-label"><?php echo esc_html__( 'Visualizzazioni', 'nexus-news-ai' ); ?></span></div>
+        </div>
 
-	<div class="nxa-section nxa-section-activity">
-		<h2><?php echo esc_html__( 'Feed attività', 'nexus-news-ai' ); ?></h2>
-		<div id="nxa-activity-feed" class="nxa-activity-feed">
-			<p class="nxa-loading">
-				<span class="spinner is-active"></span>
-				<?php echo esc_html__( 'Caricamento attività…', 'nexus-news-ai' ); ?>
-			</p>
-		</div>
-	</div>
+        <div class="nxa-section nxa-section-usage">
+                <h2><?php echo esc_html__( 'Uso AI (mese corrente)', 'nexus-news-ai' ); ?></h2>
+                <?php
+                /*
+                 * v1.0.3 — Redazione intelligente: statistiche consumo AI stampate
+                 * inline (contratto §4: nessuna rotta REST nuova). admin.js legge i
+                 * data-attribute del contenitore qui sotto e renderizza stat-card,
+                 * tabella per-agente e barra budget. Guard PHP 7.4-safe: se la
+                 * classe/metodo non esiste ancora si passa un array vuoto.
+                 */
+                $nexus_usage = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'usage_stats' ) )
+                        ? Nexus_DB::usage_stats( 'month' )
+                        : array( 'totals' => array(), 'by_agent' => array() );
+                /* Il budget arriva da get_settings(), GIÀ chiamata in testa alla view ($nexus_settings). */
+                $nexus_budget = ( is_array( $nexus_settings ) && isset( $nexus_settings['monthly_budget_usd'] ) )
+                        ? (float) $nexus_settings['monthly_budget_usd']
+                        : 0.0;
+                ?>
+                <div id="nexus-usage-panel"
+                        data-usage="<?php echo esc_attr( wp_json_encode( $nexus_usage ) ); ?>"
+                        data-budget="<?php echo esc_attr( (string) $nexus_budget ); ?>">
+                        <p class="nxa-loading">
+                                <span class="spinner is-active"></span>
+                                <?php echo esc_html__( 'Caricamento uso AI…', 'nexus-news-ai' ); ?>
+                        </p>
+                </div>
+        </div>
 
-	<div class="nxa-section nxa-section-agents">
-		<h2><?php echo esc_html__( 'Stato agenti', 'nexus-news-ai' ); ?></h2>
-		<div id="nxa-agents-mini" class="nxa-agents-grid">
-			<p class="nxa-loading">
-				<span class="spinner is-active"></span>
-				<?php echo esc_html__( 'Caricamento agenti…', 'nexus-news-ai' ); ?>
-			</p>
-		</div>
-	</div>
+        <div class="nxa-section nxa-section-activity">
+                <h2><?php echo esc_html__( 'Feed attività', 'nexus-news-ai' ); ?></h2>
+                <div id="nxa-activity-feed" class="nxa-activity-feed">
+                        <p class="nxa-loading">
+                                <span class="spinner is-active"></span>
+                                <?php echo esc_html__( 'Caricamento attività…', 'nexus-news-ai' ); ?>
+                        </p>
+                </div>
+        </div>
 
-	<noscript>
-		<div class="notice notice-error inline">
-			<p><?php echo esc_html__( 'JavaScript è disattivato: la dashboard di Nexus News AI richiede JavaScript per caricare statistiche, attività e stato degli agenti.', 'nexus-news-ai' ); ?></p>
-		</div>
-	</noscript>
+        <div class="nxa-section nxa-section-agents">
+                <h2><?php echo esc_html__( 'Stato agenti', 'nexus-news-ai' ); ?></h2>
+                <div id="nxa-agents-mini" class="nxa-agents-grid">
+                        <p class="nxa-loading">
+                                <span class="spinner is-active"></span>
+                                <?php echo esc_html__( 'Caricamento agenti…', 'nexus-news-ai' ); ?>
+                        </p>
+                </div>
+        </div>
+
+        <noscript>
+                <div class="notice notice-error inline">
+                        <p><?php echo esc_html__( 'JavaScript è disattivato: la dashboard di Nexus News AI richiede JavaScript per caricare statistiche, attività e stato degli agenti.', 'nexus-news-ai' ); ?></p>
+                </div>
+        </noscript>
 
 </div>

@@ -13,11 +13,25 @@
  *   5. PUBLISH   → Nexus_Publisher::publish() → log per piattaforma + stato 'published'.
  *   + NEXUS WIRE → redazione collettiva multi-agente su un tema (wire_run).
  *
- * Ogni fase logga su nexus_activity_logs (azioni: collecting|evaluating|rewriting|publishing|wire)
- * e aggiorna last_run dell'agente. Le azioni di approvazione/rifiuto loggano come
- * 'evaluating' (giudizio editoriale) e NON toccano last_run (non sono run automatici).
+ * Ogni fase logga su nexus_activity_logs (azioni: collecting|evaluating|rewriting|publishing|wire
+ * + v1.0.3: budget|duplicate|factcheck) e aggiorna last_run dell'agente. Le azioni di
+ * approvazione/rifiuto loggano come 'evaluating' (giudizio editoriale) e NON toccano
+ * last_run (non sono run automatici).
  *
  * Stati articolo: draft|pending_approval|approved|published|rejected.
+ *
+ * v1.0.3 — "Redazione Intelligente" (difensivo: ogni integrazione è guarded e mai fatale):
+ *   - Modello AI per-agente in fase rewrite (agents.ai_model, fallback ai_model globale);
+ *     modello economico ai_model_cheap (fallback ai_model) per collect, evaluate e fact-check.
+ *   - Ogni chiamata passa a Nexus_AI_Engine::chat() gli opt 'model', 'agent_id' e 'action'
+ *     per il tracking dell'uso AI su wp_nexus_usage_logs (ignorati dal motore v1.0.2).
+ *   - Budget mensile AI: Nexus_AI_Engine::budget_exceeded() prima di ogni fase AI; con
+ *     budget_action 'stop' la fase viene saltata (attività 'budget') e il tick prosegue;
+ *     con 'warn' viene registrato un avviso e la fase prosegue.
+ *   - Anti-duplicato: hash md5 del titolo normalizzato (articles.content_hash); gli item
+ *     già presenti vengono scartati con attività 'duplicate'.
+ *   - Fact-check post-rewrite (se enable_factcheck e fonte disponibile): punteggio e
+ *     citazioni salvati sull'articolo; sotto factcheck_min_score l'articolo torna in bozza.
  *
  * CONTRATTO PUBBLICO:
  * Nexus_Pipeline::collect( $agent_id )                       → array{ok, collected, errors, article_ids, skipped?}
@@ -68,6 +82,13 @@ class Nexus_Pipeline {
                 $category    = (string) $agent->category;
                 $personality = self::agent_personality( $agent );
 
+                // Budget mensile (v1.0.3): con budget_action 'stop' la fase di raccolta viene
+                // saltata (attività 'budget' già registrata) e il tick prosegue regolarmente.
+                if ( ! self::budget_allows( 'raccolta', (int) $agent->id ) ) {
+                        $out['errors'][] = 'Fase di raccolta saltata: budget mensile esaurito.';
+                        return $out;
+                }
+
                 /* ---- FASE 1a: fonti RSS reali (o percorso evergreen) ---- */
                 $items = array();
                 if ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'fetch_for_agent' ) ) {
@@ -84,7 +105,8 @@ class Nexus_Pipeline {
                 if ( $evergreen ) {
                         // Nessun feed disponibile → 1 analisi editoriale evergreen (nessuna pretesa di notizia in tempo reale).
                         $prompt = Nexus_AI_Engine::evergreen_prompt( $category, $personality );
-                        $res    = self::chat( $prompt, 'collect' );
+                        // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
+                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $error = self::chat_error( $res, 'motore AI non disponibile' );
@@ -112,7 +134,8 @@ class Nexus_Pipeline {
                         $items_text  = self::build_items_text( $groups[ $source_name ] );
 
                         $prompt = Nexus_AI_Engine::collect_prompt( $category, $personality, $items_text, $source_name );
-                        $res    = self::chat( $prompt, 'collect' );
+                        // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
+                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $error = self::chat_error( $res, 'motore AI non disponibile' );
@@ -169,8 +192,16 @@ class Nexus_Pipeline {
                         }
                 }
 
-                /* ---- FASE 1c: inserimento articoli in stato 'draft' ---- */
+                /* ---- FASE 1c: inserimento articoli in stato 'draft' (con anti-duplicato v1.0.3) ---- */
                 foreach ( $kept as $candidate ) {
+                        // Anti-duplicato (v1.0.3): hash del titolo normalizzato; se esiste già un
+                        // articolo con lo stesso hash l'item viene scartato con attività 'duplicate'.
+                        $hash = self::title_hash( $candidate['title'] );
+                        if ( '' !== $hash && method_exists( 'Nexus_DB', 'article_hash_exists' ) && Nexus_DB::article_hash_exists( $hash ) ) {
+                                self::log_phase( 0, 'duplicate', sprintf( 'Duplicato scartato: %s', self::clip( $candidate['title'], 60 ) ), 'info' );
+                                continue;
+                        }
+
                         $article_id = Nexus_DB::insert_article(
                                 array(
                                         'title'         => $candidate['title'],
@@ -185,6 +216,10 @@ class Nexus_Pipeline {
                                 )
                         );
                         if ( $article_id ) {
+                                // Persisti l'hash anti-duplicato (insert_article non ammette content_hash).
+                                if ( '' !== $hash && method_exists( 'Nexus_DB', 'update_article' ) ) {
+                                        Nexus_DB::update_article( $article_id, array( 'content_hash' => $hash ) );
+                                }
                                 $out['article_ids'][] = $article_id;
                                 $out['collected']++;
                         }
@@ -229,13 +264,20 @@ class Nexus_Pipeline {
 
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
 
+                // Budget mensile (v1.0.3): con budget_action 'stop' la fase di valutazione viene saltata.
+                if ( ! self::budget_allows( 'valutazione', (int) $article->agent_id ) ) {
+                        $out['error'] = 'Fase di valutazione saltata: budget mensile esaurito.';
+                        return $out;
+                }
+
                 $prompt = Nexus_AI_Engine::evaluate_prompt(
                         (string) $article->title,
                         (string) $article->summary,
                         (string) $article->content,
                         $category
                 );
-                $res = self::chat( $prompt, 'evaluate' );
+                // v1.0.3: modello economico per lo screening (ai_model_cheap, fallback ai_model).
+                $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -280,6 +322,12 @@ class Nexus_Pipeline {
                 $agent = $article->agent_id ? Nexus_DB::get_agent( $article->agent_id ) : null;
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
 
+                // Budget mensile (v1.0.3): con budget_action 'stop' la fase di riscrittura viene saltata.
+                if ( ! self::budget_allows( 'riscrittura', (int) $article->agent_id ) ) {
+                        $out['error'] = 'Fase di riscrittura saltata: budget mensile esaurito.';
+                        return $out;
+                }
+
                 $prompt = Nexus_AI_Engine::rewrite_prompt(
                         (string) $article->title,
                         (string) $article->summary,
@@ -288,7 +336,8 @@ class Nexus_Pipeline {
                         $agent ? (string) $agent->name : 'Nexus AI',
                         $agent ? self::agent_personality( $agent ) : 'professionale e oggettivo'
                 );
-                $res = self::chat( $prompt, 'rewrite' );
+                // v1.0.3: modello per-agente (agents.ai_model se impostato, fallback ai_model globale).
+                $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -325,6 +374,12 @@ class Nexus_Pipeline {
                         sprintf( 'Articolo #%d riscritto (%d parole, %d min di lettura) e messo in coda di approvazione.', $article_id, self::word_count( $content ), $read_time ),
                         'success'
                 );
+
+                /* ---- Fact-check (v1.0.3): verifica del draft contro la fonte originale ----
+                 * Se abilitato e la fonte è disponibile aggiorna factcheck_score/citations e,
+                 * sotto la soglia minima, riporta l'articolo in bozza. Mai bloccante.
+                 */
+                self::factcheck_article( $article_id, $article, (int) $article->agent_id );
 
                 $out['ok'] = true;
                 return $out;
@@ -563,6 +618,13 @@ class Nexus_Pipeline {
                                         $rewritten_now = true;
                                         $summary['messages'][] = sprintf( 'Articolo #%d riscritto e messo in coda di approvazione.', $article_id );
                                         $article = Nexus_DB::get_article( $article_id );
+
+                                        // Fact-check sotto soglia (v1.0.3): l'articolo è tornato in bozza,
+                                        // nessuna approvazione/pubblicazione automatica in questo tick.
+                                        if ( $article && 'draft' === $article->status ) {
+                                                $summary['messages'][] = sprintf( 'Articolo #%d rimesso in bozza dal fact-check: serve revisione umana.', $article_id );
+                                                continue;
+                                        }
                                 } else {
                                         $summary['messages'][] = sprintf( 'Riscrittura articolo #%d fallita: %s', $article_id, $rewriting['error'] );
                                 }
@@ -697,6 +759,17 @@ class Nexus_Pipeline {
                 }
 
                 $first = $team[0];
+
+                // Budget mensile (v1.0.3): il wire effettua più chiamate AI (3 angoli + direttore).
+                if ( ! self::budget_allows( 'nexus wire', (int) $first->id ) ) {
+                        $run['error'] = 'Fase nexus wire saltata: budget mensile esaurito.';
+                        self::save_wire_run( $run );
+                        return array(
+                                'ok'  => false,
+                                'run' => $run,
+                        );
+                }
+
                 $run['agents'] = array_map(
                         static function ( $agent ) {
                                 return (string) $agent->name;
@@ -716,7 +789,8 @@ class Nexus_Pipeline {
                                 self::agent_personality( $agent ),
                                 $topic
                         );
-                        $res = self::chat( $prompt, 'wire' );
+                        // v1.0.3: tracking usage del wire con l'agente proponente.
+                        $res = self::chat( $prompt, 'wire', array( 'agent_id' => (int) $agent->id ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $run['error'] = sprintf( 'Chat fallita per l\'agente %s: %s', $agent->name, self::chat_error( $res, 'motore AI non disponibile' ) );
@@ -752,7 +826,8 @@ class Nexus_Pipeline {
                         $topic,
                         $angles_text
                 );
-                $res = self::chat( $director_prompt, 'wire' );
+                // v1.0.3: tracking usage della chiamata direttore (agente responsabile).
+                $res = self::chat( $director_prompt, 'wire', array( 'agent_id' => (int) $first->id ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $run['error'] = sprintf( 'La direzione non ha completato la fusione: %s', self::chat_error( $res, 'motore AI non disponibile' ) );
@@ -880,11 +955,28 @@ class Nexus_Pipeline {
         /**
          * Chiamata standard al motore AI con un prompt utente singolo.
          *
+         * v1.0.3: oltre alla fase, passa al motore gli opt 'model' (modello risolto
+         * per la fase corrente), 'agent_id' e 'action' per il tracking dell'uso AI
+         * su wp_nexus_usage_logs. Un motore più vecchio (v1.0.2) ignora questi opt:
+         * passarli è sempre innocuo.
+         *
          * @param string $prompt Prompt completo.
-         * @param string $phase  Fase logica (collect|evaluate|rewrite|wire).
+         * @param string $phase  Fase logica (collect|evaluate|rewrite|wire) — usata anche come 'action'.
+         * @param array  $opts   Opzioni extra: 'model' (string), 'agent_id' (int).
          * @return array{ok:bool, content:string, error:string, simulated:bool}
          */
-        private static function chat( $prompt, $phase ) {
+        private static function chat( $prompt, $phase, $opts = array() ) {
+                $opts = is_array( $opts ) ? $opts : array();
+
+                $send = array(
+                        'phase'    => (string) $phase, // Compatibilità v1.0.x.
+                        'action'   => (string) $phase, // v1.0.3: azione per il tracking usage.
+                        'agent_id' => isset( $opts['agent_id'] ) ? absint( $opts['agent_id'] ) : 0,
+                );
+                if ( isset( $opts['model'] ) && '' !== trim( (string) $opts['model'] ) ) {
+                        $send['model'] = trim( (string) $opts['model'] );
+                }
+
                 $res = Nexus_AI_Engine::chat(
                         array(
                                 array(
@@ -892,7 +984,7 @@ class Nexus_Pipeline {
                                         'content' => (string) $prompt,
                                 ),
                         ),
-                        array( 'phase' => (string) $phase )
+                        $send
                 );
                 return is_array( $res ) ? $res : array();
         }
@@ -907,6 +999,228 @@ class Nexus_Pipeline {
         private static function chat_error( $res, $fallback ) {
                 $error = ( is_array( $res ) && ! empty( $res['error'] ) ) ? (string) $res['error'] : $fallback;
                 return self::clip( $error, 300 );
+        }
+
+        /**
+         * Impostazioni del plugin in forma difensiva (v1.0.3).
+         *
+         * @return array
+         */
+        private static function settings() {
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        $settings = Nexus_DB::get_settings();
+                        return is_array( $settings ) ? $settings : array();
+                }
+                return array();
+        }
+
+        /**
+         * Guardia del budget mensile AI (v1.0.3), da chiamare PRIMA di ogni fase che
+         * effettua chiamate AI.
+         *
+         * - budget_exceeded() = false (o motore v1.0.2 senza il metodo): la fase prosegue.
+         * - budget_action 'warn': registra un avviso e la fase prosegue.
+         * - budget_action 'stop' (default): registra l'attività 'budget' e la fase viene
+         *   saltata; il chiamante prosegue con le fasi successive (il tick non si blocca).
+         *
+         * @param string $phase    Nome fase leggibile (raccolta|valutazione|riscrittura|fact-check|nexus wire).
+         * @param int    $agent_id ID agente per l'attività (0 = sistema).
+         * @return bool True se la fase può procedere, false se va saltata.
+         */
+        private static function budget_allows( $phase, $agent_id = 0 ) {
+                if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'budget_exceeded' ) ) {
+                        return true; // Motore v1.0.2: nessun controllo di budget disponibile.
+                }
+
+                try {
+                        $exceeded = Nexus_AI_Engine::budget_exceeded();
+                } catch ( \Throwable $e ) {
+                        return true; // Mai bloccare la pipeline per un errore del controllo budget.
+                }
+
+                if ( ! $exceeded ) {
+                        return true;
+                }
+
+                $settings    = self::settings();
+                $bud_action  = isset( $settings['budget_action'] ) ? (string) $settings['budget_action'] : 'stop';
+
+                if ( 'warn' === $bud_action ) {
+                        // Solo avviso: la fase prosegue comunque.
+                        self::log_phase( (int) $agent_id, 'budget', sprintf( 'Budget mensile esaurito: la fase %s prosegue comunque (budget_action=warn).', $phase ), 'warning' );
+                        return true;
+                }
+
+                // 'stop' (default): fase saltata, il tick continua con le fasi successive.
+                self::log_phase( (int) $agent_id, 'budget', sprintf( 'Fase %s saltata: budget mensile esaurito.', $phase ), 'error' );
+                return false;
+        }
+
+        /**
+         * Modello economico per screening/valutazione/fact-check (v1.0.3):
+         * settings ai_model_cheap se impostato, altrimenti ai_model.
+         *
+         * @return string
+         */
+        private static function cheap_model() {
+                $settings = self::settings();
+                $cheap    = isset( $settings['ai_model_cheap'] ) ? trim( (string) $settings['ai_model_cheap'] ) : '';
+                if ( '' !== $cheap ) {
+                        return $cheap;
+                }
+                return isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
+        }
+
+        /**
+         * Modello per-agente per la fase rewrite (v1.0.3): agents.ai_model se non vuoto,
+         * altrimenti il modello globale settings ai_model.
+         *
+         * @param object|null $agent Agente (o null se non trovato).
+         * @return string
+         */
+        private static function agent_model( $agent ) {
+                if ( $agent && ! empty( $agent->ai_model ) ) {
+                        return trim( (string) $agent->ai_model );
+                }
+                $settings = self::settings();
+                return isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
+        }
+
+        /**
+         * Hash anti-duplicato del titolo (v1.0.3): md5 del titolo senza tag, spazi
+         * normalizzati e minuscole (mb_strtolower con fallback, mai fatale).
+         *
+         * @param string $title Titolo candidato.
+         * @return string Hash md5 (32 caratteri).
+         */
+        private static function title_hash( $title ) {
+                $norm = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( (string) $title ) ) );
+                if ( function_exists( 'mb_strtolower' ) ) {
+                        $norm = mb_strtolower( $norm, 'UTF-8' );
+                } else {
+                        $norm = strtolower( $norm );
+                }
+                return md5( $norm );
+        }
+
+        /**
+         * Fact-check del draft appena riscritto (v1.0.3), mai bloccante.
+         *
+         * Attivo solo se enable_factcheck == 1 e source_summary/source_url sono
+         * disponibili (la fonte originale serve come riferimento di verifica).
+         * Flusso: factcheck_prompt → chat (modello economico, action 'factcheck') →
+         * extract_json → update_article(factcheck_score, citations). Sotto
+         * factcheck_min_score l'articolo torna in bozza con attività 'error';
+         * sopra soglia un'attività 'success'; se extract fallisce un'attività
+         * 'warning' senza interrompere il flusso.
+         *
+         * @param int    $article_id ID articolo.
+         * @param object $article    Articolo PRIMA dell'aggiornamento (contiene il riassunto fonte originale).
+         * @param int    $agent_id   ID agente proprietario (per tracking e attività).
+         * @return void
+         */
+        private static function factcheck_article( $article_id, $article, $agent_id ) {
+                $settings = self::settings();
+                if ( empty( $settings['enable_factcheck'] ) ) {
+                        return; // Fact-check disattivato: flusso identico a v1.0.2.
+                }
+
+                // Fonte originale necessaria: senza riassunto fonte o URL la verifica non è significativa.
+                $source_summary = isset( $article->summary ) ? trim( (string) $article->summary ) : '';
+                $source_url     = isset( $article->source_url ) ? trim( (string) $article->source_url ) : '';
+                if ( '' === $source_summary || '' === $source_url ) {
+                        return;
+                }
+
+                // Motore senza factcheck_prompt (v1.0.2): skip silenzioso.
+                if ( ! class_exists( 'Nexus_AI_Engine' )
+                        || ! method_exists( 'Nexus_AI_Engine', 'factcheck_prompt' )
+                        || ! method_exists( 'Nexus_AI_Engine', 'extract_json' )
+                        || ! method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
+                        return;
+                }
+
+                // Il fact-check è una chiamata AI: soggetta al budget mensile.
+                if ( ! self::budget_allows( 'fact-check', (int) $agent_id ) ) {
+                        return;
+                }
+
+                // Rileggi l'articolo AGGIORNATO: il fact-check valuta il testo riscritto.
+                $current = Nexus_DB::get_article( $article_id );
+                if ( ! $current ) {
+                        return;
+                }
+
+                $messages = Nexus_AI_Engine::factcheck_prompt(
+                        (string) $current->title,
+                        (string) $current->content,
+                        $source_summary,
+                        $source_url
+                );
+                if ( ! is_array( $messages ) || empty( $messages ) ) {
+                        return;
+                }
+
+                $res = Nexus_AI_Engine::chat(
+                        $messages,
+                        array(
+                                'model'    => self::cheap_model(),
+                                'agent_id' => (int) $agent_id,
+                                'action'   => 'factcheck',
+                        )
+                );
+
+                if ( empty( $res['ok'] ) ) {
+                        // Chiamata fallita: solo un avviso, non bloccare la riscrittura riuscita.
+                        self::log_phase( (int) $agent_id, 'factcheck', sprintf( 'Fact-check articolo #%d non eseguito: %s', $article_id, self::chat_error( $res, 'motore AI non disponibile' ) ), 'warning' );
+                        return;
+                }
+
+                $data = Nexus_AI_Engine::extract_json( (string) $res['content'] );
+                if ( ! is_array( $data ) ) {
+                        self::log_phase( (int) $agent_id, 'factcheck', sprintf( 'Fact-check articolo #%d: risposta non interpretabile, verifica saltata.', $article_id ), 'warning' );
+                        return;
+                }
+
+                // Punteggio clampato 0-100.
+                $score = isset( $data['score'] ) && is_numeric( $data['score'] ) ? (float) $data['score'] : 0.0;
+                $score = max( 0.0, min( 100.0, $score ) );
+
+                $update = array( 'factcheck_score' => $score );
+
+                // Citazioni: salvate come JSON leggibile (array non vuoto).
+                if ( isset( $data['citations'] ) && is_array( $data['citations'] ) && ! empty( $data['citations'] ) ) {
+                        $encoded = wp_json_encode( array_values( $data['citations'] ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+                        if ( false !== $encoded && null !== $encoded ) {
+                                $update['citations'] = $encoded;
+                        }
+                }
+                Nexus_DB::update_article( $article_id, $update );
+
+                $min_score = isset( $settings['factcheck_min_score'] ) ? (float) $settings['factcheck_min_score'] : 60.0;
+
+                if ( $score < $min_score ) {
+                        // Sotto soglia: l'articolo torna in bozza per revisione umana.
+                        Nexus_DB::update_article( $article_id, array( 'status' => 'draft' ) );
+
+                        $issues      = array();
+                        $issues_text = '';
+                        if ( isset( $data['issues'] ) && is_array( $data['issues'] ) ) {
+                                $issues = $data['issues'];
+                        }
+                        foreach ( array_slice( $issues, 0, 2 ) as $issue ) {
+                                $single       = self::clip( wp_strip_all_tags( (string) $issue ), 120 );
+                                $issues_text .= ( '' === $issues_text ? '' : ' | ' ) . $single;
+                        }
+                        if ( '' === $issues_text ) {
+                                $issues_text = 'nessun dettaglio fornito dal modello';
+                        }
+
+                        self::log_phase( 0, 'factcheck', sprintf( 'Fact-check %.0f/100 sotto soglia %.0f: articolo #%d in bozza. Problemi: %s', $score, $min_score, $article_id, $issues_text ), 'error' );
+                        return;
+                }
+
+                self::log_phase( 0, 'factcheck', sprintf( 'Fact-check articolo #%d superato: %.0f/100 (soglia %.0f).', $article_id, $score, $min_score ), 'success' );
         }
 
         /**

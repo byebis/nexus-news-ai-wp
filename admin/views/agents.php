@@ -58,6 +58,24 @@
  *    - Errore REST: inserire .nxa-agents-error (o una .notice.notice-error WP) con
  *      testo "Impossibile caricare gli agenti."
  *
+ * 5) MODELLO AI PER AGENTE (v1.0.3) — SOLO contratto, NESSUN markup qui
+ *    La griglia è popolata da admin.js: questa view NON genera l'input del modello
+ *    (né nel caricamento live, né nel fallback <noscript> in sola lettura).
+ *    Contratto per ogni card generata da JS:
+ *      > input text .nxa-agent-model[data-agent-id="{id}"]
+ *          value = ai_model dell'agente (stringa, '' se vuoto — serialize_agent
+ *          della REST include già il campo ai_model);
+ *          placeholder = "vuoto = modello globale";
+ *          descrizione utente = "Il modello verrà usato per la riscrittura di
+ *          QUESTO agente; vuoto = modello globale impostato nelle opzioni."
+ *          (nota visibile server-side: p.nxa-agents-model-note in questa pagina).
+ *      > bottone salvataggio accanto al campo (nome/classe a cura di admin.js)
+ *          azione: POST /agents/{id}/model con body JSON { model: valore }
+ *          (vuoto = torna al modello globale); al successo aggiornare lo stato
+ *          locale e ricaricare la lista (GET /agents).
+ *   admin.js (altro agente) è proprietario del rendering e del salvataggio:
+ *    eventuali variazioni di contratto vanno coordinate con quel file.
+ *
  * Il markup <noscript> in fondo al file è un esempio vivente del contratto card sopra.
  *
  * @package Nexus_News_AI
@@ -101,6 +119,14 @@ $nxa_agent_status_labels = array(
 
         <p class="nxa-legend">
                 <?php esc_html_e( 'Gli agenti raccolgono notizie RSS reali della loro categoria, le valutano e le riscrivono con AI.', 'nexus-news-ai' ); ?>
+        </p>
+
+        <!-- Modello AI per agente (v1.0.3): contratto JS nel docblock di testa.
+             Il campo input.nxa-agent-model[data-agent-id] e il bottone di salvataggio
+             sono generati da admin.js dentro ogni card (POST /agents/{id}/model).
+             Qui SOLO la nota utente: nessun markup duplicato. -->
+        <p class="nxa-legend nxa-agents-model-note">
+                <?php esc_html_e( 'Modello AI per agente: il modello verrà usato per la riscrittura di QUESTO agente; vuoto = modello globale impostato nelle opzioni.', 'nexus-news-ai' ); ?>
         </p>
 
         <?php if ( $nxa_has_utils && ! empty( $nxa_categories ) ) : ?>

@@ -27,6 +27,20 @@
  *                                    con href="#nxa-article-{id}" (il JS intercetta e
  *                                    apre l'articolo nel modal invece di navigare)
  *   8. Layout lista (shortcode) .... .nxa-grid--list (variante di .nxa-grid)
+ *   9. Badge fact-check (v1.0.3) ... .nexus-factcheck.ok | .nexus-factcheck.low
+ *                                    (renderizzato in render_card() e nella byline
+ *                                     del template single quando factcheck_score > 0;
+ *                                     classe "ok" se score >= 60 altrimenti "low",
+ *                                     vedi Nexus_Shortcodes::factcheck_badge())
+ *  10. Fonti verificate (v1.0.3) ... .nexus-citations (blocco h4 + lista
+ *                                    claim → link fonte, max 8 voci; generato da
+ *                                    Nexus_Shortcodes::citations_block() nella card
+ *                                    e nel template single sotto il box fonti)
+ *
+ * NOTA v1.0.3: il modal articolo è costruito lato JS (nexus-public.js, fuori
+ * scope del frontend PHP). Le card client-side (cardHTML) replicano render_card():
+ * quando serialize_article esporrà factcheck_score/citations via REST, il JS può
+ * riutilizzare le stesse classi .nexus-factcheck/.nexus-citations (CSS già pronto).
  *
  * Oggetto localizzato per il JS (handle "nexus-public"):
  *   window.NexusPublicData = {
@@ -37,7 +51,8 @@
  *
  * Contratto dati per le card caricate via REST (load-more / filtri):
  *   riga articolo = { id, title, subtitle, summary, content, category, agent_id,
- *                     image_url, published_at, read_time, views, reactions, ... }
+ *                     image_url, published_at, read_time, views, reactions,
+ *                     factcheck_score, citations (JSON string), ... }
  *   riga agente   = { id, name, avatar (emoji), category, status, ... }
  *   La card client-side DEVE replicare il markup di Nexus_Shortcodes::render_card()
  *   (stesse classi nxa-*) per restare coerente con nexus-public.css.
@@ -60,6 +75,12 @@ final class Nexus_Shortcodes {
          * Colore di fallback per badge/dot categoria.
          */
         const FALLBACK_COLOR = '#6366f1';
+
+        /**
+         * Soglia minima del punteggio fact-check per il badge verde
+         * (.nexus-factcheck.ok): sotto soglia il badge è arancio (.low).
+         */
+        const FACTCHECK_MIN_OK = 60;
 
         /**
          * Cache locale mappa agenti {id => oggetto}.
@@ -237,6 +258,13 @@ final class Nexus_Shortcodes {
         /**
          * Render di una singola card articolo (server-side e riusabile).
          *
+         * Da v1.0.3 include, se presenti nella riga articolo:
+         *   - badge fact-check .nexus-factcheck (nel meta del footer);
+         *   - blocco fonti verificate .nexus-citations (dopo l'excerpt,
+         *     variante compatta via CSS). Le card JS (cardHTML) replicano
+         *     questo markup: allineare lì i nuovi elementi quando i campi
+         *     factcheck_score/citations saranno esposti via REST.
+         *
          * @param object $article Riga tabella nexus_articles.
          * @return string
          */
@@ -267,6 +295,10 @@ final class Nexus_Shortcodes {
                 $avatar    = ( $agent && ! empty( $agent->avatar ) ) ? (string) $agent->avatar : '🤖';
                 $agent_nm  = ( $agent && ! empty( $agent->name ) ) ? (string) $agent->name : __( 'Agente AI', 'nexus-news-ai' );
 
+                /* Fact-check + fonti verificate (v1.0.3): helper condivisi col template single. */
+                $factcheck_badge = self::factcheck_badge( $article );
+                $citations_html  = self::citations_block( $article );
+
                 $out  = '';
                 $out .= '<article class="nxa-card" data-article-id="' . esc_attr( absint( $article->id ) ) . '" data-category="' . esc_attr( $cat ) . '" role="button" tabindex="0" aria-label="' . esc_attr( sprintf( /* translators: %s: titolo articolo. */ __( 'Leggi: %s', 'nexus-news-ai' ), $title ) ) . '">';
 
@@ -291,6 +323,11 @@ final class Nexus_Shortcodes {
                 }
                 $out .= '<p class="nxa-card-excerpt">' . esc_html( Nexus_Utils::excerpt_it( $excerpt_text, 20 ) ) . '</p>';
 
+                /* Fonti verificate (max 8) se il fact-check ha prodotto citazioni. */
+                if ( $citations_html ) {
+                        $out .= $citations_html; // phpcs:ignore WordPress.Security.EscapeOutput -- HTML già escaped nell'helper.
+                }
+
                 $out .= '<footer class="nxa-card-footer">';
                 $out .= '<span class="nxa-card-agent"><span class="nxa-avatar" aria-hidden="true">' . esc_html( $avatar ) . '</span><span class="nxa-card-agent-name">' . esc_html( $agent_nm ) . '</span></span>';
                 $out .= '<span class="nxa-card-meta">';
@@ -303,11 +340,130 @@ final class Nexus_Shortcodes {
                 if ( $read_time ) {
                         $out .= '<span class="nxa-card-read">' . esc_html( $read_time ) . '</span>';
                 }
+                if ( $factcheck_badge ) {
+                        if ( $time_ago || $read_time ) {
+                                $out .= '<span class="nxa-sep" aria-hidden="true">·</span>';
+                        }
+                        $out .= $factcheck_badge; // phpcs:ignore WordPress.Security.EscapeOutput -- HTML già escaped nell'helper.
+                }
                 $out .= '</span>';
                 $out .= '</footer>';
 
                 $out .= '</div>';
                 $out .= '</article>';
+
+                return $out;
+        }
+
+        /* ========================= Fact-check & citazioni (v1.0.3) ========================= */
+
+        /**
+         * Badge "Verificato AI {score}/100" per un articolo fact-checkato.
+         *
+         * Restituisce stringa vuota se factcheck_score manca o è <= 0.
+         * Classe CSS: "ok" se score >= FACTCHECK_MIN_OK (60), altrimenti "low".
+         * Punteggio formattato come intero (82) o con decimale italiano (82,5).
+         *
+         * @param object $article Riga tabella nexus_articles.
+         * @return string HTML del badge o ''.
+         */
+        public static function factcheck_badge( $article ) {
+                if ( ! is_object( $article ) || ! isset( $article->factcheck_score ) ) {
+                        return '';
+                }
+
+                $score = (float) $article->factcheck_score;
+                if ( $score <= 0 ) {
+                        return '';
+                }
+
+                $class     = ( $score >= self::FACTCHECK_MIN_OK ) ? 'ok' : 'low';
+                $score_txt = ( floor( $score ) === $score )
+                        ? (string) (int) $score
+                        : number_format( $score, 1, ',', '.' );
+
+                return '<span class="nexus-factcheck ' . esc_attr( $class ) . '">'
+                        . esc_html( sprintf(
+                                /* translators: %s: punteggio fact-check su 100. */
+                                __( 'Verificato AI %s/100', 'nexus-news-ai' ),
+                                $score_txt
+                        ) )
+                        . '</span>';
+        }
+
+        /**
+         * Blocco "Fonti verificate" (.nexus-citations) dalle citazioni del fact-check.
+         *
+         * Decodifica difensiva del campo citations (stringa JSON, può essere
+         * null/vuota/malformata): accetta array di {claim, source} (o oggetti /
+         * stringhe pure) e restituisce al massimo $max voci valide. Tutto il
+         * contenuto è escaped (esc_html/esc_url); il link apre in nuova scheda.
+         *
+         * @param object $article Riga tabella nexus_articles.
+         * @param int    $max     Numero massimo di citazioni (default 8, min 1).
+         * @return string HTML del blocco o ''.
+         */
+        public static function citations_block( $article, $max = 8 ) {
+                if ( ! is_object( $article ) || empty( $article->citations ) ) {
+                        return '';
+                }
+
+                $max     = min( 8, max( 1, absint( $max ) ) );
+                $decoded = json_decode( (string) $article->citations, true );
+                if ( ! is_array( $decoded ) ) {
+                        return '';
+                }
+
+                /* Normalizzazione difensiva: {claim, source} validi e non vuoti. */
+                $items = array();
+                foreach ( $decoded as $citation ) {
+                        if ( count( $items ) >= $max ) {
+                                break;
+                        }
+                        $claim  = '';
+                        $source = '';
+                        if ( is_array( $citation ) ) {
+                                $claim  = trim( (string) ( $citation['claim'] ?? '' ) );
+                                $source = trim( (string) ( $citation['source'] ?? '' ) );
+                        } elseif ( is_object( $citation ) ) {
+                                $claim  = trim( (string) ( $citation->claim ?? '' ) );
+                                $source = trim( (string) ( $citation->source ?? '' ) );
+                        } elseif ( is_string( $citation ) ) {
+                                $claim = trim( $citation );
+                        }
+                        if ( '' === $claim && '' === $source ) {
+                                continue;
+                        }
+                        $items[] = array(
+                                'claim'  => $claim,
+                                'source' => $source,
+                        );
+                }
+
+                if ( ! $items ) {
+                        return '';
+                }
+
+                $out  = '<div class="nexus-citations">';
+                $out .= '<h4>' . esc_html__( 'Fonti verificate', 'nexus-news-ai' ) . '</h4>';
+                $out .= '<ul>';
+                foreach ( $items as $item ) {
+                        $out .= '<li>';
+                        if ( '' !== $item['claim'] ) {
+                                $out .= esc_html( $item['claim'] );
+                        }
+                        if ( '' !== $item['source'] ) {
+                                if ( '' !== $item['claim'] ) {
+                                        $out .= ' — ';
+                                }
+                                $out .= '<a href="' . esc_url( $item['source'] ) . '" rel="noopener nofollow" target="_blank">'
+                                        . esc_html__( 'fonte', 'nexus-news-ai' )
+                                        . '</a>';
+                        }
+                        $out .= '</li>';
+                }
+                $out .= '</ul>';
+                $out .= '</div>';
 
                 return $out;
         }

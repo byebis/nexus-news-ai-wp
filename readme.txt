@@ -4,11 +4,11 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in.
+Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST.
 
 == Description ==
 
@@ -84,9 +84,15 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 = I dati vengono cancellati quando disattivo il plugin? =
 
-**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 6 tabelle `wp_nexus_*` (inclusa `wp_nexus_subscribers`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
+**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
 == Changelog ==
+
+= 1.0.3 =
+* «Redazione intelligente»: modello AI per-agente (POST /agents/{id}/model, campo «Modello AI» nella pagina Agenti) e modello economico per screening/valutazione/fact-check; anti-duplicato via hash del titolo in fase di raccolta.
+* Uso AI sotto controllo: ogni chiamata logga token e costo stimato in USD (tabella wp_nexus_usage_logs), la dashboard mostra «Uso AI» del mese e il budget mensile (monthly_budget_usd) con azione stop o warn protegge le spese.
+* Fact-check automatico: punteggio 0-100 e citazioni claim→fonte salvati sull'articolo; sotto soglia (factcheck_min_score) l'articolo torna in bozza, sopra la soglia il post WordPress pubblica con il blocco «Fonti verificate».
+* Traduzioni AI multi-lingua via REST (POST /articles/{id}/translate, GET /articles/{id}/translations) con lingue configurabili (default en,es,fr); 7 nuovi setting nella sezione admin «Redazione intelligente».
 
 = 1.0.2 =
 * Distribuzione sociale reale: pubblicazione su Telegram (Bot API), Discord (webhook), X/Twitter (OAuth 1.0a in PHP) e LinkedIn (Bearer token) con le credenziali nei settings; canali non configurati = log "skipped" onesti, Facebook/Instagram restano simulati.
@@ -107,6 +113,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.0.3 =
+«Redazione intelligente»: scegli il modello AI di ogni agente, contieni i costi col modello economico per lo screening e il budget mensile (stop o warn), pubblica solo articoli verificati dal fact-check con il blocco «Fonti verificate» e apri il magazine alle traduzioni AI multi-lingua via REST.
 
 = 1.0.2 =
 "Distribuzione reale": pubblica davvero su Telegram, Discord, X e LinkedIn con le tue credenziali, apri la newsletter con double opt-in (shortcode [nexus_subscribe] e digest settimanale AI) e segnala i nuovi articoli a IndexNow e WebSub. I canali non configurati restano onestamente "skipped" nei log.

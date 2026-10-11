@@ -24,6 +24,10 @@
  * delete_option: le 19 chiavi settings v1.0.2 vivono in nexus_settings,
  * già rimossa.
  *
+ * Dalla v1.0.3 il drop comprende anche le due tabelle della "redazione
+ * intelligente": wp_nexus_usage_logs (tracking uso AI: token e costo stimato)
+ * e wp_nexus_translations (traduzioni AI degli articoli).
+ *
  * @package Nexus_News_AI
  */
 
@@ -111,7 +115,7 @@ function nexus_uninstall_clear_cron_events() {
 }
 
 /**
- * Drop diretto delle 6 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
+ * Drop diretto delle 8 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
  *
  * @return void
  */
@@ -125,6 +129,8 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_approval_logs',
                 $prefix . 'nexus_activity_logs',
                 $prefix . 'nexus_subscribers',
+                $prefix . 'nexus_usage_logs',   // v1.0.3 — tracking uso AI
+                $prefix . 'nexus_translations', // v1.0.3 — traduzioni AI degli articoli
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -159,8 +165,9 @@ foreach ( array_unique( $candidates ) as $db_class_file ) {
 }
 
 if ( $loaded && class_exists( 'Nexus_DB' ) ) {
-        // Nexus_DB::drop_tables() fa il drop delle 6 tabelle wp_nexus_* (inclusa
-        // nexus_subscribers dalla v1.0.2) e cancella le opzioni nexus_settings,
+        // Nexus_DB::drop_tables() fa il drop delle 8 tabelle wp_nexus_* (inclusa
+        // nexus_subscribers dalla v1.0.2, nexus_usage_logs e nexus_translations
+        // dalla v1.0.3) e cancella le opzioni nexus_settings,
         // nexus_db_version e nexus_wire_runs.
         Nexus_DB::drop_tables();
 

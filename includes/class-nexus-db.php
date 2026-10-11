@@ -96,6 +96,14 @@ class Nexus_DB {
                         'enable_indexnow'    => 0,
                         'indexnow_key'       => '', // generata automaticamente se vuota all'attivazione
                         'enable_websub'      => 0,
+                        // v1.0.3 — Redazione intelligente.
+                        'ai_model_cheap'     => '', // modello economico per screening/valutazione (vuoto = ai_model)
+                        'enable_factcheck'   => 1,
+                        'factcheck_min_score' => 60, // sotto questa soglia l'articolo torna in bozza
+                        'monthly_budget_usd' => 0, // 0 = nessun limite
+                        'budget_action'      => 'stop', // stop | warn
+                        'enable_translations' => 1,
+                        'translation_langs'  => 'en,es,fr', // codici lingua separati da virgola
                 );
         }
 
@@ -113,6 +121,8 @@ class Nexus_DB {
                 $alogs   = $wpdb->prefix . 'nexus_approval_logs';
                 $act     = $wpdb->prefix . 'nexus_activity_logs';
                 $subs    = $wpdb->prefix . 'nexus_subscribers';
+                $usage   = $wpdb->prefix . 'nexus_usage_logs';
+                $transl  = $wpdb->prefix . 'nexus_translations';
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -123,6 +133,7 @@ class Nexus_DB {
                                 description TEXT NULL,
                                 status VARCHAR(20) NOT NULL DEFAULT 'active',
                                 personality TEXT NULL,
+                                ai_model VARCHAR(100) NOT NULL DEFAULT '',
                                 last_run DATETIME NULL DEFAULT NULL,
                                 created_at DATETIME NOT NULL,
                                 updated_at DATETIME NOT NULL,
@@ -141,6 +152,9 @@ class Nexus_DB {
                                 source_url TEXT NULL,
                                 image_url TEXT NULL,
                                 wp_post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                                content_hash CHAR(32) NOT NULL DEFAULT '',
+                                factcheck_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+                                citations LONGTEXT NULL,
                                 status VARCHAR(30) NOT NULL DEFAULT 'draft',
                                 quality_score DECIMAL(5,2) NOT NULL DEFAULT 0,
                                 read_time INT NOT NULL DEFAULT 3,
@@ -153,7 +167,8 @@ class Nexus_DB {
                                 KEY status (status(30)),
                                 KEY category (category(100)),
                                 KEY agent_id (agent_id),
-                                KEY wp_post_id (wp_post_id)
+                                KEY wp_post_id (wp_post_id),
+                                KEY content_hash (content_hash)
                         ) {$charset};",
                         "CREATE TABLE {$plogs} (
                                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -201,6 +216,32 @@ class Nexus_DB {
                                 KEY status (status(20)),
                                 KEY token (token(64))
                         ) {$charset};",
+                        "CREATE TABLE {$usage} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                agent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                                action VARCHAR(50) NOT NULL DEFAULT '',
+                                model VARCHAR(120) NOT NULL DEFAULT '',
+                                prompt_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+                                completion_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+                                total_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+                                cost DECIMAL(10,4) NOT NULL DEFAULT 0,
+                                created_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                KEY agent_id (agent_id),
+                                KEY created_at (created_at)
+                        ) {$charset};",
+                        "CREATE TABLE {$transl} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                article_id BIGINT UNSIGNED NOT NULL,
+                                lang VARCHAR(10) NOT NULL DEFAULT '',
+                                title TEXT NULL,
+                                summary TEXT NULL,
+                                content LONGTEXT NULL,
+                                created_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                UNIQUE KEY article_lang (article_id, lang),
+                                KEY article_id (article_id)
+                        ) {$charset};",
                 );
         }
 
@@ -243,6 +284,8 @@ class Nexus_DB {
                         'approval_logs' => $wpdb->prefix . 'nexus_approval_logs',
                         'activity_logs' => $wpdb->prefix . 'nexus_activity_logs',
                         'subscribers'   => $wpdb->prefix . 'nexus_subscribers',
+                        'usage_logs'    => $wpdb->prefix . 'nexus_usage_logs',
+                        'translations'  => $wpdb->prefix . 'nexus_translations',
                 );
         }
 
@@ -309,7 +352,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'last_run' ) )
+                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'last_run' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -448,7 +491,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'image_url', 'wp_post_id', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
+                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'image_url', 'wp_post_id', 'content_hash', 'factcheck_score', 'citations', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -458,7 +501,7 @@ class Nexus_DB {
                 }
                 $allowed['updated_at'] = current_time( 'mysql' );
                 $int_fields = array( 'agent_id', 'read_time', 'views', 'wp_post_id' );
-                $float_fields = array( 'quality_score' );
+                $float_fields = array( 'quality_score', 'factcheck_score' );
                 $nonce_fields = array( 'published_at' );
                 $formats = array();
                 foreach ( $allowed as $k => $v ) {
@@ -613,6 +656,157 @@ class Nexus_DB {
         public static function delete_subscriber( $id ) {
                 global $wpdb;
                 return $wpdb->delete( self::tables()['subscribers'], array( 'id' => absint( $id ) ), array( '%d' ) );
+        }
+
+        /* ============ USAGE AI (v1.0.3) ============ */
+
+        /**
+         * Registra un utilizzo del motore AI (token + costo stimato).
+         *
+         * @param array $data agent_id, action, model, prompt_tokens, completion_tokens, total_tokens, cost.
+         * @return int id inserito o 0.
+         */
+        public static function insert_usage( $data ) {
+                global $wpdb;
+                $row = array(
+                        'agent_id'          => absint( $data['agent_id'] ?? 0 ),
+                        'action'            => sanitize_key( $data['action'] ?? '' ),
+                        'model'             => sanitize_text_field( (string) ( $data['model'] ?? '' ) ),
+                        'prompt_tokens'     => absint( $data['prompt_tokens'] ?? 0 ),
+                        'completion_tokens' => absint( $data['completion_tokens'] ?? 0 ),
+                        'total_tokens'      => absint( $data['total_tokens'] ?? 0 ),
+                        'cost'              => (float) ( $data['cost'] ?? 0 ),
+                        'created_at'        => current_time( 'mysql' ),
+                );
+                $ok = $wpdb->insert(
+                        self::tables()['usage_logs'],
+                        $row,
+                        array( '%d', '%s', '%s', '%d', '%d', '%d', '%f', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        /**
+         * Statistiche uso AI: totali + per-agente.
+         *
+         * @param string $period 'month' (default) | 'week' | 'all'.
+         * @return array{totals:array,by_agent:array}
+         */
+        public static function usage_stats( $period = 'month' ) {
+                global $wpdb;
+                $t = self::tables()['usage_logs'];
+                if ( 'week' === $period ) {
+                        $since = gmdate( 'Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS );
+                } elseif ( 'all' === $period ) {
+                        $since = '';
+                } else {
+                        $since = gmdate( 'Y-m-01 00:00:00', current_time( 'timestamp' ) ); // inizio mese corrente.
+                }
+                $where = '' !== $since ? $wpdb->prepare( 'WHERE created_at >= %s', $since ) : '';
+                $totals = $wpdb->get_row( "SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, COALESCE(SUM(completion_tokens),0) AS completion_tokens, COALESCE(SUM(total_tokens),0) AS total_tokens, COALESCE(SUM(cost),0) AS cost FROM {$t} {$where}" ); // phpcs:ignore
+                $by_agent = $wpdb->get_results( "SELECT agent_id, COUNT(*) AS calls, COALESCE(SUM(total_tokens),0) AS total_tokens, COALESCE(SUM(cost),0) AS cost FROM {$t} {$where} GROUP BY agent_id ORDER BY cost DESC" ); // phpcs:ignore
+                return array(
+                        'totals'   => array(
+                                'calls'             => (int) ( $totals->calls ?? 0 ),
+                                'prompt_tokens'     => (int) ( $totals->prompt_tokens ?? 0 ),
+                                'completion_tokens' => (int) ( $totals->completion_tokens ?? 0 ),
+                                'total_tokens'      => (int) ( $totals->total_tokens ?? 0 ),
+                                'cost'              => (float) ( $totals->cost ?? 0 ),
+                        ),
+                        'by_agent' => is_array( $by_agent ) ? $by_agent : array(),
+                );
+        }
+
+        /* ============ DUPLICATI (v1.0.3) ============ */
+
+        /**
+         * Verifica se esiste già un articolo con lo stesso hash del contenuto/titolo.
+         */
+        public static function article_hash_exists( $hash ) {
+                global $wpdb;
+                $t = self::tables()['articles'];
+                $hash = preg_replace( '/[^a-f0-9]/', '', strtolower( (string) $hash ) );
+                if ( '' === $hash ) {
+                        return 0;
+                }
+                return (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$t} WHERE content_hash = %s LIMIT 1", $hash ) );
+        }
+
+        /* ============ TRADUZIONI (v1.0.3) ============ */
+
+        /**
+         * Traduzioni di un articolo.
+         */
+        public static function get_translations( $article_id ) {
+                global $wpdb;
+                $t = self::tables()['translations'];
+                return $wpdb->get_results( $wpdb->prepare( "SELECT id, article_id, lang, title, summary, created_at FROM {$t} WHERE article_id = %d ORDER BY lang ASC", absint( $article_id ) ) );
+        }
+
+        /**
+         * Singola traduzione (contenuto completo).
+         */
+        public static function get_translation( $article_id, $lang ) {
+                global $wpdb;
+                $t = self::tables()['translations'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE article_id = %d AND lang = %s LIMIT 1", absint( $article_id ), sanitize_key( (string) $lang ) ) );
+        }
+
+        /**
+         * Inserisce o aggiorna una traduzione (upsert per articolo+lingua).
+         *
+         * @return int id riga o 0 su errore.
+         */
+        public static function insert_translation( $data ) {
+                global $wpdb;
+                $article_id = absint( $data['article_id'] ?? 0 );
+                $lang       = sanitize_key( (string) ( $data['lang'] ?? '' ) );
+                if ( $article_id <= 0 || '' === $lang ) {
+                        return 0;
+                }
+                $existing = self::get_translation( $article_id, $lang );
+                if ( $existing ) {
+                        $wpdb->update(
+                                self::tables()['translations'],
+                                array(
+                                        'title'   => sanitize_text_field( $data['title'] ?? '' ),
+                                        'summary' => sanitize_textarea_field( $data['summary'] ?? '' ),
+                                        'content' => wp_kses_post( $data['content'] ?? '' ),
+                                ),
+                                array( 'id' => (int) $existing->id ),
+                                array( '%s', '%s', '%s' ),
+                                array( '%d' )
+                        );
+                        return (int) $existing->id;
+                }
+                $ok = $wpdb->insert(
+                        self::tables()['translations'],
+                        array(
+                                'article_id' => $article_id,
+                                'lang'       => $lang,
+                                'title'      => sanitize_text_field( $data['title'] ?? '' ),
+                                'summary'    => sanitize_textarea_field( $data['summary'] ?? '' ),
+                                'content'    => wp_kses_post( $data['content'] ?? '' ),
+                                'created_at' => current_time( 'mysql' ),
+                        ),
+                        array( '%d', '%s', '%s', '%s', '%s', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        /**
+         * Elimina una traduzione.
+         */
+        public static function delete_translation( $article_id, $lang ) {
+                global $wpdb;
+                return $wpdb->delete(
+                        self::tables()['translations'],
+                        array(
+                                'article_id' => absint( $article_id ),
+                                'lang'       => sanitize_key( (string) $lang ),
+                        ),
+                        array( '%d', '%s' )
+                );
         }
 
         /* ============ ACTIVITY ============ */

@@ -1416,3 +1416,152 @@ body:has(.nxa-modal-overlay) {
     color: #444;
   }
 }
+
+/* ================================================================
+   Citations & Fact-check (v1.0.3) — badge "Verificato AI" e blocco
+   "Fonti verificate" generati dagli helper Nexus_Shortcodes
+   (factcheck_badge() / citations_block()). Classi CONDIVISE da:
+   card magazine (.nxa-card), template single (.nexus-single) e
+   (in futuro) card/modal JS: stesse classi per coerenza dark.
+   ================================================================ */
+
+/* ---------- Badge fact-check ---------- */
+
+.nexus-factcheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Score >= 60: verde (coerente con .nxa-wire-status.is-ok) */
+.nexus-factcheck.ok {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+/* Score sotto soglia: arancio */
+.nexus-factcheck.low {
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.45);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+/* ---------- Blocco fonti verificate ---------- */
+
+.nexus-citations {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--nxa-border-soft, rgba(148, 163, 184, 0.16));
+  border-left: 3px solid var(--nxa-accent-2, #06b6d4);
+  border-radius: var(--nxa-radius-sm, 10px);
+  background: rgba(148, 163, 184, 0.07);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--nxa-text-body, #cbd5e1);
+  word-break: break-word;
+}
+
+.nexus-citations h4 {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nxa-muted, #94a3b8);
+}
+
+.nexus-citations ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.nexus-citations li {
+  margin: 0;
+}
+
+.nexus-citations a {
+  color: var(--nxa-accent-2, #06b6d4);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.nexus-citations a:hover {
+  color: var(--nxa-focus, #22d3ee);
+}
+
+/* Variante compatta dentro la card magazine (bordo sinistro più corto) */
+.nxa-card .nexus-citations {
+  margin-top: 2px;
+  padding: 10px 12px;
+  font-size: 0.76rem;
+}
+
+.nxa-card .nexus-citations h4 {
+  margin-bottom: 6px;
+}
+
+.nxa-card .nexus-citations ul {
+  gap: 4px;
+}
+
+/* Nel template single il blocco segue il box "Fonte originale" */
+.nexus-single .nexus-citations {
+  margin-top: 18px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 480px) {
+  .nexus-citations {
+    margin-top: 14px;
+    padding: 12px;
+    font-size: 0.8rem;
+  }
+
+  .nexus-factcheck {
+    font-size: 0.62rem;
+  }
+}
+
+/* ---------- Stampa: badge e fonti restano leggibili in bianco e nero ---------- */
+
+@media print {
+  .nexus-factcheck.ok {
+    color: #166534;
+    border-color: #999;
+    background: none;
+  }
+
+  .nexus-factcheck.low {
+    color: #92400e;
+    border-color: #999;
+    background: none;
+  }
+
+  .nexus-citations {
+    background: #f5f5f5;
+    border-color: #ddd;
+    color: #333;
+  }
+
+  .nexus-citations h4 {
+    color: #555;
+  }
+
+  .nexus-citations a {
+    color: #111;
+  }
+}

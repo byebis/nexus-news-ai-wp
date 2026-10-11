@@ -31,6 +31,14 @@
  *   anche il loro value è stampato con esc_attr.
  * - indexnow_key è readonly: la chiave è generata automaticamente alla prima
  *   pubblicazione (Nexus_Ping) e non è modificabile da schermo.
+ * - CONTRATTO v1.0.3 ("Redazione intelligente"): 5 campi simple con name =
+ *   chiave esatta di Nexus_DB::get_settings() (ai_model_cheap,
+ *   factcheck_min_score, monthly_budget_usd, budget_action, translation_langs)
+ *   serializzati come name=value; 2 nuovi toggle checkbox value="1"
+ *   (enable_factcheck, enable_translations) che admin.js gestisce nel blocco
+ *   intelFlags serializzandoli 0/1 (0 quando deselezionati), stesso pattern
+ *   dei 16 toggle v1.0.2. Campi precompilati con get_settings() (value /
+ *   checked / selected) come le sezioni esistenti.
  *
  * @package Nexus_News_AI
  */
@@ -444,6 +452,71 @@ $social_platforms = array(
                                                         <?php esc_html_e( 'WebSub (PubSubHubbub)', 'nexus-news-ai' ); ?>
                                                 </label>
                                                 <p class="description"><?php esc_html_e( 'Se attivo, il feed del sito viene notificato agli hub WebSub a ogni pubblicazione.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+
+                <?php /* Sezione v1.0.3 "Redazione intelligente": campi contrattuali con admin.js (5 chiavi simple + blocco checkbox intelFlags). */ ?>
+                <h2 class="title"><?php esc_html_e( 'Redazione intelligente', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><label for="nxa-ai-model-cheap"><?php esc_html_e( 'Modello economico (screening)', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="ai_model_cheap" id="nxa-ai-model-cheap" value="<?php echo esc_attr( $settings['ai_model_cheap'] ); ?>" placeholder="vuoto = modello principale" class="regular-text code" />
+                                                <p class="description"><?php esc_html_e( 'Usato per valutazione qualità, fact-check e raccolta: conviene un modello economico.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Fact-check', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-factcheck">
+                                                        <input type="checkbox" name="enable_factcheck" id="nxa-enable-factcheck" value="1" <?php checked( (int) $settings['enable_factcheck'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Fact-check automatico con citazioni', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, dopo la riscrittura l'AI valuta il draft rispetto alla fonte (punteggio 0-100) e raccoglie le citazioni.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-factcheck-min-score"><?php esc_html_e( 'Soglia minima fact-check (0-100)', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="number" name="factcheck_min_score" id="nxa-factcheck-min-score" value="<?php echo esc_attr( $settings['factcheck_min_score'] ); ?>" min="0" max="100" step="1" class="small-text" />
+                                                <p class="description"><?php esc_html_e( "Sotto questa soglia l'articolo torna in bozza.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-monthly-budget-usd"><?php esc_html_e( 'Budget mensile AI (USD)', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="number" name="monthly_budget_usd" id="nxa-monthly-budget-usd" value="<?php echo esc_attr( $settings['monthly_budget_usd'] ); ?>" min="0" step="0.01" class="small-text" />
+                                                <p class="description"><?php esc_html_e( '0 = nessun limite. Le stime si basano sui token usati.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-budget-action"><?php esc_html_e( 'Quando il budget è esaurito', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <select name="budget_action" id="nxa-budget-action">
+                                                        <option value="stop" <?php selected( $settings['budget_action'], 'stop' ); ?>><?php esc_html_e( 'Ferma le fasi AI', 'nexus-news-ai' ); ?></option>
+                                                        <option value="warn" <?php selected( $settings['budget_action'], 'warn' ); ?>><?php esc_html_e( 'Solo avviso', 'nexus-news-ai' ); ?></option>
+                                                </select>
+                                                <p class="description"><?php esc_html_e( 'Ferma le fasi AI: le fasi successive del tick vengono saltate. Solo avviso: registra un avviso nel feed attività e prosegui.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Traduzioni AI', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-translations">
+                                                        <input type="checkbox" name="enable_translations" id="nxa-enable-translations" value="1" <?php checked( (int) $settings['enable_translations'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Traduzioni AI degli articoli', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, gli articoli pubblicati possono essere tradotti con l'AI nelle lingue configurate.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-translation-langs"><?php esc_html_e( 'Lingue di traduzione', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="translation_langs" id="nxa-translation-langs" value="<?php echo esc_attr( $settings['translation_langs'] ); ?>" placeholder="en,es,fr" class="regular-text code" />
+                                                <p class="description"><?php esc_html_e( 'Codici separati da virgola. Supportati: en, es, fr, de, pt, ar, zh, ja.', 'nexus-news-ai' ); ?></p>
                                         </td>
                                 </tr>
                         </tbody>
