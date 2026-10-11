@@ -8,8 +8,10 @@
  * CONTRATTO FISSO CON admin.js (non rinominare id e name):
  * - form#nxa-settings-form.nxa-settings-form: submit intercettato; admin.js
  *   serializza i campi come name=value ed esegue PUT /settings (nexus/v1).
- * - Gli 8 toggle (auto_collect, auto_evaluate, auto_rewrite, auto_publish,
- *   enable_wp_posts, enable_ai_images, enable_seo, seo_generate) sono
+ * - I 16 toggle (auto_collect, auto_evaluate, auto_rewrite, auto_publish,
+ *   enable_wp_posts, enable_ai_images, enable_seo, seo_generate,
+ *   enable_telegram, enable_discord, enable_x, enable_linkedin,
+ *   enable_newsletter, enable_digest, enable_indexnow, enable_websub) sono
  *   checkbox value="1": admin.js li serializza come 0/1 (0 quando deselezionati).
  * - Le 5 piattaforme social sono checkbox name="social_platforms[]" con
  *   value = blog|twitter|facebook|linkedin|instagram: admin.js serializza le
@@ -17,9 +19,18 @@
  * - Tutti gli altri campi usano name = chiave esatta di Nexus_DB::default_settings():
  *   mode, collect_interval, max_articles_per_day, auto_approve_score,
  *   site_name, site_tagline, ai_base_url, ai_model, ai_api_key,
- *   post_status, image_model, image_size.
+ *   post_status, image_model, image_size,
+ *   telegram_bot_token, telegram_chat_id, discord_webhook_url,
+ *   x_api_key, x_api_secret, x_access_token, x_access_secret,
+ *   linkedin_access_token, linkedin_author_urn, newsletter_recipients,
+ *   indexnow_key.
  * - ai_api_key: input type="password" (mai mostrata in chiaro a schermo);
  *   il value è stampato con esc_attr.
+ * - Le credenziali social (v1.0.2) sono input type="text" (scelta consapevole,
+ *   coerente con il resto della pagina) con autocomplete="new-password";
+ *   anche il loro value è stampato con esc_attr.
+ * - indexnow_key è readonly: la chiave è generata automaticamente alla prima
+ *   pubblicazione (Nexus_Ping) e non è modificabile da schermo.
  *
  * @package Nexus_News_AI
  */
@@ -258,6 +269,181 @@ $social_platforms = array(
                                                         <?php esc_html_e( "Genera meta title/description con l'AI", 'nexus-news-ai' ); ?>
                                                 </label>
                                                 <p class="description"><?php esc_html_e( "Se attivo, title e description SEO vengono generati con l'AI; in caso contrario usano titolo e riassunto dell'articolo.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+
+                <h2 class="title"><?php esc_html_e( 'Distribuzione sociale', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Telegram', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-telegram">
+                                                        <input type="checkbox" name="enable_telegram" id="nxa-enable-telegram" value="1" <?php checked( (int) $settings['enable_telegram'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, a ogni pubblicazione viene inviato un messaggio (o una foto con didascalia) nella chat Telegram configurata.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-telegram-bot-token"><?php esc_html_e( 'Token del bot Telegram', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="telegram_bot_token" id="nxa-telegram-bot-token" value="<?php echo esc_attr( $settings['telegram_bot_token'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'Token del bot Telegram da @BotFather.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-telegram-chat-id"><?php esc_html_e( 'Chat ID Telegram', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="telegram_chat_id" id="nxa-telegram-chat-id" value="<?php echo esc_attr( $settings['telegram_chat_id'] ); ?>" class="regular-text code" />
+                                                <p class="description"><?php esc_html_e( 'ID della chat o del canale di destinazione (es. -1001234567890).', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Discord', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-discord">
+                                                        <input type="checkbox" name="enable_discord" id="nxa-enable-discord" value="1" <?php checked( (int) $settings['enable_discord'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Se attivo, a ogni pubblicazione viene inviato un messaggio con embed nel canale Discord configurato.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-discord-webhook-url"><?php esc_html_e( 'Webhook Discord', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="discord_webhook_url" id="nxa-discord-webhook-url" value="<?php echo esc_attr( $settings['discord_webhook_url'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'URL del webhook del canale Discord (discord.com/api/webhooks/…).', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'X (Twitter)', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-x">
+                                                        <input type="checkbox" name="enable_x" id="nxa-enable-x" value="1" <?php checked( (int) $settings['enable_x'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, a ogni pubblicazione viene pubblicato un tweet (max 280 caratteri) con il link all'articolo.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-x-api-key"><?php esc_html_e( 'API key X', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="x_api_key" id="nxa-x-api-key" value="<?php echo esc_attr( $settings['x_api_key'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'API key dell’app dal Developer Portal di X.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-x-api-secret"><?php esc_html_e( 'API secret X', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="x_api_secret" id="nxa-x-api-secret" value="<?php echo esc_attr( $settings['x_api_secret'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'API secret dell’app (consumer secret).', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-x-access-token"><?php esc_html_e( 'Access token X', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="x_access_token" id="nxa-x-access-token" value="<?php echo esc_attr( $settings['x_access_token'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'Access token OAuth 1.0a dell’account che pubblica.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-x-access-secret"><?php esc_html_e( 'Access secret X', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="x_access_secret" id="nxa-x-access-secret" value="<?php echo esc_attr( $settings['x_access_secret'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'Access token secret OAuth 1.0a dell’account.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'LinkedIn', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-linkedin">
+                                                        <input type="checkbox" name="enable_linkedin" id="nxa-enable-linkedin" value="1" <?php checked( (int) $settings['enable_linkedin'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, a ogni pubblicazione viene creato un post UGC sull'account LinkedIn configurato.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-linkedin-access-token"><?php esc_html_e( 'Access token LinkedIn', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="linkedin_access_token" id="nxa-linkedin-access-token" value="<?php echo esc_attr( $settings['linkedin_access_token'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                <p class="description"><?php esc_html_e( 'Access token OAuth 2.0 con permesso w_member_social.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-linkedin-author-urn"><?php esc_html_e( 'Author URN LinkedIn', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="linkedin_author_urn" id="nxa-linkedin-author-urn" value="<?php echo esc_attr( $settings['linkedin_author_urn'] ); ?>" placeholder="urn:li:person:xxxx" class="regular-text code" />
+                                                <p class="description"><?php esc_html_e( "URN dell'autore del post (es. urn:li:person:xxxx).", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+
+                <h2 class="title"><?php esc_html_e( 'Newsletter', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Newsletter', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-newsletter">
+                                                        <input type="checkbox" name="enable_newsletter" id="nxa-enable-newsletter" value="1" <?php checked( (int) $settings['enable_newsletter'], 1 ); ?> />
+                                                        <?php esc_html_e( 'Attiva newsletter e digest settimanale', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Se attivo, i lettori possono iscriversi con lo shortcode [nexus_subscribe] e il digest settimanale viene inviato via email.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-newsletter-recipients"><?php esc_html_e( 'Destinatari fissi', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="newsletter_recipients" id="nxa-newsletter-recipients" value="<?php echo esc_attr( $settings['newsletter_recipients'] ); ?>" class="regular-text code" />
+                                                <p class="description"><?php esc_html_e( 'Email fisse separate da virgola, destinatarie del digest oltre agli iscritti confermati.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'Digest AI', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-digest">
+                                                        <input type="checkbox" name="enable_digest" id="nxa-enable-digest" value="1" <?php checked( (int) $settings['enable_digest'], 1 ); ?> />
+                                                        <?php esc_html_e( "Digest testuale generato con l'AI", 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, l'introduzione del digest settimanale viene scritta dall'AI (elenco titoli e link comunque incluso).", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                        </tbody>
+                </table>
+
+                <h2 class="title"><?php esc_html_e( 'Indicizzazione', 'nexus-news-ai' ); ?></h2>
+                <table class="form-table" role="presentation">
+                        <tbody>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'IndexNow', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-indexnow">
+                                                        <input type="checkbox" name="enable_indexnow" id="nxa-enable-indexnow" value="1" <?php checked( (int) $settings['enable_indexnow'], 1 ); ?> />
+                                                        <?php esc_html_e( 'IndexNow (Bing e altri)', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( "Se attivo, i permalink dei nuovi post vengono inviati ai motori che supportano il protocollo IndexNow.", 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><label for="nxa-indexnow-key"><?php esc_html_e( 'Chiave IndexNow', 'nexus-news-ai' ); ?></label></th>
+                                        <td>
+                                                <input type="text" name="indexnow_key" id="nxa-indexnow-key" value="<?php echo esc_attr( $settings['indexnow_key'] ); ?>" class="regular-text code" readonly="readonly" />
+                                                <p class="description"><?php esc_html_e( 'Generata automaticamente alla prima pubblicazione.', 'nexus-news-ai' ); ?></p>
+                                        </td>
+                                </tr>
+                                <tr>
+                                        <th scope="row"><?php esc_html_e( 'WebSub', 'nexus-news-ai' ); ?></th>
+                                        <td>
+                                                <label for="nxa-enable-websub">
+                                                        <input type="checkbox" name="enable_websub" id="nxa-enable-websub" value="1" <?php checked( (int) $settings['enable_websub'], 1 ); ?> />
+                                                        <?php esc_html_e( 'WebSub (PubSubHubbub)', 'nexus-news-ai' ); ?>
+                                                </label>
+                                                <p class="description"><?php esc_html_e( 'Se attivo, il feed del sito viene notificato agli hub WebSub a ogni pubblicazione.', 'nexus-news-ai' ); ?></p>
                                         </td>
                                 </tr>
                         </tbody>

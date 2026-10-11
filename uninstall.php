@@ -17,6 +17,13 @@
  * meta Nexus residui sui post (_nexus_article_id, _nexus_seo_title,
  * _nexus_seo_description) via delete_post_meta_by_key.
  *
+ * Dalla v1.0.2 ripulisce anche la newsletter e i ping: drop esplicito della
+ * tabella wp_nexus_subscribers (il percorso Nexus_DB::drop_tables() la include
+ * già, il fallback diretto qui sotto la aggiunge) e cancellazione degli eventi
+ * cron del plugin (nexus_weekly_digest, nexus_ping_article). Nessuna nuova
+ * delete_option: le 19 chiavi settings v1.0.2 vivono in nexus_settings,
+ * già rimossa.
+ *
  * @package Nexus_News_AI
  */
 
@@ -89,7 +96,22 @@ function nexus_uninstall_delete_wp_posts() {
 }
 
 /**
- * Drop diretto delle 5 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
+ * Cancella gli eventi cron del plugin (v1.0.2).
+ *
+ * nexus_weekly_digest è l'evento ricorrente del digest settimanale della
+ * newsletter; nexus_ping_article è schedulato come evento singolo con
+ * l'ID del post come argomento: wp_clear_scheduled_hook rimuove TUTTI gli
+ * eventi con quel hook, qualunque sia l'argomento.
+ *
+ * @return void
+ */
+function nexus_uninstall_clear_cron_events() {
+        wp_clear_scheduled_hook( 'nexus_weekly_digest' );
+        wp_clear_scheduled_hook( 'nexus_ping_article' );
+}
+
+/**
+ * Drop diretto delle 6 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
  *
  * @return void
  */
@@ -102,6 +124,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_publish_logs',
                 $prefix . 'nexus_approval_logs',
                 $prefix . 'nexus_activity_logs',
+                $prefix . 'nexus_subscribers',
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -112,7 +135,11 @@ function nexus_uninstall_drop_tables_direct() {
 
 nexus_uninstall_delete_wp_posts();
 
-/* ---------------- 1) Try via Nexus_DB ---------------- */
+/* ---------------- 1) Eventi cron (newsletter + ping, v1.0.2) ---------------- */
+
+nexus_uninstall_clear_cron_events();
+
+/* ---------------- 2) Try via Nexus_DB ---------------- */
 
 $candidates = array();
 $loaded     = false;
@@ -132,14 +159,15 @@ foreach ( array_unique( $candidates ) as $db_class_file ) {
 }
 
 if ( $loaded && class_exists( 'Nexus_DB' ) ) {
-        // Nexus_DB::drop_tables() fa il drop delle 5 tabelle wp_nexus_* e cancella
-        // le opzioni nexus_settings, nexus_db_version e nexus_wire_runs.
+        // Nexus_DB::drop_tables() fa il drop delle 6 tabelle wp_nexus_* (inclusa
+        // nexus_subscribers dalla v1.0.2) e cancella le opzioni nexus_settings,
+        // nexus_db_version e nexus_wire_runs.
         Nexus_DB::drop_tables();
 
         // I transients non sono gestiti dalla classe: li rimuoviamo qui.
         nexus_uninstall_delete_transients();
 } else {
-        /* ---------------- 2) Fallback: query dirette ---------------- */
+        /* ---------------- 3) Fallback: query dirette ---------------- */
 
         nexus_uninstall_drop_tables_direct();
         nexus_uninstall_delete_options();

@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.0.1\n"
+"Project-Id-Version: Nexus News AI 1.0.2\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -134,4 +134,53 @@ msgstr ""
 
 #: includes/class-nexus-cpt.php
 msgid "Redazione AI"
+msgstr ""
+
+# v1.0.2 — Distribuzione reale (settings social/newsletter/ping + shortcode [nexus_subscribe])
+#: admin/views/settings.php
+msgid "Distribuzione sociale"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Newsletter"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Indicizzazione"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Iscriviti alla newsletter"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Email"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Grazie! Controlla la tua casella email per confermare l'iscrizione."
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Sei già iscritto."
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Digest Nexus"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "IndexNow (Bing e altri)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "WebSub (PubSubHubbub)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Token del bot Telegram da @BotFather"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Webhook Discord"
 msgstr ""

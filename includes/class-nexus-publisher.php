@@ -16,9 +16,19 @@
  *    Se wp_insert_post/wp_update_post fallisce: log 'failed' + secondo log legacy
  *    di fallback con l'URL front-end Nexus.
  *
- * Canali social → SIMULAZIONE ONESTA (filosofia dell'originale): il plugin non ha
- * credenziali API social, quindi genera un post_id e un URL fittizi marcati come
- * simulati invece di fingere chiamate reali.
+ * Canali social REALI (v1.0.2 — "Distribuzione Reale"): telegram, discord, x
+ * (con alias twitter) e linkedin vengono delegati, quando le relative classi
+ * sono presenti, a Nexus_Social_Telegram, Nexus_Social_Discord, Nexus_Social_X
+ * e Nexus_Social_LinkedIn secondo il contratto condiviso (CONTRATTO-v1.0.2.md):
+ * ogni classe social dedicata espone publish( $article, $settings ) che ritorna
+ * array( 'status' ('published'|'failed'|'skipped'), 'post_id', 'post_url',
+ * 'error', 'note' ). Ogni esito reale riuscito/fallito registra un'attività
+ * Nexus (best-effort).
+ *
+ * Canali social → SIMULAZIONE ONESTA (fallback, filosofia dell'originale):
+ * facebook, instagram, ogni platform non mappato e i 4 canali reali quando la
+ * relativa classe NON esiste (installazione parziale/vecchia) generano un
+ * post_id e un URL fittizi marcati come simulati invece di fingere chiamate reali.
  *
  * CONTRATTO PUBBLICO (invariato):
  * Nexus_Publisher::publish( $article ) → array di log:
@@ -28,6 +38,7 @@
  *
  * @package Nexus_News_AI
  * @since   1.0.1 Canale 'blog' con post WordPress reali (CPT nexus_article).
+ * @since   1.0.2 Canali social reali (Telegram, Discord, X, LinkedIn) con fallback simulato.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -36,6 +47,11 @@ class Nexus_Publisher {
 
         /**
          * Pubblica un articolo su tutte le piattaforme configurate.
+         *
+         * Canali social reali (v1.0.2): telegram, discord, x (alias twitter) e
+         * linkedin vengono delegati alle classi social dedicate se presenti;
+         * altrimenti — come facebook, instagram e ogni platform non mappato —
+         * resta la simulazione onesta. Un log per platform in entrambi i casi.
          *
          * @param object|array $article Articolo Nexus (riga di nexus_articles).
          * @return array Log di pubblicazione (uno o più per piattaforma).
@@ -60,6 +76,16 @@ class Nexus_Publisher {
                 // 1 = pubblica post WordPress reali (CPT nexus_article), 0 = comportamento legacy.
                 $enable_wp_posts = ! empty( $settings['enable_wp_posts'] ) ? absint( $settings['enable_wp_posts'] ) : 0;
 
+                // Mappa platform → classe social reale (v1.0.2, CONTRATTO-v1.0.2.md).
+                // 'twitter' è alias storico di 'x'; facebook/instagram restano simulati.
+                $social_map = array(
+                        'telegram' => 'Nexus_Social_Telegram',
+                        'discord'  => 'Nexus_Social_Discord',
+                        'x'        => 'Nexus_Social_X',
+                        'twitter'  => 'Nexus_Social_X',
+                        'linkedin' => 'Nexus_Social_LinkedIn',
+                );
+
                 $logs = array();
                 foreach ( $platforms as $platform ) {
                         $platform = sanitize_key( $platform );
@@ -80,7 +106,17 @@ class Nexus_Publisher {
                                 continue;
                         }
 
-                        // Canali social: pubblicazione simulata, dichiarata come tale (nessuna API configurata).
+                        // Canale social reale (v1.0.2): delega alla classe dedicata se presente.
+                        if ( isset( $social_map[ $platform ] )
+                                && class_exists( $social_map[ $platform ] )
+                                && method_exists( $social_map[ $platform ], 'publish' ) ) {
+                                $logs[] = self::publish_social_real( $platform, $social_map[ $platform ], $article, $settings );
+                                continue;
+                        }
+
+                        // Fallback simulazione: platform non mappato (facebook, instagram, ...)
+                        // oppure classe social assente (installazione parziale). Pubblicazione
+                        // simulata, dichiarata come tale (nessuna API configurata).
                         $sim_id = 'sim_' . wp_generate_password( 8, false );
                         $logs[] = array(
                                 'platform' => $platform,
@@ -93,6 +129,84 @@ class Nexus_Publisher {
                 }
 
                 return $logs;
+        }
+
+        /**
+         * Pubblica su un canale social REALE tramite la classe dedicata (v1.0.2).
+         *
+         * Contratto classe social (CONTRATTO-v1.0.2.md): ogni classe espone
+         * publish( $article, $settings ) → array( 'status' ('published'|'failed'|'skipped'),
+         * 'post_id', 'post_url', 'error', 'note' ). Il risultato viene tradotto in UN
+         * log per platform; qualunque eccezione diventa log 'failed' (mai fatale).
+         *
+         * @param string $platform Platform corrente (telegram|discord|x|twitter|linkedin).
+         * @param string $cls      Nome della classe social reale.
+         * @param object $article  Articolo Nexus.
+         * @param array  $settings Impostazioni plugin (Nexus_DB::get_settings()).
+         * @return array Log di pubblicazione (uno per platform).
+         */
+        private static function publish_social_real( $platform, $cls, $article, $settings ) {
+                try {
+                        $res = call_user_func( array( $cls, 'publish' ), $article, $settings );
+                } catch ( \Throwable $e ) { // Nessuna eccezione propagate: log 'failed'.
+                        $res = array(
+                                'status'   => 'failed',
+                                'post_id'  => '',
+                                'post_url' => '',
+                                'error'    => sanitize_text_field( $cls . ': ' . $e->getMessage() ),
+                                'note'     => '',
+                        );
+                }
+
+                $res = is_array( $res ) ? $res : array();
+
+                // Normalizzazione difensiva secondo il contratto delle classi social.
+                $status = isset( $res['status'] ) ? sanitize_key( (string) $res['status'] ) : 'failed';
+                if ( ! in_array( $status, array( 'published', 'failed', 'skipped' ), true ) ) {
+                        $status = 'failed';
+                }
+                $post_id  = isset( $res['post_id'] ) ? sanitize_text_field( (string) $res['post_id'] ) : '';
+                $post_url = isset( $res['post_url'] ) ? esc_url_raw( (string) $res['post_url'] ) : '';
+                $error    = isset( $res['error'] ) ? sanitize_text_field( (string) $res['error'] ) : '';
+                $note     = isset( $res['note'] ) ? sanitize_text_field( (string) $res['note'] ) : '';
+
+                // Attività Nexus (best-effort): solo per esiti reali riusciti/falliti.
+                if ( 'skipped' !== $status ) {
+                        self::log_social_activity( $platform, 'published' === $status ? 'success' : 'error', 'published' === $status ? $note : $error );
+                }
+
+                return array(
+                        'platform' => $platform,
+                        'status'   => $status,
+                        'post_id'  => $post_id,
+                        'post_url' => $post_url,
+                        'error'    => $error,
+                        'note'     => $note,
+                );
+        }
+
+        /**
+         * Registra l'attività del canale social (best-effort: mai bloccante).
+         *
+         * @param string $platform Platform corrente.
+         * @param string $state    Stato attività ('success'|'error').
+         * @param string $detail   Nota (successo) o errore (fallimento) da registrare.
+         * @return void
+         */
+        private static function log_social_activity( $platform, $state, $detail ) {
+                if ( ! method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        return;
+                }
+
+                $detail = trim( (string) $detail );
+                if ( '' === $detail ) {
+                        $detail = 'success' === $state ? 'Pubblicazione completata.' : 'Pubblicazione fallita senza dettagli.';
+                }
+
+                try {
+                        Nexus_DB::insert_activity( 0, 'social', sprintf( 'Canale %s: %s', $platform, $detail ), $state );
+                } catch ( \Throwable $e ) { // Skip silenzioso: errore non bloccante.
+                }
         }
 
         /**

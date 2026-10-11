@@ -6,7 +6,7 @@
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social simulati in modo dichiarato). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), cron automatico e REST API.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico e REST API.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -39,16 +39,19 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Modalità completamente autonoma**: auto-approvazione basata sul punteggio di qualità (`auto_approve_score`), la pipeline gira da sola via WP-Cron.
 - **Admin panel completo**: dashboard statistiche, gestione agenti, coda di approvazione, feed attività, Nexus Wire, impostazioni.
 - **Magazine frontend**: hero section, barre categoria, griglia articoli, modal di lettura, reazioni emoji e contatore visualizzazioni.
-- **Shortcode**: `[nexus_magazine]`, `[nexus_articles]`, `[nexus_wire]`.
+- **Shortcode**: `[nexus_magazine]`, `[nexus_articles]`, `[nexus_wire]`, `[nexus_subscribe]`.
 - **Cron automatico** con intervallo configurabile e limite giornaliero di articoli.
 - **REST API `nexus/v1`**: dati e azioni della redazione accessibili programmaticamente.
 - **Nexus Wire**: pipeline multi-agente (raccolta candidati → selezione fonti → dossier del ricercatore → bozza del redattore → revisioni a 2 voci → editor finale) con storia delle run e bacheca commenti.
 - **Pubblicazione come post WordPress reali** (v1.0.1): gli articoli approvati diventano POST veri del CPT `nexus_article`, con categorie e tag nativi di WordPress e permalink `/nexus/{slug}/`; in fallback resta il front-end Nexus legacy (`/?nexus_article={id}`).
 - **Immagini in evidenza AI** (v1.0.1): featured image generata con l'AI (modello e dimensione configurabili) con fallback sull'immagine dell'articolo e infine su un placeholder locale; la pubblicazione non si blocca mai per un'immagine.
 - **SEO automatico** (v1.0.1): meta title/description generate con l'AI, meta description + Open Graph + JSON-LD `NewsArticle` sul single, compatibilità con Yoast SEO e RankMath.
+- **Pubblicazione social reale** (v1.0.2): invio vero degli articoli su **Telegram** (Bot API, `sendMessage`/`sendPhoto`), **Discord** (webhook con embed), **X/Twitter** (`/2/tweets` con firma OAuth 1.0a in PHP puro) e **LinkedIn** (UGC post via Bearer token), con le credenziali nei settings; i canali non configurati producono un log `skipped` onesto e Facebook/Instagram restano simulati in modo dichiarato.
+- **Newsletter con double opt-in** (v1.0.2): shortcode `[nexus_subscribe]` per l'iscrizione via REST con conferma via email (link `/?nexus_confirm={token}`) e disiscrizione via token, tabella `wp_nexus_subscribers` e **digest settimanale AI** inviato con `wp_mail` ai destinatari fissi e agli iscritti confermati.
+- **Ping di indicizzazione automatici** (v1.0.2): alla pubblicazione di un post `nexus_article` partono **IndexNow** (Bing e altri, chiave auto-generata con key file servito dal plugin) e **WebSub/PubSubHubbub** sul feed, fuori banda via WP-Cron senza mai bloccare la pubblicazione.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
-- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle, opzioni, transients e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
+- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (inclusa `wp_nexus_subscribers`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
 
 ---
 
@@ -64,7 +67,8 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 | Zustand store (`store.ts`) | **Nessuno**: lo stato vive nel DB; le pagine admin interrogano la REST API con fetch |
 | Motore AI `ai-engine.ts` + `openrouter.ts` | `class-nexus-ai-engine.php` (client OpenRouter-compatible, prompt editoriali IT, JSON repair) |
 | RSS `rss.ts` | `class-nexus-rss.php` (DOMDocument, cache via transients `nexus_rss_*`) |
-| Pubblicazione `publish` API | `class-nexus-publisher.php` (blog reale `/?nexus_article={id}` + social simulati, log onesti) |
+| Pubblicazione `publish` API | `class-nexus-publisher.php` (post WP reali + social reali Telegram/Discord/X/LinkedIn o simulati, log onesti) |
+| (nessun equivalente) | **Newsletter** `[nexus_subscribe]` con double opt-in e digest settimanale AI (`class-nexus-newsletter.php`) e ping **IndexNow/WebSub** (`class-nexus-ping.php`) — v1.0.2 |
 | Pipeline `collect-all.ts` / `processCategoryForAgent` | `class-nexus-pipeline.php` (le 5 fasi, eseguibili anche singolarmente) |
 | Framer Motion / Tailwind / shadcn/ui | CSS vanilla (`public/css/`) con animazioni native |
 
@@ -75,7 +79,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 ```
 nexus-news-ai/
 ├── nexus-news-ai.php              # Bootstrap: header plugin, costanti, require, hook attivazione/disattivazione
-├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_*, opzioni, transients, post nexus_article + meta
+├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_* (inclusa subscribers), opzioni, transients, eventi cron, post nexus_article + meta
 ├── readme.txt                     # Readme formato WordPress (repository.org)
 ├── README.md                      # Questo file
 ├── LICENSE                        # Licenza MIT
@@ -86,10 +90,16 @@ nexus-news-ai/
 │   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
 │   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair (nessun contenuto finto: senza chiave ritorna errore)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
-│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress reali (CPT nexus_article, v1.0.1) + fallback legacy + social simulati, log in publish_logs
+│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress reali (CPT nexus_article, v1.0.1) + fallback legacy + social reali/simulati, log in publish_logs
 │   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus»
 │   ├── class-nexus-image.php      # v1.0.1 — Immagini in evidenza: generazione AI con fallback, sideload in media library, set_post_thumbnail
 │   ├── class-nexus-seo.php        # v1.0.1 — SEO: meta AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast/RankMath, title tag
+│   ├── class-nexus-social-telegram.php # v1.0.2 — Telegram: Bot API sendMessage/sendPhoto con credenziali dai settings
+│   ├── class-nexus-social-discord.php  # v1.0.2 — Discord: webhook con embed e thumbnail
+│   ├── class-nexus-social-x.php        # v1.0.2 — X/Twitter: POST /2/tweets con firma OAuth 1.0a nativa (nessuna libreria)
+│   ├── class-nexus-social-linkedin.php # v1.0.2 — LinkedIn: ugcPosts via Bearer token
+│   ├── class-nexus-newsletter.php      # v1.0.2 — Newsletter: shortcode [nexus_subscribe], double opt-in, digest settimanale AI via wp_mail
+│   ├── class-nexus-ping.php            # v1.0.2 — Ping: IndexNow (chiave + key file) e WebSub alla pubblicazione
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
 │   └── index.php                  # Guardia "Silence is golden"
@@ -154,7 +164,7 @@ La pipeline è orchestrata da `class-nexus-pipeline.php` (contratto: `collect`, 
 4. **Approvazione (approve)** —
    - *Modalità semi-autonoma* (default): l'articolo passa a `pending_approval` e compare nella **coda di approvazione**; il revisore umano può approvare o rifiutare con nota (tabella `wp_nexus_approval_logs`).
    - *Modalità completamente autonoma*: gli articoli con `quality_score >= auto_approve_score` vengono auto-approvati, gli altri restano in coda come rete di sicurezza.
-5. **Pubblicazione multi-piattaforma** — l'articolo approvato viene inviato alle piattaforme abilitate in `social_platforms`: per **blog la pubblicazione è reale** (dalla v1.0.1 l'articolo diventa un post WordPress del CPT `nexus_article` con permalink `/nexus/{slug}/`; in fallback resta nel database Nexus con URL legacy `/?nexus_article={id}` registrato nei log), i canali **social sono simulati in modo onesto** (post_id e URL demo dichiarati come tali) e ogni invio genera una riga in `wp_nexus_publish_logs`.
+5. **Pubblicazione multi-piattaforma** — l'articolo approvato viene inviato alle piattaforme abilitate in `social_platforms`: per **blog la pubblicazione è reale** (dalla v1.0.1 l'articolo diventa un post WordPress del CPT `nexus_article` con permalink `/nexus/{slug}/`; in fallback resta nel database Nexus con URL legacy `/?nexus_article={id}` registrato nei log), i canali **Telegram, Discord, X e LinkedIn sono reali dalla v1.0.2** quando abilitati e configurati nei settings (altrimenti log `skipped` con nota onesta), gli altri canali social restano **simulati in modo dichiarato** (post_id e URL demo) e ogni invio genera una riga in `wp_nexus_publish_logs`.
 
 Stati dell'articolo: `draft` → `pending_approval` → `approved` → `published` (o `rejected`).
 
@@ -192,6 +202,14 @@ La bacheca del **Nexus Wire**: storico delle run della redazione collettiva (arg
 
 ```
 [nexus_wire]
+```
+
+### `[nexus_subscribe]`
+
+Il **form di iscrizione alla newsletter** (v1.0.2): campo email + bottone, invio via REST (`POST /nexus/v1/subscribe`, rate limit 1 richiesta al minuto per IP) e **double opt-in** — dopo l'iscrizione parte un'email con il link di conferma (`/?nexus_confirm={token}`); con il link di disiscrizione (`/?nexus_unsub={token}`) l'iscritto si rimuove da solo. I messaggi sono in italiano e traducibili via `.pot`.
+
+```
+[nexus_subscribe]
 ```
 
 > **Nota (v1.0.1):** gli articoli pubblicati come **post WordPress reali** non passano dagli shortcode: ogni post del CPT `nexus_article` è servito dal template dedicato del plugin (`templates/single-nexus_article.php`), che usa header e footer del tema attivo e mostra byline dell'agente, contenuto, fonti e reazioni Nexus, con permalink `/nexus/{slug}/`. Lo shortcode `[nexus_magazine]` continua invece a leggere il database Nexus (articoli legacy e magazine).
@@ -235,6 +253,8 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | POST | `/public/articles/{id}/reaction` | Registra una reazione emoji: body `{ "emoji": "👍" }` |
 | POST | `/public/articles/{id}/view` | Incrementa il contatore visualizzazioni |
 | GET | `/public/wire/runs` | Run Wire completate, senza dati interni |
+| POST | `/subscribe` | Iscrizione newsletter: body `{ "email": "…", "nonce": "…" }` — invia l'email di conferma (double opt-in); registrata da `Nexus_Newsletter` |
+| POST | `/unsubscribe` | Disiscrizione newsletter: body (o query) `{ "token": "…" }`; registrata da `Nexus_Newsletter` |
 | GET | `/health` | Stato del plugin (versione, tabelle, AI configurata) |
 
 Esempio:
@@ -272,8 +292,27 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `image_size` | `1024x1024` | Dimensione delle immagini generate: `1024x1024`, `1792x1024`, `1024x1792` |
 | `enable_seo` | `1` | Ottimizzazione SEO: meta description, Open Graph, JSON-LD `NewsArticle` |
 | `seo_generate` | `1` | Genera meta title/description con l'AI (fallback: titolo articolo + riassunto) |
+| `enable_telegram` | `0` | Abilita la pubblicazione reale su Telegram |
+| `telegram_bot_token` | (vuoto) | Token del bot Telegram da @BotFather |
+| `telegram_chat_id` | (vuoto) | Chat ID di destinazione dei messaggi Telegram |
+| `enable_discord` | `0` | Abilita la pubblicazione reale su Discord |
+| `discord_webhook_url` | (vuoto) | URL del webhook Discord del canale |
+| `enable_x` | `0` | Abilita la pubblicazione reale su X (Twitter) |
+| `x_api_key` | (vuoto) | API key dell'app X (OAuth 1.0a) |
+| `x_api_secret` | (vuoto) | API secret dell'app X |
+| `x_access_token` | (vuoto) | Access token dell'account X |
+| `x_access_secret` | (vuoto) | Access secret dell'account X |
+| `enable_linkedin` | `0` | Abilita la pubblicazione reale su LinkedIn |
+| `linkedin_access_token` | (vuoto) | Access token LinkedIn (Bearer) |
+| `linkedin_author_urn` | (vuoto) | URN dell'autore del post (es. `urn:li:person:xxx`) |
+| `enable_newsletter` | `0` | Attiva la newsletter: shortcode `[nexus_subscribe]`, digest settimanale e invio agli iscritti |
+| `newsletter_recipients` | (vuoto) | Email fisse destinatarie del digest, separate da virgola (gli iscritti confermati le ricevono comunque) |
+| `enable_digest` | `1` | Digest settimanale con testo generato dall'AI; `0` = nessun digest |
+| `enable_indexnow` | `0` | Ping IndexNow (Bing e altri) alla pubblicazione dei post |
+| `indexnow_key` | (vuota) | Chiave IndexNow; generata automaticamente se vuota (key file servito dal plugin) |
+| `enable_websub` | `0` | Ping WebSub (PubSubHubbub) sul feed alla pubblicazione |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO.
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro.
 
 ---
 
@@ -283,6 +322,8 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 - Ogni tick esegue le fasi abilitate dalle impostazioni (`auto_collect`, `auto_evaluate`, `auto_rewrite`, `auto_publish`), rispettando `max_articles_per_day`; gli agenti nello stato `paused`/`error` vengono saltati.
 - Se cambi `collect_interval` o `auto_collect` nelle impostazioni, l'evento viene **risincronizzato automaticamente** (hook `update_option_nexus_settings`).
 - Alla **disattivazione** l'evento pianificato viene rimosso (`Nexus_Cron::deactivate()`); alla riattivazione viene ripianificato.
+- Con la **newsletter attiva** (`enable_newsletter=1`) viene pianificato l'evento **`nexus_weekly_digest`** sullo schedule builtin `weekly`: al tick genera il digest AI degli articoli pubblicati negli ultimi 7 giorni e lo invia via `wp_mail` ai destinatari fissi e agli iscritti confermati.
+- Alla **pubblicazione di un post** `nexus_article` viene schedulato l'evento singolo **`nexus_ping_article`** (con l'ID del post come argomento): il ping IndexNow/WebSub gira fuori banda, senza mai bloccare la pubblicazione.
 - WP-Cron è "pigro": scatta solo con visite al sito. Per un giornale vero è consigliato un cron di sistema:
   1. definisci `define( 'DISABLE_WP_CRON', true );` in `wp-config.php`;
   2. aggiungi una riga crontab, es. ogni ora:
@@ -298,14 +339,14 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 
 ## Pubblicazione multi-piattaforma
 
-> **Nota onesta (simulazione):** per **blog la pubblicazione è reale** — dalla v1.0.1 l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `home_url('/nexus/{slug}/')`, collegato al record Nexus via meta `_nexus_article_id`); solo in caso di errore (o con `enable_wp_posts=0`) si ricade sul front-end Nexus legacy con URL `home_url('/?nexus_article={id}')`. I canali **Twitter/X, Facebook, LinkedIn e Instagram sono invece simulati**: il plugin non ha credenziali API social, quindi registra in `wp_nexus_publish_logs` un post_id e un URL demo, dichiarati come simulati (nota: «Pubblicazione simulata (demo): nessuna API social configurata») invece di fingere chiamate reali. È la stessa filosofia dell'app Next.js originale. Per pubblicazioni social vere servirebbe integrare le API ufficiali di ciascuna piattaforma (OAuth, token, revisori) — volutamente fuori scope per mantenere il plugin senza dipendenze e senza credenziali sensibili.
+> **Nota onesta (v1.0.2):** per **blog la pubblicazione è reale** — l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `home_url('/nexus/{slug}/')`, collegato al record Nexus via meta `_nexus_article_id`); solo in caso di errore (o con `enable_wp_posts=0`) si ricade sul front-end Nexus legacy con URL `home_url('/?nexus_article={id}')`. I canali **Telegram, Discord, X e LinkedIn sono reali dalla v1.0.2**: se il canale è abilitato nei settings con le proprie credenziali (sezione «Distribuzione sociale»), il publisher invia il messaggio con le API ufficiali (Bot API, webhook, OAuth 1.0a firmato in PHP senza librerie, UGC post via Bearer token) e registra nei log l'id e l'URL remoti veri; se il canale non è configurato il log registra lo stato `skipped` con nota onesta (es. «Telegram non configurato»), senza fingere invii. **Facebook, Instagram e qualunque altra piattaforma restano simulati**: post_id e URL demo dichiarati come tali («Pubblicazione simulata (demo)»). Ogni invio, reale o simulato, genera una riga in `wp_nexus_publish_logs` consultabile dall'admin, e i segreti (token/key) non compaiono mai in chiaro nei log.
 
 ---
 
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
-2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs` e inseriti i 7 agenti.
+2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs`, `wp_nexus_subscribers` e inseriti i 7 agenti.
 3. Vai su **Nexus News → Impostazioni** e configura la chiave AI (opzionale ma consigliata) e le modalità.
 4. Crea una pagina con `[nexus_magazine]`.
 5. (Opzionale) Configura un cron di sistema come descritto sopra.
@@ -323,10 +364,10 @@ Per tutto ciò che non produce contenuti: magazine, admin panel, coda di approva
 Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di default (`https://openrouter.ai/api/v1`) ma anche OpenAI, Groq, Ollama locale, ecc. — basta cambiare `ai_base_url` e `ai_model`.
 
 **Dove sono salvati i dati?**
-Nelle 5 tabelle `wp_nexus_*` con prefisso del tuo WordPress + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
+Nelle 6 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività e iscritti newsletter in `wp_nexus_subscribers`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`.
 
 **La disattivazione cancella i dati?**
-No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina tabelle, opzioni, transients e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
+No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 6 tabelle `wp_nexus_*` (inclusa `wp_nexus_subscribers`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
 **Posso modificare gli articoli generati?**
 Sì, dalla coda di approvazione prima della pubblicazione; via REST puoi approvare, rifiutare o eliminare (`POST /articles/{id}/approve`, `POST /articles/{id}/reject`, `DELETE /articles/{id}`).
@@ -348,6 +389,14 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.0.2 — «Distribuzione reale»
+
+- **Pubblicazione social reale**: Telegram (Bot API, `sendMessage`/`sendPhoto` con immagine), Discord (webhook con embed e thumbnail), X/Twitter (`POST /2/tweets` con firma OAuth 1.0a implementata in PHP, nessuna libreria) e LinkedIn (UGC post via Bearer token), con le credenziali nella nuova sezione admin «Distribuzione sociale»; i canali non configurati producono log `skipped` onesti e Facebook/Instagram restano simulati in modo dichiarato.
+- **Newsletter**: shortcode `[nexus_subscribe]` con iscrizioni **double opt-in** (REST `POST /nexus/v1/subscribe` con rate limit per IP, email di conferma con link, disiscrizione via token), nuova tabella `wp_nexus_subscribers` e **digest settimanale AI** inviato via `wp_mail` ai destinatari fissi e agli iscritti confermati.
+- **Ping di indicizzazione**: alla pubblicazione dei post `nexus_article` partono automaticamente i ping **IndexNow** (Bing e altri, chiave auto-generata con key file servito dal plugin) e **WebSub** (PubSubHubbub) sul feed, in un evento cron separato (`nexus_ping_article`) che non blocca mai la pubblicazione.
+- **19 nuovi setting** nelle sezioni admin «Distribuzione sociale», «Newsletter» e «Indicizzazione».
+- **Uninstall**: rimozione della tabella `wp_nexus_subscribers` e degli eventi cron `nexus_weekly_digest`/`nexus_ping_article`.
 
 ### 1.0.1 — «Contenuti veri»
 

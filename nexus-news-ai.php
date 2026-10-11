@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. 7 agenti giornalisti AI con pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.0.1
+ * Version:     1.0.2
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.0.1' );
+define( 'NEXUS_VERSION', '1.0.2' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -35,10 +35,27 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rest.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cpt.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-telegram.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-discord.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-x.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-linkedin.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-newsletter.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-ping.php';
 require_once NEXUS_PLUGIN_DIR . 'public/class-nexus-shortcodes.php';
 
 register_activation_hook( __FILE__, array( 'Nexus_DB', 'install' ) );
-register_deactivation_hook( __FILE__, array( 'Nexus_Cron', 'deactivate' ) );
+register_deactivation_hook( __FILE__, 'nexus_deactivate' );
+
+/**
+ * Disattivazione: pulizia eventi cron del plugin (pipeline, digest, ping).
+ */
+function nexus_deactivate() {
+        Nexus_Cron::deactivate();
+        if ( class_exists( 'Nexus_Ping' ) && method_exists( 'Nexus_Ping', 'deactivate' ) ) {
+                Nexus_Ping::deactivate();
+        }
+        wp_clear_scheduled_hook( 'nexus_weekly_digest' );
+}
 
 /**
  * Attivazione v1.0.1: dopo l'installazione registra il CPT nexus_article
@@ -62,6 +79,8 @@ function nexus_bootstrap() {
         Nexus_Cron::init();
         Nexus_Cpt::init();
         Nexus_SEO::init();
+        Nexus_Newsletter::init();
+        Nexus_Ping::init();
 
         if ( is_admin() ) {
                 require_once NEXUS_PLUGIN_DIR . 'admin/class-nexus-admin.php';

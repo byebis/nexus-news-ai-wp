@@ -71,6 +71,31 @@ class Nexus_DB {
                         // v1.0.1 — SEO.
                         'enable_seo'         => 1,
                         'seo_generate'       => 1, // genera meta title/description con l'AI alla pubblicazione
+                        // v1.0.2 — Distribuzione reale: Telegram.
+                        'enable_telegram'    => 0,
+                        'telegram_bot_token' => '',
+                        'telegram_chat_id'   => '',
+                        // v1.0.2 — Discord.
+                        'enable_discord'     => 0,
+                        'discord_webhook_url' => '',
+                        // v1.0.2 — X (Twitter) via OAuth 1.0a.
+                        'enable_x'           => 0,
+                        'x_api_key'          => '',
+                        'x_api_secret'       => '',
+                        'x_access_token'     => '',
+                        'x_access_secret'    => '',
+                        // v1.0.2 — LinkedIn.
+                        'enable_linkedin'    => 0,
+                        'linkedin_access_token' => '',
+                        'linkedin_author_urn'   => '',
+                        // v1.0.2 — Newsletter digest settimanale.
+                        'enable_newsletter'  => 0,
+                        'newsletter_recipients' => '', // email separate da virgola (invio fisso) — gli iscritti vengono sempre inclusi
+                        'enable_digest'      => 1, // digest settimanale AI se newsletter attiva
+                        // v1.0.2 — Ping di indicizzazione.
+                        'enable_indexnow'    => 0,
+                        'indexnow_key'       => '', // generata automaticamente se vuota all'attivazione
+                        'enable_websub'      => 0,
                 );
         }
 
@@ -87,6 +112,7 @@ class Nexus_DB {
                 $plogs   = $wpdb->prefix . 'nexus_publish_logs';
                 $alogs   = $wpdb->prefix . 'nexus_approval_logs';
                 $act     = $wpdb->prefix . 'nexus_activity_logs';
+                $subs    = $wpdb->prefix . 'nexus_subscribers';
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -163,6 +189,18 @@ class Nexus_DB {
                                 KEY agent_id (agent_id),
                                 KEY created_at (created_at)
                         ) {$charset};",
+                        "CREATE TABLE {$subs} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                email VARCHAR(191) NOT NULL,
+                                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                                token VARCHAR(64) NOT NULL DEFAULT '',
+                                created_at DATETIME NOT NULL,
+                                confirmed_at DATETIME NULL DEFAULT NULL,
+                                PRIMARY KEY  (id),
+                                UNIQUE KEY email (email),
+                                KEY status (status(20)),
+                                KEY token (token(64))
+                        ) {$charset};",
                 );
         }
 
@@ -204,6 +242,7 @@ class Nexus_DB {
                         'publish_logs'  => $wpdb->prefix . 'nexus_publish_logs',
                         'approval_logs' => $wpdb->prefix . 'nexus_approval_logs',
                         'activity_logs' => $wpdb->prefix . 'nexus_activity_logs',
+                        'subscribers'   => $wpdb->prefix . 'nexus_subscribers',
                 );
         }
 
@@ -443,6 +482,137 @@ class Nexus_DB {
                 $wpdb->delete( $t['publish_logs'], array( 'article_id' => absint( $id ) ), array( '%d' ) );
                 $wpdb->delete( $t['approval_logs'], array( 'article_id' => absint( $id ) ), array( '%d' ) );
                 return $wpdb->delete( $t['articles'], array( 'id' => absint( $id ) ), array( '%d' ) );
+        }
+
+        /* ============ SUBSCRIBERS (v1.0.2) ============ */
+
+        /**
+         * Lista iscritti newsletter con filtri base.
+         *
+         * @param array $args status (string), limit, offset.
+         * @return array|null
+         */
+        public static function subscribers( $args = array() ) {
+                global $wpdb;
+                $t      = self::tables()['subscribers'];
+                $limit  = min( 500, max( 1, absint( $args['limit'] ?? 100 ) ) );
+                $offset = absint( $args['offset'] ?? 0 );
+                $status = sanitize_key( (string) ( $args['status'] ?? '' ) );
+                if ( '' !== $status ) {
+                        return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$t} WHERE status = %s ORDER BY id DESC LIMIT %d OFFSET %d", $status, $limit, $offset ) );
+                }
+                return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$t} ORDER BY id DESC LIMIT %d OFFSET %d", $limit, $offset ) );
+        }
+
+        /**
+         * Conta iscritti (per stato).
+         */
+        public static function count_subscribers( $status = '' ) {
+                global $wpdb;
+                $t = self::tables()['subscribers'];
+                if ( '' !== $status ) {
+                        return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$t} WHERE status = %s", $status ) );
+                }
+                return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$t}" );
+        }
+
+        /**
+         * Singolo iscritto per id.
+         */
+        public static function get_subscriber( $id ) {
+                global $wpdb;
+                $t = self::tables()['subscribers'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d", absint( $id ) ) );
+        }
+
+        /**
+         * Singolo iscritto per email.
+         */
+        public static function get_subscriber_by_email( $email ) {
+                global $wpdb;
+                $t = self::tables()['subscribers'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE email = %s", sanitize_email( (string) $email ) ) );
+        }
+
+        /**
+         * Singolo iscritto per token (double opt-in / disiscrizione).
+         */
+        public static function get_subscriber_by_token( $token ) {
+                global $wpdb;
+                $t = self::tables()['subscribers'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE token = %s", preg_replace( '/[^a-zA-Z0-9]/', '', (string) $token ) ) );
+        }
+
+        /**
+         * Inserisce un nuovo iscritto (email validata qui). Se l'email esiste già
+         * ritorna l'id esistente senza duplicare.
+         *
+         * @param string $email Email iscritto.
+         * @return int id iscritto o 0 su errore.
+         */
+        public static function insert_subscriber( $email ) {
+                global $wpdb;
+                $email = sanitize_email( (string) $email );
+                if ( ! is_email( $email ) ) {
+                        return 0;
+                }
+                $existing = self::get_subscriber_by_email( $email );
+                if ( $existing ) {
+                        return (int) $existing->id;
+                }
+                $ok = $wpdb->insert(
+                        self::tables()['subscribers'],
+                        array(
+                                'email'      => $email,
+                                'status'     => 'pending',
+                                'token'      => wp_generate_password( 32, false, false ),
+                                'created_at' => current_time( 'mysql' ),
+                        ),
+                        array( '%s', '%s', '%s', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        /**
+         * Aggiorna campi di un iscritto (solo colonne ammesse).
+         */
+        public static function update_subscriber( $id, $fields ) {
+                global $wpdb;
+                $allowed = array_intersect_key(
+                        (array) $fields,
+                        array_flip( array( 'email', 'status', 'token', 'confirmed_at' ) )
+                );
+                if ( ! $allowed ) {
+                        return false;
+                }
+                if ( isset( $allowed['email'] ) ) {
+                        $allowed['email'] = sanitize_email( $allowed['email'] );
+                        if ( ! is_email( $allowed['email'] ) ) {
+                                return false;
+                        }
+                }
+                if ( isset( $allowed['status'] ) ) {
+                        $allowed['status'] = sanitize_key( $allowed['status'] );
+                        if ( ! in_array( $allowed['status'], array( 'pending', 'confirmed', 'unsubscribed' ), true ) ) {
+                                return false;
+                        }
+                }
+                if ( isset( $allowed['token'] ) ) {
+                        $allowed['token'] = preg_replace( '/[^a-zA-Z0-9]/', '', (string) $allowed['token'] );
+                }
+                $formats = array();
+                foreach ( $allowed as $v ) {
+                        $formats[] = is_int( $v ) ? '%d' : '%s';
+                }
+                return false !== $wpdb->update( self::tables()['subscribers'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+        }
+
+        /**
+         * Elimina un iscritto.
+         */
+        public static function delete_subscriber( $id ) {
+                global $wpdb;
+                return $wpdb->delete( self::tables()['subscribers'], array( 'id' => absint( $id ) ), array( '%d' ) );
         }
 
         /* ============ ACTIVITY ============ */

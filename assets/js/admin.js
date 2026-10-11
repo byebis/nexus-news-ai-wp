@@ -1132,7 +1132,8 @@
                 var i;
 
                 // campi testuali / select per nome (v1.0.1: + post_status, image_model, image_size)
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size' ];
+                // (v1.0.2: + credenziali social, newsletter_recipients, indexnow_key)
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -1164,6 +1165,16 @@
                         var flagBoxes = qsa( 'input[name="' + wpFlags[ i ] + '"]', form );
                         if ( flagBoxes.length ) {
                                 payload[ wpFlags[ i ] ] = flagBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // checkbox distribuzione sociale / newsletter / indicizzazione (v1.0.2): presenti → 1, assenti → 0
+                // (se i campi non sono ancora in settings.php, qsa torna [] e il payload li omette)
+                var distribFlags = [ 'enable_telegram', 'enable_discord', 'enable_x', 'enable_linkedin', 'enable_newsletter', 'enable_digest', 'enable_indexnow', 'enable_websub' ];
+                for ( i = 0; i < distribFlags.length; i++ ) {
+                        var distribBoxes = qsa( 'input[name="' + distribFlags[ i ] + '"]', form );
+                        if ( distribBoxes.length ) {
+                                payload[ distribFlags[ i ] ] = distribBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 

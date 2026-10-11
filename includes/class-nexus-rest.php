@@ -1205,6 +1205,28 @@ class Nexus_Rest {
                         'image_size'           => 'sanitize_text_field',
                         'enable_seo'           => 'absint',
                         'seo_generate'         => 'absint',
+                        // Distribuzione sociale (v1.0.2).
+                        'enable_telegram'      => 'absint',
+                        'telegram_bot_token'   => 'sanitize_text_field',
+                        'telegram_chat_id'     => 'sanitize_text_field',
+                        'enable_discord'       => 'absint',
+                        'discord_webhook_url'  => 'sanitize_text_field',
+                        'enable_x'             => 'absint',
+                        'x_api_key'            => 'sanitize_text_field',
+                        'x_api_secret'         => 'sanitize_text_field',
+                        'x_access_token'       => 'sanitize_text_field',
+                        'x_access_secret'      => 'sanitize_text_field',
+                        'enable_linkedin'      => 'absint',
+                        'linkedin_access_token' => 'sanitize_text_field',
+                        'linkedin_author_urn'  => 'sanitize_text_field',
+                        // Newsletter (v1.0.2).
+                        'enable_newsletter'    => 'absint',
+                        'newsletter_recipients' => 'sanitize_text_field',
+                        'enable_digest'        => 'absint',
+                        // Indicizzazione (v1.0.2).
+                        'enable_indexnow'      => 'absint',
+                        'indexnow_key'         => 'sanitize_text_field',
+                        'enable_websub'        => 'absint',
                 );
 
                 $out = array();
@@ -1225,10 +1247,23 @@ class Nexus_Rest {
                         'enable_ai_images',
                         'enable_seo',
                         'seo_generate',
+                        'enable_telegram',
+                        'enable_discord',
+                        'enable_x',
+                        'enable_linkedin',
+                        'enable_newsletter',
+                        'enable_digest',
+                        'enable_indexnow',
+                        'enable_websub',
                 ) as $flag ) {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
                         }
+                }
+
+                // Chiave IndexNow: solo caratteri alfanumerici (formato richiesto dal protocollo).
+                if ( isset( $out['indexnow_key'] ) ) {
+                        $out['indexnow_key'] = (string) preg_replace( '/[^a-zA-Z0-9]/', '', $out['indexnow_key'] );
                 }
 
                 // Valida la modalità di autonomia.
