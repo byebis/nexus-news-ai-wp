@@ -1,0 +1,1077 @@
+/**
+ * Nexus News AI — Foglio di stile pubblico (frontend / shortcode magazine)
+ *
+ * Slug plugin: nexus-news-ai
+ * Versione:    1.0.0
+ *
+ * Dark editorial mobile-first. Tutti i selettori sono prefissati "nxa-"
+ * (o contenuti in #nxa-modal-root) per non collidere con il tema WordPress.
+ * Token esposti su :root così modali e toast funzionano anche fuori da
+ * .nxa-magazine. Colori categoria guidati dall'attributo [data-category].
+ *
+ * Indice:
+ *   1. Token di design
+ *   2. Base container
+ *   3. Hero
+ *   4. Category bar
+ *   5. Griglia + card (+ variante lista)
+ *   6. Load more
+ *   7. Skeleton
+ *   8. Nexus Wire (lista run)
+ *   9. Modale articolo + reazioni
+ *  10. Animazioni
+ *  11. Accessibilità (focus, reduced-motion)
+ *  12. Stampa
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Token di design
+ * ---------------------------------------------------------------------- */
+:root {
+  --nxa-bg: #0b0f17;
+  --nxa-surface: #121826;
+  --nxa-surface-2: #1a2234;
+  --nxa-border: #232c42;
+  --nxa-border-soft: rgba(148, 163, 184, 0.16);
+  --nxa-text: #e2e8f0;
+  --nxa-text-body: #cbd5e1;
+  --nxa-muted: #94a3b8;
+  --nxa-accent-1: #7c3aed;
+  --nxa-accent-2: #06b6d4;
+  --nxa-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
+  --nxa-focus: #22d3ee;
+  --nxa-radius: 16px;
+  --nxa-radius-sm: 10px;
+  --nxa-radius-lg: 22px;
+  --nxa-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
+  --nxa-shadow-lg: 0 24px 64px rgba(2, 6, 23, 0.6);
+
+  /* Colori categoria (usati via [data-category="slug"]) */
+  --nxa-cat: #94a3b8;
+  --nxa-cat-soft: rgba(148, 163, 184, 0.14);
+  --nxa-cat-line: rgba(148, 163, 184, 0.35);
+}
+
+/* Mapping categorie: Tecnologia, Politica, Economia, Scienza, Sport,
+   Cultura, Salute. Il flag "i" rende il match case-insensitive. */
+[data-category="tecnologia" i] { --nxa-cat: #38bdf8; --nxa-cat-soft: rgba(56, 189, 248, 0.14); --nxa-cat-line: rgba(56, 189, 248, 0.4); }
+[data-category="politica" i]   { --nxa-cat: #f59e0b; --nxa-cat-soft: rgba(245, 158, 11, 0.14); --nxa-cat-line: rgba(245, 158, 11, 0.4); }
+[data-category="economia" i]   { --nxa-cat: #34d399; --nxa-cat-soft: rgba(52, 211, 153, 0.14); --nxa-cat-line: rgba(52, 211, 153, 0.4); }
+[data-category="scienza" i]    { --nxa-cat: #a78bfa; --nxa-cat-soft: rgba(167, 139, 250, 0.15); --nxa-cat-line: rgba(167, 139, 250, 0.4); }
+[data-category="sport" i]      { --nxa-cat: #f87171; --nxa-cat-soft: rgba(248, 113, 113, 0.14); --nxa-cat-line: rgba(248, 113, 113, 0.4); }
+[data-category="cultura" i]    { --nxa-cat: #f472b6; --nxa-cat-soft: rgba(244, 114, 182, 0.14); --nxa-cat-line: rgba(244, 114, 182, 0.4); }
+[data-category="salute" i]     { --nxa-cat: #4ade80; --nxa-cat-soft: rgba(74, 222, 128, 0.13); --nxa-cat-line: rgba(74, 222, 128, 0.4); }
+
+/* -------------------------------------------------------------------------
+ * 2. Base container
+ * ---------------------------------------------------------------------- */
+.nxa-magazine,
+.nxa-magazine *,
+#nxa-modal-root,
+#nxa-modal-root * {
+  box-sizing: border-box;
+}
+
+.nxa-magazine {
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--nxa-text);
+  background:
+    radial-gradient(1100px 420px at 85% -8%, rgba(6, 182, 212, 0.07), transparent 60%),
+    radial-gradient(900px 400px at 0% 0%, rgba(124, 58, 237, 0.1), transparent 55%),
+    var(--nxa-bg);
+  padding: clamp(16px, 3vw, 36px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: var(--nxa-radius-lg);
+  isolation: isolate;
+  -webkit-font-smoothing: antialiased;
+}
+
+.nxa-magazine ::selection {
+  background: rgba(124, 58, 237, 0.45);
+  color: #f8fafc;
+}
+
+.nxa-magazine [hidden] {
+  display: none !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Hero
+ * ---------------------------------------------------------------------- */
+.nxa-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(26px, 4.5vw, 48px);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+  background:
+    radial-gradient(900px 320px at 12% -20%, rgba(124, 58, 237, 0.22), transparent 60%),
+    radial-gradient(700px 300px at 96% -10%, rgba(6, 182, 212, 0.16), transparent 55%),
+    var(--nxa-surface);
+  margin-bottom: clamp(20px, 3vw, 30px);
+}
+
+.nxa-hero h1 {
+  margin: 0;
+  font-size: clamp(1.85rem, 4.5vw, 3rem);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, #f1f5f9 5%, #c4b5fd 48%, #67e8f9 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.nxa-hero > p {
+  margin: 12px 0 0;
+  max-width: 62ch;
+  color: var(--nxa-muted);
+  font-size: clamp(0.95rem, 1.6vw, 1.08rem);
+  line-height: 1.6;
+}
+
+.nxa-hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.nxa-hero-badges span {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.14);
+  border: 1px solid rgba(124, 58, 237, 0.4);
+}
+
+.nxa-hero-badges span:nth-child(even) {
+  color: #67e8f9;
+  background: rgba(6, 182, 212, 0.12);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+.nxa-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 32px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--nxa-border-soft);
+}
+
+.nxa-hero-stats > * {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+}
+
+.nxa-hero-stats b,
+.nxa-hero-stats strong {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  background: var(--nxa-accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.nxa-hero-stats small {
+  color: var(--nxa-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Category bar
+ * ---------------------------------------------------------------------- */
+.nxa-catbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: clamp(18px, 2.5vw, 26px);
+  padding: 4px 2px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--nxa-border) transparent;
+}
+
+.nxa-catbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.nxa-catbar::-webkit-scrollbar-thumb {
+  background: var(--nxa-border);
+  border-radius: 999px;
+}
+
+.nxa-cat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface);
+  color: var(--nxa-muted);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.nxa-cat-btn:hover {
+  color: var(--nxa-text);
+  background: var(--nxa-surface-2);
+  border-color: var(--nxa-cat-line, var(--nxa-border));
+}
+
+.nxa-cat-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--nxa-cat, var(--nxa-accent-2));
+  box-shadow: 0 0 8px var(--nxa-cat-soft, transparent);
+}
+
+.nxa-cat-btn.is-active,
+.nxa-cat-btn[aria-pressed="true"] {
+  color: #fff;
+  background: var(--nxa-accent-grad);
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.35);
+}
+
+.nxa-cat-btn:active {
+  transform: scale(0.97);
+}
+
+/* -------------------------------------------------------------------------
+ * 5. Griglia + card
+ * ---------------------------------------------------------------------- */
+.nxa-grid {
+  display: grid;
+  grid-template-columns: 1fr; /* mobile: 1 colonna (< 640px) */
+  gap: 20px;
+}
+
+@media (min-width: 640px) {
+  .nxa-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+.nxa-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  cursor: pointer;
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.nxa-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: var(--nxa-shadow);
+}
+
+.nxa-card h3,
+.nxa-card p {
+  margin: 0; /* neutralizza gli stili del tema */
+}
+
+.nxa-card-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--nxa-surface-2);
+}
+
+.nxa-card-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.45s ease;
+}
+
+.nxa-card:hover .nxa-card-media img {
+  transform: scale(1.045);
+}
+
+/* Cover senza immagine: gradiente tinto categoria + emoji */
+.nxa-card-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2.75rem;
+  line-height: 1;
+  background:
+    linear-gradient(135deg, var(--nxa-cat-soft), transparent 65%),
+    radial-gradient(420px 200px at 80% -20%, rgba(6, 182, 212, 0.12), transparent 60%),
+    linear-gradient(160deg, var(--nxa-surface-2), var(--nxa-surface));
+  text-shadow: 0 6px 22px rgba(2, 6, 23, 0.55);
+}
+
+.nxa-card-cat {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--nxa-cat, var(--nxa-text));
+  background: rgba(11, 15, 23, 0.72);
+  border: 1px solid var(--nxa-cat-line, var(--nxa-border));
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.nxa-card-ai {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(6, 182, 212, 0.92));
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.45);
+}
+
+.nxa-card > h3.nxa-card-title {
+  padding: 18px 20px 0;
+  font-size: 1.06rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--nxa-text);
+}
+
+.nxa-card > p.nxa-card-sub {
+  padding: 6px 20px 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nxa-cat, var(--nxa-muted));
+}
+
+.nxa-card > p.nxa-card-excerpt {
+  padding: 10px 20px 18px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--nxa-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.nxa-card-foot {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  padding: 12px 20px 15px;
+  border-top: 1px solid var(--nxa-border-soft);
+  font-size: 0.76rem;
+  color: var(--nxa-muted);
+}
+
+.nxa-card-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--nxa-text-body);
+}
+
+.nxa-card-time,
+.nxa-card-read {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ----- Variante lista: card orizzontali su desktop ----- */
+.nxa-grid.nxa-list {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .nxa-grid.nxa-list .nxa-card {
+    display: grid;
+    grid-template-columns: minmax(210px, 290px) 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  .nxa-grid.nxa-list .nxa-card-media {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    aspect-ratio: auto;
+    height: 100%;
+    min-height: 186px;
+  }
+
+  .nxa-grid.nxa-list .nxa-card > h3.nxa-card-title {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 20px 24px 0;
+    align-self: start;
+  }
+
+  .nxa-grid.nxa-list .nxa-card > p.nxa-card-sub {
+    grid-column: 2;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .nxa-grid.nxa-list .nxa-card > p.nxa-card-excerpt {
+    grid-column: 2;
+    padding: 10px 24px 4px;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .nxa-grid.nxa-list .nxa-card-foot {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 14px 24px 18px;
+    padding: 12px 0 0;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 6. Load more
+ * ---------------------------------------------------------------------- */
+.nxa-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: fit-content;
+  margin: clamp(24px, 3vw, 34px) auto 0;
+  padding: 12px 30px;
+  border: none;
+  border-radius: 999px;
+  background: var(--nxa-accent-grad);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+}
+
+.nxa-load-more:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 12px 30px rgba(124, 58, 237, 0.45);
+}
+
+.nxa-load-more:active {
+  transform: translateY(0);
+}
+
+.nxa-load-more[disabled],
+.nxa-load-more[aria-busy="true"] {
+  opacity: 0.65;
+  cursor: progress;
+  transform: none;
+}
+
+/* -------------------------------------------------------------------------
+ * 7. Skeleton (shimmer)
+ * ---------------------------------------------------------------------- */
+.nxa-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--nxa-surface-2);
+}
+
+.nxa-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(148, 163, 184, 0.14) 50%,
+    transparent 100%
+  );
+  animation: nxa-shimmer 1.6s ease-in-out infinite;
+}
+
+.nxa-skeleton.is-media {
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+}
+
+.nxa-skeleton.is-title {
+  height: 1.05rem;
+  width: 72%;
+}
+
+.nxa-skeleton.is-text {
+  height: 0.78rem;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.nxa-skeleton.is-text:last-child {
+  width: 58%;
+}
+
+/* -------------------------------------------------------------------------
+ * 8. Nexus Wire (lista run)
+ * ---------------------------------------------------------------------- */
+.nxa-wire-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nxa-wire-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px 18px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.nxa-wire-run:hover {
+  border-color: rgba(6, 182, 212, 0.45);
+}
+
+.nxa-wire-topic {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--nxa-text);
+}
+
+.nxa-wire-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nxa-wire-agents span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--nxa-muted);
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border);
+}
+
+.nxa-wire-status {
+  --nxa-status: #22d3ee;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--nxa-status);
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border);
+}
+
+.nxa-wire-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nxa-wire-status.is-success,
+.nxa-wire-status.is-ok { --nxa-status: #4ade80; border-color: rgba(74, 222, 128, 0.4); background: rgba(74, 222, 128, 0.1); }
+.nxa-wire-status.is-warning { --nxa-status: #fbbf24; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); }
+.nxa-wire-status.is-error,
+.nxa-wire-status.is-failed { --nxa-status: #f87171; border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.1); }
+.nxa-wire-status.is-running { --nxa-status: #22d3ee; border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.1); }
+
+.nxa-wire-status.is-running::before {
+  animation: nxa-pulse 1.2s ease-in-out infinite;
+}
+
+/* -------------------------------------------------------------------------
+ * 9. Modale articolo + reazioni
+ * ---------------------------------------------------------------------- */
+#nxa-modal-root:empty {
+  display: none;
+}
+
+.nxa-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 7, 14, 0.74);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: nxa-fade-in 0.2s ease both;
+}
+
+.nxa-modal {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 28px clamp(20px, 4vw, 32px) 30px;
+  color: var(--nxa-text);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 20px;
+  box-shadow: var(--nxa-shadow-lg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--nxa-border) transparent;
+  animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nxa-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--nxa-border);
+  background: rgba(26, 34, 52, 0.88);
+  color: var(--nxa-muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.nxa-modal-close:hover {
+  color: #fff;
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.nxa-modal-body {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--nxa-text-body);
+}
+
+.nxa-modal-body h1,
+.nxa-modal-body h2,
+.nxa-modal-body h3 {
+  margin: 1.3em 0 0.5em;
+  color: var(--nxa-text);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.nxa-modal-body h1 { font-size: 1.5rem; margin-top: 0; }
+.nxa-modal-body h2 { font-size: 1.22rem; }
+.nxa-modal-body h3 { font-size: 1.05rem; }
+
+.nxa-modal-body p {
+  margin: 0 0 1em;
+}
+
+.nxa-modal-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 4px 0 16px;
+}
+
+.nxa-modal-body a {
+  color: #7dd3fc;
+  text-underline-offset: 3px;
+}
+
+.nxa-modal-body blockquote {
+  margin: 1.2em 0;
+  padding: 4px 0 4px 18px;
+  border-left: 3px solid var(--nxa-accent-1);
+  color: var(--nxa-muted);
+  font-style: italic;
+}
+
+.nxa-modal-body ul,
+.nxa-modal-body ol {
+  margin: 0 0 1em;
+  padding-left: 1.4em;
+}
+
+.nxa-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--nxa-border-soft);
+}
+
+.nxa-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.nxa-reaction-btn:hover {
+  border-color: rgba(124, 58, 237, 0.6);
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.nxa-reaction-btn:active {
+  transform: scale(0.96);
+}
+
+.nxa-reaction-btn.is-active,
+.nxa-reaction-btn[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--nxa-accent-grad);
+  color: #fff;
+}
+
+.nxa-reaction-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--nxa-muted);
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.nxa-reaction-btn.is-active .nxa-reaction-count,
+.nxa-reaction-btn[aria-pressed="true"] .nxa-reaction-count {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.nxa-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--nxa-border-soft);
+  font-size: 0.76rem;
+  color: var(--nxa-muted);
+}
+
+/* Blocco scroll pagina a modale aperta (classe aggiunta via JS; fallback :has) */
+body.nxa-lock-scroll {
+  overflow: hidden !important;
+}
+
+body:has(.nxa-modal-overlay) {
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------------------
+ * 10. Animazioni
+ * ---------------------------------------------------------------------- */
+@keyframes nxa-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes nxa-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes nxa-shimmer {
+  to { transform: translateX(100%); }
+}
+
+@keyframes nxa-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+/* -------------------------------------------------------------------------
+ * 11. Accessibilità
+ * ---------------------------------------------------------------------- */
+.nxa-magazine :focus-visible,
+.nxa-modal-overlay :focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+.nxa-cat-btn:focus-visible,
+.nxa-load-more:focus-visible,
+.nxa-reaction-btn:focus-visible,
+.nxa-modal-close:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-skeleton::after,
+  .nxa-wire-status.is-running::before {
+    animation: none;
+  }
+
+  .nxa-modal-overlay,
+  .nxa-modal {
+    animation: none;
+  }
+
+  .nxa-card,
+  .nxa-card-media img,
+  .nxa-cat-btn,
+  .nxa-load-more,
+  .nxa-reaction-btn,
+  .nxa-modal-close,
+  .nxa-wire-run {
+    transition: none;
+  }
+
+  .nxa-card:hover {
+    transform: none;
+  }
+
+  .nxa-card:hover .nxa-card-media img {
+    transform: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 12. Stampa
+ * ---------------------------------------------------------------------- */
+@media print {
+  .nxa-hero,
+  .nxa-catbar,
+  .nxa-load-more,
+  .nxa-modal-overlay,
+  .nxa-skeleton,
+  .nxa-card-ai,
+  .nxa-reactions {
+    display: none !important;
+  }
+
+  .nxa-magazine {
+    background: #fff !important;
+    color: #111 !important;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .nxa-card {
+    background: #fff;
+    border: 1px solid #d4d4d8;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .nxa-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .nxa-card > h3.nxa-card-title,
+  .nxa-card-agent {
+    color: #111;
+  }
+
+  .nxa-card > p.nxa-card-sub {
+    color: #555;
+  }
+
+  .nxa-card > p.nxa-card-excerpt,
+  .nxa-card-foot {
+    color: #444;
+  }
+
+  .nxa-wire-run {
+    background: #fff;
+    border-color: #ddd;
+  }
+
+  .nxa-wire-agents span {
+    background: #f5f5f5;
+    border-color: #ddd;
+    color: #333;
+  }
+}
+
+/* ================================================================
+   PATCH INTEGRAZIONE — classi card usate da render_card() PHP e
+   cardHTML() JS (allineate dopo il merge dei moduli paralleli).
+   ================================================================ */
+
+.nxa-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px 20px;
+}
+
+.nxa-card-subtitle {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--nxa-text, #e2e8f0);
+  opacity: 0.85;
+}
+
+.nxa-card-avatar {
+  font-size: inherit;
+  line-height: 1;
+  filter: drop-shadow(0 6px 16px rgba(2, 6, 23, 0.45));
+}
+
+.nxa-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--nxa-border, rgba(148, 163, 184, 0.16));
+  font-size: 0.8rem;
+  color: var(--nxa-muted, #94a3b8);
+}
+
+.nxa-card-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--nxa-text, #e2e8f0);
+}
+
+.nxa-card-agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nxa-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  background: var(--nxa-surface-2, #1a2234);
+  border: 1px solid var(--nxa-border, rgba(148, 163, 184, 0.2));
+  overflow: hidden;
+}
+
+.nxa-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nxa-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.nxa-sep {
+  opacity: 0.5;
+}

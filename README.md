@@ -1,0 +1,325 @@
+# Nexus News AI — Plugin WordPress
+
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
+![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
+![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
+
+> Il giornale di nuova generazione, scritto da intelligenze artificiali.
+
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social simulati in modo dichiarato). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), cron automatico e REST API.
+
+Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
+
+---
+
+## Indice
+
+1. [Caratteristiche](#caratteristiche)
+2. [Mapping Next.js → WordPress](#mapping-nextjs--wordpress)
+3. [Architettura dei file](#architettura-dei-file)
+4. [I 7 agenti giornalisti](#i-7-agenti-giornalisti)
+5. [La pipeline editoriale](#la-pipeline-editoriale)
+6. [Shortcode](#shortcode)
+7. [REST API `nexus/v1`](#rest-api-nexusv1)
+8. [Impostazioni](#impostazioni)
+9. [Cron automatico](#cron-automatico)
+10. [Pubblicazione multi-piattaforma](#pubblicazione-multi-piattaforma)
+11. [Installazione](#installazione)
+12. [FAQ tecniche](#faq-tecniche)
+13. [Licenza e crediti](#licenza-e-crediti)
+
+---
+
+## Caratteristiche
+
+- **7 agenti giornalisti AI** con nome, emoji, categoria e personalità distinti (seed automatici all'attivazione).
+- **Pipeline editoriale completa**: raccolta RSS → valutazione → riscrittura AI → approvazione → pubblicazione multi-piattaforma.
+- **Modalità semi-autonoma**: gli articoli entrano in coda di approvazione e vengono pubblicati solo dopo il via libera umano.
+- **Modalità completamente autonoma**: auto-approvazione basata sul punteggio di qualità (`auto_approve_score`), la pipeline gira da sola via WP-Cron.
+- **Admin panel completo**: dashboard statistiche, gestione agenti, coda di approvazione, feed attività, Nexus Wire, impostazioni.
+- **Magazine frontend**: hero section, barre categoria, griglia articoli, modal di lettura, reazioni emoji e contatore visualizzazioni.
+- **Shortcode**: `[nexus_magazine]`, `[nexus_articles]`, `[nexus_wire]`.
+- **Cron automatico** con intervallo configurabile e limite giornaliero di articoli.
+- **REST API `nexus/v1`**: dati e azioni della redazione accessibili programmaticamente.
+- **Nexus Wire**: pipeline multi-agente (raccolta candidati → selezione fonti → dossier del ricercatore → bozza del redattore → revisioni a 2 voci → editor finale) con storia delle run e bacheca commenti.
+- **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
+- **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
+- **Disinstallazione pulita**: `uninstall.php` rimuove tabelle, opzioni e transients.
+
+---
+
+## Mapping Next.js → WordPress
+
+| Componente originale (Next.js) | Equivalente WordPress (plugin) |
+|---|---|
+| Supabase (PostgreSQL): tabelle `agents`, `articles`, `publish_logs`, `approval_logs`, `activity_logs`, `settings` | Tabelle MySQL custom `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs` + option `nexus_settings` (schema via `dbDelta` in `Nexus_DB`) |
+| API Routes `/api/*` (App Router) | REST API `nexus/v1` registrate in `class-nexus-rest.php` |
+| Admin panel React (`components/admin/*`) | Admin WP nativo (menu `Nexus News`) + viste PHP in `admin/views/` + vanilla JS |
+| Magazine React (`components/magazine/*`) | Output shortcode PHP + vanilla JS/CSS in `public/` |
+| Cron route `/api/cron` (scheduler esterni) | **WP-Cron** (`class-nexus-cron.php`): evento `nexus_cron_tick` su schedule custom `nexus_interval`, auto-sincronizzato con le impostazioni |
+| Zustand store (`store.ts`) | **Nessuno**: lo stato vive nel DB; le pagine admin interrogano la REST API con fetch |
+| Motore AI `ai-engine.ts` + `openrouter.ts` | `class-nexus-ai-engine.php` (client OpenRouter-compatible, prompt editoriali IT, JSON repair) |
+| RSS `rss.ts` | `class-nexus-rss.php` (DOMDocument, cache via transients `nexus_rss_*`) |
+| Pubblicazione `publish` API | `class-nexus-publisher.php` (blog reale `/?nexus_article={id}` + social simulati, log onesti) |
+| Pipeline `collect-all.ts` / `processCategoryForAgent` | `class-nexus-pipeline.php` (le 5 fasi, eseguibili anche singolarmente) |
+| Framer Motion / Tailwind / shadcn/ui | CSS vanilla (`public/css/`) con animazioni native |
+
+---
+
+## Architettura dei file
+
+```
+nexus-news-ai/
+├── nexus-news-ai.php              # Bootstrap: header plugin, costanti, require, hook attivazione/disattivazione
+├── uninstall.php                  # Disinstallazione: drop tabelle wp_nexus_*, opzioni, transients
+├── readme.txt                     # Readme formato WordPress (repository.org)
+├── README.md                      # Questo file
+├── LICENSE                        # Licenza MIT
+│
+├── includes/                      # Classi core (nessun output, solo logica)
+│   ├── class-nexus-db.php         # Layer dati: schema dbDelta, CRUD, settings, seed agenti, stats, drop_tables()
+│   ├── class-nexus-utils.php      # Utility condivise (sanitizzazione, slug, formattazioni)
+│   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
+│   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair (nessun contenuto finto: senza chiave ritorna errore)
+│   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
+│   ├── class-nexus-publisher.php  # Pubblicazione: blog reale + social simulati, log in publish_logs
+│   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
+│   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
+│   └── index.php                  # Guardia "Silence is golden"
+│
+├── admin/                         # Back-end WordPress
+│   ├── class-nexus-admin.php      # Menu admin, enqueue assets, handler, gateway alle viste
+│   ├── css/                       # nexus-admin.css: stili delle pagine admin
+│   ├── views/                     # Template HTML delle pagine admin
+│   │   ├── dashboard.php          # Dashboard statistiche
+│   │   ├── agents.php             # Gestione agenti
+│   │   ├── queue.php              # Coda di approvazione
+│   │   ├── activity.php           # Feed attività
+│   │   ├── wire.php               # Nexus Wire (redazione collettiva)
+│   │   └── settings.php           # Impostazioni
+│   └── index.php
+│
+├── public/                        # Front-end magazine
+│   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue
+│   ├── css/                       # nexus-public.css: stili del magazine (classi nxa-*)
+│   ├── js/                        # nexus-public.js: interazioni (modal, reazioni, categorie) via REST + nonce wp_rest
+│   └── index.php
+│
+├── assets/                        # Asset condivisi admin
+│   ├── js/                        # admin.js: script dell'interfaccia admin (vanilla JS, consuma le REST route nexus/v1)
+│   └── index.php
+│
+└── languages/                     # Internazionalizzazione
+    ├── nexus-news-ai.pot          # Template di traduzione (gettext)
+    └── index.php
+```
+
+Ogni directory contiene un `index.php` di silenzio per impedire il directory listing.
+
+---
+
+## I 7 agenti giornalisti
+
+Gli agenti vengono inseriti automaticamente alla prima attivazione (solo se la tabella è vuota) e sono modificabili dall'admin panel.
+
+| Agente | Emoji | Categoria | Personalità |
+|---|---|---|---|
+| TechBot | 🤖 | Tecnologia | Analitico e orientato all'impatto pratico per lettori tech-savvy |
+| PolicyWatch | 🏛️ | Politica | Equilibrato e oggettivo, con contesto storico e geopolitico |
+| MarketPulse | 📈 | Economia | Rigoroso ma accessibile, con dati concreti e implicazioni per investitori |
+| SciExplorer | 🔬 | Scienza | Divulgativo ma preciso, spiegazioni chiare per un pubblico colto |
+| SportArena | ⚽ | Sport | Emozionante e narrativo, con statistiche e analisi tattiche |
+| CultureHub | 🎭 | Cultura | Elegante e riflessivo, con riferimenti storici e artistici |
+| HealthDesk | 🩺 | Salute | Rassicurante e basato su evidenze scientifiche, con consigli pratici |
+
+---
+
+## La pipeline editoriale
+
+La pipeline è orchestrata da `class-nexus-pipeline.php` (contratto: `collect`, `evaluate`, `rewrite`, `approve`, `reject`, `publish`, `run_full`, `cron_tick`, `wire_run`, `wire_runs`) e può essere eseguita per intero ("Esegui pipeline completa" nell'admin o `POST /pipeline/run`), a fasi singole, o automaticamente via cron. **Tutte le fasi generative richiedono la chiave AI**: senza chiave ogni fase registra nei log attività l'errore «Chiave API AI non configurata».
+
+1. **Raccolta (collect)** — `Nexus_RSS` scarica gli item dai feed RSS della categoria dell'agente (se non ci sono candidati, percorso **evergreen**); una chiamata AI (`collect_prompt`) seleziona i **massimo 2 candidati migliori** (score ≥ 50), salvati come articoli in stato `draft` con titolo, fonte, URL e riassunto. Richiede il modello AI configurato.
+2. **Valutazione (evaluate)** — una chiamata AI (`evaluate_prompt`) assegna il `quality_score` 0-100, salvato sull'articolo; l'esito finisce nel feed `activity_logs`.
+3. **Riscrittura AI (rewrite)** — una chiamata AI (`rewrite_prompt`) produce titolo, sottotitolo, contenuto e riassunto definitivi in stile editoriale (categoria + personalità dell'agente): l'articolo passa a `pending_approval` con `read_time` calcolato.
+4. **Approvazione (approve)** —
+   - *Modalità semi-autonoma* (default): l'articolo passa a `pending_approval` e compare nella **coda di approvazione**; il revisore umano può approvare o rifiutare con nota (tabella `wp_nexus_approval_logs`).
+   - *Modalità completamente autonoma*: gli articoli con `quality_score >= auto_approve_score` vengono auto-approvati, gli altri restano in coda come rete di sicurezza.
+5. **Pubblicazione multi-piattaforma** — l'articolo approvato viene inviato alle piattaforme abilitate in `social_platforms`: per **blog la pubblicazione è reale** (l'articolo vive nel database Nexus, con URL di riferimento `/?nexus_article={id}` registrato nei log), i canali **social sono simulati in modo onesto** (post_id e URL demo dichiarati come tali) e ogni invio genera una riga in `wp_nexus_publish_logs`.
+
+Stati dell'articolo: `draft` → `pending_approval` → `approved` → `published` (o `rejected`).
+
+---
+
+## Shortcode
+
+### `[nexus_magazine]`
+
+Il magazine completo: hero con articolo in evidenza, barre categorie, griglia articoli, modal di dettaglio con reazioni emoji.
+
+```
+[nexus_magazine]
+```
+
+### `[nexus_articles]`
+
+Lista o griglia di articoli filtrabili. Attributi:
+
+| Attributo | Default | Valori |
+|---|---|---|
+| `category` | (tutte) | `Tecnologia`, `Politica`, `Economia`, `Scienza`, `Sport`, `Cultura`, `Salute` |
+| `limit` | `9` | numero massimo di articoli (1-24) |
+| `layout` | `grid` | `grid` (card) o `list` (elenco compatto) |
+
+```
+[nexus_articles category="Tecnologia" limit="6" layout="list"]
+[nexus_articles category="Sport" limit="3"]
+[nexus_articles limit="12" layout="grid"]
+```
+
+### `[nexus_wire]`
+
+La bacheca del **Nexus Wire**: storico delle run della redazione collettiva (argomento, agenti coinvolti, fonti usate, commenti di revisione) e articolo prodotto dall'ultima sessione. Attributo opzionale `limit` (default `10`, max `20`).
+
+```
+[nexus_wire]
+```
+
+---
+
+## REST API `nexus/v1`
+
+Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
+
+- **Route admin**: richiedono un utente con capability `manage_options` e nonce WordPress (`X-WP-Nonce` con cookie di sessione, o Application Password).
+- **Route pubbliche**: aperte in lettura/scrittura limitata (usate dal frontend magazine, che invia comunque il nonce `wp_rest`), espongono solo dati pubblicabili.
+
+### Route admin (`manage_options`)
+
+| Metodo | Endpoint | Descrizione |
+|---|---|---|
+| GET | `/agents` | Lista dei 7 agenti (nome, emoji, categoria, personalità, stato, last_run) |
+| POST | `/agents/{id}/status` | Cambia stato agente: body `{ "status": "active\|paused\|error" }` |
+| GET | `/articles` | Lista articoli; filtri `status`, `category`, `agent_id`, `search`, `page`, `per_page` |
+| GET | `/articles/{id}` | Dettaglio articolo (inclusi log pubblicazione) |
+| DELETE | `/articles/{id}` | Elimina l'articolo e i log correlati |
+| POST | `/articles/{id}/approve` | Approva l'articolo: body `{ "note": "…" }` opzionale |
+| POST | `/articles/{id}/reject` | Rifiuta l'articolo: body `{ "note": "…" }` |
+| POST | `/pipeline/collect` | Esegue la raccolta RSS: body `{ "agent_id": 0 }` (0 = tutti gli agenti attivi) |
+| POST | `/pipeline/run` | Esegue la pipeline completa per agente o per tutti |
+| POST | `/pipeline/publish` | Pubblica un singolo articolo approvato `{article_id}` |
+| GET | `/settings` | Impostazioni correnti |
+| PUT | `/settings` | Aggiorna le impostazioni (merge parziale sui campi in whitelist) |
+| GET | `/activity` | Feed attività; args `limit`, `agent_id` |
+| GET | `/stats` | Statistiche dashboard (totali, stati, views, agenti attivi, attività 24h) |
+| POST | `/wire/run` | Avvia una run del Nexus Wire: body `{ "topic": "…" }` (max 200 caratteri) |
+| GET | `/wire/runs` | Storico completo delle run del Wire; arg `limit` |
+
+### Route pubbliche
+
+| Metodo | Endpoint | Descrizione |
+|---|---|---|
+| GET | `/public/articles` | Solo articoli `published`; args `category`, `search`, `page`, `per_page` (max 24) |
+| GET | `/public/articles/{id}` | Dettaglio articolo, solo se pubblicato |
+| POST | `/public/articles/{id}/reaction` | Registra una reazione emoji: body `{ "emoji": "👍" }` |
+| POST | `/public/articles/{id}/view` | Incrementa il contatore visualizzazioni |
+| GET | `/public/wire/runs` | Run Wire completate, senza dati interni |
+| GET | `/health` | Stato del plugin (versione, tabelle, AI configurata) |
+
+Esempio:
+
+```bash
+curl "https://tuosito.it/wp-json/nexus/v1/public/articles?category=Scienza&per_page=6"
+```
+
+---
+
+## Impostazioni
+
+Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `update_settings()`, modificabili dall'admin panel o via REST). Valori uniti ai default al volo: una chiave assente ricade sul default.
+
+| Chiave | Default | Descrizione |
+|---|---|---|
+| `mode` | `semi_autonomous` | Modalità pipeline: `semi_autonomous` (approvazione umana) oppure `fully_autonomous` (auto-approvazione) |
+| `auto_collect` | `1` | Esegue la raccolta RSS nelle esecuzioni automatiche |
+| `auto_evaluate` | `1` | Esegue la valutazione nelle esecuzioni automatiche |
+| `auto_rewrite` | `1` | Esegue la riscrittura AI nelle esecuzioni automatiche |
+| `auto_publish` | `0` | Pubblica automaticamente gli articoli approvati |
+| `collect_interval` | `3600` | Intervallo del cron in secondi |
+| `max_articles_per_day` | `10` | Limite di articoli creati al giorno (protezione anti-flood) |
+| `social_platforms` | `blog,twitter,facebook,linkedin,instagram` | Piattaforme su cui la pubblicazione invia gli articoli |
+| `site_name` | `Nexus News AI` | Nome del magazine mostrato nel frontend |
+| `site_tagline` | `Il giornale di nuova generazione` | Tagline del magazine |
+| `ai_api_key` | (vuota) | Chiave API del servizio AI OpenRouter-compatible |
+| `ai_base_url` | `https://openrouter.ai/api/v1` | Base URL dell'API AI (compatibile OpenAI/OpenRouter) |
+| `ai_model` | `openai/gpt-4o-mini` | Modello usato per riscrittura e Nexus Wire |
+| `auto_approve_score` | `75` | Punteggio minimo per l'auto-approvazione in `fully_autonomous` |
+
+---
+
+## Cron automatico
+
+- Il plugin registra uno **schedule WP-Cron custom** (`nexus_interval`, durata = `collect_interval` secondi) e vi pianifica l'evento **`nexus_cron_tick`**.
+- Ogni tick esegue le fasi abilitate dalle impostazioni (`auto_collect`, `auto_evaluate`, `auto_rewrite`, `auto_publish`), rispettando `max_articles_per_day`; gli agenti nello stato `paused`/`error` vengono saltati.
+- Se cambi `collect_interval` o `auto_collect` nelle impostazioni, l'evento viene **risincronizzato automaticamente** (hook `update_option_nexus_settings`).
+- Alla **disattivazione** l'evento pianificato viene rimosso (`Nexus_Cron::deactivate()`); alla riattivazione viene ripianificato.
+- WP-Cron è "pigro": scatta solo con visite al sito. Per un giornale vero è consigliato un cron di sistema:
+  1. definisci `define( 'DISABLE_WP_CRON', true );` in `wp-config.php`;
+  2. aggiungi una riga crontab, es. ogni ora:
+     ```cron
+     0 * * * * curl -s https://tuosito.it/wp-cron.php?doing_wp_cron > /dev/null
+     ```
+  3. oppure con WP-CLI dispara il tick a mano quando serve:
+     ```bash
+     wp cron event run nexus_cron_tick
+     ```
+
+---
+
+## Pubblicazione multi-piattaforma
+
+> **Nota onesta (simulazione):** per **blog la pubblicazione è reale** — l'articolo vive nel database Nexus e l'URL di riferimento registrato nei log è `home_url('/?nexus_article={id}')`. I canali **Twitter/X, Facebook, LinkedIn e Instagram sono invece simulati**: il plugin non ha credenziali API social, quindi registra in `wp_nexus_publish_logs` un post_id e un URL demo, dichiarati come simulati (nota: «Pubblicazione simulata (demo): nessuna API social configurata») invece di fingere chiamate reali. È la stessa filosofia dell'app Next.js originale. Per pubblicazioni social vere servirebbe integrare le API ufficiali di ciascuna piattaforma (OAuth, token, revisori) — volutamente fuori scope per mantenere il plugin senza dipendenze e senza credenziali sensibili.
+
+---
+
+## Installazione
+
+1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
+2. Attiva il plugin: vengono create le tabelle `wp_nexus_agents`, `wp_nexus_articles`, `wp_nexus_publish_logs`, `wp_nexus_approval_logs`, `wp_nexus_activity_logs` e inseriti i 7 agenti.
+3. Vai su **Nexus News → Impostazioni** e configura la chiave AI (opzionale ma consigliata) e le modalità.
+4. Crea una pagina con `[nexus_magazine]`.
+5. (Opzionale) Configura un cron di sistema come descritto sopra.
+
+Requisiti: **WordPress 6.0+**, **PHP 7.4+**, MySQL/MariaDB. Nessuna estensione PHP particolare oltre a quelle standard di WP (`DOMDocument` inclusa di serie).
+
+---
+
+## FAQ tecniche
+
+**Senza chiave AI il plugin funziona?**
+Per tutto ciò che non produce contenuti: magazine, admin panel, coda di approvazione, pubblicazione degli articoli esistenti, cron, REST API. La pipeline invece si ferma — ogni fase (raccolta inclusa) chiama il modello — e nei log attività compare l'errore «Chiave API AI non configurata». Appena inserisci la chiave nelle impostazioni, le nuove esecuzioni partono regolarmente.
+
+**Quale servizio AI è supportato?**
+Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di default (`https://openrouter.ai/api/v1`) ma anche OpenAI, Groq, Ollama locale, ecc. — basta cambiare `ai_base_url` e `ai_model`.
+
+**Dove sono salvati i dati?**
+Nelle 5 tabelle `wp_nexus_*` con prefisso del tuo WordPress + l'option `nexus_settings`. Gli articoli **non** diventano `wp_posts`: il magazine è autonomo, così la pipeline non inquina il blog.
+
+**La disattivazione cancella i dati?**
+No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina tabelle, opzioni e transients.
+
+**Posso modificare gli articoli generati?**
+Sì, dalla coda di approvazione prima della pubblicazione; via REST puoi approvare, rifiutare o eliminare (`POST /articles/{id}/approve`, `POST /articles/{id}/reject`, `DELETE /articles/{id}`).
+
+**I feed RSS dove si configurano?**
+Nell'admin panel, sezione agenti/impostazioni: ogni agente raccoglie dalla propria categoria. I risultati sono in cache nei transients `nexus_rss_*` per non martellare le fonti.
+
+**È compatibile con la cache/l'object caching?**
+Sì: non usa sessioni né stato globale; le risposte REST pubbliche sono cacheabili e le pagine shortcode sono output standard.
+
+---
+
+## Licenza e crediti
+
+Rilasciato sotto **licenza MIT** (vedi `LICENSE`). © 2026 **byebis**.
+
+Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso spirito, stessa redazione di intelligenze artificiali, nuova casa in `wp-content/plugins`.

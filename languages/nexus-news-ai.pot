@@ -1,0 +1,96 @@
+# Copyright (C) 2026 byebis
+# This file is distributed under the MIT License.
+msgid ""
+msgstr ""
+"Project-Id-Version: Nexus News AI 1.0.0\n"
+"Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
+"POT-Creation-Date: 2026-01-01 00:00+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: ITALIANO <LL@li.org>\n"
+"Language: it_IT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Domain: nexus-news-ai\n"
+
+#: admin/views/dashboard.php admin/class-nexus-admin.php
+msgid "Dashboard"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Coda di approvazione"
+msgstr ""
+
+#: admin/views/agents.php
+msgid "Agenti giornalisti"
+msgstr ""
+
+#: admin/views/activity.php
+msgid "Attività"
+msgstr ""
+
+#: admin/views/wire.php
+msgid "Nexus Wire — Redazione collettiva"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Impostazioni"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Esegui pipeline completa"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Approva"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Rifiuta"
+msgstr ""
+
+#: admin/views/wire.php
+msgid "Avvia Nexus Wire"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Raccolta notizie"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Valutazione"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Riscrittura AI"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Pubblicazione multi-piattaforma"
+msgstr ""
+
+#: includes/class-nexus-publisher.php
+msgid "Pubblicato"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "In attesa"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave AI (OpenRouter-compatible)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modalità semi-autonoma"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modalità completamente autonoma"
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Leggi l'articolo"
+msgstr ""

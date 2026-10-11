@@ -1,0 +1,1225 @@
+/**
+ * Nexus News AI — Foglio di stile admin panel (WordPress)
+ *
+ * Slug plugin: nexus-news-ai
+ * Versione:    1.0.0
+ *
+ * Pannello dark editorial dentro .wrap.nexus-admin. I componenti "volanti"
+ * (modale .nxa-modal/.nxa-modal-overlay e toast .nxa-toast, appesi al body)
+ * sono stilizzati anche fuori da .nexus-admin: tutti i selettori sono
+ * comunque prefissati nxa- per zero collisioni con il core.
+ * Mobile-first: base = schermi stretti (sidebar WP collassata), breakpoint
+ * a 782px (fold menu admin) e 1100px.
+ *
+ * Indice:
+ *   1. Token di design
+ *   2. Mapping categorie [data-category]
+ *   3. Base pannello .wrap.nexus-admin
+ *   4. Bottoni (.nxa-btn / .nxa-btn-primary)
+ *   5. Badge (.nxa-badge) e punteggio (.nxa-score)
+ *   6. Stat grid + actions row
+ *   7. Agenti (.nxa-agents-grid)
+ *   8. Coda editoriale (.nxa-queue-list)
+ *   9. Activity feed
+ *  10. Settings form + toggle switch
+ *  11. Nexus Wire runs
+ *  12. Toast
+ *  13. Modale admin (riusa stile pubblico)
+ *  14. Spinner
+ *  15. Accessibilità (focus, reduced-motion)
+ *  16. Stampa
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Token di design
+ * ---------------------------------------------------------------------- */
+:root {
+  --nxa-bg: #0b0f17;
+  --nxa-surface: #121826;
+  --nxa-surface-2: #1a2234;
+  --nxa-surface-3: #0d1320;
+  --nxa-border: #232c42;
+  --nxa-border-soft: rgba(148, 163, 184, 0.16);
+  --nxa-text: #e2e8f0;
+  --nxa-text-body: #cbd5e1;
+  --nxa-muted: #94a3b8;
+  --nxa-accent-1: #7c3aed;
+  --nxa-accent-2: #06b6d4;
+  --nxa-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
+  --nxa-focus: #22d3ee;
+  --nxa-radius: 14px;
+  --nxa-radius-sm: 10px;
+  --nxa-radius-lg: 18px;
+  --nxa-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
+  --nxa-shadow-lg: 0 24px 64px rgba(2, 6, 23, 0.6);
+
+  --nxa-cat: #94a3b8;
+  --nxa-cat-soft: rgba(148, 163, 184, 0.14);
+  --nxa-cat-line: rgba(148, 163, 184, 0.35);
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Mapping categorie (case-insensitive)
+ * ---------------------------------------------------------------------- */
+[data-category="tecnologia" i] { --nxa-cat: #38bdf8; --nxa-cat-soft: rgba(56, 189, 248, 0.14); --nxa-cat-line: rgba(56, 189, 248, 0.4); }
+[data-category="politica" i]   { --nxa-cat: #f59e0b; --nxa-cat-soft: rgba(245, 158, 11, 0.14); --nxa-cat-line: rgba(245, 158, 11, 0.4); }
+[data-category="economia" i]   { --nxa-cat: #34d399; --nxa-cat-soft: rgba(52, 211, 153, 0.14); --nxa-cat-line: rgba(52, 211, 153, 0.4); }
+[data-category="scienza" i]    { --nxa-cat: #a78bfa; --nxa-cat-soft: rgba(167, 139, 250, 0.15); --nxa-cat-line: rgba(167, 139, 250, 0.4); }
+[data-category="sport" i]      { --nxa-cat: #f87171; --nxa-cat-soft: rgba(248, 113, 113, 0.14); --nxa-cat-line: rgba(248, 113, 113, 0.4); }
+[data-category="cultura" i]    { --nxa-cat: #f472b6; --nxa-cat-soft: rgba(244, 114, 182, 0.14); --nxa-cat-line: rgba(244, 114, 182, 0.4); }
+[data-category="salute" i]     { --nxa-cat: #4ade80; --nxa-cat-soft: rgba(74, 222, 128, 0.13); --nxa-cat-line: rgba(74, 222, 128, 0.4); }
+
+/* -------------------------------------------------------------------------
+ * 3. Base pannello
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin,
+.wrap.nexus-admin * {
+  box-sizing: border-box;
+}
+
+.wrap.nexus-admin {
+  max-width: 1220px;
+  margin: 16px 20px 28px 2px;
+  padding: clamp(16px, 2.5vw, 28px);
+  color: var(--nxa-text);
+  background:
+    radial-gradient(900px 380px at 90% -10%, rgba(6, 182, 212, 0.08), transparent 60%),
+    radial-gradient(700px 320px at 0% 0%, rgba(124, 58, 237, 0.12), transparent 55%),
+    var(--nxa-bg);
+  border: 1px solid #1e293b;
+  border-radius: var(--nxa-radius-lg);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap.nexus-admin [hidden] {
+  display: none !important;
+}
+
+.wrap.nexus-admin h1 {
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: #f1f5f9;
+}
+
+.wrap.nexus-admin h2 {
+  margin: 30px 0 12px;
+  padding: 0;
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--nxa-text);
+}
+
+.wrap.nexus-admin h2::after {
+  content: "";
+  display: block;
+  width: 42px;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--nxa-accent-grad);
+}
+
+.wrap.nexus-admin p {
+  color: var(--nxa-muted);
+}
+
+.wrap.nexus-admin a {
+  color: #7dd3fc;
+}
+
+.wrap.nexus-admin code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--nxa-surface-3);
+  border: 1px solid var(--nxa-border);
+  color: #a5b4fc;
+  font-size: 0.82em;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Bottoni
+ * ---------------------------------------------------------------------- */
+.nxa-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border: 1px solid #2a3550;
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  text-shadow: none;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease,
+    transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.nxa-btn:hover {
+  border-color: rgba(124, 58, 237, 0.6);
+  background: #202a40;
+  color: #fff;
+  text-decoration: none;
+}
+
+.nxa-btn:active {
+  transform: scale(0.98);
+}
+
+.nxa-btn:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+.nxa-btn[disabled],
+.nxa-btn[aria-busy="true"],
+.nxa-btn.is-busy {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.nxa-btn.is-sm {
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  border-radius: 8px;
+}
+
+.nxa-btn.is-danger {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.nxa-btn.is-danger:hover {
+  color: #fff;
+  background: rgba(248, 113, 113, 0.2);
+  border-color: rgba(248, 113, 113, 0.65);
+}
+
+.nxa-btn-primary {
+  border-color: transparent;
+  background: var(--nxa-accent-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.32);
+}
+
+.nxa-btn-primary:hover {
+  border-color: transparent;
+  background: var(--nxa-accent-grad);
+  color: #fff;
+  filter: brightness(1.1);
+  box-shadow: 0 10px 26px rgba(124, 58, 237, 0.45);
+}
+
+/* -------------------------------------------------------------------------
+ * 5. Badge + punteggio
+ * ---------------------------------------------------------------------- */
+.nxa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+
+.nxa-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nxa-badge.is-active {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.nxa-badge.is-paused {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.nxa-badge.is-error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.nxa-badge.is-error::before {
+  animation: nxa-pulse 1.2s ease-in-out infinite;
+}
+
+/* Badge categoria (eredita --nxa-cat da [data-category] sull'antenato) */
+.nxa-badge.nxa-agent-cat {
+  color: var(--nxa-cat);
+  background: var(--nxa-cat-soft);
+  border-color: var(--nxa-cat-line);
+}
+
+.nxa-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.7;
+}
+
+.nxa-score.is-high {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.nxa-score.is-mid {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.nxa-score.is-low {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+/* -------------------------------------------------------------------------
+ * 6. Stat grid + actions row
+ * ---------------------------------------------------------------------- */
+.nxa-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr); /* mobile-first */
+  gap: 12px;
+  margin: 18px 0 6px;
+}
+
+@media (min-width: 782px) {
+  .nxa-stat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1100px) {
+  .nxa-stat-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.nxa-stat-card {
+  padding: 16px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nxa-stat-card:hover {
+  border-color: rgba(124, 58, 237, 0.45);
+  transform: translateY(-2px);
+  box-shadow: var(--nxa-shadow);
+}
+
+.nxa-stat-value {
+  display: block;
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  background: var(--nxa-accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.nxa-stat-label {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nxa-muted);
+}
+
+.nxa-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 8px;
+}
+
+/* -------------------------------------------------------------------------
+ * 7. Agenti
+ * ---------------------------------------------------------------------- */
+.nxa-agents-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin: 14px 0;
+}
+
+@media (min-width: 782px) {
+  .nxa-agents-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1100px) {
+  .nxa-agents-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.nxa-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nxa-agent-card:hover {
+  border-color: rgba(124, 58, 237, 0.5);
+  transform: translateY(-2px);
+  box-shadow: var(--nxa-shadow);
+}
+
+.nxa-agent-avatar {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  font-size: 1.85rem;
+  line-height: 1;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.24), rgba(6, 182, 212, 0.24));
+  border: 1px solid rgba(124, 58, 237, 0.4);
+  box-shadow: inset 0 0 18px rgba(124, 58, 237, 0.12);
+}
+
+.nxa-agent-name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--nxa-text);
+  line-height: 1.3;
+}
+
+.nxa-agent-cat {
+  align-self: flex-start;
+  display: inline-flex;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--nxa-cat);
+  background: var(--nxa-cat-soft);
+  border: 1px solid var(--nxa-cat-line);
+}
+
+.nxa-agent-persona {
+  margin: 0;
+  font-size: 0.84rem;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--nxa-text-body);
+}
+
+.nxa-agent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--nxa-border-soft);
+  font-size: 0.74rem;
+  color: var(--nxa-muted);
+}
+
+/* -------------------------------------------------------------------------
+ * 8. Coda editoriale
+ * ---------------------------------------------------------------------- */
+.nxa-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.nxa-queue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.nxa-queue-row:hover {
+  border-color: rgba(124, 58, 237, 0.45);
+  background: #141b2c;
+}
+
+.nxa-queue-main {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--nxa-text);
+  overflow-wrap: anywhere;
+}
+
+.nxa-queue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 0.73rem;
+  color: var(--nxa-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nxa-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 781px) {
+  .nxa-queue-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 9. Activity feed
+ * ---------------------------------------------------------------------- */
+.nxa-activity-feed {
+  display: flex;
+  flex-direction: column;
+  margin: 14px 0;
+  padding: 6px 18px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius);
+}
+
+.nxa-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--nxa-border-soft);
+}
+
+.nxa-activity-item:last-child {
+  border-bottom: none;
+}
+
+.nxa-activity-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  font-size: 0.95rem;
+  line-height: 1;
+  border-radius: 10px;
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border);
+}
+
+.nxa-activity-item p,
+.nxa-activity-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-top: 5px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--nxa-text-body);
+  overflow-wrap: anywhere;
+}
+
+.nxa-activity-time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-top: 6px;
+  font-size: 0.71rem;
+  color: var(--nxa-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Varianti stato */
+.nxa-activity-item.is-success .nxa-activity-icon {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+.nxa-activity-item.is-warning .nxa-activity-icon {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.nxa-activity-item.is-error .nxa-activity-icon {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+/* -------------------------------------------------------------------------
+ * 10. Settings form + toggle switch
+ * ---------------------------------------------------------------------- */
+.nxa-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 760px;
+  margin: 14px 0;
+  padding: clamp(16px, 2.5vw, 24px);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+}
+
+.nxa-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (min-width: 782px) {
+  .nxa-form-row {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .nxa-form-row > label {
+    flex: 0 0 220px;
+    padding-top: 1px;
+  }
+}
+
+.nxa-form-row label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--nxa-text);
+}
+
+.wrap.nexus-admin .nxa-form-row input[type="text"],
+.wrap.nexus-admin .nxa-form-row input[type="email"],
+.wrap.nexus-admin .nxa-form-row input[type="url"],
+.wrap.nexus-admin .nxa-form-row input[type="password"],
+.wrap.nexus-admin .nxa-form-row input[type="number"],
+.wrap.nexus-admin .nxa-form-row select,
+.wrap.nexus-admin .nxa-form-row textarea {
+  width: 100%;
+  max-width: 440px;
+  padding: 9px 12px;
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-3);
+  color: var(--nxa-text);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  box-shadow: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.wrap.nexus-admin .nxa-form-row textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.wrap.nexus-admin .nxa-form-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--nxa-muted) 50%),
+    linear-gradient(135deg, var(--nxa-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+.wrap.nexus-admin .nxa-form-row input:focus,
+.wrap.nexus-admin .nxa-form-row select:focus,
+.wrap.nexus-admin .nxa-form-row textarea:focus {
+  border-color: var(--nxa-accent-1);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.22);
+  outline: none;
+}
+
+.wrap.nexus-admin .nxa-form-row input:focus-visible,
+.wrap.nexus-admin .nxa-form-row select:focus-visible,
+.wrap.nexus-admin .nxa-form-row textarea:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+.nxa-form-hint {
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+}
+
+/* --- Toggle switch -----------------------------------------------------
+ * Markup atteso (variante A, self-contained):
+ *   <input type="checkbox" class="nxa-switch" ...>
+ * Variante B (label wrapper):
+ *   <label class="nxa-switch"><input type="checkbox"><span class="nxa-switch-track"></span></label>
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin input[type="checkbox"].nxa-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 46px;
+  height: 26px;
+  margin: 0;
+  flex: 0 0 auto;
+  border: 1px solid #2a3550;
+  border-radius: 999px;
+  background: var(--nxa-surface-2);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  box-shadow: none;
+}
+
+.wrap.nexus-admin input[type="checkbox"].nxa-switch::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--nxa-muted);
+  transform: translateY(-50%);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.wrap.nexus-admin input[type="checkbox"].nxa-switch:checked {
+  border-color: transparent;
+  background: var(--nxa-accent-grad);
+}
+
+.wrap.nexus-admin input[type="checkbox"].nxa-switch:checked::before {
+  transform: translate(20px, -50%);
+  background: #fff;
+}
+
+.wrap.nexus-admin input[type="checkbox"].nxa-switch:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+.wrap.nexus-admin input[type="checkbox"].nxa-switch[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Variante B: label.nxa-switch con input nascosto + .nxa-switch-track */
+.wrap.nexus-admin label.nxa-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.wrap.nexus-admin label.nxa-switch input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.wrap.nexus-admin label.nxa-switch .nxa-switch-track {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid #2a3550;
+  border-radius: 999px;
+  background: var(--nxa-surface-2);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.wrap.nexus-admin label.nxa-switch .nxa-switch-track::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--nxa-muted);
+  transform: translateY(-50%);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.wrap.nexus-admin label.nxa-switch input:checked + .nxa-switch-track {
+  border-color: transparent;
+  background: var(--nxa-accent-grad);
+}
+
+.wrap.nexus-admin label.nxa-switch input:checked + .nxa-switch-track::before {
+  transform: translate(20px, -50%);
+  background: #fff;
+}
+
+.wrap.nexus-admin label.nxa-switch input:focus-visible + .nxa-switch-track {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------
+ * 11. Nexus Wire runs
+ * ---------------------------------------------------------------------- */
+.nxa-wire-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.nxa-wire-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px 16px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.nxa-wire-run:hover {
+  border-color: rgba(6, 182, 212, 0.45);
+}
+
+.nxa-wire-topic {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--nxa-text);
+}
+
+.nxa-wire-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.nxa-wire-agents span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--nxa-muted);
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border);
+}
+
+.nxa-wire-status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+}
+
+.nxa-wire-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.nxa-wire-status.is-success,
+.nxa-wire-status.is-ok { color: #4ade80; background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.4); }
+.nxa-wire-status.is-warning { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.4); }
+.nxa-wire-status.is-error,
+.nxa-wire-status.is-failed { color: #f87171; background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.45); }
+
+/* -------------------------------------------------------------------------
+ * 12. Toast
+ * ---------------------------------------------------------------------- */
+.nxa-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(380px, calc(100vw - 40px));
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--nxa-surface);
+  border: 1px solid #2a3550;
+  color: var(--nxa-text);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  box-shadow: var(--nxa-shadow-lg);
+  animation: nxa-toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nxa-toast.is-success {
+  border-color: rgba(74, 222, 128, 0.45);
+  box-shadow: inset 3px 0 0 #4ade80, var(--nxa-shadow-lg);
+}
+
+.nxa-toast.is-error {
+  border-color: rgba(248, 113, 113, 0.5);
+  box-shadow: inset 3px 0 0 #f87171, var(--nxa-shadow-lg);
+}
+
+.nxa-toast.is-info {
+  border-color: rgba(6, 182, 212, 0.5);
+  box-shadow: inset 3px 0 0 #06b6d4, var(--nxa-shadow-lg);
+}
+
+.nxa-toast .nxa-toast-close {
+  margin-left: auto;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.nxa-toast .nxa-toast-close:hover {
+  opacity: 1;
+}
+
+/* Stack opzionale: <div class="nxa-toast-stack"> con più .nxa-toast dentro */
+.nxa-toast-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nxa-toast-stack .nxa-toast {
+  position: static;
+}
+
+/* -------------------------------------------------------------------------
+ * 13. Modale admin (stessa geometria di quella pubblica)
+ * ---------------------------------------------------------------------- */
+.nxa-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 7, 14, 0.74);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: nxa-fade-in 0.2s ease both;
+}
+
+.nxa-modal {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 28px clamp(20px, 4vw, 32px) 30px;
+  color: var(--nxa-text);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 20px;
+  box-shadow: var(--nxa-shadow-lg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--nxa-border) transparent;
+  animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nxa-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--nxa-border);
+  background: rgba(26, 34, 52, 0.88);
+  color: var(--nxa-muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.nxa-modal-close:hover {
+  color: #fff;
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.nxa-modal-body {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--nxa-text-body);
+}
+
+.nxa-modal-body h1,
+.nxa-modal-body h2,
+.nxa-modal-body h3 {
+  margin: 1.2em 0 0.45em;
+  color: var(--nxa-text);
+  line-height: 1.3;
+}
+
+.nxa-modal-body h1 { font-size: 1.4rem; margin-top: 0; }
+.nxa-modal-body h2 { font-size: 1.15rem; }
+
+.nxa-modal-body p {
+  margin: 0 0 1em;
+}
+
+.nxa-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--nxa-border-soft);
+  font-size: 0.74rem;
+  color: var(--nxa-muted);
+}
+
+body.nxa-lock-scroll {
+  overflow: hidden !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 14. Spinner
+ * ---------------------------------------------------------------------- */
+.nxa-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: var(--nxa-accent-2);
+  border-radius: 50%;
+  vertical-align: -3px;
+  animation: nxa-spin 0.7s linear infinite;
+}
+
+.nxa-spinner.is-lg {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+  vertical-align: middle;
+}
+
+.nxa-btn .nxa-spinner {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
+/* -------------------------------------------------------------------------
+ * 15. Accessibilità
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin :focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+@keyframes nxa-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes nxa-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes nxa-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nxa-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nxa-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-spinner,
+  .nxa-badge.is-error::before {
+    animation: none;
+  }
+
+  .nxa-modal-overlay,
+  .nxa-modal,
+  .nxa-toast {
+    animation: none;
+  }
+
+  .nxa-btn,
+  .nxa-agent-card,
+  .nxa-stat-card,
+  .nxa-queue-row,
+  .nxa-wire-run,
+  .nxa-modal-close {
+    transition: none;
+  }
+
+  .nxa-agent-card:hover,
+  .nxa-stat-card:hover {
+    transform: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 16. Stampa
+ * ---------------------------------------------------------------------- */
+@media print {
+  .nxa-actions-row,
+  .nxa-queue-actions,
+  .nxa-toast,
+  .nxa-toast-stack,
+  .nxa-modal-overlay,
+  .nxa-spinner {
+    display: none !important;
+  }
+
+  .wrap.nexus-admin {
+    background: #fff !important;
+    color: #111 !important;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .nxa-stat-card,
+  .nxa-agent-card,
+  .nxa-queue-row,
+  .nxa-activity-feed,
+  .nxa-wire-run,
+  .nxa-settings-form {
+    background: #fff;
+    border-color: #d4d4d8;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .nxa-stat-value {
+    color: #111;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .wrap.nexus-admin p,
+  .nxa-queue-meta,
+  .nxa-activity-time,
+  .nxa-agent-meta,
+  .nxa-form-hint {
+    color: #444;
+  }
+}
