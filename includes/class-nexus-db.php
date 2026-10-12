@@ -104,6 +104,8 @@ class Nexus_DB {
                         'budget_action'      => 'stop', // stop | warn
                         'enable_translations' => 1,
                         'translation_langs'  => 'en,es,fr', // codici lingua separati da virgola
+                        // v1.1.2 — Multilingua nativo: pubblica le traduzioni AI come post WP collegati.
+                        'enable_autotranslate_posts' => 0,
                         // v1.0.4 — Scala & Pro: coda lavori (stile Action Scheduler).
                         'enable_queue'       => 0, // 1 = le azioni pesanti passano dalla coda wp_nexus_jobs
                         'queue_batch_size'   => 5, // lavori eseguiti per ogni runner tick

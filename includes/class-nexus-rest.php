@@ -37,6 +37,9 @@
  *   POST   /nexus/v1/redazioni                     body {name, parent, agent_ids[]} crea, risposta {term_id, agents} (v1.1.1)
  *   POST   /nexus/v1/redazioni/{id}                body {name, slug, parent, agent_ids} parziali, risposta {ok, term} (v1.1.1)
  *   DELETE /nexus/v1/redazioni/{id}                risposta {ok, message}: WP riassegna le sub-redazioni alla madre (v1.1.1)
+ *   GET    /nexus/v1/multilang/info                 driver attivo e lingue del sito {driver, default, current, langs} (v1.1.2)
+ *   POST   /nexus/v1/multilang/translate-post       body {article_id, lang}: pubblica la traduzione come post WP {ok, already, lang, post_id, edit_url, permalink} (v1.1.2)
+ *   GET    /nexus/v1/multilang/translations-posts   args: article_id. Traduzioni native {article_id, source_post_id, source_lang, note, translations} (v1.1.2)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -897,6 +900,62 @@ class Nexus_Rest {
                                         'callback'            => array( __CLASS__, 'rest_redazioni_delete' ),
                                         'permission_callback' => $admin_permission,
                                         'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                // v1.1.2: multilingua — info driver e lingue, traduzione come post nativo, stato traduzioni.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/multilang/info',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_multilang_info' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/multilang/translate-post',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_multilang_translate_post' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'article_id'        => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'lang'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/multilang/translations-posts',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_multilang_translations_posts' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'article_id'        => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
                                 ),
                         )
                 );
@@ -3178,5 +3237,275 @@ class Nexus_Rest {
                 }
 
                 return $ordered;
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: MULTILINGUA (v1.1.2)
+         * ======================================================================= */
+
+        /**
+         * GET /multilang/info — driver attivo e lingue del sito (v1.1.2).
+         *
+         * Risposta: {driver, default, current, langs: [{code, name, default}]}.
+         * Fonte unica Nexus_Multilang: con Polylang o WPML attivi i dati vengono
+         * dalle loro API ufficiali, altrimenti dal collegamento interno del plugin.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_multilang_info( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Multilang' ) ) {
+                        return self::err(
+                                'nexus_rest_multilang_missing',
+                                __( 'Il modulo multilingua non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                500
+                        );
+                }
+
+                $default = sanitize_key( (string) Nexus_Multilang::default_lang() );
+                $current = sanitize_key( (string) Nexus_Multilang::current_lang() );
+                $langs   = array();
+
+                foreach ( (array) Nexus_Multilang::site_langs() as $code ) {
+                        $code = sanitize_key( (string) $code );
+                        if ( '' === $code ) {
+                                continue;
+                        }
+                        $langs[] = array(
+                                'code'    => $code,
+                                'name'    => (string) Nexus_Multilang::lang_name( $code ),
+                                'default' => ( $code === $default ),
+                        );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'driver'  => sanitize_key( (string) Nexus_Multilang::driver() ),
+                                'default' => $default,
+                                'current' => $current,
+                                'langs'   => $langs,
+                        )
+                );
+        }
+
+        /**
+         * POST /multilang/translate-post — pubblica la traduzione come post WP (v1.1.2).
+         *
+         * Body: {article_id, lang}. Delega tutto a Nexus_Translate::translate_to_post
+         * (traduzione AI, upsert del post nativo e collegamento al gruppo lingua).
+         * Errori onesti: 400 per le guardie su articolo e lingua, 500 se la
+         * traduzione AI fallisce (messaggio del modulo traduzioni riportato intero).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_multilang_translate_post( $request ) {
+                $article_id = absint( $request->get_param( 'article_id' ) );
+                $lang       = sanitize_key( (string) $request->get_param( 'lang' ) );
+
+                if ( $article_id <= 0 ) {
+                        return self::err( 'nexus_rest_article_id_missing', __( 'Parametro article_id mancante.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( '' === $lang ) {
+                        return self::err( 'nexus_rest_lang_missing', __( 'Parametro lang mancante o non valido.', 'nexus-news-ai' ), 400 );
+                }
+
+                $article = Nexus_DB::get_article( $article_id );
+                if ( ! $article ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                if ( ! class_exists( 'Nexus_Translate' ) || ! method_exists( 'Nexus_Translate', 'translate_to_post' ) ) {
+                        return self::err( 'nexus_rest_translate_missing', __( 'Il modulo traduzioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ), 500 );
+                }
+
+                $result = Nexus_Translate::translate_to_post( $article_id, $lang );
+
+                if ( ! is_array( $result ) ) {
+                        return self::err( 'nexus_rest_translate_failed', __( 'Il modulo traduzioni non ha restituito un risultato valido.', 'nexus-news-ai' ), 500 );
+                }
+
+                if ( empty( $result['ok'] ) ) {
+                        $error = isset( $result['error'] ) ? trim( (string) $result['error'] ) : '';
+                        return self::err(
+                                'nexus_rest_translate_failed',
+                                '' !== $error ? $error : __( 'Traduzione non riuscita per un motivo non specificato dal modulo traduzioni.', 'nexus-news-ai' ),
+                                self::multilang_translate_error_status( $error )
+                        );
+                }
+
+                $post_id  = isset( $result['post_id'] ) ? absint( $result['post_id'] ) : 0;
+                $out_lang = isset( $result['lang'] ) ? sanitize_key( (string) $result['lang'] ) : '';
+                if ( '' === $out_lang ) {
+                        $out_lang = $lang;
+                }
+
+                $links = self::multilang_post_links( $post_id );
+
+                return rest_ensure_response(
+                        array(
+                                'ok'        => true,
+                                'already'   => ! empty( $result['already'] ),
+                                'lang'      => $out_lang,
+                                'post_id'   => $post_id,
+                                'edit_url'  => $links['edit_url'],
+                                'permalink' => $links['permalink'],
+                        )
+                );
+        }
+
+        /**
+         * GET /multilang/translations-posts — traduzioni native di un articolo (v1.1.2).
+         *
+         * Args: article_id. Risposta: {article_id, source_post_id, source_lang,
+         * note, translations: [{lang, post_id, edit_url, permalink, status,
+         * modified, is_source}]}. Articolo senza post WP nativo: source_post_id 0
+         * con nota onesta (risposta 200, non è un errore). Il permalink è
+         * valorizzato solo per i post pubblicati.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_multilang_translations_posts( $request ) {
+                $article_id = absint( $request->get_param( 'article_id' ) );
+
+                if ( $article_id <= 0 ) {
+                        return self::err( 'nexus_rest_article_id_missing', __( 'Parametro article_id mancante.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( ! Nexus_DB::get_article( $article_id ) ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                if ( ! class_exists( 'Nexus_Translate' ) || ! method_exists( 'Nexus_Translate', 'native_post_for_article' ) ) {
+                        return self::err( 'nexus_rest_translate_missing', __( 'Il modulo traduzioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ), 500 );
+                }
+
+                $source_post_id = absint( Nexus_Translate::native_post_for_article( $article_id ) );
+
+                $note         = '';
+                $source_lang  = '';
+                $translations = array();
+
+                if ( $source_post_id <= 0 ) {
+                        $note = __( 'L\'articolo non ha ancora un post WordPress nativo: pubblicalo per attivare le traduzioni come post.', 'nexus-news-ai' );
+                } elseif ( class_exists( 'Nexus_Multilang' ) && method_exists( 'Nexus_Multilang', 'translations_of' ) && method_exists( 'Nexus_Multilang', 'lang_of_post' ) ) {
+                        $source_lang = sanitize_key( (string) Nexus_Multilang::lang_of_post( $source_post_id ) );
+
+                        $map = (array) Nexus_Multilang::translations_of( $source_post_id );
+                        ksort( $map );
+
+                        // Prima la riga sorgente, poi le traduzioni in ordine di codice lingua.
+                        foreach ( array( true, false ) as $want_source ) {
+                                foreach ( $map as $code => $pid ) {
+                                        $is_source = ( absint( $pid ) === $source_post_id );
+                                        if ( $is_source !== $want_source ) {
+                                                continue;
+                                        }
+                                        $translations[] = self::multilang_translation_row( $code, absint( $pid ), $is_source );
+                                }
+                        }
+                } else {
+                        $note = __( 'Il modulo multilingua non è disponibile: impossibile elencare le traduzioni collegate.', 'nexus-news-ai' );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'article_id'     => $article_id,
+                                'source_post_id' => $source_post_id,
+                                'source_lang'    => $source_lang,
+                                'note'           => $note,
+                                'translations'   => $translations,
+                        )
+                );
+        }
+
+        /**
+         * Link di modifica e permalink pubblico di un post WP (v1.1.2).
+         *
+         * Il permalink è valorizzato SOLO se il post è pubblicato: bozze e
+         * stati intermedi non hanno un URL pubblico stabile.
+         *
+         * @param int $post_id Post WP.
+         * @return array {edit_url: string, permalink: string}
+         */
+        private static function multilang_post_links( $post_id ) {
+                $post_id = absint( $post_id );
+
+                $edit_url = '';
+                if ( $post_id > 0 && function_exists( 'admin_url' ) ) {
+                        $edit_url = esc_url_raw( admin_url( 'post.php?post=' . $post_id . '&action=edit' ) );
+                }
+
+                $permalink = '';
+                if ( $post_id > 0 && function_exists( 'get_permalink' ) && function_exists( 'get_post_status' ) && 'publish' === get_post_status( $post_id ) ) {
+                        $link = get_permalink( $post_id );
+                        if ( is_string( $link ) && '' !== $link ) {
+                                $permalink = esc_url_raw( $link );
+                        }
+                }
+
+                return array(
+                        'edit_url'  => $edit_url,
+                        'permalink' => $permalink,
+                );
+        }
+
+        /**
+         * Riga di stato per un post della catena di traduzione (v1.1.2).
+         *
+         * @param string $lang      Codice lingua.
+         * @param int    $post_id   Post WP.
+         * @param bool   $is_source True se il post è la sorgente del gruppo.
+         * @return array
+         */
+        private static function multilang_translation_row( $lang, $post_id, $is_source ) {
+                $post   = ( $post_id > 0 && function_exists( 'get_post' ) ) ? get_post( $post_id ) : null;
+                $status = ( $post instanceof WP_Post && function_exists( 'get_post_status' ) ) ? get_post_status( $post ) : '';
+
+                $modified = '';
+                if ( $post instanceof WP_Post && function_exists( 'get_the_modified_date' ) ) {
+                        $date     = get_the_modified_date( 'c', $post );
+                        $modified = is_string( $date ) ? $date : '';
+                }
+
+                $links = self::multilang_post_links( $post_id );
+
+                return array(
+                        'lang'      => sanitize_key( (string) $lang ),
+                        'post_id'   => $post_id,
+                        'edit_url'  => $links['edit_url'],
+                        'permalink' => $links['permalink'],
+                        'status'    => sanitize_key( (string) $status ),
+                        'modified'  => $modified,
+                        'is_source' => (bool) $is_source,
+                );
+        }
+
+        /**
+         * Status HTTP onesto per un errore restituito da translate_to_post.
+         *
+         * Le guardie su articolo e lingua (nessun post WP nativo, lingua uguale
+         * alla sorgente, traduzioni disattivate) sono condizioni richiedibili
+         * dal client: 400. Gli altri casi (AI fallita, database) sono interni: 500.
+         * La classificazione legge il messaggio del modulo, mai il suo funzionamento.
+         *
+         * @param string $error Messaggio di errore del modulo traduzioni.
+         * @return int
+         */
+        private static function multilang_translate_error_status( $error ) {
+                $error  = (string) $error;
+                $guards = array( 'WordPress nativo', 'in questa lingua', 'disattivate', 'non attive' );
+
+                foreach ( $guards as $needle ) {
+                        if ( '' !== $needle && false !== stripos( $error, $needle ) ) {
+                                return 400;
+                        }
+                }
+
+                return 500;
         }
 }

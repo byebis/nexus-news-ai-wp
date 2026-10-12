@@ -96,6 +96,22 @@
  *   flusso WordPress bozza, revisione, pubblicato. Nessun name o id
  *   rinominato: collectSettings (admin.js) resta valido.
  *
+ * - CONTRATTO v1.1.2 ("Multilingua nativo", T-06): nel pannello "Redazione
+ *   intelligente" (gruppo "Intelligenza artificiale") nuova sub-sezione di
+ *   righe "Multilingua — post tradotti nativi": badge testuale del driver di
+ *   lingua (Nexus_Multilang::driver(), guardia class_exists: degrada senza
+ *   fatal), elenco delle lingue del sito con marcatura della predefinita
+ *   (site_langs + lang_name + default_lang, tutto esc_html), 1 toggle
+ *   checkbox value="1" (enable_autotranslate_posts, id
+ *   nxa-enable-autotranslate-posts, checked da get_settings con accesso
+ *   difensivo isset) e nota onesta sui contenuti nativi. La checkbox e'
+ *   serializzata 0 o 1 da admin.js v1.1.2 nel blocco intelFlags (contratto
+ *   T-03) e la chiave esiste gia' in Nexus_DB::default_settings(). Le righe
+ *   informative sono renderizzate server-side a ogni caricamento pagina
+ *   (nessuna REST). Stile locale in <style> di coda: SOLO classi prefisso
+ *   .nxa-ml- via token design system (stesso pattern delle viste jobs.php
+ *   e tools.php).
+ *
  * @package Nexus_News_AI
  */
 
@@ -103,6 +119,47 @@ defined( 'ABSPATH' ) || exit;
 
 $settings         = Nexus_DB::get_settings();
 $active_platforms = array_filter( array_map( 'trim', explode( ',', (string) $settings['social_platforms'] ) ) );
+
+/* Sub-sezione v1.1.2 "Multilingua — post tradotti nativi": valori dal driver
+ * Nexus_Multilang con guardia class_exists (mai fatale, degradazione onesta).
+ * La chiave enable_autotranslate_posts esiste gia' in
+ * Nexus_DB::default_settings(): accesso difensivo con isset per robustezza. */
+$ml_on      = class_exists( 'Nexus_Multilang' );
+$ml_driver  = $ml_on ? Nexus_Multilang::driver() : 'nexus';
+$ml_default = $ml_on ? Nexus_Multilang::default_lang() : '';
+
+$ml_lang_labels = array();
+if ( $ml_on ) {
+        foreach ( Nexus_Multilang::site_langs() as $ml_code ) {
+                $ml_code = sanitize_key( (string) $ml_code );
+                if ( '' === $ml_code ) {
+                        continue;
+                }
+                $ml_label = (string) Nexus_Multilang::lang_name( $ml_code );
+                if ( $ml_code === $ml_default ) {
+                        $ml_label .= ' (' . __( 'predefinita', 'nexus-news-ai' ) . ')';
+                }
+                $ml_lang_labels[] = $ml_label;
+        }
+}
+
+if ( $ml_on && 'polylang' === $ml_driver ) {
+        $ml_driver_badge = __( 'Polylang è attivo: le associazioni tra lingue usano Polylang.', 'nexus-news-ai' );
+} elseif ( $ml_on && 'wpml' === $ml_driver ) {
+        $ml_driver_badge = __( 'WPML è attivo: le associazioni tra lingue usano WPML.', 'nexus-news-ai' );
+} elseif ( $ml_on ) {
+        $ml_driver_badge = __( 'Collegamento interno Nexus: nessun plugin di lingua attivo (compatibile con Polylang e WPML se li installerai).', 'nexus-news-ai' );
+} else {
+        $ml_driver_badge = __( 'Il modulo multilingua non risulta caricato: stato non verificabile.', 'nexus-news-ai' );
+}
+
+if ( $ml_on ) {
+        $ml_langs_text = ! empty( $ml_lang_labels ) ? implode( ', ', $ml_lang_labels ) : __( 'Nessuna lingua attiva rilevata.', 'nexus-news-ai' );
+} else {
+        $ml_langs_text = __( 'Elenco non disponibile: il modulo multilingua non risulta caricato.', 'nexus-news-ai' );
+}
+
+$ml_autotranslate = isset( $settings['enable_autotranslate_posts'] ) ? (int) $settings['enable_autotranslate_posts'] : 0;
 
 $social_platforms = array(
         'blog'      => __( 'Blog (WordPress)', 'nexus-news-ai' ),
@@ -324,6 +381,38 @@ $social_platforms = array(
                                                         <td>
                                                                 <input type="text" name="translation_langs" id="nxa-translation-langs" value="<?php echo esc_attr( $settings['translation_langs'] ); ?>" placeholder="en,es,fr" class="regular-text code" />
                                                                 <p class="description"><?php esc_html_e( 'Codici separati da virgola. Supportati: en, es, fr, de, pt, ar, zh, ja.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <?php /* Sub-sezione v1.1.2 "Multilingua — post tradotti nativi": righe informative dal driver di lingua + toggle enable_autotranslate_posts (serializzato dal blocco intelFlags di admin.js, contratto T-03). */ ?>
+                                                <tr class="nxa-ml-head">
+                                                        <th colspan="2"><?php esc_html_e( 'Multilingua — post tradotti nativi', 'nexus-news-ai' ); ?></th>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Driver di lingua', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <p><span class="nxa-ml-badge"><?php echo esc_html( $ml_driver_badge ); ?></span></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Lingue del sito', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <p class="description"><?php echo esc_html( $ml_langs_text ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Traduzioni come post', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-enable-autotranslate-posts">
+                                                                        <input type="checkbox" name="enable_autotranslate_posts" id="nxa-enable-autotranslate-posts" value="1" <?php checked( $ml_autotranslate, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Pubblica automaticamente le traduzioni come post', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Al publish di un articolo, per ogni lingua attiva viene creato il post tradotto collegato (traduzioni AI attive richieste).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Nota', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <p class="description"><?php esc_html_e( 'I post tradotti restano contenuti nativi di WordPress: sopravvivono al plugin. Le associazioni lingua con Polylang o WPML si gestiscono dalle loro interfacce.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>
@@ -768,6 +857,27 @@ $social_platforms = array(
                 </p>
         </form>
 </div>
+<style>
+  /* Stile locale della vista Impostazioni (v1.1.2): sub-sezione "Multilingua —
+     post tradotti nativi". SOLO classi prefisso .nxa-ml- (pattern viste
+     jobs.php e tools.php): nessun colore fisso, tutto via token del design
+     system (tema chiaro di default, scuro via body.nexus-theme-dark). */
+  .nxa-ml-head th {
+    padding-top: 26px;
+    font-weight: 600;
+  }
+  .nxa-ml-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--nxa-border);
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+</style>
 <script>
 ( function () {
         'use strict';

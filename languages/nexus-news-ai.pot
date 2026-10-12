@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.1.1\n"
+"Project-Id-Version: Nexus News AI 1.1.2\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -433,3 +433,174 @@ msgstr ""
 #: public/class-nexus-shortcodes.php
 msgid "Redazione non trovata: %s"
 msgstr ""
+
+# v1.1.2 — Multilingua nativo (traduzioni come post WP collegati: translate, REST multilang, switcher, settings, dashboard)
+#: includes/class-nexus-translate.php
+msgid "Articolo o lingua non validi."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Servizio multilingua non disponibile al momento."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "L'articolo non ha un post WordPress nativo: pubblica o migra l'articolo prima."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "L'articolo è già in questa lingua."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Traduzione non riuscita: titolo tradotto mancante."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito: ambiente WordPress incompleto."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito: %s"
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita: ambiente WordPress incompleto."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita: %s"
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo multilingua non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro lang mancante o non valido."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo traduzioni non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo traduzioni non ha restituito un risultato valido."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Traduzione non riuscita per un motivo non specificato dal modulo traduzioni."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "L'articolo non ha ancora un post WordPress nativo: pubblicalo per attivare le traduzioni come post."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo multilingua non è disponibile: impossibile elencare le traduzioni collegate."
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Lingua non trovata: %s"
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Traduzione non disponibile"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "predefinita"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Polylang è attivo: le associazioni tra lingue usano Polylang."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "WPML è attivo: le associazioni tra lingue usano WPML."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Collegamento interno Nexus: nessun plugin di lingua attivo (compatibile con Polylang e WPML se li installerai)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Il modulo multilingua non risulta caricato: stato non verificabile."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nessuna lingua attiva rilevata."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Elenco non disponibile: il modulo multilingua non risulta caricato."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Multilingua — post tradotti nativi"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Driver di lingua"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lingue del sito"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Traduzioni come post"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblica automaticamente le traduzioni come post"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Al publish di un articolo, per ogni lingua attiva viene creato il post tradotto collegato (traduzioni AI attive richieste)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nota"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "I post tradotti restano contenuti nativi di WordPress: sopravvivono al plugin. Le associazioni lingua con Polylang o WPML si gestiscono dalle loro interfacce."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Collegamento interno Nexus."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Associazioni gestite da Polylang."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Associazioni gestite da WPML."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Multilingua"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Nessun post tradotto ancora."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Apri la lista Articoli."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "%1$s — %2$s articolo"
+msgid_plural "%1$s — %2$s articoli"
+msgstr[0] ""
+msgstr[1] ""

@@ -7,8 +7,11 @@
  *   [nexus_magazine redazione="sport"]  — variante filtrata sul ramo COMPLETO della
  *                                         redazione (v1.1.1: sub-redazioni incluse,
  *                                         semantica nativa include_children)
- *   [nexus_articles category="" limit="9" layout="grid|list" redazione=""]
+ *   [nexus_magazine lang="en"]          — variante filtrata per lingua (v1.1.2,
+ *                                         driver nexus; con Polylang/WPML delegata)
+ *   [nexus_articles category="" limit="9" layout="grid|list" redazione="" lang=""]
  *   [nexus_wire limit="10"]             — Redazione Collettiva (ultime esecuzioni)
+ *   [nexus_lang_switcher]               — selettore lingue del sito (v1.1.2)
  *
  * NOTA v1.1.1 — attributo redazione (slug o nome, anche parziale: basta lo slug
  * della redazione madre): risolve il termine con get_term_by slug e poi nome
@@ -20,6 +23,35 @@
  * nexus-v1 public-articles che non accetta il parametro redazione, quindi
  * verrebbero mostrati articoli fuori dal ramo (niente percorsi disonesti).
  * Senza l'attributo il comportamento e' identico a prima (zero regressioni).
+ *
+ * NOTA v1.1.2 — multilingua (driver attivo da Nexus_Multilang: polylang, wpml o
+ * collegamento interno nexus):
+ *   - nuovo shortcode [nexus_lang_switcher]: elenco lingue del sito. Su un
+ *     singolo articolo di tipo post i link puntano al permalink della
+ *     traduzione PUBBLICATA (Nexus_Multilang::translations_of); una lingua
+ *     senza traduzione pubblica diventa uno span non cliccabile con title
+ *     onesto "Traduzione non disponibile". Fuori dal singular il link e' la
+ *     home con query var ?lang={code}: per il driver nexus la variabile viene
+ *     consumata dal filtro pre_get_posts di questa classe; con Polylang o
+ *     WPML lo shortcode mostra comunque l'elenco lingue del driver, ma il
+ *     comportamento dei link sugli archivi resta ai plugin (usare il loro
+ *     switcher se preferiscono altri formati di URL). Senza la classe
+ *     Nexus_Multilang l'output dello switcher e' vuoto: onesto e mai fatale.
+ *   - nuovo attributo lang su [nexus_magazine] e [nexus_articles] (driver
+ *     nexus): risolve i post WordPress della lingua (meta _nexus_lang; i post
+ *     SENZA meta sono della lingua predefinita del sito) e filtra le righe
+ *     articoli tramite la colonna wp_post_id, stesso pattern del filtro
+ *     redazione v1.1.1. Combinabile con redazione (intersezione dei due
+ *     insiemi di post ID). Lingua richiesta inesistente → messaggio onesto
+ *     "Lingua non trovata"; con il filtro attivo barra categorie e bottone
+ *     "Carica altri" NON vengono stampati (stesso motivo della redazione: il
+ *     refetch client passa dalla REST nexus-v1 public-articles che non porta
+ *     il parametro lang). Con Polylang/WPML l'attributo e' accettato e
+ *     ignorato: i contenuti sono gia' filtrati per lingua corrente dai plugin.
+ *   - query var 'lang' registrata su query_vars e filtro pre_get_posts della
+ *     main query (solo driver nexus): solo front-end, mai admin, solo listing
+ *     di post (home, archivi e ricerca con post_type nativo o non impostato);
+ *     mai singular, pagine o archivi di altri tipi di post.
  *
  * =====================================================================================
  * NOTA-INTEGRAZIONE (per public/js/nexus-public.js e public/css/nexus-public.css)
@@ -50,6 +82,12 @@
  *                                    claim → link fonte, max 8 voci; generato da
  *                                    Nexus_Shortcodes::citations_block() nella card
  *                                    e nel template single sotto il box fonti)
+ *  11. Selettore lingua (v1.1.2) ... ul.nexus-lang-switcher con li.nexus-lang-item
+ *                                    [nexus-lang-current] data-lang="{codice lingua}";
+ *                                    lingua senza traduzione pubblica = span con
+ *                                    classe nexus-lang-missing e title onesto.
+ *                                    Solo CSS (sezione 16 di nexus-public.css):
+ *                                    nessun comportamento JS previsto.
  *
  * NOTA v1.0.3: il modal articolo è costruito lato JS (nexus-public.js, fuori
  * scope del frontend PHP). Le card client-side (cardHTML) replicano render_card():
@@ -109,7 +147,7 @@ final class Nexus_Shortcodes {
         private function __construct() {}
 
         /**
-         * Bootstrap: registra shortcode + hook asset.
+         * Bootstrap: registra shortcode + hook asset + hook multilingua (v1.1.2).
          *
          * @return void
          */
@@ -117,8 +155,15 @@ final class Nexus_Shortcodes {
                 add_shortcode( 'nexus_magazine', array( __CLASS__, 'render_magazine' ) );
                 add_shortcode( 'nexus_articles', array( __CLASS__, 'render_articles' ) );
                 add_shortcode( 'nexus_wire', array( __CLASS__, 'render_wire' ) );
+                add_shortcode( 'nexus_lang_switcher', array( __CLASS__, 'render_lang_switcher' ) );
 
                 add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_public' ) );
+
+                /* v1.1.2 multilingua: query var lang e filtro lingua della main
+                 * query, entrambi attivi SOLO con il driver nexus. Con Polylang
+                 * o WPML i ganci restano inattivi: i plugin filtrano gia' da soli. */
+                add_filter( 'query_vars', array( __CLASS__, 'register_lang_query_var' ) );
+                add_action( 'pre_get_posts', array( __CLASS__, 'filter_main_query_by_lang' ) );
         }
 
         /* ========================= ASSET ========================= */
@@ -182,7 +227,17 @@ final class Nexus_Shortcodes {
          * filtro attivo barra categorie e load-more restano fuori (vedi nota
          * v1.1.1 in testa al file).
          *
-         * @param array|string $atts Attributi shortcode. Supportati: per_page (default 12), redazione (default '').
+         * Da v1.1.2 supporta l'attributo lang (driver nexus): filtra la griglia
+         * sugli articoli nella lingua richiesta (post WordPress con meta
+         * _nexus_lang; i post SENZA meta sono della lingua predefinita del
+         * sito), combinabile con redazione (intersezione dei due insiemi di
+         * post ID). Lingua inesistente → messaggio onesto "Lingua non trovata";
+         * con il filtro attivo barra categorie e load-more restano fuori,
+         * stesso motivo della redazione. Con Polylang o WPML l'attributo e'
+         * accettato e ignorato: i contenuti sono gia' filtrati per lingua
+         * corrente dai plugin (nota v1.1.2 in testa al file).
+         *
+         * @param array|string $atts Attributi shortcode. Supportati: per_page (default 12), redazione (default ''), lang (default '').
          * @return string
          */
         public static function render_magazine( $atts = array() ) {
@@ -190,6 +245,7 @@ final class Nexus_Shortcodes {
                         array(
                                 'per_page'  => 12,
                                 'redazione' => '',
+                                'lang'      => '',
                         ),
                         (array) $atts,
                         'nexus_magazine'
@@ -211,6 +267,22 @@ final class Nexus_Shortcodes {
                                 . '</p></div>';
                 }
 
+                /* v1.1.2: filtro lingua (driver nexus). Con Polylang/WPML i contenuti
+                 * sono gia' filtrati per lingua corrente dai plugin: attributo
+                 * accettato e senza effetto qui (nota v1.1.2 in testa al file). */
+                $lang_state = self::lang_filter_state( $atts['lang'] );
+
+                /* Lingua richiesta inesistente: output onesto, nessun contenuto inventato. */
+                if ( $lang_state['unknown'] ) {
+                        return '<div class="nxa-magazine" data-nxa="magazine"><p class="nxa-empty">'
+                                . esc_html( sprintf(
+                                        /* translators: %s: codice lingua richiesto. */
+                                        __( 'Lingua non trovata: %s', 'nexus-news-ai' ),
+                                        $lang_state['lang']
+                                ) )
+                                . '</p></div>';
+                }
+
                 self::enqueue_assets();
 
                 $settings = Nexus_DB::get_settings();
@@ -227,8 +299,17 @@ final class Nexus_Shortcodes {
                 if ( $redazione_term instanceof WP_Term ) {
                         /* Ramo completo della redazione (sub-redazioni incluse). */
                         $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
+                        if ( $lang_state['active'] ) {
+                                /* Intersezione ramo redazione e lingua richiesta (v1.1.2). */
+                                $branch_post_ids = array_values( array_intersect( $branch_post_ids, $lang_state['post_ids'] ) );
+                        }
                         $published_count = self::redazione_count_articles( $branch_post_ids );
                         $articles        = self::redazione_articles( $branch_post_ids, $per_page );
+                } elseif ( $lang_state['active'] ) {
+                        /* Filtro lingua senza redazione (v1.1.2): gli helper per post ID
+                         * del filtro redazione sono generici e vengono riusati qui. */
+                        $published_count = self::redazione_count_articles( $lang_state['post_ids'] );
+                        $articles        = self::redazione_articles( $lang_state['post_ids'], $per_page );
                 } else {
                         $published_count = Nexus_DB::count_articles( array( 'status' => 'published' ) );
                         $articles        = Nexus_DB::articles(
@@ -261,10 +342,11 @@ final class Nexus_Shortcodes {
                 $out .= '</section>';
 
                 /* ---------- Barra categorie ---------- */
-                /* Con filtro redazione la barra resta fuori: il refetch client-side
-                 * per categoria passa dalla REST pubblica senza parametro redazione
-                 * e sostituirebbe le card del ramo con articoli fuori dal ramo. */
-                if ( ! $redazione_term instanceof WP_Term ) {
+                /* Con filtro redazione o lingua la barra resta fuori: il refetch
+                 * client-side per categoria passa dalla REST pubblica senza i
+                 * parametri redazione/lang e sostituirebbe le card filtrate con
+                 * articoli fuori dal filtro (niente percorsi disonesti). */
+                if ( ! $redazione_term instanceof WP_Term && ! $lang_state['active'] ) {
                         $out .= '<nav class="nxa-category-bar" aria-label="' . esc_attr__( 'Filtra articoli per categoria', 'nexus-news-ai' ) . '">';
                         $out .= '<button type="button" class="nxa-cat-btn is-active" data-category="">' . esc_html__( 'Tutte', 'nexus-news-ai' ) . '</button>';
                         foreach ( $active_agents as $agent ) {
@@ -292,10 +374,11 @@ final class Nexus_Shortcodes {
                 $out .= '</div>';
 
                 /* ---------- Carica altri ---------- */
-                /* Con filtro redazione il bottone resta fuori: la paginazione JS
-                 * chiama la REST pubblica che non accetta il parametro redazione,
-                 * quindi caricherebbe articoli fuori dal ramo. */
-                if ( ! $redazione_term instanceof WP_Term && $published_count > $per_page ) {
+                /* Con filtro redazione o lingua il bottone resta fuori: la
+                 * paginazione JS chiama la REST pubblica che non accetta i
+                 * parametri redazione/lang, quindi caricherebbe articoli
+                 * fuori dal filtro attivo. */
+                if ( ! $redazione_term instanceof WP_Term && ! $lang_state['active'] && $published_count > $per_page ) {
                         $out .= '<div class="nxa-load-more-wrap">';
                         $out .= '<button type="button" class="nxa-btn-load-more" data-nxa="load-more" data-page="2" data-per-page="' . esc_attr( $per_page ) . '">' . esc_html__( 'Carica altri articoli', 'nexus-news-ai' ) . '</button>';
                         $out .= '</div>';
@@ -530,13 +613,17 @@ final class Nexus_Shortcodes {
          * Griglia o lista semplice di card su articoli pubblicati.
          *
          * Attributi: category (default ''), limit (default 9, max 24),
-         * layout (grid|list) e, da v1.1.1, redazione (default '', slug o nome):
-         * filtra sul ramo completo della redazione, sub-redazioni incluse
-         * (semantica nativa include_children). Esempio:
+         * layout (grid|list), redazione (default '', slug o nome, v1.1.1) e
+         * lang (default '', v1.1.2, driver nexus): filtra sul ramo completo
+         * della redazione (semantica nativa include_children) e/o sulla lingua
+         * richiesta (meta _nexus_lang sui post WordPress; i post SENZA meta
+         * sono della lingua predefinita). Esempi:
          * [nexus_articles redazione="sport" limit="6"] mostra gli articoli di
-         * Sport e di Calcio, Basket, F1. Se la redazione non esiste l'output
-         * e' un messaggio onesto, senza contenuto inventato. Senza l'attributo
-         * redazione il comportamento e' identico a prima (zero regressioni).
+         * Sport e di Calcio, Basket, F1; [nexus_articles lang="en"] mostra gli
+         * articoli in inglese. Redazione o lingua inesistenti → messaggio
+         * onesto, senza contenuto inventato. Con Polylang o WPML l'attributo
+         * lang e' accettato e ignorato: i contenuti sono gia' filtrati per
+         * lingua corrente dai plugin (nota v1.1.2 in testa al file).
          *
          * @param array|string $atts Attributi.
          * @return string
@@ -548,6 +635,7 @@ final class Nexus_Shortcodes {
                                 'limit'     => 9,
                                 'layout'    => 'grid',
                                 'redazione' => '',
+                                'lang'      => '',
                         ),
                         (array) $atts,
                         'nexus_articles'
@@ -572,12 +660,34 @@ final class Nexus_Shortcodes {
                                 . '</p></div>';
                 }
 
+                /* v1.1.2: filtro lingua (driver nexus), stesso stato del magazine. */
+                $lang_state = self::lang_filter_state( $atts['lang'] );
+
+                /* Lingua richiesta inesistente: output onesto, nessun contenuto inventato. */
+                if ( $lang_state['unknown'] ) {
+                        return '<div class="nxa-articles" data-nxa="articles"><p class="nxa-empty">'
+                                . esc_html( sprintf(
+                                        /* translators: %s: codice lingua richiesto. */
+                                        __( 'Lingua non trovata: %s', 'nexus-news-ai' ),
+                                        $lang_state['lang']
+                                ) )
+                                . '</p></div>';
+                }
+
                 self::enqueue_assets();
 
                 if ( $redazione_term instanceof WP_Term ) {
                         /* Ramo completo della redazione (sub-redazioni incluse). */
                         $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
-                        $articles        = self::redazione_articles( $branch_post_ids, $limit );
+                        if ( $lang_state['active'] ) {
+                                /* Intersezione ramo redazione e lingua richiesta (v1.1.2). */
+                                $branch_post_ids = array_values( array_intersect( $branch_post_ids, $lang_state['post_ids'] ) );
+                        }
+                        $articles = self::redazione_articles( $branch_post_ids, $limit );
+                } elseif ( $lang_state['active'] ) {
+                        /* Filtro lingua senza redazione (v1.1.2): gli helper per post ID
+                         * del filtro redazione sono generici e vengono riusati qui. */
+                        $articles = self::redazione_articles( $lang_state['post_ids'], $limit );
                 } else {
                         $args = array(
                                 'status'   => 'published',
@@ -706,6 +816,194 @@ final class Nexus_Shortcodes {
                 $out .= '</section>';
 
                 return $out;
+        }
+
+        /* ========================= [nexus_lang_switcher] (v1.1.2) ========================= */
+
+        /**
+         * Selettore lingue del sito (v1.1.2): elenco lingue del driver attivo
+         * di Nexus_Multilang (Polylang, WPML o collegamento interno nexus).
+         *
+         * Markup: ul.nexus-lang-switcher con li.nexus-lang-item (data-lang =
+         * codice lingua); la lingua corrente porta la classe nexus-lang-current
+         * e aria-current sul link. Su un singolo articolo di tipo post i link
+         * puntano al permalink della traduzione PUBBLICATA (Nexus_Multilang::
+         * translations_of): una lingua senza traduzione pubblica diventa uno
+         * span non cliccabile con title onesto "Traduzione non disponibile"
+         * (niente percorsi rotti verso bozze). Fuori dal singular il link e'
+         * la home con query var ?lang={code}: per il driver nexus la variabile
+         * e' consumata da filter_main_query_by_lang(); con Polylang o WPML lo
+         * shortcode mostra comunque l'elenco lingue del driver, ma il
+         * comportamento dei link sugli archivi resta ai plugin (usare il loro
+         * switcher se preferiscono altri formati di URL, nota in testa al file).
+         * Senza la classe Nexus_Multilang l'output e' vuoto: onesto, mai fatale.
+         *
+         * @param array|string $atts Attributi shortcode (nessuno supportato).
+         * @return string
+         */
+        public static function render_lang_switcher( $atts = array() ) {
+                /* Guard: senza il modulo multilingua output vuoto onesto. */
+                if ( ! class_exists( 'Nexus_Multilang' ) ) {
+                        return '';
+                }
+
+                /* Punto di estensione: nessun attributo supportato al momento. */
+                shortcode_atts( array(), (array) $atts, 'nexus_lang_switcher' );
+
+                $langs = Nexus_Multilang::site_langs();
+                $langs = is_array( $langs ) ? $langs : array();
+                if ( empty( $langs ) ) {
+                        return '';
+                }
+
+                self::enqueue_assets();
+
+                /* Su un singolo articolo la lingua corrente e' quella del post stesso. */
+                $post_id = ( is_singular( 'post' ) ) ? absint( get_queried_object_id() ) : 0;
+                $current = ( $post_id > 0 ) ? Nexus_Multilang::lang_of_post( $post_id ) : Nexus_Multilang::current_lang();
+
+                /* Traduzioni del post corrente (mappa codice lingua - post ID, includo il post stesso). */
+                $translations = ( $post_id > 0 ) ? Nexus_Multilang::translations_of( $post_id ) : array();
+                $translations = is_array( $translations ) ? $translations : array();
+
+                $out  = '';
+                $out .= '<ul class="nexus-lang-switcher">';
+
+                foreach ( $langs as $lang ) {
+                        $lang = sanitize_key( (string) $lang );
+                        if ( '' === $lang ) {
+                                continue;
+                        }
+
+                        $is_current = ( $lang === $current );
+                        $classes    = 'nexus-lang-item' . ( $is_current ? ' nexus-lang-current' : '' );
+
+                        $out .= '<li class="' . esc_attr( $classes ) . '" data-lang="' . esc_attr( $lang ) . '">';
+
+                        /* URL della lingua: permalink della traduzione pubblicata
+                         * (singular) oppure home con query var lang (listing e archivi). */
+                        $url = '';
+                        if ( $post_id > 0 ) {
+                                $pid = isset( $translations[ $lang ] ) ? absint( $translations[ $lang ] ) : 0;
+                                if ( $pid > 0 && get_post( $pid ) instanceof WP_Post && 'publish' === get_post_status( $pid ) ) {
+                                        $permalink = get_permalink( $pid );
+                                        if ( is_string( $permalink ) && '' !== $permalink ) {
+                                                $url = $permalink;
+                                        }
+                                }
+                        } else {
+                                /* Driver nexus: la query var lang e' consumata dal filtro
+                                 * pre_get_posts di questa classe. Polylang e WPML gestiscono
+                                 * gli URL degli archivi a modo loro: qui il link resta la
+                                 * home con la query var, il loro switcher ufficiale puo'
+                                 * essere usato in alternativa (nota in testa al file). */
+                                $url = add_query_arg( 'lang', $lang, home_url( '/' ) );
+                        }
+
+                        if ( '' !== $url ) {
+                                $out .= '<a href="' . esc_url( $url ) . '"' . ( $is_current ? ' aria-current="true"' : '' ) . '>' . esc_html( Nexus_Multilang::lang_name( $lang ) ) . '</a>';
+                        } else {
+                                $out .= '<span class="nexus-lang-missing" title="' . esc_attr__( 'Traduzione non disponibile', 'nexus-news-ai' ) . '">' . esc_html( Nexus_Multilang::lang_name( $lang ) ) . '</span>';
+                        }
+
+                        $out .= '</li>';
+                }
+
+                $out .= '</ul>';
+
+                return $out;
+        }
+
+        /* ========================= Filtro lingua main query (v1.1.2) ========================= */
+
+        /**
+         * Registra la query var pubblica 'lang' (v1.1.2, solo driver nexus).
+         *
+         * Senza la registrazione ?lang=en non arriverebbe alla main query di
+         * WordPress. Con Polylang o WPML la variabile la gestiscono i plugin:
+         * nessuna registrazione (se fosse gia' presente resta intatta).
+         *
+         * @param array $vars Query var pubbliche.
+         * @return array
+         */
+        public static function register_lang_query_var( $vars ) {
+                if ( class_exists( 'Nexus_Multilang' ) && 'nexus' === Nexus_Multilang::driver() && ! in_array( 'lang', (array) $vars, true ) ) {
+                        $vars[] = 'lang';
+                }
+
+                return $vars;
+        }
+
+        /**
+         * Filtro lingua della main query (v1.1.2, solo driver nexus).
+         *
+         * pre_get_posts: solo front-end, solo main query, MAI admin. La query
+         * var lang viene sanificata con sanitize_key e accettata solo se
+         * presente tra le lingue del sito (Nexus_Multilang::site_langs()).
+         * Il filtro si applica ai listing di post (home, archivi e ricerca con
+         * post_type nativo o non impostato): mai a singular, pagine o archivi
+         * di altri tipi di post. Con Polylang o WPML nessun intervento: i
+         * plugin filtrano gia' da soli.
+         *
+         * Clausola meta (v. lang_meta_clauses): i post SENZA meta _nexus_lang
+         * sono nella lingua predefinita del sito, quindi per la lingua
+         * predefinita la meta_query e' relation OR tra NOT EXISTS e valore
+         * = lang; per le altre lingue basta la clausola "=" lang (altrimenti
+         * i post della lingua predefinita finirebbero in ogni archivio). La
+         * clausola si APPENDA a un eventuale meta_query preesistente senza
+         * sovrascriverne la relation (stesso pattern del filtro redazione 1.1.1).
+         *
+         * @param WP_Query $query Query corrente.
+         * @return void
+         */
+        public static function filter_main_query_by_lang( $query ) {
+                if ( is_admin() || ! $query->is_main_query() ) {
+                        return;
+                }
+
+                if ( ! class_exists( 'Nexus_Multilang' ) || 'nexus' !== Nexus_Multilang::driver() ) {
+                        return;
+                }
+
+                $lang = sanitize_key( (string) $query->get( 'lang' ) );
+                if ( '' === $lang || ! in_array( $lang, Nexus_Multilang::site_langs(), true ) ) {
+                        return;
+                }
+
+                /* Solo listing di post: singular, pagine e altri post type restano fuori. */
+                $post_type = $query->get( 'post_type' );
+                if ( '' !== $post_type && 'post' !== $post_type ) {
+                        return;
+                }
+                if ( ! ( $query->is_home() || $query->is_archive() || $query->is_search() ) ) {
+                        return;
+                }
+
+                $clauses = self::lang_meta_clauses( $lang );
+                if ( empty( $clauses ) ) {
+                        return;
+                }
+
+                /* Merge attento: la clausola lingua si APPENDA all'eventuale
+                 * meta_query esistente, senza sovrascriverne la relation. */
+                $meta_query = $query->get( 'meta_query' );
+                $meta_query = is_array( $meta_query ) ? $meta_query : array();
+
+                if ( empty( $meta_query ) ) {
+                        $meta_query = $clauses;
+                } elseif ( isset( $meta_query['key'] ) || isset( $meta_query['value'] ) ) {
+                        /* Clausola singola piatta: incapsulata prima dell'append. */
+                        $flat                   = $meta_query;
+                        $meta_query             = array( $flat, $clauses );
+                        $meta_query['relation'] = 'AND';
+                } else {
+                        $meta_query[] = $clauses;
+                        if ( count( $meta_query ) > 1 && empty( $meta_query['relation'] ) ) {
+                                $meta_query['relation'] = 'AND';
+                        }
+                }
+
+                $query->set( 'meta_query', $meta_query );
         }
 
         /* ========================= Helpers privati ========================= */
@@ -871,7 +1169,8 @@ final class Nexus_Shortcodes {
         }
 
         /**
-         * Righe articoli Nexus collegate ai post del ramo redazione (v1.1.1).
+         * Righe articoli Nexus collegate a un insieme di post WordPress (v1.1.1;
+         * da v1.1.2 helper generico riusato anche dal filtro lingua).
          *
          * Le righe della tabella articoli Nexus puntano al post WordPress
          * (nativo o CPT legacy) tramite la colonna wp_post_id: il filtro per
@@ -911,9 +1210,10 @@ final class Nexus_Shortcodes {
         }
 
         /**
-         * Conta le righe articoli Nexus collegate ai post del ramo (v1.1.1).
+         * Conta le righe articoli Nexus collegate a un insieme di post (v1.1.1;
+         * da v1.1.2 helper generico riusato anche dal filtro lingua).
          *
-         * @param array $post_ids Post ID del ramo.
+         * @param array $post_ids Post ID del ramo o della lingua.
          * @return int
          */
         private static function redazione_count_articles( $post_ids ) {
@@ -935,5 +1235,141 @@ final class Nexus_Shortcodes {
                         . " WHERE status = 'published' AND wp_post_id IN ( {$ids_in} )";
 
                 return (int) $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID assolutizzati, nessun placeholder.
+        }
+
+        /* ========================= Multilingua: helper filtro lang (v1.1.2) ========================= */
+
+        /**
+         * Stato del filtro lingua richiesto da shortcode (v1.1.2).
+         *
+         * Ritorna un array associativo con:
+         *   active   — true se il filtro si applica (driver nexus e lingua valida);
+         *   lang     — codice lingua richiesto, sanificato con sanitize_key ('' se assente);
+         *   post_ids — post ID WordPress degli articoli pubblicati in quella lingua;
+         *   unknown  — true se la lingua richiesta NON esiste tra le lingue del
+         *              sito (output onesto, nessun contenuto inventato).
+         *
+         * Senza la classe Nexus_Multilang l'attributo resta senza effetto
+         * (nessun filtro, listing standard: zero regressioni). Con Polylang o
+         * WPML il filtro non si applica: i contenuti sono gia' filtrati per
+         * lingua corrente dai plugin (nota v1.1.2 in testa al file).
+         *
+         * @param string $raw_lang Valore grezzo dell'attributo lang.
+         * @return array
+         */
+        private static function lang_filter_state( $raw_lang ) {
+                $state = array(
+                        'active'   => false,
+                        'lang'     => '',
+                        'post_ids' => array(),
+                        'unknown'  => false,
+                );
+
+                $lang = sanitize_key( (string) $raw_lang );
+                if ( '' === $lang ) {
+                        return $state;
+                }
+                $state['lang'] = $lang;
+
+                if ( ! class_exists( 'Nexus_Multilang' ) || 'nexus' !== Nexus_Multilang::driver() ) {
+                        return $state;
+                }
+
+                if ( ! in_array( $lang, Nexus_Multilang::site_langs(), true ) ) {
+                        $state['unknown'] = true;
+                        return $state;
+                }
+
+                $state['active']   = true;
+                $state['post_ids'] = self::lang_post_ids( $lang );
+
+                return $state;
+        }
+
+        /**
+         * Clausole meta_query del filtro lingua (driver nexus, v1.1.2).
+         *
+         * I post SENZA meta _nexus_lang sono nella lingua predefinita del sito:
+         * per la lingua predefinita la clausola e' relation OR tra NOT EXISTS
+         * (meta assente) e valore = lang (i post senza meta sono inclusi);
+         * per le altre lingue basta la clausola "=" lang, altrimenti i post
+         * della lingua predefinita finirebbero in ogni archivio. Ritorna
+         * array() se il filtro non e' applicabile (classe assente o lingua non
+         * tra le lingue del sito). Clausole pronte per essere APPENDATE a un
+         * eventuale meta_query preesistente, senza sovrascriverne la relation.
+         *
+         * Speculare all'helper omonimo di Nexus_Public_API: i due file sono
+         * scope separati del contratto, quindi la logica e' duplicata di proposito.
+         *
+         * @param string $lang Codice lingua.
+         * @return array Clausole meta_query o array().
+         */
+        private static function lang_meta_clauses( $lang ) {
+                $lang = sanitize_key( (string) $lang );
+                if ( '' === $lang || ! class_exists( 'Nexus_Multilang' ) ) {
+                        return array();
+                }
+                if ( ! in_array( $lang, Nexus_Multilang::site_langs(), true ) ) {
+                        return array();
+                }
+
+                $equals = array(
+                        'key'     => Nexus_Multilang::META_LANG,
+                        'value'   => $lang,
+                        'compare' => '=',
+                );
+
+                if ( $lang === Nexus_Multilang::default_lang() ) {
+                        return array(
+                                'relation' => 'OR',
+                                array(
+                                        'key'     => Nexus_Multilang::META_LANG,
+                                        'compare' => 'NOT EXISTS',
+                                ),
+                                $equals,
+                        );
+                }
+
+                return array( $equals );
+        }
+
+        /**
+         * Post ID WordPress degli articoli pubblicati in una lingua (v1.1.2).
+         *
+         * WP_Query nativa con le clausole meta del filtro lingua sui tipi di
+         * post dual-mode del plugin (nativo 'post' piu' il CPT legacy
+         * nexus_article) via Nexus_Native::query_post_types() con guard
+         * class_exists. Solo post pubblicati, cache di term e meta disattivate:
+         * servono solo gli ID per filtrare le righe della tabella articoli
+         * (colonna wp_post_id), identico al flusso del filtro redazione 1.1.1.
+         *
+         * @param string $lang Codice lingua.
+         * @return array Post ID (int).
+         */
+        private static function lang_post_ids( $lang ) {
+                $clauses = self::lang_meta_clauses( $lang );
+                if ( empty( $clauses ) ) {
+                        return array();
+                }
+
+                $post_types = array( 'post', 'nexus_article' );
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ) {
+                        $post_types = Nexus_Native::query_post_types();
+                }
+
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => $post_types,
+                                'post_status'            => 'publish',
+                                'fields'                 => 'ids',
+                                'posts_per_page'         => -1,
+                                'no_found_rows'          => true,
+                                'update_post_term_cache' => false,
+                                'update_post_meta_cache' => false,
+                                'meta_query'             => $clauses,
+                        )
+                );
+
+                return array_values( array_map( 'absint', (array) $query->posts ) );
         }
 }

@@ -22,6 +22,18 @@
  *    v1.0.3 — se l'articolo ha citazioni dal fact-check (colonna citations, JSON),
  *    un blocco HTML "Fonti verificate" (max 8 voci, escape completo) viene incluso
  *    nel contenuto iniziale del post, PRIMA di wp_insert_post/wp_update_post.
+ *    v1.1.2 "Multilingua nativo" — subito dopo il successo della pubblicazione WP
+ *    (meta di collegamento _nexus_article_id già scritto), se il setting
+ *    enable_autotranslate_posts è attivo e Nexus_Translate è disponibile, per ogni
+ *    lingua attiva (setting translation_langs) diversa dalla lingua del post
+ *    sorgente (Nexus_Multilang::lang_of_post, guard class_exists) viene schedulato
+ *    un evento WP nativo 'nexus_ml_autotranslate' sfalsato di un minuto per lingua
+ *    (wp_schedule_single_event): le traduzioni diventano post nativi collegati
+ *    senza saturare l'AI. L'handler Nexus_Publisher::run_autotranslate(),
+ *    agganciato in Nexus_Publisher::init() (da chiamare nel bootstrap, stesso
+ *    schema di Nexus_Multilang::init()), delega a Nexus_Translate::translate_to_post()
+ *    e registra l'attività con esito onesto. Best-effort totale: la schedulazione
+ *    non fa MAI fallire la pubblicazione (try/catch + guard).
  *
  * Canali social REALI (v1.0.2 — "Distribuzione Reale"): telegram, discord, x
  * (con alias twitter) e linkedin vengono delegati, quando le relative classi
@@ -47,11 +59,28 @@
  * @since   1.0.1 Canale 'blog' con post WordPress reali (CPT nexus_article).
  * @since   1.0.2 Canali social reali (Telegram, Discord, X, LinkedIn) con fallback simulato.
  * @since   1.0.3 Blocco "Fonti verificate" (nexus-citations) dal fact-check nel post WP reale.
+ * @since   1.1.2 Auto-traduzione post-publish come post nativi: eventi WP 'nexus_ml_autotranslate'
+ *               sfalsati di un minuto per lingua, handler run_autotranslate() e init().
  */
 
 defined( 'ABSPATH' ) || exit;
 
 class Nexus_Publisher {
+
+        /**
+         * Bootstrap del publisher (v1.1.2): registra l'handler degli eventi WP
+         * 'nexus_ml_autotranslate' (uno per lingua, sfalsati di un minuto)
+         * schedulati da publish_wp_post dopo la pubblicazione riuscita.
+         *
+         * Da chiamare UNA volta nel bootstrap del plugin (stesso schema di
+         * Nexus_Multilang::init()): senza questa chiamata l'evento cron resta
+         * senza handler e le traduzioni automatiche non partono.
+         *
+         * @return void
+         */
+        public static function init() {
+                add_action( 'nexus_ml_autotranslate', array( __CLASS__, 'run_autotranslate' ), 10, 2 );
+        }
 
         /**
          * Pubblica un articolo su tutte le piattaforme configurate.
@@ -345,6 +374,50 @@ class Nexus_Publisher {
                 // Persisti il riferimento nel database Nexus SUBITO dopo insert/update riuscito.
                 Nexus_DB::update_article( $article_id, array( 'wp_post_id' => $post_id ) );
 
+                // Auto-traduzione post-publish (v1.1.2 "Multilingua nativo"): qui il post
+                // esiste e il meta _nexus_article_id è già scritto. Se il setting
+                // enable_autotranslate_posts è attivo e Nexus_Translate è disponibile,
+                // per ogni lingua attiva (setting translation_langs, stesso split e
+                // sanitize_key di Nexus_Translate) diversa dalla lingua del post sorgente
+                // si schedula un evento WP nativo sfalsato di un minuto per lingua
+                // (i parte da 0). Best-effort totale: nessun errore qui deve mai
+                // interrompere la pubblicazione.
+                $nxa_autotranslate = ! empty( $settings['enable_autotranslate_posts'] ) ? absint( $settings['enable_autotranslate_posts'] ) : 0;
+                if ( 1 === $nxa_autotranslate
+                        && class_exists( 'Nexus_Translate' )
+                        && method_exists( 'Nexus_Translate', 'translate_to_post' )
+                        && function_exists( 'wp_schedule_single_event' ) ) {
+                        try {
+                                $nxa_langs = array();
+                                $nxa_raw   = isset( $settings['translation_langs'] ) ? (string) $settings['translation_langs'] : '';
+                                foreach ( explode( ',', $nxa_raw ) as $nxa_part ) {
+                                        $nxa_code = sanitize_key( trim( $nxa_part ) );
+                                        if ( '' !== $nxa_code && ! in_array( $nxa_code, $nxa_langs, true ) ) {
+                                                $nxa_langs[] = $nxa_code;
+                                        }
+                                }
+
+                                // Lingua del post sorgente: senza Nexus_Multilang il confronto
+                                // salta e si usano tutte le lingue attive (comportamento difensivo).
+                                $nxa_source_lang = class_exists( 'Nexus_Multilang' ) ? Nexus_Multilang::lang_of_post( $post_id ) : '';
+
+                                $nxa_i = 0;
+                                foreach ( $nxa_langs as $nxa_lang ) {
+                                        if ( '' !== $nxa_source_lang && $nxa_lang === $nxa_source_lang ) {
+                                                continue;
+                                        }
+                                        wp_schedule_single_event( time() + ( 60 * $nxa_i ), 'nexus_ml_autotranslate', array( (int) $article_id, $nxa_lang ) );
+                                        $nxa_i++;
+                                }
+
+                                // Log attività best-effort: solo se almeno un evento è stato schedulato.
+                                if ( $nxa_i > 0 && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                        Nexus_DB::insert_activity( 0, 'autotranslate', sprintf( 'Programmate %d traduzioni automatiche per articolo #%d (post WP #%d).', $nxa_i, $article_id, $post_id ), 'success' );
+                                }
+                        } catch ( \Throwable $e ) { // Ignora: la schedulazione non deve mai interrompere la pubblicazione.
+                        }
+                }
+
                 // Immagine in evidenza (v1.0.1): la classe può non esistere ancora; mai bloccare.
                 if ( class_exists( 'Nexus_Image' ) && method_exists( 'Nexus_Image', 'ensure_featured' ) ) {
                         try {
@@ -381,6 +454,79 @@ class Nexus_Publisher {
                                 'note'     => $note,
                         ),
                 );
+        }
+
+        /**
+         * Handler cron dell'auto-traduzione (v1.1.2 "Multilingua nativo").
+         *
+         * Eseguito dagli eventi WP nativi 'nexus_ml_autotranslate' schedulati in
+         * publish_wp_post (uno per lingua, sfalsati di un minuto). Delega a
+         * Nexus_Translate::translate_to_post(), che crea o aggiorna il post
+         * tradotto collegato: se la lingua esiste già risponde already=true e
+         * nessun costo AI viene duplicato. Il log attività registra l'esito
+         * onesto (success/error). Mai fatale: qualunque problema diventa una
+         * riga di log 'error', mai un crash del cron.
+         *
+         * @param int    $article_id ID dell'articolo Nexus.
+         * @param string $lang       Codice lingua della traduzione (es. 'en').
+         * @return void
+         */
+        public static function run_autotranslate( $article_id, $lang ) {
+                $article_id = absint( $article_id );
+                $lang       = sanitize_key( (string) $lang );
+
+                if ( $article_id < 1 || '' === $lang ) {
+                        return;
+                }
+
+                if ( ! class_exists( 'Nexus_Translate' ) || ! method_exists( 'Nexus_Translate', 'translate_to_post' ) ) {
+                        self::log_autotranslate_activity( $article_id, $lang, false, 'Nexus_Translate::translate_to_post non disponibile: traduzione automatica saltata.' );
+                        return;
+                }
+
+                try {
+                        $res = Nexus_Translate::translate_to_post( $article_id, $lang );
+                } catch ( \Throwable $e ) { // Il cron non deve mai morire per un'eccezione dell'AI.
+                        self::log_autotranslate_activity( $article_id, $lang, false, sprintf( 'Eccezione: %s', sanitize_text_field( $e->getMessage() ) ) );
+                        return;
+                }
+
+                $res = is_array( $res ) ? $res : array();
+
+                if ( empty( $res['ok'] ) ) {
+                        $error = isset( $res['error'] ) ? trim( (string) $res['error'] ) : '';
+                        self::log_autotranslate_activity( $article_id, $lang, false, '' !== $error ? sanitize_text_field( $error ) : 'Traduzione automatica fallita senza dettagli.' );
+                        return;
+                }
+
+                $already = ! empty( $res['already'] );
+                $post_id = isset( $res['post_id'] ) ? absint( $res['post_id'] ) : 0;
+                $message = $already
+                        ? sprintf( 'Post #%1$d aggiornato in lingua %2$s per articolo #%3$d (già tradotto).', $post_id, $lang, $article_id )
+                        : sprintf( 'Post #%1$d pubblicato in lingua %2$s per articolo #%3$d.', $post_id, $lang, $article_id );
+
+                self::log_autotranslate_activity( $article_id, $lang, true, $message );
+        }
+
+        /**
+         * Log attività dell'auto-traduzione (best-effort, stesso pattern del
+         * publisher: insert_activity se esiste, altrimenti skip silenzioso).
+         *
+         * @param int    $article_id ID dell'articolo Nexus.
+         * @param string $lang       Codice lingua della traduzione.
+         * @param bool   $success    True se la traduzione è riuscita.
+         * @param string $detail     Messaggio onesto sull'esito.
+         * @return void
+         */
+        private static function log_autotranslate_activity( $article_id, $lang, $success, $detail ) {
+                if ( ! method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        return;
+                }
+
+                try {
+                        Nexus_DB::insert_activity( 0, 'autotranslate', sprintf( 'Traduzione %1$s articolo #%2$d: %3$s', $lang, $article_id, $detail ), $success ? 'success' : 'error' );
+                } catch ( \Throwable $e ) { // Skip silenzioso: errore non bloccante.
+                }
         }
 
         /**

@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.1-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.2-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`). Dalla 1.1.1 la testata si organizza in **redazioni gerarchiche**: una tassonomia WordPress nativa (`nexus_redazione`) con redazioni madri, sub-redazioni annidate e agenti assegnati ai rami (es. Redazione Sport → Calcio, Basket e F1), pagina admin dedicata **Redazioni**, archivi pubblici `/redazione/{slug}/` col subtree incluso, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione` e **capabilities per ramo** per gli editori — tutto WP nativo, zero tabelle nuove.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`). Dalla 1.1.1 la testata si organizza in **redazioni gerarchiche**: una tassonomia WordPress nativa (`nexus_redazione`) con redazioni madri, sub-redazioni annidate e agenti assegnati ai rami (es. Redazione Sport → Calcio, Basket e F1), pagina admin dedicata **Redazioni**, archivi pubblici `/redazione/{slug}/` col subtree incluso, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione` e **capabilities per ramo** per gli editori — tutto WP nativo, zero tabelle nuove. Dalla 1.1.2 la redazione parla tutte le lingue con il **multilingua nativo**: le traduzioni AI diventano **post WordPress veri e collegati** tra loro (permalink, revisioni e SEO propri) con driver automatico **Polylang / WPML / collegamento interno Nexus** (post meta, zero tabelle nuove), switcher lingua in frontend, `hreflang` e `og:locale` automatici, pubblicazione automatica delle traduzioni dopo il publish e compatibilità totale con Polylang e WPML tramite le loro API ufficiali.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -32,10 +32,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 15. [Impostazioni & Agenti Pro (v1.0.7)](#v107--impostazioni--agenti-pro)
 16. [Tutto nativo (v1.1.0)](#v110--tutto-nativo)
 17. [Redazioni gerarchiche (v1.1.1)](#v111--redazioni-gerarchiche)
-18. [Installazione](#installazione)
-19. [FAQ tecniche](#faq-tecniche)
-20. [Licenza e crediti](#licenza-e-crediti)
-21. [Changelog](#changelog)
+18. [Multilingua nativo (v1.1.2)](#v112--multilingua-nativo)
+19. [Installazione](#installazione)
+20. [FAQ tecniche](#faq-tecniche)
+21. [Licenza e crediti](#licenza-e-crediti)
+22. [Changelog](#changelog)
 
 ---
 
@@ -74,6 +75,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **Impostazioni & Agenti Pro** (v1.0.7): Impostazioni riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con sezioni ad accordion e stato aperto/chiuso ricordato nel browser; **modelli AI auto-load** dal provider (endpoint compatibile OpenAI `{base_url}/models`) con lista suggerita nei campi modello (anche nell'editor agenti) e cache 12 ore; **editor agenti completo** (creare nuovi agenti, modificare tutti i campi, clonare — il clone nasce in pausa con categoria resa univoca); **diagnostica AI** in Strumenti (la chiave non viene mai mostrata) e **fix overflow mobile** (griglia agenti fluida, tabelle scrollabili, toolbar a capo, input full-width).
 - **Tutto nativo** (v1.1.0): gli articoli nuovi pubblicano come **post nativi** (`post`, in home/archivio/feed del tema) invece che sul CPT `nexus_article`; ogni agente diventa un **utente bot** con ruolo `nexus_ai_journalist` (sola capability `read`, niente wp-admin) e firma i post con **byline e pagina autore reali**; la categoria dell'agente è una **categoria WP reale** (mappata su `wp_terms`) e gli articoli ricevono **tag automatici deterministici** (3-5 tag da titolo e riassunto, nessuna chiamata AI); **migrazione 1-click** in Strumenti con barra di progresso batched per convertire i vecchi articoli CPT; nuovo stato `pending` («In attesa di revisione») per `post_status`; nuove rotte REST admin `GET /wp/categories`, `POST /native/migrate`, `GET /native/migrate/status`, `POST /native/migrate/reset`. Le tabelle Nexus restano per l'operativo (coda, costi, log, iscritti).
 - **Redazioni gerarchiche** (v1.1.1): ogni testata può avere più **redazioni** contemporanee con **sub-redazioni annidate** come le categorie WP (es. Redazione Sport → Calcio, Basket, F1) e gli **agenti assegnati ai termini** (term meta `_nexus_agents`); tassonomia nativa `nexus_redazione` con archivi pubblici `/redazione/{slug}/` che includono il subtree, pagina admin **Redazioni** con albero gerarchico, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione`, **capabilities per ramo** (profilo utente con guardie: solo `manage_options` assegna la redazione, l'editore scoped vede solo il suo ramo), migrazione che assegna le redazioni dal suo agente, REST nativa `wp/v2/redazioni` + 4 rotte admin. Zero tabelle nuove.
+- **Multilingua nativo** (v1.1.2): le traduzioni AI diventano **post WordPress collegati** (non più solo righe nella tabella storico `wp_nexus_translations`): permalink, revisioni, SEO e tema propri per ogni lingua. Driver automatico con **Polylang** o **WPML** attivi (le associazioni tra lingue usano le loro API ufficiali) oppure **collegamento interno Nexus** via post meta (`_nexus_lang`, `_nexus_trid`, `_nexus_source_post_id`) — zero tabelle nuove; nuovo shortcode **`[nexus_lang_switcher]`**, attributo `lang` per `[nexus_magazine]`/`[nexus_articles]` e parametro `lang` sull'API pubblica, **`hreflang` e `og:locale` automatici** sul single, pubblicazione automatica delle traduzioni come post dopo il publish (eventi WP-Cron sfalsati, setting `enable_autotranslate_posts`), rotte REST admin `/multilang` e card dashboard «Multilingua».
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -116,20 +118,21 @@ nexus-news-ai/
 │   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
 │   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair, tracking uso AI (token/costo stimato) e budget mensile, fact-check, estimate_cost (v1.0.3)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
-│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress (post NATIVI dalla v1.1.0, CPT nexus_article nelle versioni precedenti) + fallback legacy + social reali/simulati, log in publish_logs, assegnazione termini redazione dell'agente (v1.1.1)
+│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress (post NATIVI dalla v1.1.0, CPT nexus_article nelle versioni precedenti) + fallback legacy + social reali/simulati, log in publish_logs, assegnazione termini redazione dell'agente (v1.1.1), auto-translate post-publish con eventi WP-Cron sfalsati (v1.1.2)
 │   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus» (dalla v1.1.0 resta per i permalink legacy)
 │   ├── class-nexus-native.php     # v1.1.0 — Nexus_Native: utenti bot degli agenti (ruolo nexus_ai_journalist), categorie native (term_id), tag deterministici, migrazione 1-click CPT → post nativi (dalla v1.1.1 assegna anche i termini redazione dell'agente), letture dual-mode
 │   ├── class-nexus-redazioni.php  # v1.1.1 — Nexus_Redazioni: tassonomia gerarchica nexus_redazione (parent/child come le categorie), term meta _nexus_agents, albero/agenti/contatori per ramo, filtro articoli in lista admin
 │   ├── class-nexus-caps.php       # v1.1.1 — Nexus_Caps: campo profilo «Redazione assegnata» e restrizioni per ramo (map_meta_cap + parse_query, guardie manage_options)
+│   ├── class-nexus-multilang.php  # v1.1.2 — Nexus_Multilang: adattatore multilingua (driver Polylang/WPML/nexus interno con meta _nexus_lang, _nexus_trid, _nexus_source_post_id), gruppi di traduzione, statistiche per lingua
 │   ├── class-nexus-image.php      # v1.0.1 — Immagini in evidenza: generazione AI con fallback, sideload in media library, set_post_thumbnail
-│   ├── class-nexus-seo.php        # v1.0.1 — SEO: meta AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast/RankMath, title tag
+│   ├── class-nexus-seo.php        # v1.0.1 — SEO: meta AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast/RankMath, title tag; hreflang e og:locale per lingua sul single (v1.1.2)
 │   ├── class-nexus-social-telegram.php # v1.0.2 — Telegram: Bot API sendMessage/sendPhoto con credenziali dai settings
 │   ├── class-nexus-social-discord.php  # v1.0.2 — Discord: webhook con embed e thumbnail
 │   ├── class-nexus-social-x.php        # v1.0.2 — X/Twitter: POST /2/tweets con firma OAuth 1.0a nativa (nessuna libreria)
 │   ├── class-nexus-social-linkedin.php # v1.0.2 — LinkedIn: ugcPosts via Bearer token
 │   ├── class-nexus-newsletter.php      # v1.0.2 — Newsletter: shortcode [nexus_subscribe], double opt-in, digest settimanale AI via wp_mail
 │   ├── class-nexus-ping.php            # v1.0.2 — Ping: IndexNow (chiave + key file) e WebSub alla pubblicazione
-│   ├── class-nexus-translate.php       # v1.0.3 — Traduzioni AI: rotte REST translate/translations, prompt multi-lingua, upsert in wp_nexus_translations
+│   ├── class-nexus-translate.php       # v1.0.3 — Traduzioni AI: rotte REST translate/translations, prompt multi-lingua, upsert in wp_nexus_translations; dalla v1.1.2 pubblica le traduzioni come post nativi collegati (translate_to_post, native_post_for_article)
 │   ├── class-nexus-queue.php           # v1.0.4 — Coda lavori stile Action Scheduler: dispatch, run_batch (claim atomico, retry con backoff), retry, cancel, requeue_stale, runner WP-Cron nexus_queue_runner
 │   ├── class-nexus-cli.php             # v1.0.4 — WP-CLI: comando wp nexus (run, collect, evaluate, rewrite, publish, approve, reject, translate, agents, articles, stats, queue, settings)
 │   ├── class-nexus-blocks.php          # v1.0.4 — Blocchi Gutenberg server-side: nexus/latest-articles e nexus/subscribe-form
@@ -137,7 +140,7 @@ nexus-news-ai/
 │   ├── class-nexus-i18n.php            # v1.0.5 — Admin bilingue IT/EN: Nexus_I18n (current_lang, translate_html sulle viste, enqueue di i18n.js)
 │   ├── class-nexus-i18n-dict.php       # v1.0.5 — Dizionario i18n base: nexus_i18n_default_dict() con le voci IT=>EN dell'admin
 │   ├── class-nexus-i18n-dict-extra.php # v1.0.5 — Dizionario i18n esteso: nexus_i18n_extra_dict() con voci aggiuntive (caricato da Nexus_I18n)
-│   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS, parametro redazione (v1.1.1)
+│   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS, parametro redazione (v1.1.1), parametro lang e campo lingua negli item (v1.1.2)
 │   ├── class-nexus-multisite.php       # v1.0.5 — Multisite: installazione tabelle sui nuovi siti (wp_initialize_site), status(), install_all()
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
@@ -147,7 +150,7 @@ nexus-news-ai/
 │   ├── class-nexus-admin.php      # Menu admin, enqueue assets, handler, gateway alle viste
 │   ├── css/                       # nexus-admin.css: stili delle pagine admin (tema chiaro di default, dark opzionale — v1.0.6)
 │   ├── views/                     # Template HTML delle pagine admin
-│   │   ├── dashboard.php          # Dashboard statistiche (contatori «Contenuti nativi» — v1.1.0; card «Redazioni» — v1.1.1)
+│   │   ├── dashboard.php          # Dashboard statistiche (contatori «Contenuti nativi» — v1.1.0; card «Redazioni» — v1.1.1; card «Multilingua» con articoli per lingua — v1.1.2)
 │   │   ├── agents.php             # Gestione agenti (+ colonna «Redazioni» con chip agenti assegnati — v1.1.1)
 │   │   ├── redazioni.php          # v1.1.1 — Redazioni: form redazione madre/sub (nome, slug, madre, agenti) + albero gerarchico con contatori e archivio nativo
 │   │   ├── queue.php              # Coda di approvazione
@@ -156,17 +159,17 @@ nexus-news-ai/
 │   │   ├── wire.php               # Nexus Wire (redazione collettiva)
 │   │   ├── analytics.php          # v1.0.4 — Analytics: serie giornaliera, costi AI, per piattaforma/agente, top articoli, iscritti
 │   │   ├── tools.php              # v1.0.5 — Strumenti: informazioni di sistema, esporta/importa configurazione, API pubblica (chiave), diagnostica AI (v1.0.7), migrazione contenuti nativi (v1.1.0)
-│   │   └── settings.php           # Impostazioni: 4 gruppi con sezioni ad accordion (v1.0.7), opzione post_status «In attesa di revisione» (v1.1.0)
+│   │   └── settings.php           # Impostazioni: 4 gruppi con sezioni ad accordion (v1.0.7), opzione post_status «In attesa di revisione» (v1.1.0), sezione «Multilingua — post tradotti nativi» con driver, lingue del sito e auto-translate (v1.1.2)
 │   └── index.php
 │
 ├── public/                        # Front-end magazine
-│   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue, attributo redazione (v1.1.1)
+│   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue, attributo redazione (v1.1.1), attributo lang e [nexus_lang_switcher] (v1.1.2)
 │   ├── css/                       # nexus-public.css: stili light editoriali del frontend (token --nxp-*, classi nxa-*/nexus-* — v1.0.6)
 │   ├── js/                        # nexus-public.js: interazioni (modal, reazioni, categorie) via REST + nonce wp_rest
 │   └── index.php
 │
 ├── assets/                        # Asset condivisi admin
-│   ├── js/                        # admin.js (interfaccia admin) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) + i18n.js (v1.0.5: traduzione IT→EN dei contenuti dinamici admin) — vanilla JS, consuma le REST route nexus/v1
+│   ├── js/                        # admin.js (interfaccia admin: riga «Pubblica come post» e chips delle traduzioni per lingua nell'articolo — v1.1.2) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) + i18n.js (v1.0.5: traduzione IT→EN dei contenuti dinamici admin) — vanilla JS, consuma le REST route nexus/v1
 │   └── index.php
 │
 ├── templates/                     # Template front-end per i post WordPress reali (v1.0.1)
@@ -232,6 +235,7 @@ Lista o griglia di articoli filtrabili. Attributi:
 | `category` | (tutte) | `Tecnologia`, `Politica`, `Economia`, `Scienza`, `Sport`, `Cultura`, `Salute` |
 | `limit` | `9` | numero massimo di articoli (1-24) |
 | `layout` | `grid` | `grid` (card) o `list` (elenco compatto) |
+| `lang` | (tutte) | codice lingua (es. `en`): con il driver multilingua interno filtra gli articoli per lingua (v1.1.2, dettagli nella sezione [Multilingua nativo](#v112--multilingua-nativo)); con Polylang/WPML il contenuto è già filtrato per lingua corrente |
 
 ```
 [nexus_articles category="Tecnologia" limit="6" layout="list"]
@@ -253,6 +257,14 @@ Il **form di iscrizione alla newsletter** (v1.0.2): campo email + bottone, invio
 
 ```
 [nexus_subscribe]
+```
+
+### `[nexus_lang_switcher]`
+
+Lo **switcher delle lingue del sito** (v1.1.2): lista delle lingue attive con nome italiano; su una pagina singola ogni voce punta al permalink della traduzione, sulle altre pagine a `home_url('/')` con query var `?lang={code}`. La lingua corrente è evidenziata (`nexus-lang-current`); le lingue senza traduzione appaiono non cliccabili con la nota onesta «Traduzione non disponibile». Dettagli nella sezione [Multilingua nativo](#v112--multilingua-nativo).
+
+```
+[nexus_lang_switcher]
 ```
 
 > **Nota (v1.0.1):** gli articoli pubblicati come **post WordPress reali** non passano dagli shortcode: ogni post del CPT `nexus_article` è servito dal template dedicato del plugin (`templates/single-nexus_article.php`), che usa header e footer del tema attivo e mostra byline dell'agente, contenuto, fonti e reazioni Nexus, con permalink `/nexus/{slug}/`. Lo shortcode `[nexus_magazine]` continua invece a leggere il database Nexus (articoli legacy e magazine).
@@ -312,6 +324,9 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | POST | `/redazioni` | Crea una redazione (v1.1.1): body `{ "name", "parent", "agent_ids": [] }` (`parent` = term ID della madre, `0` = redazione di primo livello) → `{ "term_id", "agents" }` o errore onesto |
 | POST | `/redazioni/{id}` | Aggiorna una redazione (v1.1.1): body parziale `{ "name"?, "slug"?, "parent"?, "agent_ids"? }` (solo i campi presenti; `parent` non può essere se stesso né un proprio discendente) → `{ "ok": true, "term": { "id", "name", "slug", "parent", "agents" } }` |
 | DELETE | `/redazioni/{id}` | Elimina una redazione (v1.1.1): `wp_delete_term` e WordPress riparenta da solo le sub-redazioni alla madre → `{ "ok": true, "message": "…" }` |
+| GET | `/multilang/info` | Driver e lingue del sito (v1.1.2): `{ "driver": "nexus\|polylang\|wpml", "default": "it", "current": "it", "langs": [ { "code": "it", "name": "Italiano", "default": true } ] }` |
+| POST | `/multilang/translate-post` | Pubblica la traduzione di un articolo come post nativo collegato (v1.1.2): body `{ "article_id": 12, "lang": "en" }` → `{ "ok": true, "already": false, "lang": "en", "post_id": 123, "edit_url": "…", "permalink": "…" }` oppure errore onesto (`already=true` se il post esiste già: upsert, mai duplicati) |
+| GET | `/multilang/translations-posts` | Stato traduzioni-post di un articolo (v1.1.2): arg `article_id` → `{ "article_id": 12, "source_post_id": 45, "source_lang": "it", "note": "", "translations": [ { "lang": "it", "post_id": 45, "edit_url": "…", "permalink": "…", "status": "publish", "modified": "2026-01-01T10:00:00+00:00", "is_source": true } ] }` — prima la riga sorgente (solo se `source_post_id` > 0, else `note` onesta e 200), poi le traduzioni in ordine di codice lingua; permalink valorizzato solo per i post pubblicati |
 
 ### Route pubbliche
 
@@ -388,6 +403,7 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `budget_action` | `stop` | Quando il budget è esaurito: `stop` = le fasi AI vengono saltate con log attività, `warn` = avviso ma la pipeline prosegue |
 | `enable_translations` | `1` | Abilita le traduzioni AI degli articoli via REST (`POST /articles/{id}/translate`) |
 | `translation_langs` | `en,es,fr` | Lingue di traduzione ammesse, separate da virgola (en, es, fr, de, pt, ar, zh, ja) |
+| `enable_autotranslate_posts` | `0` | Pubblica automaticamente le traduzioni come **post WP collegati** (v1.1.2): al publish di un articolo, per ogni lingua attiva parte un evento WP-Cron sfalsato che crea/aggiorna il post tradotto (richiede `enable_translations=1`) |
 | `enable_queue` | `0` | Usa la coda lavori (stile Action Scheduler): le azioni pesanti vengono accodate in `wp_nexus_jobs` ed eseguite in batch ogni 60 secondi dal runner WP-Cron |
 | `queue_batch_size` | `5` | Lavori per batch del runner della coda (1-50) |
 | `queue_max_attempts` | `3` | Tentativi massimi per lavoro prima di passare a `failed` (1-10) |
@@ -396,7 +412,7 @@ Salvate nell'option `nexus_settings` (gestite da `Nexus_DB::get_settings()` / `u
 | `public_api_key` | (vuota) | Chiave API pubblica; si genera dalla pagina **Strumenti → API pubblica** (v1.0.5) |
 | `admin_theme` | `light` | Tema dell'interfaccia admin (v1.0.6): `light` (chiaro, consigliato) oppure `dark` (aspetto notturno delle versioni precedenti); selezione in Impostazioni → Interfaccia |
 
-Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)). Nella v1.0.6 si aggiunge la sezione **«Interfaccia»** con la chiave `admin_theme` della tabella sopra: tema chiaro attivo di default, dark opzionale (dettagli nella sezione [UI chiara & curata](#v106--ui-chiara--curata)). Nella v1.0.7 nessun setting nuovo: le sezioni esistenti sono riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con pannelli ad accordion e stato aperto/chiuso ricordato dal browser (dettagli nella sezione [Impostazioni & Agenti Pro](#v107--impostazioni--agenti-pro)). Nella v1.1.0 nessun setting nuovo: `post_status` guadagna l'opzione `pending` («In attesa di revisione») e `enable_wp_posts` pubblica ora post nativi (dettagli nella sezione [Tutto nativo](#v110--tutto-nativo)).
+Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** con le 7 chiavi sopra: determinano se (e come) gli articoli approvati diventano post WordPress reali, con immagine in evidenza AI e ottimizzazione SEO. Nella v1.0.2 si aggiungono tre sezioni: **«Distribuzione sociale»** (credenziali Telegram, Discord, X e LinkedIn), **«Newsletter»** (iscrizioni, destinatari, digest) e **«Indicizzazione»** (IndexNow e WebSub). Le credenziali social vivono solo nell'option `nexus_settings`: non vengono mai loggate né esposte nei messaggi di errore in chiaro. Nella v1.0.3 si aggiunge la sezione **«Redazione intelligente»** con le 7 chiavi della tabella sopra (dettagli nella sezione [Redazione intelligente](#redazione-intelligente-v103)). Nella v1.0.4 si aggiunge la sezione **«Scala & Pro»** con le 3 chiavi della coda lavori (dettagli nella sezione [Scala & Pro](#scala--pro-v104)). Nella v1.0.5 si aggiunge la sezione **«Lingua e API pubblica»** con le 3 chiavi della tabella sopra (dettagli nella sezione [Strumenti, API pubblica, Multisite, Admin bilingue](#v105--strumenti-api-pubblica-multisite-admin-bilingue)). Nella v1.0.6 si aggiunge la sezione **«Interfaccia»** con la chiave `admin_theme` della tabella sopra: tema chiaro attivo di default, dark opzionale (dettagli nella sezione [UI chiara & curata](#v106--ui-chiara--curata)). Nella v1.0.7 nessun setting nuovo: le sezioni esistenti sono riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con pannelli ad accordion e stato aperto/chiuso ricordato dal browser (dettagli nella sezione [Impostazioni & Agenti Pro](#v107--impostazioni--agenti-pro)). Nella v1.1.0 nessun setting nuovo: `post_status` guadagna l'opzione `pending` («In attesa di revisione») e `enable_wp_posts` pubblica ora post nativi (dettagli nella sezione [Tutto nativo](#v110--tutto-nativo)). Nella v1.1.1 nessun setting nuovo. Nella v1.1.2 arriva la chiave `enable_autotranslate_posts` nella sub-sezione **«Multilingua — post tradotti nativi»** del gruppo «Intelligenza artificiale» (dettagli nella sezione [Multilingua nativo](#v112--multilingua-nativo)).
 
 ---
 
@@ -408,6 +424,7 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 - Alla **disattivazione** l'evento pianificato viene rimosso (`Nexus_Cron::deactivate()`); alla riattivazione viene ripianificato.
 - Con la **newsletter attiva** (`enable_newsletter=1`) viene pianificato l'evento **`nexus_weekly_digest`** sullo schedule builtin `weekly`: al tick genera il digest AI degli articoli pubblicati negli ultimi 7 giorni e lo invia via `wp_mail` ai destinatari fissi e agli iscritti confermati.
 - Alla **pubblicazione di un post** `nexus_article` viene schedulato l'evento singolo **`nexus_ping_article`** (con l'ID del post come argomento): il ping IndexNow/WebSub gira fuori banda, senza mai bloccare la pubblicazione.
+- Con **`enable_autotranslate_posts=1`** (v1.1.2) la pubblicazione di un articolo pianifica un evento singolo **`nexus_ml_autotranslate`** per ogni lingua attiva, **sfalsato di un minuto** (`time() + 60 * i`): ogni evento pubblica la traduzione come post nativo collegato (`Nexus_Translate::translate_to_post`, vedi la sezione [Multilingua nativo](#v112--multilingua-nativo)); la schedulazione è best-effort, la pubblicazione non fallisce mai per un problema di traduzioni.
 - Con la **coda attiva** (`enable_queue=1`, sezione «Scala & Pro») viene pianificato l'evento **`nexus_queue_runner`** sullo schedule custom `nexus_queue_60s` (60 secondi): ogni pass processa un batch di `queue_batch_size` lavori (retry con backoff, requeue dei lavori bloccati oltre 30 minuti, pulizia periodica) e ogni tick del cron principale viene accodato come lavoro `pipeline_cron_tick`; con la coda disattivata l'evento viene rimosso e il comportamento resta quello classico.
 - WP-Cron è "pigro": scatta solo con visite al sito. Per un giornale vero è consigliato un cron di sistema:
   1. definisci `define( 'DISABLE_WP_CRON', true );` in `wp-config.php`;
@@ -810,6 +827,80 @@ Le 4 rotte REST admin sono documentate nella tabella [Route admin](#route-admin-
 
 ---
 
+## v1.1.2 — Multilingua nativo
+
+Dalla v1.1.2 la redazione parla tutte le lingue secondo il principio che guida il plugin dalla 1.1.0: **tutto quello che può essere nativo in WordPress lo integriamo**. Le traduzioni AI non sono più solo righe nella tabella storico `wp_nexus_translations`: diventano **post WordPress veri e propri** (post type `post`, con permalink, revisioni, immagine in evidenza, SEO e tema propri) **collegati tra loro** esattamente come fa il multilingua di WordPress. Se sul sito c'è già **Polylang** o **WPML** il plugin usa le **loro API ufficiali** (zero conflitti, zero duplicazioni); se non c'è niente, un **collegamento interno Nexus** basato su post meta tiene insieme i post — **zero tabelle nuove**. La tabella `wp_nexus_translations` resta come **storico e contatore dei costi** (la macchina che traduce), mentre il contenuto tradotto pubblicato è nativo (WordPress).
+
+### Il modello: traduzioni come post WordPress collegati
+
+- Ogni articolo Nexus può essere tradotto in più lingue; per ogni lingua la traduzione pubblicata è un **post nativo** (`post`) con **titolo, contenuto e riassunto tradotti dall'AI**, lo stesso stato del post sorgente, autore bot, categoria e tag nativi della testata, immagine in evidenza ereditata (best-effort) e meta di collegamento `_nexus_article_id`.
+- Il post tradotto è **collegato al post sorgente** nel gruppo di traduzione della lingua: dalla pagina articolo dell'admin (riga «Pubblica come post») o via REST (`POST /multilang/translate-post`) vedi per ogni lingua se il post esiste già, lo aggiorni (upsert: nessun duplicato, `already=true`) o lo crei.
+- La traduzione resta **aggiornabile**: rilanciando la traduzione per la stessa lingua il post esistente viene aggiornato (titolo, contenuto, riassunto), non duplicato; i costi AI continuano a essere tracciati come sempre in `wp_nexus_usage_logs`.
+
+### I 3 driver: Polylang, WPML, collegamento interno Nexus
+
+Il driver si seleziona **automaticamente** (filtrabile con il filtro `nexus_multilang_driver`) e l'API statica `Nexus_Multilang` (metodi `driver()`, `site_langs()`, `current_lang()`, `default_lang()`, `lang_of_post()`, `translations_of()`, `post_for_lang()`, `register_translation()`, `stats_counts()` e compagnia) è sempre **guard-rata**: mai fatale se il plugin di lingua manca o cambia API.
+
+| Driver | Quando | Come collega le traduzioni |
+|---|---|---|
+| `polylang` | Polylang attivo | API ufficiali `pll_*`: `pll_set_post_language`, `pll_save_post_translations`, `pll_get_post_translations`, `pll_languages_list`, `pll_count_posts` |
+| `wpml` | WPML attivo | Filtri WPML: `wpml_set_element_language_details`, `wpml_get_element_translations`, `wpml_active_languages`, `wpml_default_language` |
+| `nexus` | Nessun plugin di lingua attivo | Collegamento interno del plugin via **post meta**: `_nexus_lang` (lingua del post), `_nexus_trid` (chiave del gruppo di traduzione, es. `nexus-g42`), `_nexus_source_post_id` (ID del post sorgente) |
+
+Con Polylang o WPML le associazioni tra lingue sono **quelle dei plugin** (visibili e modificabili anche dalle loro UI); il meta `_nexus_trid` resta sincronizzato come traccia interna per report e query veloci, mai come verità (che sta nei driver). Il driver `nexus` è pronto a convivere con Polylang/WPML se li installerai in futuro: nessuna migrazione, le associazioni si costruiscono con le loro API al prossimo collegamento.
+
+### Le rotte REST admin `/multilang`
+
+Tre nuove rotte (namespace `nexus/v1`, permission `manage_options`) documentate con shape reali nella tabella [Route admin](#route-admin-manage_options):
+
+- `GET /multilang/info` — driver attivo, lingua predefinita, lingua corrente e lingue del sito con nome italiano;
+- `POST /multilang/translate-post` — pubblica la traduzione di un articolo come post nativo collegato (upsert, errori onesti);
+- `GET /multilang/translations-posts?article_id=N` — stato delle traduzioni-post di un articolo: post sorgente con la sua lingua e lista delle traduzioni con ID, link modifica, permalink, stato e marca «sorgente».
+
+Nella pagina articolo l'admin (riga **«Pubblica come post»** con i bottoni delle lingue attive e la lista dei chip con link «Modifica»/«Vedi») consuma queste rotte; se il driver è Polylang o WPML compare la nota discreta «Associazioni lingua gestite da Polylang/WPML».
+
+### Shortcode `[nexus_lang_switcher]`
+
+Lista delle **lingue del sito** (`Nexus_Multilang::site_langs()` con nome italiano) come switcher in frontend: su una pagina singola ogni voce punta al **permalink della traduzione** (lingue senza traduzione → voce non cliccabile con title onesto «Traduzione non disponibile»), sulle altre pagine rimanda a `home_url('/')` con query var `?lang={code}` (driver nexus: filtra i post per lingua; con Polylang/WPML attivi il comportamento dei link resta ai loro switcher se li preferisci, lo shortcode mostra comunque l'elenco delle lingue). La lingua corrente ha la classe `nexus-lang-current`.
+
+```
+[nexus_lang_switcher]
+```
+
+### Attributo `lang` per gli shortcode e parametro `lang` dell'API pubblica
+
+- **`[nexus_articles lang="en"]`** e **`[nexus_magazine lang="en"]`**: con il driver `nexus` filtra la lista per lingua (meta query su `_nexus_lang` che include i post senza meta — sono di default della lingua del sito); con Polylang/WPML il contenuto è già filtrato per lingua corrente dai plugin stessi (attributo accettato e senza effetto). Lingua richiesta inesistente → messaggio onesto nel markup («Lingua non trovata: …», nessun contenuto inventato).
+- **Nota di coerenza sul magazine**: con il filtro `lang` attivo `[nexus_magazine]` non stampa la barra categorie né il bottone «Carica altri» — il refetch client-side passa dalla REST pubblica senza quel parametro e mostrerebbe articoli fuori dal filtro; senza l'attributo il comportamento resta identico a prima.
+- **API pubblica** `nexus-public/v1`: gli endpoint di listing accettano il parametro **`lang`** (stessa semantica; lingua inesistente → lista vuota onesta) e **ogni item** della risposta porta il nuovo campo **`lang`** (`Nexus_Multilang::lang_of_post`); con Polylang/WPML attivi il contenuto è già filtrato per lingua corrente dai plugin e la risposta include il campo `lang_note` onesto («contenuto già filtrato da Polylang/WPML»).
+
+### SEO: `hreflang` e `og:locale` automatici
+
+Sul single di un post che ha **più di una lingua pubblicata** (sono contate solo le traduzioni in stato `publish`), `Nexus_Seo` aggiunge automaticamente in `<head>`:
+
+- `<link rel="alternate" hreflang="{code}" href="{permalink}" />` per ogni lingua, con **`x-default`** sul permalink della lingua predefinita del sito;
+- **`og:locale`** del post corrente (mappa it_IT, en_US, es_ES, fr_FR, de_DE, pt_PT, ar_AR, zh_CN, ja_JP) e **`og:locale:alternate`** per le altre lingue pubblicate.
+
+Funziona identico con tutti e tre i driver (usa `Nexus_Multilang::translations_of`, che parla già Polylang/WPML): zero lavoro extra quando i plugin di lingua sono attivi.
+
+### Auto-translate: le traduzioni si pubblicano da sole dopo il publish
+
+Con il setting **`enable_autotranslate_posts=1`** (Impostazioni → Intelligenza artificiale → «Multilingua — post tradotti nativi») ogni articolo pubblicato pianifica per ogni lingua attiva un **evento WP-Cron nativo** (`nexus_ml_autotranslate`, `wp_schedule_single_event`) **sfalsato di un minuto** (`time() + 60 * i`, con i progressivo): le traduzioni partono una alla volta, senza saturare il modello AI, senza toccare il cron di sistema e senza mai far fallire la pubblicazione (schedulazione best-effort). Ogni evento chiama `Nexus_Translate::translate_to_post()` e registra l'esito nei log attività; se la lingua è già stata tradotta il metodo risponde `already=true`: nessun costo AI duplicato. La schedulazione è **tutto WP**: eventi standard visibili con `wp cron event list` (o dalla pagina Strumenti), rimossi senza residui.
+
+### Nell'admin: Impostazioni e dashboard
+
+- **Impostazioni → Intelligenza artificiale**: sub-sezione **«Multilingua — post tradotti nativi»** con il badge del driver attivo («Polylang è attivo: le associazioni tra lingue usano Polylang.» / WPML / «Collegamento interno Nexus: nessun plugin di lingua attivo (compatibile con Polylang e WPML se li installerai).»), le lingue del sito con marcatura della lingua predefinita e la checkbox `enable_autotranslate_posts`.
+- **Dashboard**: nuova card **«Multilingua»** con badge driver e i chip «{LINGUA} — N articoli» per ogni lingua con articoli pubblicati (`Nexus_Multilang::stats_counts()`); se non c'è ancora nulla, stato vuoto onesto con link alla pagina Articoli.
+
+### Compatibilità Polylang e WPML
+
+Se i plugin di lingua sono attivi Nexus **non crea strutture parallele**: le lingue del sito, la lingua corrente e le associazioni tra traduzioni passano dalle **API ufficiali** (`pll_*` per Polylang, i filtri `wpml_*` per WPML); i post tradotti compaiono nelle UI di Polylang/WPML come qualunque traduzione, e gli switcher, gli archivi per lingua e i filtri di quei plugin continuano a funzionare sui post di Nexus (sono post normali). Attivare Polylang o WPML **dopo** aver già tradotto col driver interno non richiede nulla: le associazioni si costruiscono con le loro API alla prossima registrazione di una traduzione.
+
+### Disinstallazione: i post tradotti restano
+
+Le traduzioni sono **contenuti nativi WordPress** (post `post` con i loro meta): alla disinstallazione del plugin **non vengono cancellati** — sopravvivono come i post e le categorie della testata. Il flusso di disinstallazione esistente rimuove tabelle, opzioni, transients, eventi cron e i post del CPT legacy `nexus_article`: i post tradotti nativi non ne fanno parte.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -834,7 +925,7 @@ Qualsiasi endpoint **OpenAI-compatible** (`/chat/completions`): OpenRouter di de
 Nelle 9 tabelle `wp_nexus_*` con prefisso del tuo WordPress (agenti, articoli, log di pubblicazione/approvazione/attività, iscritti newsletter in `wp_nexus_subscribers`, uso AI in `wp_nexus_usage_logs`, traduzioni in `wp_nexus_translations` e — dalla v1.0.4 — lavori in coda in `wp_nexus_jobs`) + l'option `nexus_settings`. Dalla v1.0.1 gli articoli approvati diventano **anche** post WordPress reali del CPT `nexus_article` (se `enable_wp_posts` è `1`), collegati al record Nexus via meta `_nexus_article_id`: la redazione resta nel database Nexus, i post pubblicati vivono nel blog con permalink `/nexus/{slug}/`. Dalla v1.1.0 i contenuti nuovi pubblicano come **post nativi** `post` (sezione [Tutto nativo](#v110--tutto-nativo)).
 
 **La disattivazione cancella i dati?**
-No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
+No: solo la disinstallazione (cancellazione del plugin) esegue `uninstall.php`, che elimina le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). I **post tradotti nativi** (v1.1.2) **non vengono cancellati**: sono post WordPress veri, contenuti nativi che sopravvivono al plugin. Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
 **Posso modificare gli articoli generati?**
 Sì, dalla coda di approvazione prima della pubblicazione; via REST puoi approvare, rifiutare o eliminare (`POST /articles/{id}/approve`, `POST /articles/{id}/reject`, `DELETE /articles/{id}`).
@@ -862,6 +953,16 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.1.2 — Multilingua nativo
+
+- **Traduzioni come post WordPress collegati**: `Nexus_Translate::translate_to_post()` pubblica la traduzione AI di un articolo come **post nativo** `post` (titolo, contenuto e riassunto tradotti, stato del sorgente, autore bot, categoria e tag nativi, immagine in evidenza ereditata) collegato al gruppo di traduzione della lingua; upsert sempre: il post esiste già? viene aggiornato (`already=true`), mai duplicato.
+- **3 driver automatici**: **Polylang** (API `pll_*`) e **WPML** (`wpml_set_element_language_details` e compagnia) quando attivi — le associazioni tra lingue usano le loro API ufficiali — oppure **collegamento interno Nexus** via post meta `_nexus_lang`, `_nexus_trid` e `_nexus_source_post_id`: zero tabelle nuove, classe `Nexus_Multilang` guard-rata mai fatale.
+- **3 nuove rotte REST admin**: `GET /multilang/info` (driver, lingua predefinita, lingua corrente, lingue del sito con nome), `POST /multilang/translate-post` (pubblica la traduzione come post collegato con `edit_url` e `permalink`), `GET /multilang/translations-posts` (stato per articolo: sorgente, lingua e lista traduzioni con stato e link); permission `manage_options`.
+- **Switcher e filtri lingua in frontend**: nuovo shortcode **`[nexus_lang_switcher]`** (lingue del sito, permalink della traduzione per lingua, lingue senza traduzione non cliccabili con nota onesta), attributo `lang` per `[nexus_articles]` e `[nexus_magazine]`, parametro `lang` sull'API pubblica `nexus-public/v1` con nuovo campo `lang` su ogni item.
+- **SEO multilingua**: sul single con più di una lingua pubblicata `hreflang` per ogni lingua (con `x-default` sulla lingua predefinita) e `og:locale` / `og:locale:alternate` automatici.
+- **Auto-translate post-publish**: setting `enable_autotranslate_posts` — al publish di un articolo ogni lingua attiva riceve un evento WP-Cron nativo `nexus_ml_autotranslate` **sfalsato di un minuto** che pubblica la traduzione come post collegato (best-effort, `already=true` se già tradotta: nessun costo duplicato); card dashboard «Multilingua» con articoli per lingua.
+- **Nessuna migrazione di schema**: le traduzioni sono post nativi + meta (l'aggiornamento è tutto WordPress); la tabella `wp_nexus_translations` resta come storico/costi; alla disinstallazione i post tradotti **restano** (contenuti nativi, sopravvivono al plugin).
 
 ### 1.1.1 — «Redazioni gerarchiche»
 

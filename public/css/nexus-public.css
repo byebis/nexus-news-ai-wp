@@ -50,6 +50,7 @@
  *  13. Animazioni
  *  14. Accessibilita' (focus, reduced-motion)
  *  15. Stampa
+ *  16. Selettore lingua [nexus_lang_switcher] (v1.1.2)
  */
 
 /* -------------------------------------------------------------------------
@@ -1732,7 +1733,9 @@ body.nxa-noscroll {
   .nexus-news-input,
   .nxa-reaction-btn,
   .nxa-modal-close,
-  .nxa-wire-item {
+  .nxa-wire-item,
+  .nexus-lang-item a,
+  .nexus-lang-item span {
     transition: none;
   }
 
@@ -1788,5 +1791,97 @@ body.nxa-noscroll {
   .nxa-card:hover {
     transform: none;
     box-shadow: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 16. Selettore lingua [nexus_lang_switcher] (v1.1.2)
+ *
+ * Markup generato da Nexus_Shortcodes::render_lang_switcher():
+ *   ul.nexus-lang-switcher > li.nexus-lang-item [nexus-lang-current]
+ *   data-lang="{codice lingua}" con link (a) o span non cliccabile
+ *   (span.nexus-lang-missing, title "Traduzione non disponibile") quando la
+ *   traduzione pubblica manca. Il chip della lingua corrente replica il
+ *   pattern is-active della category bar (sezione 5). Solo token esistenti:
+ *   zero valori colore nuovi. L'enqueue del foglio avviene anche durante il
+ *   rendering di [nexus_lang_switcher] (Nexus_Shortcodes::enqueue_assets).
+ * ---------------------------------------------------------------------- */
+.nexus-lang-switcher,
+.nexus-lang-switcher * {
+  box-sizing: border-box;
+}
+
+.nexus-lang-switcher {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.nexus-lang-item {
+  margin: 0;
+  padding: 0;
+}
+
+/* Chip lingua: link attivo o span non cliccabile (traduzione assente) */
+.nexus-lang-item a,
+.nexus-lang-item span {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  border: 1px solid var(--nxp-border);
+  border-radius: 999px;
+  background: var(--nxp-surface);
+  color: var(--nxp-text-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.nexus-lang-item a:hover {
+  color: var(--nxp-link-hover);
+  background: var(--nxp-surface-2);
+  border-color: var(--nxp-accent-1);
+}
+
+.nexus-lang-item a:focus-visible {
+  outline: 2px solid var(--nxp-focus);
+  outline-offset: 2px;
+}
+
+/* Lingua corrente: chip evidenziato, stesso pattern is-active della category bar */
+.nexus-lang-item.nexus-lang-current a,
+.nexus-lang-item.nexus-lang-current span {
+  color: var(--nxp-surface);
+  background: var(--nxp-accent-grad);
+  border-color: transparent;
+  box-shadow: var(--nxp-shadow);
+}
+
+/* Lingua senza traduzione pubblica: non cliccabile, aspetto disabilitato */
+.nexus-lang-item span.nexus-lang-missing {
+  color: var(--nxp-muted);
+  background: var(--nxp-surface-2);
+  border-style: dashed;
+  cursor: default;
+}
+
+/* Dettagli responsive mobile (come le sezioni precedenti) */
+@media (max-width: 480px) {
+  .nexus-lang-switcher {
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .nexus-lang-item a,
+  .nexus-lang-item span {
+    padding: 4px 11px;
+    font-size: 0.78rem;
   }
 }

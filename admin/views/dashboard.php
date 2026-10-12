@@ -68,6 +68,19 @@
  * invito con link alla pagina Redazioni. Guard class_exists: senza la classe
  * fondamenta la card non viene stampata (degradazione senza fatal).
  *
+ * v1.1.2 — Contratto "Multilingua nativo" (T-07): nella griglia statistiche e'
+ * presente una stat-card server-side aggiuntiva "Multilingua" (stesso pattern
+ * visuale della card Redazioni). Nessun id nuovo consumato da admin.js: il JS
+ * scrive solo sui nodi con id nxa-stat-*, quindi i valori di questa card non
+ * vengono sovrascritti. Tutti i dati arrivano da chiamate PHP dirette a
+ * Nexus_Multilang (nessuna rotta REST nuova): badge del driver attivo
+ * (Polylang, WPML o collegamento interno Nexus) con testo breve, e per ogni
+ * voce di Nexus_Multilang::stats_counts() una chip "Lingua — N articoli"
+ * (etichetta da lang_name, plurale con _n). Con zero traduzioni la card
+ * mostra uno stato vuoto onesto ("Nessun post tradotto ancora.") con link
+ * alla lista Articoli. Guard class_exists: senza la classe fondamenta la
+ * card non viene stampata (degradazione senza fatal).
+ *
  * @package Nexus_News_AI
  */
 
@@ -140,6 +153,32 @@ if ( class_exists( 'Nexus_Redazioni' ) ) {
                 foreach ( (array) Nexus_DB::agents() as $nexus_red_agent_row ) {
                         $nexus_red_agent_map[ (int) $nexus_red_agent_row->id ] = $nexus_red_agent_row;
                 }
+        }
+}
+
+/*
+ * v1.1.2 (T-07) — Card "Multilingua": driver attivo e conteggio dei post
+ * pubblicati per lingua, letti in PHP diretto da Nexus_Multilang (contratto
+ * §1: nessuna rotta REST nuova). Con zero traduzioni la card mostra lo stato
+ * vuoto con link alla lista Articoli; senza la classe fondamenta la card non
+ * viene stampata.
+ */
+$nexus_ml_driver     = '';
+$nexus_ml_counts     = array();
+$nexus_ml_badge      = 'Nexus';
+$nexus_ml_badge_text = __( 'Collegamento interno Nexus.', 'nexus-news-ai' );
+
+if ( class_exists( 'Nexus_Multilang' ) ) {
+        $nexus_ml_driver = Nexus_Multilang::driver();
+        $nexus_ml_counts = Nexus_Multilang::stats_counts();
+        $nexus_ml_counts = is_array( $nexus_ml_counts ) ? $nexus_ml_counts : array();
+
+        if ( 'polylang' === $nexus_ml_driver ) {
+                $nexus_ml_badge      = 'Polylang';
+                $nexus_ml_badge_text = __( 'Associazioni gestite da Polylang.', 'nexus-news-ai' );
+        } elseif ( 'wpml' === $nexus_ml_driver ) {
+                $nexus_ml_badge      = 'WPML';
+                $nexus_ml_badge_text = __( 'Associazioni gestite da WPML.', 'nexus-news-ai' );
         }
 }
 ?>
@@ -232,6 +271,32 @@ if ( class_exists( 'Nexus_Redazioni' ) ) {
                                         </span>
                                 </div>
                         <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+                <?php if ( class_exists( 'Nexus_Multilang' ) ) : ?>
+                <div class="nxa-stat-card">
+                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_ml_badge ); ?></span>
+                        <span class="nxa-stat-label"><?php echo esc_html__( 'Multilingua', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-stat-label"><?php echo esc_html( $nexus_ml_badge_text ); ?></span>
+                        <?php if ( empty( $nexus_ml_counts ) ) : ?>
+                                <span class="nxa-stat-label"><?php echo esc_html__( 'Nessun post tradotto ancora.', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'edit.php' ) ); ?>"><?php echo esc_html__( 'Apri la lista Articoli.', 'nexus-news-ai' ); ?></a></span>
+                        <?php else : ?>
+                                <span class="nxa-red-agents-chips">
+                                        <?php foreach ( $nexus_ml_counts as $nexus_ml_lang => $nexus_ml_count ) : ?>
+                                                <?php
+                                                $nexus_ml_count = (int) $nexus_ml_count;
+                                                $nexus_ml_name  = Nexus_Multilang::lang_name( (string) $nexus_ml_lang );
+                                                ?>
+                                                <span class="nxa-red-chip"><?php echo esc_html( sprintf(
+                                                        /* translators: 1: nome della lingua, 2: numero di post pubblicati in quella lingua. */
+                                                        _n( '%1$s — %2$s articolo', '%1$s — %2$s articoli', $nexus_ml_count, 'nexus-news-ai' ),
+                                                        $nexus_ml_name,
+                                                        number_format_i18n( $nexus_ml_count )
+                                                ) ); ?></span>
+                                        <?php endforeach; ?>
+                                </span>
+                        <?php endif; ?>
                 </div>
                 <?php endif; ?>
         </div>

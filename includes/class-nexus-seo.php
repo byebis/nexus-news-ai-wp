@@ -4,7 +4,10 @@
  * WordPress reali (CPT nexus_article): meta description, Open Graph base,
  * JSON-LD NewsArticle e title tag personalizzati.
  *
- * Implementa la sezione SEO del contratto v1.0.1 (§4 "Contenuti Veri").
+ * Implementa la sezione SEO del contratto v1.0.1 (§4 "Contenuti Veri") e, da
+ * v1.1.2 (CONTRATTO-v1.1.2.md "Multilingua nativo"), i meta hreflang alternati
+ * e og:locale per le single 'post' con più di una lingua pubblicata: le
+ * traduzioni sono post WordPress collegati, mappati via Nexus_Multilang (§1).
  *
  * CONTRATTO PUBBLICO (usato dagli altri moduli):
  * Nexus_SEO::init()                          — registra gli hook front-end:
@@ -17,7 +20,9 @@
  *                                              oppure array() se la SEO è disabilitata (enable_seo != 1).
  *                                              Mai fatale, mai eccezioni: in caso di problemi usa il fallback locale.
  * Nexus_SEO::print_head_meta()               — hook wp_head: meta description + Open Graph base + blocco
- *                                              JSON-LD @type NewsArticle, SOLO su single nexus_article.
+ *                                              JSON-LD @type NewsArticle su single nexus_article e post
+ *                                              nativi (dual-mode v1.1.0); da v1.1.2 anche hreflang
+ *                                              alternati e og:locale se 'post' ha più lingue pubblicate.
  * Nexus_SEO::filter_title( $title )          — hook pre_get_document_title: su single nexus_article usa
  *                                              _nexus_seo_title se presente, altrimenti "Titolo | Nome sito"
  *                                              (separatore ' | ').
@@ -192,7 +197,13 @@ class Nexus_SEO {
 
         /**
          * Hook wp_head (priorità 1): meta description, Open Graph base e JSON-LD
-         * NewsArticle, SOLO sulle pagine single del post type nexus_article.
+         * NewsArticle sulle single nexus_article e post nativi (dual-mode v1.1.0).
+         *
+         * Da v1.1.2 ("Multilingua nativo"): sulle single di tipo 'post' con più di
+         * una lingua pubblicata emette anche i link rel alternate hreflang (x-default
+         * sulla lingua predefinita) e og:locale + og:locale:alternate, tramite le API
+         * Nexus_Multilang. Guardie: classe assente, non-singular o meno di due lingue
+         * pubblicate: nessun output aggiuntivo, mai fatale.
          *
          * @return void
          */
@@ -298,6 +309,77 @@ class Nexus_SEO {
                 }
                 if ( '' !== $published ) {
                         echo '<meta property="article:published_time" content="' . esc_attr( $published ) . '">' . "\n";
+                }
+
+                // v1.1.2 Multilingua nativo (CONTRATTO-v1.1.2.md): sulle single di tipo
+                // 'post' con più di una lingua pubblicata emette hreflang alternati e
+                // og:locale + og:locale:alternate. Guard: Nexus_Multilang presente;
+                // classe assente, non-singular o poche lingue: output invariato, mai fatale.
+                if ( class_exists( 'Nexus_Multilang' ) && 'post' === $post->post_type ) {
+                        $translations = Nexus_Multilang::translations_of( $post_id );
+
+                        // Solo traduzioni davvero pubblicate, con permalink utilizzabile.
+                        $published_translations = array();
+                        if ( is_array( $translations ) && ! empty( $translations ) ) {
+                                foreach ( $translations as $lang => $translation_id ) {
+                                        $lang           = sanitize_key( (string) $lang );
+                                        $translation_id = absint( $translation_id );
+
+                                        if ( '' === $lang || $translation_id < 1 || 'publish' !== get_post_status( $translation_id ) ) {
+                                                continue;
+                                        }
+
+                                        $translation_url = get_permalink( $translation_id );
+                                        if ( ! is_string( $translation_url ) || '' === $translation_url ) {
+                                                continue;
+                                        }
+
+                                        $published_translations[ $lang ] = $translation_url;
+                                }
+                        }
+
+                        // Almeno due lingue pubblicate: emette hreflang e og:locale.
+                        if ( count( $published_translations ) > 1 ) {
+                                // Un link hreflang per ciascuna lingua pubblicata.
+                                foreach ( $published_translations as $lang => $translation_url ) {
+                                        echo '<link rel="alternate" hreflang="' . esc_attr( $lang ) . '" href="' . esc_url( $translation_url ) . '" />' . "\n";
+                                }
+
+                                // x-default: permalink della lingua predefinita, se tra le pubblicate.
+                                $default_lang = sanitize_key( (string) Nexus_Multilang::default_lang() );
+                                if ( '' !== $default_lang && isset( $published_translations[ $default_lang ] ) ) {
+                                        echo '<link rel="alternate" hreflang="x-default" href="' . esc_url( $published_translations[ $default_lang ] ) . '" />' . "\n";
+                                }
+
+                                // Mappa codice lingua: locale Open Graph (fuori mappa: codice così com'è).
+                                $locale_map = array(
+                                        'it' => 'it_IT',
+                                        'en' => 'en_US',
+                                        'es' => 'es_ES',
+                                        'fr' => 'fr_FR',
+                                        'de' => 'de_DE',
+                                        'pt' => 'pt_PT',
+                                        'ar' => 'ar_AR',
+                                        'zh' => 'zh_CN',
+                                        'ja' => 'ja_JP',
+                                );
+
+                                // og:locale del post corrente.
+                                $current_lang   = sanitize_key( (string) Nexus_Multilang::lang_of_post( $post_id ) );
+                                $current_locale = isset( $locale_map[ $current_lang ] ) ? $locale_map[ $current_lang ] : $current_lang;
+                                if ( '' !== $current_locale ) {
+                                        echo '<meta property="og:locale" content="' . esc_attr( $current_locale ) . '">' . "\n";
+                                }
+
+                                // og:locale:alternate per le altre lingue pubblicate.
+                                foreach ( array_keys( $published_translations ) as $lang ) {
+                                        if ( $lang === $current_lang ) {
+                                                continue;
+                                        }
+                                        $alternate_locale = isset( $locale_map[ $lang ] ) ? $locale_map[ $lang ] : $lang;
+                                        echo '<meta property="og:locale:alternate" content="' . esc_attr( $alternate_locale ) . '">' . "\n";
+                                }
+                        }
                 }
 
                 // JSON-LD NewsArticle (dati strutturati per i motori di ricerca).

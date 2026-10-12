@@ -654,13 +654,29 @@
                         }
                         // Sezione "Traduci" (v1.0.3): lingue caricate in modo
                         // asincrono da GET /settings, fallback contrattuale en/es/fr.
+                        // v1.1.2: sotto la riga traduzioni la riga "Pubblica come
+                        // post" — bottoni lingua che creano il post WP tradotto
+                        // collegato e lista di stato delle traduzioni come post
+                        // (riempita da GET multilang/translations-posts con la
+                        // nota discreta del driver da multilang/info, cache pagina).
                         html += '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Traduci</h4>' +
                                 '<div class="nxa-translate-row" id="nxa-translate-row">' +
                                         '<p style="font-size:12px;color:var(--nxa-muted);margin:0">Caricamento lingue…</p>' +
+                                '</div>' +
+                                '<div class="nxa-translate-post-row" id="nxa-translate-post-row">' +
+                                        '<p class="nxa-translate-post-label" style="font-size:12px;font-weight:600;margin:10px 0 4px;color:var(--nxa-text-body)">Pubblica come post</p>' +
+                                        '<div class="nxa-translate-post-btns">' +
+                                                '<p style="font-size:12px;color:var(--nxa-muted);margin:0">Caricamento lingue…</p>' +
+                                        '</div>' +
+                                        '<div id="nxa-translations-posts-list"></div>' +
                                 '</div>';
 
                         openModalBody( html );
                         bindTranslateButtons( qs( '#nxa-translate-row' ), num( pick( a, 'id' ) ) || num( id ) );
+                        // v1.1.2: bottoni "Pubblica come post" + lista di stato
+                        // delle traduzioni come post nativi (una fetch per apertura).
+                        bindTranslatePostButtons( qs( '#nxa-translate-post-row' ), num( pick( a, 'id' ) ) || num( id ) );
+                        loadTranslationsPosts( num( pick( a, 'id' ) ) || num( id ) );
                 } ).catch( function ( err ) {
                         openModalBody( emptyState( '⚠️', 'Impossibile caricare l’articolo', err.message || '' ) );
                 } );
@@ -800,6 +816,218 @@
                                 apiErrorToast( err, 'Traduzione non riuscita' );
                         } ).then( function () {
                                 setBtnLoading( btn, false );
+                        } );
+                } );
+        }
+
+        /* ==================================================================
+         * 6-ter. TRADUZIONI COME POST NATIVI (v1.1.2)
+         * ==================================================================
+         *
+         * Le traduzioni diventano post WordPress veri, collegati tra loro
+         * (Polylang, WPML o meta interni Nexus secondo il driver attivo).
+         * Endpoint admin usati tramite helper api() (namespace nexus / v1):
+         *  - GET  multilang/info               → driver attivo, cache di pagina;
+         *  - POST multilang/translate-post     → corpo { article_id, lang },
+         *    risposta con lang, post_id, edit_url, permalink e already;
+         *  - GET  multilang/translations-posts → { article_id, source_post_id,
+         *    source_lang, translations: [ { lang, post_id, edit_url,
+         *    permalink, status, modified, is_source } ] }.
+         *
+         * Lettura difensiva come nel resto del file: campi mancanti non
+         * crashano, errori REST sempre in toast italiano, bottoni riabilitati
+         * nel ramo finale after-catch (chiusura modal e ESC safe).
+         */
+
+        /**
+         * v1.1.2: info driver multilingua, UNA fetch per pagina (cache in
+         * variabile, stesso pattern di getSettingsOnce). Errore → null: la
+         * nota driver sparisce e il resto della UI funziona comunque.
+         */
+        var multilangInfoCache = null;
+        var multilangInfoFetched = false;
+
+        function getMultilangInfo() {
+                if ( multilangInfoFetched ) {
+                        return Promise.resolve( multilangInfoCache );
+                }
+                multilangInfoFetched = true;
+                return api( 'multilang/info' ).then( function ( payload ) {
+                        multilangInfoCache = unwrap( payload ) || {};
+                        return multilangInfoCache;
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] multilang info:', err );
+                        return null;
+                } );
+        }
+
+        /**
+         * v1.1.2: nota discreta sul driver attivo. Con Polylang o WPML le
+         * associazioni tra lingue sono gestite dai plugin: lo dichiariamo
+         * apertamente invece di far credere che sia Nexus a collegarle.
+         */
+        function multilangDriverNoteHtml() {
+                var info = multilangInfoCache;
+                if ( ! info ) {
+                        return '';
+                }
+                var driver = String( pick( info, 'driver' ) || '' ).toLowerCase();
+                if ( driver === 'polylang' ) {
+                        return '<p class="nxa-multilang-note" style="font-size:12px;color:var(--nxa-muted);margin:6px 0 0">Associazioni lingua gestite da Polylang.</p>';
+                }
+                if ( driver === 'wpml' ) {
+                        return '<p class="nxa-multilang-note" style="font-size:12px;color:var(--nxa-muted);margin:6px 0 0">Associazioni lingua gestite da WPML.</p>';
+                }
+                return '';
+        }
+
+        /**
+         * v1.1.2: chip di una traduzione pubblicata come post. Bandiera e
+         * codice lingua da TRANSLATE_META, badge di stato (STATUS_META:
+         * 'publish' mostrato come Pubblicato, 'future' come In attesa),
+         * marcatura "sorgente" per il post nativo dell'articolo e link
+         * Modifica (editor admin) e Vedi (permalink pubblico).
+         */
+        function translationPostChip( t ) {
+                var lang = String( pick( t, 'lang' ) || '' );
+                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                var status = String( pick( t, 'status' ) || '' ).toLowerCase();
+                if ( status === 'publish' ) {
+                        status = 'published';
+                }
+                if ( status === 'future' ) {
+                        status = 'pending';
+                }
+                var editUrl = String( pick( t, 'edit_url' ) || '' );
+                var permalink = String( pick( t, 'permalink' ) || '' );
+                var isSource = !! t.is_source;
+                return '<span class="nxa-trans-post-chip" data-lang="' + esc( lang ) + '"' + ( isSource ? ' data-source="1"' : '' ) +
+                        ' style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--nxa-border);border-radius:999px;padding:3px 10px;font-size:12px;background:var(--nxa-surface-2)">' +
+                        '<strong>' + esc( label ) + '</strong>' +
+                        badge( status ) +
+                        ( isSource ? '<span class="nxa-trans-post-source" style="font-size:11px;color:var(--nxa-muted)">sorgente</span>' : '' ) +
+                        ( editUrl ? '<a class="nxa-trans-post-edit" href="' + esc( editUrl ) + '">Modifica</a>' : '' ) +
+                        ( permalink ? '<a class="nxa-trans-post-view" href="' + esc( permalink ) + '" target="_blank" rel="noopener noreferrer">Vedi</a>' : '' ) +
+                '</span>';
+        }
+
+        /**
+         * v1.1.2: render della lista #nxa-translations-posts-list. Senza
+         * post nativo (source_post_id 0) nota onesta: le traduzioni come
+         * post si attivano pubblicando l'articolo. Post nativo presente ma
+         * nessuna traduzione: stato vuoto onesto, mai contenuti simulati.
+         */
+        function renderTranslationsPosts( data ) {
+                var box = qs( '#nxa-translations-posts-list' );
+                if ( ! box ) {
+                        return;
+                }
+                var d = data || {};
+                var sourcePostId = num( pick( d, 'source_post_id' ) );
+                var translations = Array.isArray( d.translations ) ? d.translations : [];
+                var html = multilangDriverNoteHtml();
+                if ( sourcePostId <= 0 ) {
+                        html += '<p class="nxa-trans-posts-note" style="font-size:12px;color:var(--nxa-muted);margin:6px 0 0">Pubblica l’articolo per attivare le traduzioni come post.</p>';
+                        box.innerHTML = html;
+                        return;
+                }
+                if ( ! translations.length ) {
+                        html += '<p class="nxa-trans-posts-note" style="font-size:12px;color:var(--nxa-muted);margin:6px 0 0">Nessuna traduzione pubblicata come post.</p>';
+                        box.innerHTML = html;
+                        return;
+                }
+                html += '<div class="nxa-trans-posts-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' +
+                        translations.map( translationPostChip ).join( '' ) +
+                '</div>';
+                box.innerHTML = html;
+        }
+
+        /**
+         * v1.1.2: GET multilang/translations-posts per l'articolo e render
+         * della lista. Chiamata all'apertura del dettaglio e dopo ogni
+         * pubblicazione riuscita; driver e stato arrivano in parallelo e
+         * un modal chiuso nel frattempo (box fuori dal documento) interrompe
+         * il render senza errori.
+         */
+        function loadTranslationsPosts( articleId ) {
+                var box = qs( '#nxa-translations-posts-list' );
+                var id = num( articleId );
+                if ( ! box || id <= 0 ) {
+                        return Promise.resolve();
+                }
+                showSkeleton( box, 2 );
+                return Promise.all( [
+                        getMultilangInfo(),
+                        api( 'multilang/translations-posts?article_id=' + id )
+                ] ).then( function ( results ) {
+                        if ( ! box.isConnected ) {
+                                return; // modal chiuso nel frattempo
+                        }
+                        renderTranslationsPosts( unwrap( results[ 1 ] ) || {} );
+                } ).catch( function ( err ) {
+                        if ( ! box.isConnected ) {
+                                return;
+                        }
+                        box.innerHTML = '<p class="nxa-trans-posts-note" style="font-size:12px;color:var(--nxa-muted);margin:6px 0 0">' +
+                                esc( ( err && err.message ) ? err.message : 'Stato delle traduzioni non disponibile.' ) + '</p>';
+                        window.console.warn( '[Nexus] traduzioni come post:', err );
+                } );
+        }
+
+        /**
+         * v1.1.2: riga "Pubblica come post" del modal articolo. Stesse lingue
+         * dei bottoni "Traduci" (translateLangs su GET /settings, cache di
+         * pagina). Click → POST multilang/translate-post { article_id, lang }:
+         * tutti i bottoni lingua della riga restano disabilitati durante la
+         * chiamata; successo → toast + refresh della lista di stato (chips
+         * con link Modifica e Vedi); errore → apiErrorToast.
+         */
+        function bindTranslatePostButtons( container, articleId ) {
+                if ( ! container ) {
+                        return;
+                }
+                getSettingsOnce().then( function ( settings ) {
+                        if ( ! container.isConnected ) {
+                                return; // il modal è stato chiuso nel frattempo
+                        }
+                        var btns = container.querySelector( '.nxa-translate-post-btns' );
+                        if ( ! btns ) {
+                                return;
+                        }
+                        btns.innerHTML = translateLangs( settings ).map( function ( lang ) {
+                                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                                return '<button type="button" class="button nxa-translate-post" data-lang="' + esc( lang ) + '">' + label + '</button>';
+                        } ).join( '' );
+                } );
+                container.addEventListener( 'click', function ( ev ) {
+                        var btn = ev.target.closest ? ev.target.closest( '.nxa-translate-post' ) : null;
+                        if ( ! btn || btn.disabled ) {
+                                return;
+                        }
+                        var id = num( articleId );
+                        if ( id <= 0 ) {
+                                return;
+                        }
+                        var lang = btn.getAttribute( 'data-lang' ) || '';
+                        qsa( '.nxa-translate-post', container ).forEach( function ( b ) {
+                                b.disabled = true;
+                        } );
+                        setBtnLoading( btn, true, 'Pubblico…' );
+                        api( 'multilang/translate-post', { method: 'POST', body: { article_id: id, lang: lang } } ).then( function ( payload ) {
+                                var d = unwrap( payload ) || {};
+                                var code = String( pick( d, 'lang' ) || lang ).toUpperCase();
+                                toast( d.already
+                                        ? 'Traduzione già pubblicata come post (' + code + ').'
+                                        : 'Traduzione pubblicata come post (' + code + ').',
+                                        'success', 'Traduzioni come post' );
+                                loadTranslationsPosts( id );
+                        } ).catch( function ( err ) {
+                                apiErrorToast( err, 'Pubblicazione traduzione non riuscita' );
+                        } ).then( function () {
+                                setBtnLoading( btn, false );
+                                qsa( '.nxa-translate-post', container ).forEach( function ( b ) {
+                                        b.disabled = false;
+                                } );
                         } );
                 } );
         }
@@ -1808,8 +2036,9 @@
                 }
 
                 // checkbox redazione intelligente (v1.0.3): presenti → 1, assenti → 0
-                // (stesso pattern dei blocchi wpFlags/distribFlags sopra)
-                var intelFlags = [ 'enable_factcheck', 'enable_translations' ];
+                // (v1.1.2: + enable_autotranslate_posts, post tradotti nativi;
+                // stesso pattern dei blocchi wpFlags/distribFlags sopra)
+                var intelFlags = [ 'enable_factcheck', 'enable_translations', 'enable_autotranslate_posts' ];
                 for ( i = 0; i < intelFlags.length; i++ ) {
                         var intelBoxes = qsa( 'input[name="' + intelFlags[ i ] + '"]', form );
                         if ( intelBoxes.length ) {
