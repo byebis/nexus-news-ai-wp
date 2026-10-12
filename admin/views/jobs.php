@@ -46,8 +46,8 @@
  * lavoro in <code>, testo errore) vanno a capo via overflow-wrap invece di
  * spingere le colonne; su schermi <=600px l'errore troncato passa a wrapping
  * completo. Nessuna width/min-width fissa eccessiva presente nel markup o
- * nello stile locale (verificato). Nessun id/data-*/selettore consumato dallo
- * script inline modificato; nessuno style inline nuovo.
+ * nello stile locale (verificato). Nessun id, data-attributo o selettore
+ * consumato dallo script inline modificato; nessuno style inline nuovo.
  *
  * @package Nexus_News_AI
  */
