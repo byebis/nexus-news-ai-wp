@@ -20,6 +20,21 @@
  *
  * Stati articolo: draft|pending_approval|approved|published|rejected.
  *
+ * v1.1.4 — "Redazione completa" (capo redattore AI + fonti redazione, guarded):
+ *   - COLLECT: NESSUN tocco per le fonti (v1.1.4 integratore): i feed delle fonti
+ *     della redazione dell'agente sono gia' uniti DENTRO Nexus_Rss::fetch_for_agent()
+ *     (T-08: fonti redazione prima dei globali, dedup per link, cap 10); collect()
+ *     consuma gli item finali senza alcun merge aggiuntivo.
+ *   - REWRITE: se l'articolo e' in giro di revisione (chief_status 'revisione'),
+ *     la nota del capo redattore (chief_note) viene allegata al prompt del giornalista.
+ *   - DOPO la rewrite: se l'articolo resta in pending_approval e il capo redattore
+ *     e' attivo (Nexus_Chief::enabled), la revisione gli viene affidata via coda
+ *     'nexus_chief_review' (o chiamata diretta se la coda non e' disponibile).
+ *     Nessun doppio recapito: lo stato viene riletto prima dell'invio e il
+ *     percorso fully_autonomous sopra soglia NON cambia (auto-approvazione esistente).
+ *   - CRON TICK: dopo il giro degli agenti, il capo redattore rilegge fino a 3
+ *     articoli in attesa (Nexus_Chief::run_for_pending( 3 )), giri di revisione inclusi.
+ *
  * v1.0.3 — "Redazione Intelligente" (difensivo: ogni integrazione è guarded e mai fatale):
  *   - Modello AI per-agente in fase rewrite (agents.ai_model, fallback ai_model globale);
  *     modello economico ai_model_cheap (fallback ai_model) per collect, evaluate e fact-check.
@@ -89,7 +104,12 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                /* ---- FASE 1a: fonti RSS reali (o percorso evergreen) ---- */
+                /* ---- FASE 1a: fonti RSS reali (o percorso evergreen) ----
+                 * NOTA v1.1.4: i feed delle fonti della redazione sono gia' uniti
+                 * DENTRO Nexus_Rss::fetch_for_agent() (T-08: fonti redazione prima
+                 * dei globali, dedup per link, cap 10). Il collect NON fa ulteriori
+                 * merge di fonti: gli item arrivano pronti, stessa shape.
+                 */
                 $items = array();
                 if ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'fetch_for_agent' ) ) {
                         $fetched = Nexus_Rss::fetch_for_agent( $agent );
@@ -97,6 +117,7 @@ class Nexus_Pipeline {
                                 $items = $fetched;
                         }
                 }
+
                 $evergreen = empty( $items );
 
                 $candidates  = array();
@@ -304,6 +325,12 @@ class Nexus_Pipeline {
         /**
          * FASE 3 — Riscrittura AI dell'articolo in versione editoriale completa.
          *
+         * Richiamabile in standalone (legge l'articolo, lo rimette in
+         * pending_approval): e' il giro di revisione riusato dal capo redattore
+         * (v1.1.4, Nexus_Chief) quando il verdetto e' "revisiona". In quel caso,
+         * se l'articolo e' in revisione (chief_status 'revisione') la nota del
+         * capo (chief_note) viene allegata al prompt del giornalista.
+         *
          * @param int $article_id ID articolo.
          * @return array{ok:bool, error:string}
          */
@@ -328,6 +355,16 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
+                // v1.1.4 — Giro di revisione del capo redattore: se l'articolo e' in
+                // revisione (chief_status 'revisione'), la nota del capo guida la nuova
+                // stesura del giornalista. Guard isset: le colonne chief_ della v1.1.4
+                // possono non esistere su installazioni non ancora aggiornate.
+                $chief_note = '';
+                if ( isset( $article->chief_status ) && 'revisione' === (string) $article->chief_status
+                        && isset( $article->chief_note ) && '' !== trim( (string) $article->chief_note ) ) {
+                        $chief_note = self::clip( (string) $article->chief_note, 600 );
+                }
+
                 $prompt = Nexus_AI_Engine::rewrite_prompt(
                         (string) $article->title,
                         (string) $article->summary,
@@ -336,6 +373,12 @@ class Nexus_Pipeline {
                         $agent ? (string) $agent->name : 'Nexus AI',
                         $agent ? self::agent_personality( $agent ) : 'professionale e oggettivo'
                 );
+                if ( '' !== $chief_note ) {
+                        $prompt .= sprintf(
+                                "\n\nNOTA DEL CAPO REDATTORE (articolo mandato in revisione: tienila presente riscrivendo):\n%s",
+                                $chief_note
+                        );
+                }
                 // v1.0.3: modello per-agente (agents.ai_model se impostato, fallback ai_model globale).
                 $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id ) );
 
@@ -671,6 +714,18 @@ class Nexus_Pipeline {
                         } elseif ( empty( $settings['auto_rewrite'] ) ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d lasciato in stato bozza (auto_rewrite disabilitato).', $article_id );
                         }
+
+                        // v1.1.4 — CAPO REDATTORE AI: se dopo la riscrittura l'articolo e'
+                        // rimasto in coda (pending_approval: nessuna auto-approvazione) e il
+                        // capo redattore e' attivo, la revisione passa a lui. Nessun doppio
+                        // recapito: lo stato viene riletto e stato diverso da pending_approval
+                        // non viene inviato (l'auto-approvazione fully_autonomous NON cambia).
+                        if ( $rewritten_now ) {
+                                $chief_article = Nexus_DB::get_article( $article_id );
+                                if ( $chief_article && 'pending_approval' === $chief_article->status ) {
+                                        self::chief_dispatch( $article_id );
+                                }
+                        }
                 }
 
                 $summary['ok'] = true;
@@ -717,12 +772,68 @@ class Nexus_Pipeline {
                         }
                 }
 
+                // v1.1.4 — Capo redattore AI: dopo il giro degli agenti il capo rilegge
+                // fino a 3 articoli in attesa di revisione (giri di revisione inclusi),
+                // se la funzionalita' e' attiva. Guard totali, mai fatale.
+                if ( class_exists( 'Nexus_Chief' ) && method_exists( 'Nexus_Chief', 'enabled' ) && method_exists( 'Nexus_Chief', 'run_for_pending' ) ) {
+                        try {
+                                if ( Nexus_Chief::enabled() ) {
+                                        Nexus_Chief::run_for_pending( 3 );
+                                }
+                        } catch ( Throwable $e ) {
+                                Nexus_DB::insert_activity( 0, 'evaluating', sprintf( 'Errore capo redattore nel tick del cron: %s', self::clip( $e->getMessage(), 300 ) ), 'error' );
+                        }
+                }
+
                 return array(
                         'ok'        => true,
                         'ran'       => $ran,
                         'results'   => $results,
                         'timestamp' => current_time( 'mysql' ),
                 );
+        }
+
+        /**
+         * Affida un articolo alla revisione del capo redattore AI (v1.1.4).
+         *
+         * Preferisce la coda lavori ('nexus_chief_review': asincrona con
+         * enable_queue=1, sincrona con enable_queue=0); se la coda non e'
+         * disponibile chiama Nexus_Chief::review_article direttamente. Guardie
+         * difensive: senza Nexus_Chief (versioni precedenti) o con capo
+         * disattivato il flusso resta identico alla versione precedente.
+         *
+         * @param int $article_id ID articolo in pending_approval.
+         * @return void
+         */
+        private static function chief_dispatch( $article_id ) {
+                if ( ! class_exists( 'Nexus_Chief' ) || ! method_exists( 'Nexus_Chief', 'enabled' ) ) {
+                        return; // Capo redattore non disponibile: flusso invariato.
+                }
+
+                try {
+                        if ( ! Nexus_Chief::enabled() ) {
+                                return;
+                        }
+                } catch ( Throwable $e ) {
+                        return; // Mai bloccare la pipeline per un errore del capo redattore.
+                }
+
+                if ( class_exists( 'Nexus_Queue' ) && method_exists( 'Nexus_Queue', 'dispatch' ) ) {
+                        try {
+                                Nexus_Queue::dispatch( 'nexus_chief_review', array( 'article_id' => (int) $article_id ) );
+                                return;
+                        } catch ( Throwable $e ) {
+                                // Coda non disponibile: fallback alla revisione diretta.
+                        }
+                }
+
+                if ( method_exists( 'Nexus_Chief', 'review_article' ) ) {
+                        try {
+                                Nexus_Chief::review_article( (int) $article_id, false );
+                        } catch ( Throwable $e ) {
+                                self::log_phase( 0, 'evaluating', sprintf( 'Capo redattore: revisione articolo #%d fallita: %s', (int) $article_id, self::clip( $e->getMessage(), 300 ) ), 'error' );
+                        }
+                }
         }
 
         /**

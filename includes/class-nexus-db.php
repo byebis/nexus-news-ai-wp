@@ -28,6 +28,33 @@
  * Nexus_DB::add_reaction( $id, $emoji )
  * Nexus_DB::drop_tables()              — usato da uninstall.php
  *
+ * v1.1.4 — NUOVE COLONNE (contratto T-02):
+ *   nexus_agents:  ai_provider (provider AI dedicato dell'agente, '' = provider globale
+ *                  dalle impostazioni), role ('giornalista' | 'capo_redattore'),
+ *                  chief_scope ('' | 'global' | 'category' | 'term'), chief_term_id
+ *                  (redazione assegnata al capo redattore, 0 = nessuna). ZERO indici
+ *                  nuovi: cardinalità bassa, bastano le scansioni (le KEY esistenti
+ *                  restano intatte per dbDelta).
+ *   nexus_articles: chief_status ('' | 'visto' | 'modificato' | 'rifiutato' | 'revisione'),
+ *                  chief_note (nota del capo redattore), chief_agent_id, chief_reviewed_at
+ *                  (data revisione capo), chief_rounds (giri di revisione effettuati).
+ *   Le colonne vengono aggiunte automaticamente da dbDelta() invocato da install() e
+ *   maybe_upgrade() quando NEXUS_VERSION cambia (bump 1.1.4 riservato all'integratore).
+ * v1.1.4 — NUOVE CHIAVI SETTINGS (contratto T-02, default_settings()):
+ *   Provider per agente: prov_key_openrouter, prov_key_openai, prov_key_anthropic,
+ *   prov_key_google, prov_key_groq, prov_key_deepseek, prov_key_mistral, prov_key_xai,
+ *   prov_key_custom (chiavi API per provider) e prov_base_custom (base URL del provider
+ *   "custom" compatibile OpenAI).
+ *   Capo redattore: chief_enabled, chief_auto_publish (0 = human-in-the-loop con badge,
+ *   1 = pubblicazione automatica se il capo approva), chief_max_rounds, chief_id
+ *   (0 = automatico: primo capo redattore attivo).
+ *   Strumenti di ricerca: tools_enabled, tools_search_provider ('tavily' | 'serper' |
+ *   'brave' | 'none'), tools_search_key, tools_max_results, tools_read_page,
+ *   tools_read_max_chars, tools_max_rounds, tools_timeout e mcp_servers_text
+ *   (righe "nome|url|tokenOpzionale").
+ *   update_settings() itera default_settings(): le chiavi nuove sono subito
+ *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ *
  * @package Nexus_News_AI
  */
 
@@ -116,6 +143,35 @@ class Nexus_DB {
                         'public_api_key'     => '', // chiave generata dalla pagina Strumenti
                         // v1.0.6 — Tema visuale del pannello admin.
                         'admin_theme'        => 'light', // light | dark (chiaro di default dalla 1.0.6)
+                        // v1.1.4 — Provider AI per agente: chiave API per ciascun provider
+                        // (chiave vuota = provider non selezionabile; il provider globale
+                        // "ai_api_key" sopra resta il fallback per gli agenti senza provider).
+                        'prov_key_openrouter' => '',
+                        'prov_key_openai'     => '',
+                        'prov_key_anthropic'  => '',
+                        'prov_key_google'     => '',
+                        'prov_key_groq'       => '',
+                        'prov_key_deepseek'   => '',
+                        'prov_key_mistral'    => '',
+                        'prov_key_xai'        => '',
+                        'prov_key_custom'     => '',
+                        'prov_base_custom'    => '', // base URL del provider "custom" (compatibile OpenAI)
+                        // v1.1.4 — Capo redattore AI: legge gli articoli in pending_approval
+                        // e approva/modifica/richiede revisione/rifiuta (Nexus_Chief, T-03).
+                        'chief_enabled'       => 0, // 1 = revisione capo redattore attiva
+                        'chief_auto_publish'  => 0, // 0 = human-in-the-loop (badge, approvi tu), 1 = pubblica in automatico se il capo approva
+                        'chief_max_rounds'    => 2, // giri di revisione max prima di richiedere l'intervento umano
+                        'chief_id'            => 0, // 0 = automatico: primo agente attivo con ruolo capo_redattore
+                        // v1.1.4 — Strumenti di ricerca per gli agenti (tool-use loop, Nexus_Tools, T-04).
+                        'tools_enabled'         => 0, // 1 = gli agenti possono usare gli strumenti nel loop
+                        'tools_search_provider' => 'tavily', // tavily | serper | brave | none
+                        'tools_search_key'      => '', // chiave API del motore di ricerca scelto
+                        'tools_max_results'     => 5, // risultati max per ogni ricerca web
+                        'tools_read_page'       => 1, // 1 = lettura pagine web attiva
+                        'tools_read_max_chars'  => 6000, // caratteri max estratti per pagina
+                        'tools_max_rounds'      => 3, // giri max del tool-use loop
+                        'tools_timeout'         => 15, // timeout in secondi delle richieste HTTP degli strumenti
+                        'mcp_servers_text'      => '', // righe "nome|url|tokenOpzionale" (server MCP Streamable HTTP)
                 );
         }
 
@@ -147,6 +203,10 @@ class Nexus_DB {
                                 status VARCHAR(20) NOT NULL DEFAULT 'active',
                                 personality TEXT NULL,
                                 ai_model VARCHAR(100) NOT NULL DEFAULT '',
+                                ai_provider VARCHAR(50) NOT NULL DEFAULT '',
+                                role VARCHAR(20) NOT NULL DEFAULT 'giornalista',
+                                chief_scope VARCHAR(20) NOT NULL DEFAULT '',
+                                chief_term_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 wp_user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 term_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 last_run DATETIME NULL DEFAULT NULL,
@@ -173,6 +233,11 @@ class Nexus_DB {
                                 factcheck_score DECIMAL(5,2) NOT NULL DEFAULT 0,
                                 citations LONGTEXT NULL,
                                 status VARCHAR(30) NOT NULL DEFAULT 'draft',
+                                chief_status VARCHAR(20) NOT NULL DEFAULT '',
+                                chief_note TEXT NULL,
+                                chief_agent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                                chief_reviewed_at DATETIME NULL DEFAULT NULL,
+                                chief_rounds TINYINT UNSIGNED NOT NULL DEFAULT 0,
                                 quality_score DECIMAL(5,2) NOT NULL DEFAULT 0,
                                 read_time INT NOT NULL DEFAULT 3,
                                 views INT UNSIGNED NOT NULL DEFAULT 0,
@@ -398,19 +463,44 @@ class Nexus_DB {
                 return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE LOWER(category) = LOWER(%s) LIMIT 1", (string) $category ) );
         }
 
+        /**
+         * Aggiorna un agente (solo colonne ammesse dalla whitelist).
+         *
+         * v1.1.4: ammesse anche ai_provider (sanitize_text_field), role
+         * ('giornalista' | 'capo_redattore', valore non valido = 'giornalista'),
+         * chief_scope ('' | 'global' | 'category' | 'term', valore non valido = '')
+         * e chief_term_id (sempre intero).
+         *
+         * @param int   $id     Id agente.
+         * @param array $fields Campi da aggiornare: name, avatar, category, description,
+         *                      status, personality, ai_model, ai_provider, role, chief_scope,
+         *                      chief_term_id, last_run, wp_user_id, term_id.
+         * @return int|false
+         */
         public static function update_agent( $id, $fields ) {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'last_run', 'wp_user_id', 'term_id' ) )
+                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'ai_provider', 'role', 'chief_scope', 'chief_term_id', 'last_run', 'wp_user_id', 'term_id' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
                 }
+                // v1.1.4: sanizione colonne provider per agente + capo redattore.
+                if ( isset( $allowed['ai_provider'] ) ) {
+                        $allowed['ai_provider'] = sanitize_text_field( $allowed['ai_provider'] );
+                }
+                if ( isset( $allowed['role'] ) ) {
+                        $allowed['role'] = in_array( $allowed['role'], array( 'giornalista', 'capo_redattore' ), true ) ? $allowed['role'] : 'giornalista';
+                }
+                if ( isset( $allowed['chief_scope'] ) ) {
+                        $allowed['chief_scope'] = in_array( $allowed['chief_scope'], array( '', 'global', 'category', 'term' ), true ) ? $allowed['chief_scope'] : '';
+                }
                 $allowed['updated_at'] = current_time( 'mysql' );
                 $formats               = array_fill( 0, count( $allowed ), '%s' );
                 // v1.1.0: colonne di integrazione nativa sempre intere (bot user + categoria WP).
-                foreach ( array( 'wp_user_id', 'term_id' ) as $nxa_int_field ) {
+                // v1.1.4: anche chief_term_id (redazione assegnata al capo redattore) resta intera.
+                foreach ( array( 'wp_user_id', 'term_id', 'chief_term_id' ) as $nxa_int_field ) {
                         $nxa_pos = array_search( $nxa_int_field, array_keys( $allowed ), true );
                         if ( false !== $nxa_pos ) {
                                 $allowed[ $nxa_int_field ] = absint( $allowed[ $nxa_int_field ] );
@@ -424,26 +514,45 @@ class Nexus_DB {
         }
 
         /**
-         * Inserisce un agente (usato da import configurazione, v1.0.5). Ritorna id o 0.
+         * Inserisce un agente (usato da import configurazione v1.0.5 e da REST create/clone
+         * agenti). Ritorna id o 0.
          *
-         * @param array $data name (richiesto), avatar, category, description, status, personality, ai_model.
+         * v1.1.4: accetta anche ai_provider (sanitize_text_field), role ('giornalista' |
+         * 'capo_redattore', valore mancante o non valido = 'giornalista'), chief_scope
+         * ('' | 'global' | 'category' | 'term', valore non valido = '') e chief_term_id
+         * (sempre intero).
+         *
+         * @param array $data name (richiesto), avatar, category, description, status, personality, ai_model, ai_provider, role, chief_scope, chief_term_id, wp_user_id, term_id.
          * @return int
          */
         public static function insert_agent( $data ) {
                 global $wpdb;
                 $now = current_time( 'mysql' );
+                // v1.1.4: ruolo e ambito capo redattore in whitelist (fallback = default colonna).
+                $role = $data['role'] ?? '';
+                if ( ! in_array( $role, array( 'giornalista', 'capo_redattore' ), true ) ) {
+                        $role = 'giornalista';
+                }
+                $chief_scope = $data['chief_scope'] ?? '';
+                if ( ! in_array( $chief_scope, array( '', 'global', 'category', 'term' ), true ) ) {
+                        $chief_scope = '';
+                }
                 $row = array(
-                        'name'        => sanitize_text_field( $data['name'] ?? '' ),
-                        'avatar'      => sanitize_text_field( $data['avatar'] ?? '' ),
-                        'category'    => sanitize_text_field( $data['category'] ?? '' ),
-                        'description' => sanitize_textarea_field( $data['description'] ?? '' ),
-                        'status'      => sanitize_key( $data['status'] ?? 'active' ),
-                        'personality' => sanitize_textarea_field( $data['personality'] ?? '' ),
-                        'ai_model'    => sanitize_text_field( $data['ai_model'] ?? '' ),
-                        'wp_user_id'  => absint( $data['wp_user_id'] ?? 0 ),
-                        'term_id'     => absint( $data['term_id'] ?? 0 ),
-                        'created_at'  => $now,
-                        'updated_at'  => $now,
+                        'name'          => sanitize_text_field( $data['name'] ?? '' ),
+                        'avatar'        => sanitize_text_field( $data['avatar'] ?? '' ),
+                        'category'      => sanitize_text_field( $data['category'] ?? '' ),
+                        'description'   => sanitize_textarea_field( $data['description'] ?? '' ),
+                        'status'        => sanitize_key( $data['status'] ?? 'active' ),
+                        'personality'   => sanitize_textarea_field( $data['personality'] ?? '' ),
+                        'ai_model'      => sanitize_text_field( $data['ai_model'] ?? '' ),
+                        'ai_provider'   => sanitize_text_field( $data['ai_provider'] ?? '' ),
+                        'role'          => $role,
+                        'chief_scope'   => $chief_scope,
+                        'chief_term_id' => absint( $data['chief_term_id'] ?? 0 ),
+                        'wp_user_id'    => absint( $data['wp_user_id'] ?? 0 ),
+                        'term_id'       => absint( $data['term_id'] ?? 0 ),
+                        'created_at'    => $now,
+                        'updated_at'    => $now,
                 );
                 if ( '' === $row['name'] || '' === $row['category'] ) {
                         return 0;

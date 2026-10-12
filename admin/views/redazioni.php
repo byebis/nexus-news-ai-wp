@@ -50,13 +50,38 @@
  *        compaiono .nxa-red-toggle (espandi e collassa, solo con figli),
  *        .nxa-red-name, chips .nxa-red-agents-chips, contatore
  *        .nxa-red-count e azioni .nxa-red-edit, .nxa-red-del e
- *        .nxa-red-view (apre l'archivio pubblico in una nuova scheda).
+ *        .nxa-red-view (apre l'archivio pubblico in una nuova scheda);
+ *      - #nxa-red-sources → textarea fonti della redazione (v1.1.4):
+ *        in modifica riempita dal meta _nexus_sources del termine come
+ *        righe "rss|https://..." / "site|https://...", al submit le
+ *        righe diventano array di oggetti {type, url} (plumbing nel
+ *        punto 4: NON passa dalla route nexus/v1/redazioni).
  *
  * 3) Le barre .nxa-skeleton dentro #nxa-red-tree coprono il tempo prima
  *    del primo render REST (admin.js le sostituisce, stesso pattern delle
  *    viste Agenti e Coda). NIENTE fallback noscript di contenuto: senza
  *    JavaScript la pagina resta uno skeleton e mostra solo l'avviso
  *    noscript; le stringhe visibili usano il text domain nexus-news-ai.
+ *
+ * 4) FONTI DELLA REDAZIONE (v1.1.4, T-08) — plumbing del meta
+ *    "_nexus_sources" (array di oggetti {type, url}, type 'rss'|'site',
+ *    registrato show_in_rest in Nexus_Redazioni::register_taxonomy).
+ *    Percorso scelto: REST NATIVA dei termini, ZERO endpoint nuovi
+ *    (le route nexus/v1/redazioni non gestiscono le fonti):
+ *      - CARICAMENTO (modalità modifica, click .nxa-red-edit): GET
+ *        wp/v2/redazioni/{id}?context=edit (header X-WP-Nonce con
+ *        NexusAdminData.nonce, lo stesso di api()) → meta._nexus_sources
+ *        → righe "type|url" in #nxa-red-sources (meta assente o vuoto →
+ *        textarea vuota; modalità crea → textarea vuota).
+ *      - SALVATAGGIO: POST wp/v2/redazioni/{id} con body
+ *        {meta: {_nexus_sources: [ {type, url}, ... ]}}: in modifica dopo
+ *        il salvataggio della redazione (sempre, array vuoto = cancella
+ *        tutte le fonti); in creazione solo se la textarea non è vuota,
+ *        dopo la risposta di POST nexus/v1/redazioni che porta term_id.
+ *        La normalizzazione server-side è garantita dal sanitize_callback
+ *        Nexus_Redazioni::sanitize_sources (accetta anche le righe "type|url").
+ *    Nota UI: le fonti sono opzionali — i giornalisti della redazione le
+ *    usano in raccolta e il capo redattore per verificare.
  *
  * @package Nexus_News_AI
  * @since   1.1.1
@@ -104,6 +129,12 @@ defined( 'ABSPATH' ) || exit;
                                 </p>
                                 <!-- Container checkbox agenti: admin.js genera input.nxa-red-agent (value = agent id) con avatar e nome. -->
                                 <div id="nxa-red-agents"></div>
+                                <p class="nxa-red-field">
+                                        <label for="nxa-red-sources"><?php esc_html_e( 'Fonti della redazione', 'nexus-news-ai' ); ?></label>
+                                        <!-- Textarea fonti (v1.1.4): righe "rss|https://..." (feed diretto) o "site|https://..." (sito: feed scoperto automaticamente). admin.js la riempie dal meta _nexus_sources e salva via REST nativa wp/v2 (contratto nel docblock di testa). -->
+                                        <textarea id="nxa-red-sources" class="widefat" rows="4" placeholder="rss|https://www.ansa.it/sito/ansait_rss.xml&#10;site|https://www.ilpost.it"></textarea>
+                                        <span class="description"><?php esc_html_e( 'Una riga per fonte: rss|URL per un feed RSS diretto, site|URL per un sito di cui scoprire il feed automaticamente. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare.', 'nexus-news-ai' ); ?></span>
+                                </p>
                                 <p class="nxa-red-form-actions">
                                         <button type="submit" id="nxa-red-save" class="button button-primary"><?php esc_html_e( 'Crea redazione', 'nexus-news-ai' ); ?></button>
                                         <button type="button" id="nxa-red-cancel" class="button hidden"><?php esc_html_e( 'Annulla', 'nexus-news-ai' ); ?></button>

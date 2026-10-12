@@ -1,8 +1,9 @@
 <?php
 /**
  * Nexus AI Engine — motore AI del plugin: chiamate chat/completions verso il
- * provider configurato (default OpenRouter), prompt editoriali in italiano e
- * parsing robusto delle risposte JSON.
+ * provider configurato (default OpenRouter) o verso il provider per-agente
+ * scelto nel registry Nexus_Providers (v1.1.4), prompt editoriali in italiano
+ * e parsing robusto delle risposte JSON.
  *
  * Port PHP fedele di nexus-src/src/lib/ai-engine.ts + openrouter.ts.
  *
@@ -17,6 +18,15 @@
  *                                                      (formato OpenAI) il ritorno aggiunge la chiave 'usage'
  *                                                      (prompt_tokens/completion_tokens/total_tokens/model) e il consumo
  *                                                      viene loggato (mai bloccante) con Nexus_DB::insert_usage().
+ *                                                      v1.1.4: $opts ammette anche 'provider' (ID del registry
+ *                                                      Nexus_Providers), 'api_key' e 'base_url' (override diretti,
+ *                                                      priorita' massima) e 'agent' (oggetto/array con ai_provider).
+ *                                                      Ordine di risoluzione: override diretti → provider esplicito →
+ *                                                      agente → globali attuali (retrocompatibilita' 100%). Lo schema
+ *                                                      di autenticazione segue il provider: 'bearer' → header
+ *                                                      Authorization Bearer (come i globali); 'anthropic' → endpoint
+ *                                                      OpenAI-compat di Anthropic con header x-api-key, Authorization
+ *                                                      Bearer e anthropic-version 2023-06-01.
  * Nexus_AI_Engine::budget_exceeded()                 — v1.0.3: true se monthly_budget_usd > 0 e il costo stimato del
  *                                                      mese (Nexus_DB::usage_stats('month')['totals']['cost']) raggiunge
  *                                                      il budget. Mai fatale (guard + try/catch).
@@ -54,6 +64,23 @@ class Nexus_AI_Engine {
          * - 'agent_id'    (intero,  default 0)   — v1.0.3: agente associato alla chiamata (tracking uso).
          * - 'action'      (stringa, default '')  — v1.0.3: azione editoriale della chiamata
          *   (collect|evaluate|rewrite|factcheck|translate|digest) per il tracking uso.
+         * - 'provider'    (stringa, default '')  — v1.1.4: ID provider del registry Nexus_Providers
+         *   (es. 'openrouter', 'anthropic', 'ollama'); risolto con Nexus_Providers::resolve().
+         * - 'api_key'     (stringa, default '')  — v1.1.4: chiave API diretta per questa chiamata
+         *   (override con priorita' massima su provider e globali).
+         * - 'base_url'    (stringa, default '')  — v1.1.4: base URL diretta per questa chiamata
+         *   (override con priorita' massima su provider e globali).
+         * - 'agent'       (oggetto|array)        — v1.1.4: agente con eventuale campo 'ai_provider',
+         *   risolto con Nexus_Providers::resolve_for_agent() (assente/vuoto/sconosciuto = globali).
+         *
+         * v1.1.4: ordine di risoluzione credenziali — override diretti 'api_key'/'base_url' →
+         * 'provider' esplicito → 'agent' con ai_provider → globali attuali (retrocompatibilita'
+         * 100%: nessun comportamento cambia per chi non usa i provider). Lo schema di
+         * autenticazione segue il provider risolto: 'bearer' → header Authorization Bearer
+         * (come i globali storici); 'anthropic' → endpoint OpenAI-compat di Anthropic
+         * (/chat/completions) con header x-api-key, Authorization Bearer e
+         * anthropic-version 2023-06-01. Chiave vuota ammessa solo per i provider che la
+         * prevedono (es. Ollama locale): la validazione e' delegata a Nexus_Providers::resolve().
          *
          * Ritorna SEMPRE un array con le chiavi 'ok', 'content', 'error', 'simulated'.
          * In caso di errore: 'ok' => false, 'error' descrittivo in italiano, 'content' vuoto.
@@ -64,7 +91,8 @@ class Nexus_AI_Engine {
          * valida) con Nexus_DB::insert_usage() e costo stimato con estimate_cost().
          *
          * @param array $messages Messaggi in formato chat (array di array con 'role' e 'content').
-         * @param array $opts     Opzioni opzionali (temperature, max_tokens, agent_id, action).
+         * @param array $opts     Opzioni opzionali (temperature, max_tokens, agent_id, action,
+         *                        provider, api_key, base_url, agent).
          * @return array
          */
         public static function chat( $messages, $opts = array() ) {
@@ -127,7 +155,68 @@ class Nexus_AI_Engine {
                         $model = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
                 }
 
-                if ( '' === $api_key ) {
+                // v1.1.4: schema di autenticazione del provider corrente ('bearer' o 'anthropic').
+                // I globali storici (ai_api_key/ai_base_url) usano sempre Bearer, come prima della 1.1.4.
+                $auth = 'bearer';
+
+                // v1.1.4: provider per chiamata. Ordine di risoluzione:
+                // 1) override diretti opts 'api_key'/'base_url' (priorita' massima);
+                // 2) opts 'provider' (ID esplicito, risolto con Nexus_Providers::resolve());
+                // 3) opts 'agent' (oggetto/array con ai_provider, via resolve_for_agent());
+                // 4) globali attuali (retrocompatibilita' 100%).
+                $opt_api_key  = isset( $opts['api_key'] ) ? trim( (string) $opts['api_key'] ) : '';
+                $opt_base_url = isset( $opts['base_url'] ) ? trim( (string) $opts['base_url'] ) : '';
+                $opt_provider = isset( $opts['provider'] ) ? sanitize_key( (string) $opts['provider'] ) : '';
+
+                $explicit_provider = false;
+
+                if ( '' !== $opt_api_key || '' !== $opt_base_url ) {
+                        // Override diretti: ogni campo sostituisce solo il proprio valore.
+                        if ( '' !== $opt_api_key ) {
+                                $api_key = $opt_api_key;
+                        }
+                        if ( '' !== $opt_base_url ) {
+                                $base_url = $opt_base_url;
+                        }
+                        $explicit_provider = true;
+                } elseif ( '' !== $opt_provider && class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'resolve' ) ) {
+                        $resolved = Nexus_Providers::resolve( $opt_provider );
+                        if ( empty( $resolved['ok'] ) ) {
+                                $fail['error'] = ( isset( $resolved['error'] ) && '' !== (string) $resolved['error'] ) ? (string) $resolved['error'] : 'Provider AI non disponibile: ' . $opt_provider . '.';
+                                return $fail;
+                        }
+                        if ( isset( $resolved['base_url'] ) && '' !== (string) $resolved['base_url'] ) {
+                                $base_url = (string) $resolved['base_url'];
+                        }
+                        $api_key = isset( $resolved['api_key'] ) ? (string) $resolved['api_key'] : $api_key;
+                        $auth    = ( isset( $resolved['auth'] ) && 'anthropic' === $resolved['auth'] ) ? 'anthropic' : 'bearer';
+                        $explicit_provider = true;
+                } elseif ( isset( $opts['agent'] ) && class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'resolve_for_agent' ) ) {
+                        $resolved = Nexus_Providers::resolve_for_agent( $opts['agent'] );
+                        $legacy_agent = ! empty( $resolved['legacy'] );
+
+                        if ( ! $legacy_agent && empty( $resolved['ok'] ) ) {
+                                // Provider noto ma non risolvibile (es. chiave mancante): errore
+                                // esplicito, senza fallback silenzioso sui globali (evita di inviare
+                                // la richiesta con credenziali diverse da quelle richieste).
+                                $fail['error'] = ( isset( $resolved['error'] ) && '' !== (string) $resolved['error'] ) ? (string) $resolved['error'] : 'Provider AI non disponibile per l\'agente.';
+                                return $fail;
+                        }
+
+                        if ( ! $legacy_agent ) {
+                                if ( isset( $resolved['base_url'] ) && '' !== (string) $resolved['base_url'] ) {
+                                        $base_url = (string) $resolved['base_url'];
+                                }
+                                $api_key = isset( $resolved['api_key'] ) ? (string) $resolved['api_key'] : $api_key;
+                                $auth    = ( isset( $resolved['auth'] ) && 'anthropic' === $resolved['auth'] ) ? 'anthropic' : 'bearer';
+                                $explicit_provider = true;
+                        }
+                }
+
+                // Chiave obbligatoria SOLO sul percorso globale: un provider esplicito
+                // (es. Ollama locale) puo' ammettere la chiave vuota e la validazione
+                // della chiave e' gia' fatta da Nexus_Providers::resolve().
+                if ( '' === $api_key && ! $explicit_provider ) {
                         $fail['error'] = 'Chiave API AI non configurata: imposta la chiave API (ai_api_key) nelle impostazioni del plugin Nexus News AI.';
                         return $fail;
                 }
@@ -154,18 +243,31 @@ class Nexus_AI_Engine {
                         return $fail;
                 }
 
+                // v1.1.4: header di autenticazione in base allo schema del provider risolto.
+                // 'bearer' (default, come i globali storici): Authorization Bearer;
+                // 'anthropic' (endpoint OpenAI-compat /chat/completions di Anthropic):
+                // sia x-api-key sia Authorization Bearer, piu' anthropic-version.
+                $headers = array(
+                        'Content-Type'  => 'application/json',
+                        'Accept'        => 'application/json',
+                        // Intestazioni di attribuzione consigliate da OpenRouter.
+                        'HTTP-Referer'  => home_url( '/' ),
+                        'X-Title'       => 'Nexus News AI',
+                );
+                if ( 'anthropic' === $auth ) {
+                        $headers['x-api-key']         = $api_key;
+                        $headers['Authorization']     = 'Bearer ' . $api_key;
+                        $headers['anthropic-version'] = '2023-06-01';
+                } elseif ( '' !== $api_key ) {
+                        // Bearer solo se c'e' una chiave: Ollama locale puo' non averla.
+                        $headers['Authorization'] = 'Bearer ' . $api_key;
+                }
+
                 $response = wp_remote_post(
                         $endpoint,
                         array(
                                 'timeout' => 60,
-                                'headers' => array(
-                                        'Authorization' => 'Bearer ' . $api_key,
-                                        'Content-Type'  => 'application/json',
-                                        'Accept'        => 'application/json',
-                                        // Intestazioni di attribuzione consigliate da OpenRouter.
-                                        'HTTP-Referer'  => home_url( '/' ),
-                                        'X-Title'       => 'Nexus News AI',
-                                ),
+                                'headers' => $headers,
                                 'body'    => $encoded_body,
                         )
                 );

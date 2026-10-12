@@ -28,6 +28,11 @@
  *     pubblica, il post viene tassonomizzato ai termini di X.
  *  4. FILTRO ARTICOLI — dropdown nativo "Tutte le redazioni" nella
  *     lista Articoli/CPT, con subtree incluso (come le categorie).
+ *  5. FONTI DELLA REDAZIONE (v1.1.4) — term meta "_nexus_sources" con
+ *     le fonti della redazione (feed RSS diretti o siti da cui scoprire
+ *     i feed), opzionali: usate in raccolta (merge nei feed dell'agente
+ *     tramite Nexus_Rss::fetch_for_agent) e dal capo redattore per
+ *     verificare le notizie.
  *
  * EREDITARIETA' (regole chiave, tutta semantica WP):
  *  - ARCHIVI: l'archivio di una redazione madre mostra anche gli
@@ -36,6 +41,9 @@
  *  - AGENTI: NON si ereditano in scrittura. Ogni assegnazione sta sul
  *    termine dove l'editore la mette; per il ramo completo si usa
  *    Nexus_Redazioni::agents_for_term() che somma termine + discendenti.
+ *  - FONTI (v1.1.4): NON si ereditano (come gli agenti): valgono SOLO
+ *    le fonti del termine assegnato all'agente
+ *    (Nexus_Redazioni::sources_for_agent, senza discendenti).
  *  - MULTISITE: ogni sito del network ha le sue redazioni (le
  *    tassonomie sono per-sito): testata = sito, come da v1.0.5.
  *
@@ -47,8 +55,14 @@ defined( 'ABSPATH' ) || exit;
 
 class Nexus_Redazioni {
 
-        const TAX         = 'nexus_redazione';
-        const META_AGENTS = '_nexus_agents';
+        const TAX          = 'nexus_redazione';
+        const META_AGENTS  = '_nexus_agents';
+        const META_SOURCES = '_nexus_sources';
+
+        /**
+         * Durata del transient di discovery feed per URL sito in secondi (1 ora).
+         */
+        const DISCOVER_TTL = 3600;
 
         /**
          * Bootstrapping: tassonomia + filtro articoli in lista admin.
@@ -62,7 +76,8 @@ class Nexus_Redazioni {
         }
 
         /**
-         * Registra la tassonomia gerarchica e il term meta degli agenti.
+         * Registra la tassonomia gerarchica e i term meta degli agenti e
+         * delle fonti (v1.1.4).
          *
          * Chiamata su init e all'attivazione (prima del flush delle rewrite).
          *
@@ -126,6 +141,38 @@ class Nexus_Redazioni {
                                         ),
                                         'sanitize_callback' => array( __CLASS__, 'sanitize_agent_ids' ),
                                         'description'       => __( 'Agenti giornalisti assegnati alla redazione.', 'nexus-news-ai' ),
+                                )
+                        );
+
+                        // v1.1.4: fonti della redazione, array di oggetti {type, url}
+                        // (type: 'rss' = feed diretto, 'site' = sito da cui scoprire il feed).
+                        // show_in_rest: l'editor della pagina Redazioni legge e salva il meta
+                        // con la REST nativa wp/v2/redazioni/{id}, senza endpoint nuovi.
+                        register_term_meta(
+                                self::TAX,
+                                self::META_SOURCES,
+                                array(
+                                        'type'              => 'array',
+                                        'single'            => true,
+                                        'show_in_rest'      => array(
+                                                'schema' => array(
+                                                        'type'  => 'array',
+                                                        'items' => array(
+                                                                'type'       => 'object',
+                                                                'properties' => array(
+                                                                        'type' => array(
+                                                                                'type' => 'string',
+                                                                                'enum' => array( 'rss', 'site' ),
+                                                                        ),
+                                                                        'url'  => array(
+                                                                                'type' => 'string',
+                                                                        ),
+                                                                ),
+                                                        ),
+                                                ),
+                                        ),
+                                        'sanitize_callback' => array( __CLASS__, 'sanitize_sources' ),
+                                        'description'       => __( 'Fonti della redazione (feed RSS o siti da cui scoprire i feed).', 'nexus-news-ai' ),
                                 )
                         );
                 }
@@ -290,6 +337,240 @@ class Nexus_Redazioni {
                         . " AND p.post_status NOT IN ( 'trash', 'auto-draft' )";
 
                 return (int) $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID interi assolutizzati.
+        }
+
+        /* ============ FONTI DELLA REDAZIONE (v1.1.4) ============ */
+
+        /**
+         * Normalizza il term meta _nexus_sources in array di fonti valide.
+         *
+         * Accetta sia array di array/oggetti {type, url} sia righe di testo
+         * "rss|https://..." oppure "site|https://..." (la forma usata dalla
+         * textarea della pagina Redazioni). Tipo mancante o ignoto → 'rss'
+         * (l'URL viene trattato come feed diretto). Item senza URL valido
+         * vengono scartati; dedup per tipo e URL.
+         *
+         * @param mixed $value Valore grezzo (array, stringa o null).
+         * @return array Array di array( 'type' => 'rss'|'site', 'url' => string ).
+         */
+        public static function sanitize_sources( $value ) {
+                $rows = is_array( $value ) ? $value : ( null === $value ? array() : array( $value ) );
+                $out  = array();
+                $seen = array();
+
+                foreach ( $rows as $row ) {
+                        $type = 'rss';
+                        $url  = '';
+
+                        if ( is_array( $row ) ) {
+                                $raw_type = isset( $row['type'] ) ? sanitize_key( (string) $row['type'] ) : '';
+                                if ( 'site' === $raw_type ) {
+                                        $type = 'site';
+                                }
+                                $url = isset( $row['url'] ) ? (string) $row['url'] : '';
+                        } else {
+                                // Riga testuale "type|url" (shape della textarea della UI).
+                                $parts = explode( '|', (string) $row, 2 );
+                                if ( 2 === count( $parts ) ) {
+                                        $raw_type = sanitize_key( trim( $parts[0] ) );
+                                        if ( 'site' === $raw_type ) {
+                                                $type = 'site';
+                                        }
+                                        $url = trim( $parts[1] );
+                                } else {
+                                        $url = trim( (string) $row );
+                                }
+                        }
+
+                        $url = esc_url_raw( trim( $url ) );
+                        if ( '' === $url ) {
+                                continue;
+                        }
+
+                        $key = $type . '|' . strtolower( $url );
+                        if ( isset( $seen[ $key ] ) ) {
+                                continue;
+                        }
+                        $seen[ $key ] = true;
+
+                        $out[] = array(
+                                'type' => $type,
+                                'url'  => $url,
+                        );
+                }
+
+                return $out;
+        }
+
+        /**
+         * Fonti assegnate a un termine redazione (senza discendenti).
+         *
+         * @param int $term_id Term ID.
+         * @return array Array di array( 'type' => 'rss'|'site', 'url' => string ).
+         */
+        public static function sources_for_term( $term_id ) {
+                $term_id = absint( $term_id );
+                if ( $term_id < 1 ) {
+                        return array();
+                }
+                $value = get_term_meta( $term_id, self::META_SOURCES, true );
+                return self::sanitize_sources( $value );
+        }
+
+        /**
+         * Fonti della redazione assegnata a un agente (contratto pubblico
+         * v1.1.4: usato da raccolta, capo redattore e UI).
+         *
+         * REGOLA DI EREDITARIETA' (deliberata, contratto v1.1.4): si leggono
+         * SOLO le fonti del termine assegnato all'agente (colonna term_id di
+         * nexus_agents, letta con Nexus_DB::get_agent in guard), NON quelle
+         * dei termini discendenti: se un agente è su "Calcio", le fonti di
+         * "Sport" (madre) NON vengono usate.
+         *
+         * @param int $agent_id Agent ID.
+         * @return array Array di array( 'type' => 'rss'|'site', 'url' => string ).
+         */
+        public static function sources_for_agent( $agent_id ) {
+                $agent_id = absint( $agent_id );
+                if ( $agent_id < 1 || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_agent' ) ) {
+                        return array();
+                }
+                $agent = Nexus_DB::get_agent( $agent_id );
+                if ( ! $agent || empty( $agent->term_id ) ) {
+                        return array();
+                }
+                return self::sources_for_term( (int) $agent->term_id );
+        }
+
+        /**
+         * Fonti di un agente convertite in ITEM FEED con lo STESSO shape di
+         * Nexus_Rss::fetch_for_agent (title, description clip 400, link,
+         * source): è l'array che collect e il capo redattore consumano.
+         *
+         * - type 'rss': l'URL della fonte è già un feed;
+         * - type 'site': primo feed del sito scoperto con
+         *   Nexus_Tools::discover_feeds (guard class_exists+method_exists),
+         *   con transient di 1 ora per URL sito (DISCOVER_TTL).
+         *
+         * L'estrazione degli item è delegata a Nexus_Rss::fetch_feed_items
+         * (guard class_exists+method_exists) così che lo shape resti identico
+         * agli item dei feed di categoria anche in future modifiche.
+         *
+         * @param int $agent_id Agent ID.
+         * @param int $max      Numero massimo di item restituiti.
+         * @return array Array di item: {title, description, link, source}.
+         */
+        public static function sources_items_for_agent( $agent_id, $max = 5 ) {
+                $max = (int) $max;
+                if ( $max < 1 ) {
+                        $max = 5;
+                }
+
+                $items = self::sources_for_agent( $agent_id );
+                if ( empty( $items ) ) {
+                        return array();
+                }
+
+                $out        = array();
+                $seen_feeds = array();
+                $seen_links = array();
+
+                foreach ( $items as $item ) {
+                        if ( count( $out ) >= $max ) {
+                                break;
+                        }
+                        if ( ! is_array( $item ) || empty( $item['url'] ) ) {
+                                continue;
+                        }
+
+                        $feed_urls = array();
+                        if ( 'site' === $item['type'] ) {
+                                $discovered = self::discover_feed_for_site( (string) $item['url'] );
+                                if ( '' !== $discovered ) {
+                                        $feed_urls[] = $discovered;
+                                }
+                        } else {
+                                // 'rss': l'URL della fonte è un feed diretto.
+                                $feed_urls[] = (string) $item['url'];
+                        }
+
+                        foreach ( $feed_urls as $feed_url ) {
+                                if ( count( $out ) >= $max ) {
+                                        break;
+                                }
+                                $feed_key = strtolower( $feed_url );
+                                if ( '' === $feed_key || isset( $seen_feeds[ $feed_key ] ) ) {
+                                        continue;
+                                }
+                                $seen_feeds[ $feed_key ] = true;
+
+                                $fetched = array();
+                                if ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'fetch_feed_items' ) ) {
+                                        $fetched = Nexus_Rss::fetch_feed_items( $feed_url, $max - count( $out ) );
+                                }
+                                if ( ! is_array( $fetched ) ) {
+                                        $fetched = array();
+                                }
+
+                                foreach ( $fetched as $feed_item ) {
+                                        if ( count( $out ) >= $max ) {
+                                                break;
+                                        }
+                                        if ( ! is_array( $feed_item ) || empty( $feed_item['link'] ) ) {
+                                                continue;
+                                        }
+                                        $link_key = strtolower( (string) $feed_item['link'] );
+                                        if ( isset( $seen_links[ $link_key ] ) ) {
+                                                continue;
+                                        }
+                                        $seen_links[ $link_key ] = true;
+                                        $out[]                   = $feed_item;
+                                }
+                        }
+                }
+
+                return $out;
+        }
+
+        /**
+         * Primo feed trovato su un sito (discovery con cache 1 ora per URL).
+         *
+         * Il transient mantiene ANCHE il risultato vuoto: un sito senza feed
+         * non viene risondato per un'ora (la discovery fa una GET completa
+         * della pagina e non deve ripetersi ad ogni tick di raccolta).
+         *
+         * @param string $site_url URL del sito.
+         * @return string URL del feed ('' se nessun feed o modulo strumenti assente).
+         */
+        private static function discover_feed_for_site( $site_url ) {
+                $site_url = trim( (string) $site_url );
+                if ( '' === $site_url ) {
+                        return '';
+                }
+
+                $cache_key = 'nexus_disc_feed_' . md5( $site_url );
+                $cached    = get_transient( $cache_key );
+                if ( is_string( $cached ) ) {
+                        return $cached;
+                }
+
+                $found = '';
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'discover_feeds' ) ) {
+                        $feeds = Nexus_Tools::discover_feeds( $site_url );
+                        if ( is_array( $feeds ) ) {
+                                foreach ( $feeds as $feed_url ) {
+                                        if ( is_string( $feed_url ) && '' !== trim( $feed_url ) ) {
+                                                // Primo feed trovato: basta, come da contratto v1.1.4.
+                                                $found = esc_url_raw( trim( $feed_url ) );
+                                                break;
+                                        }
+                                }
+                        }
+                }
+
+                set_transient( $cache_key, $found, self::DISCOVER_TTL );
+
+                return $found;
         }
 
         /* ============ SCRITTURA: ASSEGNAZIONI ============ */

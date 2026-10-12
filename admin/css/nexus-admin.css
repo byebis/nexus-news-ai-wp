@@ -40,6 +40,7 @@
  *  18. Fix overflow mobile + wrapper tabelle (v1.0.7)
  *  19. Migrazione contenuti nativi (v1.1.0)
  *  20. Redazioni (v1.1.1)
+ *  21. Creazione rapida + badge capo redattore (v1.1.4)
  */
 
 /* -------------------------------------------------------------------------
@@ -2453,4 +2454,89 @@ body.nxa-lock-scroll {
   .nxa-red-view {
     transition: none;
   }
+}
+
+/* -------------------------------------------------------------------------
+ * 21. Creazione rapida + badge capo redattore (v1.1.4)
+ * ---------------------------------------------------------------------- */
+/* Barra preset sopra la lista agenti (agents.php T-06): contenitore
+ * flessibile che spezza su mobile; i bottoni portano .nxa-btn e qui ne
+ * affinano solo le proporzioni a pillola compatta. Zero colori nuovi:
+ * solo token esistenti, tema scuro ereditato. */
+.nxa-preset-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+}
+
+.nxa-preset-bar-label {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--nxa-muted);
+}
+
+.nxa-preset-btn {
+  flex: 0 1 auto;
+  padding: 6px 12px;
+  font-size: 0.76rem;
+  border-radius: 999px;
+}
+
+.nxa-preset-btn:hover {
+  background: var(--nxa-surface-3);
+}
+
+/* Badge capo redattore (coda + dettaglio, markup admin.js): stessa forma
+ * di .nxa-badge, tinte di stato esistenti — visto = ok, modificato = info,
+ * rifiutato = err, revisione = warn. Il default (info) copre varianti
+ * future non ancora mappate. */
+.nxa-badge.nxa-badge-chief {
+  color: var(--nxa-info-text);
+  background: var(--nxa-info-bg);
+  border-color: var(--nxa-info-line);
+}
+
+.nxa-badge.nxa-badge-chief--visto {
+  color: var(--nxa-ok-text);
+  background: var(--nxa-ok-bg);
+  border-color: var(--nxa-ok-line);
+}
+
+.nxa-badge.nxa-badge-chief--modificato {
+  color: var(--nxa-info-text);
+  background: var(--nxa-info-bg);
+  border-color: var(--nxa-info-line);
+}
+
+.nxa-badge.nxa-badge-chief--rifiutato {
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
+}
+
+.nxa-badge.nxa-badge-chief--revisione {
+  color: var(--nxa-warn-text);
+  background: var(--nxa-warn-bg);
+  border-color: var(--nxa-warn-line);
+}
+
+/* Blocco "Nota del capo redattore" nel modal dettaglio (markup admin.js
+ * con stili inline come la box fact-check): qui solo l'etichetta del
+ * titolo, per coerenza con le altre intestazioni di sezione del modal. */
+.nxa-chief-note h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nxa-muted);
 }

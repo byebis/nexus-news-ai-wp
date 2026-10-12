@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.1.3\n"
+"Project-Id-Version: Nexus News AI 1.1.4\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -604,3 +604,208 @@ msgid "%1$s — %2$s articolo"
 msgid_plural "%1$s — %2$s articoli"
 msgstr[0] ""
 msgstr[1] ""
+
+# v1.1.4 — Redazione completa (capo redattore AI, provider per agente, strumenti di ricerca)
+#: admin/views/settings.php
+msgid "Provider AI per agente"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "URL base del provider Personalizzato"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ogni agente può scegliere provider e modello nella pagina Agenti; senza chiave qui il provider non è selezionabile. Il provider globale (sopra) resta il fallback."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Capo redattore AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Attiva il capo redattore AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Il giornalista AI scrive l'articolo e il capo redattore AI lo legge: lo approva, lo modifica, richiede una revisione o lo rifiuta. Con gli strumenti di ricerca attivi il capo verifica anche le fonti online. L'umano resta sempre sovrano: può approvare o rifiutare dalla coda come oggi."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblicazione automatica dopo approvazione del capo redattore"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Deselezionato = human-in-the-loop: l'articolo resta in bozza con il badge del capo redattore e l'approvazione resta a te."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Giri massimi di revisione (1-5)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quante volte il capo può richiedere una revisione al giornalista AI prima di lasciare l'articolo all'umano (predefinito 2)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Agente capo redattore (0 = automatico)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "ID dell'agente con ruolo capo redattore da usare sempre. 0 = automatico: viene scelto il primo capo redattore attivo."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Strumenti di ricerca per gli agenti"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Strumenti di ricerca"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Attiva gli strumenti di ricerca per gli agenti"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ricerca web, lettura pagine, scoperta feed RSS e client MCP: gli agenti li usano per raccogliere fonti durante la raccolta e il capo redattore per verificare le notizie."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Provider di ricerca web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Tavily"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Serper"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Brave"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nessuno"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Servizio usato per cercare notizie online. Nessuno disattiva la ricerca web (lettura pagine e client MCP restano disponibili)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave API del provider di ricerca"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave del servizio di ricerca scelto (Tavily, Serper o Brave). Salvata nel database del sito, mai mostrata in chiaro."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Risultati per ricerca (1-10)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Numero massimo di risultati restituiti da ogni ricerca web (predefinito 5)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lettura pagine web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Consenti lettura pagine web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Gli agenti possono aprire le pagine trovate dalla ricerca (o indicate nei prompt) per leggerne il testo completo."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Caratteri massimi per pagina (500-20000)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Testo massimo estratto da ogni pagina web letta da un agente (predefinito 6000)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Giri di strumenti per risposta (0-6)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quante volte l'AI può usare uno strumento in fila prima della risposta finale. 0 = loop disattivato (predefinito 3)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Timeout richieste (secondi, 5-30)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Tempo massimo per ogni richiesta di ricerca o lettura di pagina (predefinito 15 secondi)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Server MCP (uno per riga)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Un server per riga nel formato nome|URL|tokenOpzionale (le righe che iniziano con # sono commenti). Solo server MCP compatibili con il trasporto Streamable HTTP (JSON-RPC 2.0 su HTTP): il token, se presente, viene inviato come Authorization: Bearer."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Fonti della redazione"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Una riga per fonte: rss|URL per un feed RSS diretto, site|URL per un sito di cui scoprire il feed automaticamente. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Fonti della redazione (feed RSS o siti da cui scoprire i feed)."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Provider di ricerca non valido. Valori ammessi: tavily, serper, brave, none."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Gli strumenti di ricerca non sono disponibili: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Strumento non valido. Valori ammessi: search, read, feeds, mcp."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro query mancante per il test di ricerca."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro url mancante per il test di lettura pagina."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro url mancante per il test di RSS discovery."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro server mancante per il test MCP."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro tool_name mancante per il test MCP."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo capo redattore non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Capo redattore non disponibile: attivalo nelle impostazioni."
+msgstr ""

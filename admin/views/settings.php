@@ -112,6 +112,32 @@
  *   .nxa-ml- via token design system (stesso pattern delle viste jobs.php
  *   e tools.php).
  *
+ * - CONTRATTO v1.1.4 ("Redazione completa", T-07): 3 nuovi pannelli accordion
+ *   nel gruppo "Intelligenza artificiale", tra "Configurazione AI" e
+ *   "Redazione intelligente". Pannello "providers" ("Provider AI per agente"):
+ *   9 input password con autocomplete="new-password" e value con esc_attr
+ *   (stesso pattern di ai_api_key) con name = chiave settings esatta:
+ *   prov_key_openrouter, prov_key_openai, prov_key_anthropic,
+ *   prov_key_google, prov_key_groq, prov_key_deepseek, prov_key_mistral,
+ *   prov_key_xai, prov_key_custom; più input text prov_base_custom (URL base
+ *   del provider Personalizzato) e nota di raccordo con la pagina Agenti.
+ *   Pannello "chief" ("Capo redattore AI"): checkbox chief_enabled e
+ *   chief_auto_publish (value="1": admin.js T-06 le serializza 0/1 nel blocco
+ *   flag, come i toggle esistenti), numerici chief_max_rounds (1-5) e
+ *   chief_id (0 = automatico) più spiegazione del flusso editoriale.
+ *   Pannello "tools" ("Strumenti di ricerca per gli agenti"): checkbox
+ *   tools_enabled e tools_read_page (value="1"), select tools_search_provider
+ *   (tavily, serper, brave, none), password tools_search_key (pattern
+ *   ai_api_key), numerici tools_max_results (1-10), tools_read_max_chars
+ *   (500-20000), tools_max_rounds (0-6, 0 = loop disattivato) e
+ *   tools_timeout (5-30), textarea mcp_servers_text (una riga per server nel
+ *   formato "nome|URL|tokenOpzionale"). Le chiavi nuove arrivano da
+ *   Nexus_DB::default_settings() v1.1.4 (T-02): campi precompilati con
+ *   get_settings() e accesso difensivo (default T-02 finché le chiavi nuove
+ *   non esistono in DB, come già per admin_language ed enable_public_api).
+ *   Slugs pannello nuovi: providers, chief, tools (stesso meccanismo
+ *   accordion e localStorage degli altri: chiusi di default, nessun JS nuovo).
+ *
  * @package Nexus_News_AI
  */
 
@@ -160,6 +186,41 @@ if ( $ml_on ) {
 }
 
 $ml_autotranslate = isset( $settings['enable_autotranslate_posts'] ) ? (int) $settings['enable_autotranslate_posts'] : 0;
+
+/* Sub-sezioni v1.1.4 "Provider AI per agente", "Capo redattore AI" e
+ * "Strumenti di ricerca per gli agenti": valori da Nexus_DB::get_settings()
+ * con accesso difensivo (default del contratto T-02 finché le chiavi nuove
+ * non esistono in DB, pattern admin_language ed enable_public_api). Le
+ * etichette dei 9 provider replicano ordine e nomi del catalog dei provider
+ * (contratto T-01) senza dipendere dalla classe. */
+$prov_keys = array(
+        'openrouter' => 'OpenRouter',
+        'openai'     => 'OpenAI',
+        'anthropic'  => 'Anthropic',
+        'google'     => 'Google Gemini',
+        'groq'       => 'Groq',
+        'deepseek'   => 'DeepSeek',
+        'mistral'    => 'Mistral',
+        'xai'        => 'xAI (Grok)',
+        'custom'     => 'Personalizzato / compatibile OpenAI',
+);
+
+$prov_base_custom      = isset( $settings['prov_base_custom'] ) ? (string) $settings['prov_base_custom'] : '';
+
+$chief_enabled         = isset( $settings['chief_enabled'] ) ? (int) $settings['chief_enabled'] : 0;
+$chief_auto_publish    = isset( $settings['chief_auto_publish'] ) ? (int) $settings['chief_auto_publish'] : 0;
+$chief_max_rounds      = isset( $settings['chief_max_rounds'] ) ? (int) $settings['chief_max_rounds'] : 2;
+$chief_id              = isset( $settings['chief_id'] ) ? (int) $settings['chief_id'] : 0;
+
+$tools_enabled         = isset( $settings['tools_enabled'] ) ? (int) $settings['tools_enabled'] : 0;
+$tools_search_provider = isset( $settings['tools_search_provider'] ) ? (string) $settings['tools_search_provider'] : 'tavily';
+$tools_search_key      = isset( $settings['tools_search_key'] ) ? (string) $settings['tools_search_key'] : '';
+$tools_max_results     = isset( $settings['tools_max_results'] ) ? (int) $settings['tools_max_results'] : 5;
+$tools_read_page       = isset( $settings['tools_read_page'] ) ? (int) $settings['tools_read_page'] : 1;
+$tools_read_max_chars  = isset( $settings['tools_read_max_chars'] ) ? (int) $settings['tools_read_max_chars'] : 6000;
+$tools_max_rounds      = isset( $settings['tools_max_rounds'] ) ? (int) $settings['tools_max_rounds'] : 3;
+$tools_timeout         = isset( $settings['tools_timeout'] ) ? (int) $settings['tools_timeout'] : 15;
+$mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $settings['mcp_servers_text'] : '';
 
 $social_platforms = array(
         'blog'      => __( 'Blog (WordPress)', 'nexus-news-ai' ),
@@ -309,6 +370,177 @@ $social_platforms = array(
                                                         <td>
                                                                 <input type="password" name="ai_api_key" id="nxa-ai-api-key" value="<?php echo esc_attr( $settings['ai_api_key'] ); ?>" class="regular-text code" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Chiave API del provider AI (OpenRouter o endpoint compatibile OpenAI). Salvata nel database del sito, mai mostrata in chiaro.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="providers">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-providers">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Provider AI per agente', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-providers" hidden>
+                                <?php /* Sezione v1.1.4 "Provider AI per agente": una chiave API per provider (name = chiave settings esatta, serializzata per name da admin.js). */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <?php foreach ( $prov_keys as $prov_id => $prov_label ) : ?>
+                                                        <tr>
+                                                                <th scope="row"><label for="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>"><?php echo esc_html( $prov_label ); ?></label></th>
+                                                                <td>
+                                                                        <input type="password" name="prov_key_<?php echo esc_attr( $prov_id ); ?>" id="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>" value="<?php echo esc_attr( $settings[ 'prov_key_' . $prov_id ] ?? '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                </td>
+                                                        </tr>
+                                                <?php endforeach; ?>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-prov-base-custom"><?php esc_html_e( 'URL base del provider Personalizzato', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="prov_base_custom" id="nxa-prov-base-custom" value="<?php echo esc_attr( $prov_base_custom ); ?>" placeholder="https://esempio.it/v1" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Nota', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <p class="description"><?php esc_html_e( 'Ogni agente può scegliere provider e modello nella pagina Agenti; senza chiave qui il provider non è selezionabile. Il provider globale (sopra) resta il fallback.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="chief">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-chief">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Capo redattore AI', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-chief" hidden>
+                                <?php /* Sezione v1.1.4 "Capo redattore AI": 2 toggle (value="1", serializzati 0/1 dal blocco flag di admin.js) più 2 campi numerici. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Capo redattore AI', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-chief-enabled">
+                                                                        <input type="checkbox" name="chief_enabled" id="nxa-chief-enabled" value="1" <?php checked( $chief_enabled, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Attiva il capo redattore AI', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( "Il giornalista AI scrive l'articolo e il capo redattore AI lo legge: lo approva, lo modifica, richiede una revisione o lo rifiuta. Con gli strumenti di ricerca attivi il capo verifica anche le fonti online. L'umano resta sempre sovrano: può approvare o rifiutare dalla coda come oggi.", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Pubblicazione automatica', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-chief-auto-publish">
+                                                                        <input type="checkbox" name="chief_auto_publish" id="nxa-chief-auto-publish" value="1" <?php checked( $chief_auto_publish, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Pubblicazione automatica dopo approvazione del capo redattore', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( "Deselezionato = human-in-the-loop: l'articolo resta in bozza con il badge del capo redattore e l'approvazione resta a te.", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-chief-max-rounds"><?php esc_html_e( 'Giri massimi di revisione (1-5)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="chief_max_rounds" id="nxa-chief-max-rounds" value="<?php echo esc_attr( $chief_max_rounds ); ?>" min="1" max="5" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( "Quante volte il capo può richiedere una revisione al giornalista AI prima di lasciare l'articolo all'umano (predefinito 2).", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-chief-id"><?php esc_html_e( 'Agente capo redattore (0 = automatico)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="chief_id" id="nxa-chief-id" value="<?php echo esc_attr( $chief_id ); ?>" min="0" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( "ID dell'agente con ruolo capo redattore da usare sempre. 0 = automatico: viene scelto il primo capo redattore attivo.", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="tools">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-tools">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Strumenti di ricerca per gli agenti', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-tools" hidden>
+                                <?php /* Sezione v1.1.4 "Strumenti di ricerca per gli agenti": 2 toggle (value="1"), select provider di ricerca, chiave API, 4 numerici e textarea dei server MCP. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Strumenti di ricerca', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-tools-enabled">
+                                                                        <input type="checkbox" name="tools_enabled" id="nxa-tools-enabled" value="1" <?php checked( $tools_enabled, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Attiva gli strumenti di ricerca per gli agenti', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Ricerca web, lettura pagine, scoperta feed RSS e client MCP: gli agenti li usano per raccogliere fonti durante la raccolta e il capo redattore per verificare le notizie.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-search-provider"><?php esc_html_e( 'Provider di ricerca web', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <select name="tools_search_provider" id="nxa-tools-search-provider">
+                                                                        <option value="tavily" <?php selected( $tools_search_provider, 'tavily' ); ?>><?php esc_html_e( 'Tavily', 'nexus-news-ai' ); ?></option>
+                                                                        <option value="serper" <?php selected( $tools_search_provider, 'serper' ); ?>><?php esc_html_e( 'Serper', 'nexus-news-ai' ); ?></option>
+                                                                        <option value="brave" <?php selected( $tools_search_provider, 'brave' ); ?>><?php esc_html_e( 'Brave', 'nexus-news-ai' ); ?></option>
+                                                                        <option value="none" <?php selected( $tools_search_provider, 'none' ); ?>><?php esc_html_e( 'Nessuno', 'nexus-news-ai' ); ?></option>
+                                                                </select>
+                                                                <p class="description"><?php esc_html_e( 'Servizio usato per cercare notizie online. Nessuno disattiva la ricerca web (lettura pagine e client MCP restano disponibili).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-search-key"><?php esc_html_e( 'Chiave API del provider di ricerca', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="password" name="tools_search_key" id="nxa-tools-search-key" value="<?php echo esc_attr( $tools_search_key ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <p class="description"><?php esc_html_e( 'Chiave del servizio di ricerca scelto (Tavily, Serper o Brave). Salvata nel database del sito, mai mostrata in chiaro.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-max-results"><?php esc_html_e( 'Risultati per ricerca (1-10)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="tools_max_results" id="nxa-tools-max-results" value="<?php echo esc_attr( $tools_max_results ); ?>" min="1" max="10" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Numero massimo di risultati restituiti da ogni ricerca web (predefinito 5).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Lettura pagine web', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-tools-read-page">
+                                                                        <input type="checkbox" name="tools_read_page" id="nxa-tools-read-page" value="1" <?php checked( $tools_read_page, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Consenti lettura pagine web', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Gli agenti possono aprire le pagine trovate dalla ricerca (o indicate nei prompt) per leggerne il testo completo.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-read-max-chars"><?php esc_html_e( 'Caratteri massimi per pagina (500-20000)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="tools_read_max_chars" id="nxa-tools-read-max-chars" value="<?php echo esc_attr( $tools_read_max_chars ); ?>" min="500" max="20000" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Testo massimo estratto da ogni pagina web letta da un agente (predefinito 6000).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-max-rounds"><?php esc_html_e( 'Giri di strumenti per risposta (0-6)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="tools_max_rounds" id="nxa-tools-max-rounds" value="<?php echo esc_attr( $tools_max_rounds ); ?>" min="0" max="6" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( "Quante volte l'AI può usare uno strumento in fila prima della risposta finale. 0 = loop disattivato (predefinito 3).", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-tools-timeout"><?php esc_html_e( 'Timeout richieste (secondi, 5-30)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="tools_timeout" id="nxa-tools-timeout" value="<?php echo esc_attr( $tools_timeout ); ?>" min="5" max="30" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Tempo massimo per ogni richiesta di ricerca o lettura di pagina (predefinito 15 secondi).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-mcp-servers-text"><?php esc_html_e( 'Server MCP (uno per riga)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <textarea name="mcp_servers_text" id="nxa-mcp-servers-text" rows="3" class="large-text code" placeholder="mioserver|https://esempio.it/mcp|tokenOpzionale"><?php echo esc_textarea( $mcp_servers_text ); ?></textarea>
+                                                                <p class="description"><?php esc_html_e( 'Un server per riga nel formato nome|URL|tokenOpzionale (le righe che iniziano con # sono commenti). Solo server MCP compatibili con il trasporto Streamable HTTP (JSON-RPC 2.0 su HTTP): il token, se presente, viene inviato come Authorization: Bearer.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>

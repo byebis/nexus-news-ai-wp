@@ -105,6 +105,32 @@
  * attributo) nel template delle righe nuove, come previsto dal
  * contratto. Il placeholder statico è "—" escaped.
  *
+ * =====================================================================
+ * v1.1.4 — CREAZIONE RAPIDA + RUOLO/PROVIDER/CAPO REDATTORE (T-06)
+ * =====================================================================
+ *
+ * La toolbar è seguita dalla barra "Creazione rapida" (.nxa-preset-bar):
+ * bottoni .nxa-preset-btn con data-preset (tech|sport|economia|politica|
+ * scienza|cultura|salute|capo) che admin.js trasforma in prefill del form
+ * #nxa-agent-form e apertura del modal nuovo agente (invio normale
+ * POST /agents). Emoji dei preset: SOLO emoji già presenti nel progetto
+ * (seed agenti in class-nexus-db.php e icone attività di admin.js); per il
+ * capo redattore si usa 📰 perché il simbolo citato dal contratto non è
+ * mai comparso nel progetto (nota in worklog).
+ * Nel modal editor tre campi nuovi, gestiti interamente da admin.js:
+ *  - #nxa-agent-role (name="role"): Giornalista / Capo redattore;
+ *  - #nxa-agent-provider (name="ai_provider"): prima option "" = "Provider
+ *    globale (impostazioni)", lista riempita da admin.js con GET
+ *    /nexus/v1/tools/catalog (T-05; a catalogo assente resta solo il
+ *    provider globale);
+ *  - #nxa-agent-chief-field (hidden): visibile solo con ruolo capo
+ *    redattore, contiene #nxa-agent-chief-scope (name="chief_scope",
+ *    global|category|term) e, per l'ambito "term", #nxa-agent-chief-term
+ *    (name="chief_term_id", opzioni dai termini redazioni via cache pagina
+ *    GET /redazioni già usata dalla colonna "Redazioni").
+ * La serializzazione dei 4 campi nuovi nei POST/PUT /agents resta in
+ * admin.js. Tutti gli id, data-attributi e classi esistenti restano intatti.
+ *
  * @package Nexus_News_AI
  */
 
@@ -144,6 +170,22 @@ $nxa_agent_status_labels = array(
         <div class="nxa-toolbar">
                 <button type="button" class="nxa-btn nxa-agents-refresh"><?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?></button>
                 <button type="button" id="nxa-agent-new" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Nuovo agente', 'nexus-news-ai' ); ?></button>
+        </div>
+
+        <!-- Creazione rapida (v1.1.4): preset agenti in un click. I bottoni sono
+             consumati da admin.js (T-06): click → prefill del form agente
+             e apertura del modal editor, poi invio POST /agents standard.
+             Emoji solo da quelle già presenti nel progetto (vedi docblock testa). -->
+        <div class="nxa-preset-bar" role="group" aria-label="Creazione rapida agenti">
+                <span class="nxa-preset-bar-label"><?php echo esc_html( 'Creazione rapida:' ); ?></span>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="tech"><?php echo esc_html( '🤖 Giornalista tech' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="sport"><?php echo esc_html( '⚽ Giornalista sport' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="economia"><?php echo esc_html( '📈 Giornalista economia' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="politica"><?php echo esc_html( '🏛️ Giornalista politica' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="scienza"><?php echo esc_html( '🔬 Giornalista scienza' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="cultura"><?php echo esc_html( '🎭 Giornalista cultura' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="salute"><?php echo esc_html( '🩺 Giornalista salute' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="capo"><?php echo esc_html( '📰 Capo redattore' ); ?></button>
         </div>
 
         <!-- Modello AI per agente (v1.0.3): il campo input.nxa-agent-model[data-agent-id]
@@ -262,6 +304,27 @@ $nxa_agent_status_labels = array(
                                                 <span class="nxa-agent-field-hint"><?php esc_html_e( 'La categoria diventa una categoria reale della testata e l’articolo erediterà autore e sezione.', 'nexus-news-ai' ); ?></span></p>
                                         <p class="nxa-agent-field"><label for="nxa-agent-status"><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></label>
                                                 <select id="nxa-agent-status" name="status"><option value="active"><?php esc_html_e( 'Attivo', 'nexus-news-ai' ); ?></option><option value="paused"><?php esc_html_e( 'In pausa', 'nexus-news-ai' ); ?></option></select></p>
+                                        <p class="nxa-agent-field"><label for="nxa-agent-role"><?php echo esc_html( 'Ruolo' ); ?></label>
+                                                <select id="nxa-agent-role" name="role">
+                                                        <option value="giornalista"><?php echo esc_html( 'Giornalista' ); ?></option>
+                                                        <option value="capo_redattore"><?php echo esc_html( 'Capo redattore' ); ?></option>
+                                                </select></p>
+                                        <p class="nxa-agent-field"><label for="nxa-agent-provider"><?php echo esc_html( 'Provider AI (vuoto = globale)' ); ?></label>
+                                                <select id="nxa-agent-provider" name="ai_provider">
+                                                        <option value=""><?php echo esc_html( 'Provider globale (impostazioni)' ); ?></option>
+                                                </select>
+                                                <span class="nxa-agent-field-hint"><?php echo esc_html( 'La lista dei provider arriva dalle impostazioni; senza chiave in Impostazioni → Provider AI il provider non è utilizzabile.' ); ?></span></p>
+                                        <p class="nxa-agent-field nxa-agent-field--full nxa-agent-chief-field" id="nxa-agent-chief-field" hidden>
+                                                <label for="nxa-agent-chief-scope"><?php echo esc_html( 'Ambito capo redattore' ); ?></label>
+                                                <select id="nxa-agent-chief-scope" name="chief_scope">
+                                                        <option value="global"><?php echo esc_html( 'Intero giornale' ); ?></option>
+                                                        <option value="category"><?php echo esc_html( 'Categoria dell’agente' ); ?></option>
+                                                        <option value="term"><?php echo esc_html( 'Redazione specifica' ); ?></option>
+                                                </select>
+                                                <select id="nxa-agent-chief-term" name="chief_term_id" hidden>
+                                                        <option value="0"><?php echo esc_html( 'Caricamento redazioni…' ); ?></option>
+                                                </select>
+                                                <span class="nxa-agent-field-hint"><?php echo esc_html( 'Visibile solo per il ruolo Capo redattore: dice al capo quali articoli verifica (intero giornale, solo la sua categoria o una redazione specifica).' ); ?></span></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-model"><?php esc_html_e( 'Modello AI (vuoto = globale)', 'nexus-news-ai' ); ?></label>
                                                 <input type="text" id="nxa-agent-model" name="ai_model" maxlength="100" list="nxa-agent-model-datalist" class="code" />
                                                 <datalist id="nxa-agent-model-datalist"></datalist></p>

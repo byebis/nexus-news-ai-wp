@@ -40,6 +40,9 @@
  *   GET    /nexus/v1/multilang/info                 driver attivo e lingue del sito {driver, default, current, langs} (v1.1.2)
  *   POST   /nexus/v1/multilang/translate-post       body {article_id, lang}: pubblica la traduzione come post WP {ok, already, lang, post_id, edit_url, permalink} (v1.1.2)
  *   GET    /nexus/v1/multilang/translations-posts   args: article_id. Traduzioni native {article_id, source_post_id, source_lang, note, translations} (v1.1.2)
+ *   GET    /nexus/v1/tools/catalog                  catalogo strumenti di ricerca e provider AI per agente (v1.1.4)
+ *   POST   /nexus/v1/tools/test                     body {tool: search|read|feeds|mcp, query|url|server|tool_name|args}: test strumento dalla UI impostazioni (v1.1.4)
+ *   POST   /nexus/v1/chief/run/{id}                 forza la revisione del capo redattore su un articolo, risposta {ok, chief_status, note} (v1.1.4)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -52,7 +55,16 @@
  * SHAPE ARTICOLI (serialize_article): ogni endpoint che restituisce articoli
  * (admin e public) usa la stessa shape: oltre a wp_post_id e post_permalink
  * (v1.0.1) dalla v1.1.3 include sempre anche wp_post_status, wp_edit_url e
- * wp_preview_url (stringa vuota quando il dato non è disponibile).
+ * wp_preview_url (stringa vuota quando il dato non è disponibile); dalla
+ * v1.1.4 include sempre anche i campi capo redattore chief_status,
+ * chief_note, chief_reviewed_at, chief_agent, chief_agent_name e
+ * chief_rounds (stringa vuota o 0 quando il capo redattore non ha ancora
+ * revisionato l'articolo).
+ *
+ * SHAPE AGENTI (serialize_agent): dalla v1.1.4 ogni endpoint che restituisce
+ * agenti (lista, status, model, create, update, clone) include sempre anche
+ * ai_provider ('' = provider globale), role ('giornalista' default),
+ * chief_scope ('' | global | category | term) e chief_term_id (int).
  *
  * @package Nexus_News_AI
  */
@@ -909,6 +921,91 @@ class Nexus_Rest {
                         )
                 );
 
+                /* ---------------- ADMIN: CAPO REDATTORE + STRUMENTI DI RICERCA (v1.1.4) ---------------- */
+
+                // v1.1.4: catalogo strumenti di ricerca e provider AI (editor agenti + impostazioni).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/tools/catalog',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_tools_catalog' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.4: test di uno strumento di ricerca (solo dalla UI impostazioni, nessuna scrittura).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/tools/test',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_tools_test' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'tool'      => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'query'     => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'url'       => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'esc_url_raw',
+                                                ),
+                                                'max'       => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 0,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'server'    => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'tool_name' => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'mcp_tool'  => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'args'      => array(
+                                                        'type'              => 'array',
+                                                        'required'          => false,
+                                                        'default'           => array(),
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.4: revisione forzata del capo redattore su un articolo.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/chief/run/(?P<id>[0-9]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_chief_run' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
                 // v1.1.2: multilingua — info driver e lingue, traduzione come post nativo, stato traduzioni.
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -1065,6 +1162,11 @@ class Nexus_Rest {
          * Normalizza i campi dell'editor agente in un array sicuro per il DB.
          * Regole: name max 100, category max 100, ai_model max 100, status in
          * active|paused (error non è impostabile a mano), testi sanitizzati.
+         * v1.1.4: ai_provider ('' = provider globale, altrimenti id presente
+         * nel catalogo Nexus_Providers, altrimenti ''), role in
+         * giornalista|capo_redattore (valore non riconosciuto → giornalista),
+         * chief_scope in ''|global|category|term (valore non riconosciuto → ''),
+         * chief_term_id sempre intero positivo.
          *
          * @param WP_REST_Request $request Request.
          * @return array Campi pronti per insert/update.
@@ -1093,6 +1195,30 @@ class Nexus_Rest {
                 if ( null !== $request->get_param( 'status' ) ) {
                         $status = sanitize_key( (string) $request->get_param( 'status' ) );
                         $fields['status'] = in_array( $status, array( 'active', 'paused' ), true ) ? $status : 'paused';
+                }
+                if ( null !== $request->get_param( 'ai_provider' ) ) {
+                        // v1.1.4: provider dedicato dell'agente; '' = provider globale (fallback impostazioni).
+                        $provider = sanitize_key( (string) $request->get_param( 'ai_provider' ) );
+                        if ( '' !== $provider ) {
+                                $catalog  = class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'catalog' ) ? Nexus_Providers::catalog() : null;
+                                $valid    = is_array( $catalog ) && array_key_exists( $provider, $catalog );
+                                $provider = $valid ? $provider : '';
+                        }
+                        $fields['ai_provider'] = $provider;
+                }
+                if ( null !== $request->get_param( 'role' ) ) {
+                        // v1.1.4: ruolo editoriale dell'agente.
+                        $role = sanitize_key( (string) $request->get_param( 'role' ) );
+                        $fields['role'] = in_array( $role, array( 'giornalista', 'capo_redattore' ), true ) ? $role : 'giornalista';
+                }
+                if ( null !== $request->get_param( 'chief_scope' ) ) {
+                        // v1.1.4: ambito di competenza del capo redattore ('' = nessuno).
+                        $scope = sanitize_key( (string) $request->get_param( 'chief_scope' ) );
+                        $fields['chief_scope'] = in_array( $scope, array( 'global', 'category', 'term' ), true ) ? $scope : '';
+                }
+                if ( null !== $request->get_param( 'chief_term_id' ) ) {
+                        // v1.1.4: redazione di competenza quando chief_scope è 'term'.
+                        $fields['chief_term_id'] = absint( $request->get_param( 'chief_term_id' ) );
                 }
 
                 // Limiti di lunghezza coerenti con lo schema (VARCHAR 100).
@@ -1188,7 +1314,8 @@ class Nexus_Rest {
         /**
          * POST /agents/{id}/clone — duplica un agente esistente (v1.0.7).
          * Nome: "{name} (copia)"; categoria: "{category}-copia", poi -copia-2, -3…
-         * Il clone nasce in pausa per non partire a sorpresa con la pipeline.
+         * Il clone nasce in pausa per non partire a sorpresa con la pipeline e
+         * mantiene provider, ruolo e ambito capo redattore dell'originale (v1.1.4).
          */
         public static function rest_agent_clone( $request ) {
                 $id    = absint( $request->get_param( 'id' ) );
@@ -1216,6 +1343,10 @@ class Nexus_Rest {
                                 'status'      => 'paused',
                                 'personality' => (string) $agent->personality,
                                 'ai_model'    => (string) $agent->ai_model,
+                                'ai_provider' => (string) ( $agent->ai_provider ?? '' ),
+                                'role'        => (string) ( $agent->role ?? 'giornalista' ),
+                                'chief_scope' => (string) ( $agent->chief_scope ?? '' ),
+                                'chief_term_id' => absint( $agent->chief_term_id ?? 0 ),
                         )
                 );
                 if ( ! $new_id ) {
@@ -2150,6 +2281,10 @@ class Nexus_Rest {
         /**
          * Sanitizza e filtra il body PUT /settings con whitelist chiavi.
          *
+         * v1.1.4: ammesse anche le chiavi provider AI per agente (prov_key_*),
+         * capo redattore (chief_*) e strumenti di ricerca (tools_*,
+         * mcp_servers_text) con tipi, range ed enum dedicati.
+         *
          * @param array $body Body JSON decodificato.
          * @return array|WP_Error Payload pulito (solo chiavi ammesse presenti).
          */
@@ -2208,6 +2343,32 @@ class Nexus_Rest {
                         'translation_langs'    => 'sanitize_text_field',
                         // Tema UI admin (v1.0.6).
                         'admin_theme'          => 'sanitize_key',
+                        // Provider AI per agente (v1.1.4): chiavi per provider e base URL personalizzato.
+                        'prov_key_openrouter'  => 'sanitize_text_field',
+                        'prov_key_openai'      => 'sanitize_text_field',
+                        'prov_key_anthropic'   => 'sanitize_text_field',
+                        'prov_key_google'      => 'sanitize_text_field',
+                        'prov_key_groq'        => 'sanitize_text_field',
+                        'prov_key_deepseek'    => 'sanitize_text_field',
+                        'prov_key_mistral'     => 'sanitize_text_field',
+                        'prov_key_xai'         => 'sanitize_text_field',
+                        'prov_key_custom'      => 'sanitize_text_field',
+                        'prov_base_custom'     => 'esc_url_raw',
+                        // Capo redattore AI (v1.1.4).
+                        'chief_enabled'        => 'absint',
+                        'chief_auto_publish'   => 'absint',
+                        'chief_max_rounds'     => 'absint',
+                        'chief_id'             => 'absint',
+                        // Strumenti di ricerca (v1.1.4).
+                        'tools_enabled'        => 'absint',
+                        'tools_search_provider' => 'sanitize_key',
+                        'tools_search_key'     => 'sanitize_text_field',
+                        'tools_max_results'    => 'absint',
+                        'tools_read_page'      => 'absint',
+                        'tools_read_max_chars' => 'absint',
+                        'tools_max_rounds'     => 'absint',
+                        'tools_timeout'        => 'absint',
+                        'mcp_servers_text'     => 'sanitize_textarea_field',
                 );
 
                 $out = array();
@@ -2238,6 +2399,11 @@ class Nexus_Rest {
                         'enable_websub',
                         'enable_factcheck',
                         'enable_translations',
+                        // Capo redattore + strumenti di ricerca (v1.1.4).
+                        'chief_enabled',
+                        'chief_auto_publish',
+                        'tools_enabled',
+                        'tools_read_page',
                 ) as $flag ) {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
@@ -2305,11 +2471,50 @@ class Nexus_Rest {
                         $out['auto_approve_score'] = min( 100, max( 0, (int) $out['auto_approve_score'] ) );
                 }
 
+                // Capo redattore: giri di revisione 1-5 (v1.1.4).
+                if ( isset( $out['chief_max_rounds'] ) ) {
+                        $out['chief_max_rounds'] = min( 5, max( 1, (int) $out['chief_max_rounds'] ) );
+                }
+
+                // Provider di ricerca: tavily | serper | brave | none (v1.1.4).
+                if ( isset( $out['tools_search_provider'] ) && ! in_array( $out['tools_search_provider'], array( 'tavily', 'serper', 'brave', 'none' ), true ) ) {
+                        return self::err(
+                                'nexus_rest_invalid_search_provider',
+                                __( 'Provider di ricerca non valido. Valori ammessi: tavily, serper, brave, none.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                // Risultati di ricerca per query: 1-10 (v1.1.4).
+                if ( isset( $out['tools_max_results'] ) ) {
+                        $out['tools_max_results'] = min( 10, max( 1, (int) $out['tools_max_results'] ) );
+                }
+
+                // Lettura pagine: 500-20000 caratteri (v1.1.4).
+                if ( isset( $out['tools_read_max_chars'] ) ) {
+                        $out['tools_read_max_chars'] = min( 20000, max( 500, (int) $out['tools_read_max_chars'] ) );
+                }
+
+                // Giri del tool-use loop: 0-6 (0 = loop disattivato) (v1.1.4).
+                if ( isset( $out['tools_max_rounds'] ) ) {
+                        $out['tools_max_rounds'] = min( 6, max( 0, (int) $out['tools_max_rounds'] ) );
+                }
+
+                // Timeout richieste strumenti: 5-30 secondi (v1.1.4).
+                if ( isset( $out['tools_timeout'] ) ) {
+                        $out['tools_timeout'] = min( 30, max( 5, (int) $out['tools_timeout'] ) );
+                }
+
                 return $out;
         }
 
         /**
          * Serializza un agente per la risposta JSON.
+         *
+         * Dalla v1.1.4 include sempre anche ai_provider ('' = provider globale),
+         * role (default 'giornalista'), chief_scope ('' | global | category | term)
+         * e chief_term_id: letture difensive con ?? per righe precedenti alla
+         * migrazione colonne.
          *
          * @param object $agent Riga agente.
          * @return array
@@ -2329,6 +2534,10 @@ class Nexus_Rest {
                         'status'      => (string) $agent->status,
                         'personality' => (string) $agent->personality,
                         'ai_model'    => (string) ( $agent->ai_model ?? '' ),
+                        'ai_provider' => (string) ( $agent->ai_provider ?? '' ),
+                        'role'        => (string) ( $agent->role ?? 'giornalista' ),
+                        'chief_scope' => (string) ( $agent->chief_scope ?? '' ),
+                        'chief_term_id' => absint( $agent->chief_term_id ?? 0 ),
                         'last_run'    => (string) ( $agent->last_run ?? '' ),
                         'created_at'  => (string) $agent->created_at,
                         'updated_at'  => (string) $agent->updated_at,
@@ -2364,6 +2573,12 @@ class Nexus_Rest {
          * wp_preview_url: campi SEMPRE presenti, stringa vuota quando il post
          * WP manca, l'utente non può modificarlo o il permalink pubblico è
          * già sufficiente.
+         *
+         * Dalla v1.1.4 include anche i campi del capo redattore chief_status,
+         * chief_note, chief_reviewed_at, chief_agent, chief_agent_name e
+         * chief_rounds: SEMPRE presenti, stringa vuota o 0 quando il capo
+         * redattore non ha ancora revisionato l'articolo (o la colonna non
+         * esiste ancora: letture difensive con ?? come stile del file).
          *
          * @param object $a             Riga articolo.
          * @param bool   $with_content  Includere il contenuto completo (default true).
@@ -2403,6 +2618,10 @@ class Nexus_Rest {
                         }
                 }
 
+                // v1.1.4: dati capo redattore (verdetto, nota, agente revisore, giri di revisione).
+                $chief_agent_id = (int) ( $a->chief_agent_id ?? 0 );
+                $chief_agent    = $chief_agent_id > 0 ? self::get_agent_cached( $chief_agent_id ) : null;
+
                 $out = array(
                         'id'            => (int) $a->id,
                         'title'         => (string) $a->title,
@@ -2420,6 +2639,12 @@ class Nexus_Rest {
                         'wp_post_status' => $wp_status,
                         'wp_edit_url'   => $wp_edit_url,
                         'wp_preview_url' => $wp_preview_url,
+                        'chief_status' => (string) ( $a->chief_status ?? '' ),
+                        'chief_note' => (string) ( $a->chief_note ?? '' ),
+                        'chief_reviewed_at' => (string) ( $a->chief_reviewed_at ?? '' ),
+                        'chief_agent' => $chief_agent_id,
+                        'chief_agent_name' => $chief_agent ? (string) $chief_agent->name : '',
+                        'chief_rounds' => (int) ( $a->chief_rounds ?? 0 ),
                         'factcheck_score' => (float) ( $a->factcheck_score ?? 0 ),
                         'citations'     => (string) ( $a->citations ?? '' ),
                         'status'        => (string) $a->status,
@@ -3545,5 +3770,214 @@ class Nexus_Rest {
                 }
 
                 return 500;
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: CAPO REDATTORE E STRUMENTI DI RICERCA (v1.1.4)
+         * ======================================================================= */
+
+        /**
+         * GET /tools/catalog — catalogo strumenti di ricerca e provider AI (v1.1.4).
+         *
+         * Delega a Nexus_Tools::catalog(): shape {enabled, search_providers,
+         * search_provider, has_search_key, mcp, providers} (providers è il
+         * catalogo Nexus_Providers, serve alla select provider dell'editor
+         * agenti). Non richiede strumenti attivi: è lettura di configurazione.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_tools_catalog( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Tools' ) || ! method_exists( 'Nexus_Tools', 'catalog' ) ) {
+                        return self::err(
+                                'nexus_rest_tools_missing',
+                                __( 'Gli strumenti di ricerca non sono disponibili: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $catalog = Nexus_Tools::catalog();
+
+                return rest_ensure_response( is_array( $catalog ) ? $catalog : array() );
+        }
+
+        /**
+         * POST /tools/test — test onesto di uno strumento di ricerca (v1.1.4).
+         *
+         * Body JSON: {tool: 'search'|'read'|'feeds'|'mcp', ...args}:
+         *   search {query, max?}          → Nexus_Tools::search_web
+         *   read   {url}                  → Nexus_Tools::read_page
+         *   feeds  {url}                  → Nexus_Tools::discover_feeds
+         *   mcp    {server, tool_name, args?} → Nexus_Tools::mcp_call
+         * Il nome dello strumento MCP viaggia su tool_name (fallback mcp_tool)
+         * per non collidere con il selettore 'tool' del tipo di test.
+         * Risposta: {ok, tool, result, error} con result = JSON serializzato e
+         * clipped a 4000 caratteri (anteprima, mai un dump completo). Non
+         * richiede tools_enabled: serve proprio per provare la configurazione
+         * prima di attivare. Solo per test dalla UI impostazioni: nessuna
+         * scrittura su DB.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_tools_test( $request ) {
+                if ( ! class_exists( 'Nexus_Tools' ) ) {
+                        return self::err(
+                                'nexus_rest_tools_missing',
+                                __( 'Gli strumenti di ricerca non sono disponibili: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $tool = sanitize_key( (string) $request->get_param( 'tool' ) );
+                if ( ! in_array( $tool, array( 'search', 'read', 'feeds', 'mcp' ), true ) ) {
+                        return self::err(
+                                'nexus_rest_invalid_tool',
+                                __( 'Strumento non valido. Valori ammessi: search, read, feeds, mcp.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $tool_methods = array(
+                        'search' => 'search_web',
+                        'read'   => 'read_page',
+                        'feeds'  => 'discover_feeds',
+                        'mcp'    => 'mcp_call',
+                );
+                if ( ! method_exists( 'Nexus_Tools', $tool_methods[ $tool ] ) ) {
+                        return self::err(
+                                'nexus_rest_tools_missing',
+                                __( 'Gli strumenti di ricerca non sono disponibili: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $result = array();
+
+                try {
+                        if ( 'search' === $tool ) {
+                                $query = trim( (string) $request->get_param( 'query' ) );
+                                if ( '' === $query ) {
+                                        return self::err( 'nexus_rest_tool_query_missing', __( 'Parametro query mancante per il test di ricerca.', 'nexus-news-ai' ), 400 );
+                                }
+                                $result = Nexus_Tools::search_web( $query, absint( $request->get_param( 'max' ) ) );
+                        } elseif ( 'read' === $tool ) {
+                                $url = esc_url_raw( (string) $request->get_param( 'url' ) );
+                                if ( '' === $url ) {
+                                        return self::err( 'nexus_rest_tool_url_missing', __( 'Parametro url mancante per il test di lettura pagina.', 'nexus-news-ai' ), 400 );
+                                }
+                                $result = Nexus_Tools::read_page( $url );
+                        } elseif ( 'feeds' === $tool ) {
+                                $url = esc_url_raw( (string) $request->get_param( 'url' ) );
+                                if ( '' === $url ) {
+                                        return self::err( 'nexus_rest_tool_url_missing', __( 'Parametro url mancante per il test di RSS discovery.', 'nexus-news-ai' ), 400 );
+                                }
+                                $result = Nexus_Tools::discover_feeds( $url );
+                        } else {
+                                $server = sanitize_key( (string) $request->get_param( 'server' ) );
+                                $mcp_tool = sanitize_text_field( (string) $request->get_param( 'tool_name' ) );
+                                if ( '' === $mcp_tool ) {
+                                        $mcp_tool = sanitize_text_field( (string) $request->get_param( 'mcp_tool' ) );
+                                }
+                                if ( '' === $server ) {
+                                        return self::err( 'nexus_rest_tool_server_missing', __( 'Parametro server mancante per il test MCP.', 'nexus-news-ai' ), 400 );
+                                }
+                                if ( '' === $mcp_tool ) {
+                                        return self::err( 'nexus_rest_tool_mcp_tool_missing', __( 'Parametro tool_name mancante per il test MCP.', 'nexus-news-ai' ), 400 );
+                                }
+                                $mcp_args = $request->get_param( 'args' );
+                                $result   = Nexus_Tools::mcp_call( $server, $mcp_tool, is_array( $mcp_args ) ? $mcp_args : array() );
+                        }
+                } catch ( Throwable $e ) {
+                        // Mai fatal: l'errore del modulo strumenti diventa esito del test.
+                        $result = array( 'ok' => false, 'error' => sanitize_text_field( $e->getMessage() ) );
+                }
+
+                if ( ! is_array( $result ) ) {
+                        $result = array( 'data' => $result );
+                }
+
+                $error = isset( $result['error'] ) ? trim( (string) $result['error'] ) : '';
+                $ok    = array_key_exists( 'ok', $result ) ? (bool) $result['ok'] : true;
+                if ( '' !== $error ) {
+                        $ok = false;
+                }
+
+                // Clip 4000: la risposta resta un'anteprima compatta per la UI.
+                $json = wp_json_encode( $result );
+                if ( ! is_string( $json ) ) {
+                        $json = '';
+                }
+                if ( mb_strlen( $json ) > 4000 ) {
+                        $json = mb_substr( $json, 0, 4000 );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'     => $ok,
+                                'tool'   => $tool,
+                                'result' => $json,
+                                'error'  => $error,
+                        )
+                );
+        }
+
+        /**
+         * POST /chief/run/{id} — forza la revisione del capo redattore (v1.1.4).
+         *
+         * Delega a Nexus_Chief::review_article: il capo legge l'articolo (con
+         * strumenti attivi verifica anche le fonti) e applica il verdetto
+         * secondo le impostazioni (auto publish o badge in bozza). Risposta:
+         * {ok, chief_status, note} con lo stato capo redattore e la nota
+         * presenti sull'articolo dopo la revisione. Se il capo redattore non
+         * è attivo la risposta è 400 con messaggio operativo.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_chief_run( $request ) {
+                if ( ! class_exists( 'Nexus_Chief' ) || ! method_exists( 'Nexus_Chief', 'review_article' ) ) {
+                        return self::err(
+                                'nexus_rest_chief_missing',
+                                __( 'Il modulo capo redattore non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                if ( method_exists( 'Nexus_Chief', 'enabled' ) && ! Nexus_Chief::enabled() ) {
+                        return self::err(
+                                'nexus_rest_chief_disabled',
+                                __( 'Capo redattore non disponibile: attivalo nelle impostazioni.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $id      = absint( $request->get_param( 'id' ) );
+                $article = self::get_article_or_404( $id );
+                if ( is_wp_error( $article ) ) {
+                        return $article;
+                }
+
+                $res = Nexus_Chief::review_article( $id );
+                if ( is_wp_error( $res ) ) {
+                        return $res;
+                }
+
+                $ok = true;
+                if ( is_array( $res ) && array_key_exists( 'ok', $res ) ) {
+                        $ok = (bool) $res['ok'];
+                }
+
+                $fresh = Nexus_DB::get_article( $id );
+
+                return rest_ensure_response(
+                        array(
+                                'ok'           => $ok,
+                                'chief_status' => $fresh ? (string) ( $fresh->chief_status ?? '' ) : '',
+                                'note'         => $fresh ? (string) ( $fresh->chief_note ?? '' ) : '',
+                        )
+                );
         }
 }

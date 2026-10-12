@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. 7 agenti giornalisti AI con pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.3
+ * Version:     1.1.4
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.3' );
+define( 'NEXUS_VERSION', '1.1.4' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -27,9 +27,12 @@ define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-db.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-utils.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rss.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-providers.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-ai-engine.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-publisher.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-pipeline.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-tools.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-chief.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cron.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rest.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cpt.php';
@@ -106,6 +109,12 @@ function nexus_bootstrap() {
         Nexus_Multilang::init();
         Nexus_Publisher::init();
         Nexus_Queue::init();
+
+        // v1.1.4: Capo Redattore AI (registra l'handler coda nexus_chief_review).
+        if ( class_exists( 'Nexus_Chief' ) && method_exists( 'Nexus_Chief', 'init' ) ) {
+                Nexus_Chief::init();
+        }
+
         Nexus_Blocks::init();
         Nexus_I18n::init();
         Nexus_Public_API::init();

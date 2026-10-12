@@ -23,6 +23,7 @@
  *    lo stylesheet reale prevalga sempre a parità di specificità.
  *
  * v1.1.3: modal dettaglio mobile-safe (flex-start, dvh, overflow-wrap) e link "Vedi bozza WordPress" (wpViewLink).
+ * v1.1.4: barra "Creazione rapida" con preset agenti (prefill + modal), editor con ruolo/provider AI/ambito capo redattore, badge e "Nota del capo redattore" in coda e dettaglio, bottone "Revisione capo redattore" (POST /chief/run/{id}) e flag settings capo/strumenti.
  *
  * @package Nexus_News_AI
  */
@@ -301,6 +302,63 @@
                 return '<a class="nxa-wp-view" href="' + esc( href ) + '" target="_blank" rel="noopener noreferrer" title="Apri il post WordPress nativo">' + esc( label ) + '</a>';
         }
 
+        /* ------------------- CAPO REDATTORE (v1.1.4) ------------------- */
+
+        /**
+         * v1.1.4: chief_status dell'articolo (serialize_article T-05). Lettura
+         * difensiva come wpPostBadge/wpViewLink: risposta vecchia senza i campi
+         * → stringa vuota = nessun badge, mai crash.
+         */
+        function chiefStatusOf( a ) {
+                return String( pick( a || {}, 'chief_status', 'chiefStatus' ) || '' ).toLowerCase();
+        }
+
+        /** v1.1.4: verdetto capo redattore → testo IT del contratto ('' = nessuno). */
+        function chiefStatusLabel( status ) {
+                var map = {
+                        visto:      '🎖 Capo redattore: visto',
+                        modificato: '✏ Capo redattore: modificato',
+                        rifiutato:  '⛔ Capo redattore: rifiutato',
+                        revisione:  '🔄 Revisione capo redattore'
+                };
+                return map[ String( status || '' ).toLowerCase() ] || '';
+        }
+
+        /** v1.1.4: badge capo redattore accanto allo stato articolo (coda + dettaglio). */
+        function chiefBadge( a ) {
+                var status = chiefStatusOf( a );
+                var label = chiefStatusLabel( status );
+                if ( ! label ) {
+                        return '';
+                }
+                return '<span class="nxa-badge nxa-badge-chief nxa-badge-chief--' + esc( status ) + '">' + esc( label ) + '</span>';
+        }
+
+        /** v1.1.4: bottone forzatura revisione capo (usato in coda e dettaglio). */
+        function chiefRunButtonHtml( chiefStatus, attrs ) {
+                var extra = attrs || '';
+                return '<button type="button" class="button nxa-chief-run" data-chief-status="' + esc( String( chiefStatus || '' ) ) + '"' + ( extra ? ' ' + extra : '' ) + '>🎖 Revisione capo redattore</button>';
+        }
+
+        /**
+         * v1.1.4: blocco "Nota del capo redattore" del modal dettaglio, come
+         * la box fact-check: classi + stili inline, chief_note/chief_reviewed_at
+         * da serialize_article T-05; nota assente → blocco omesso.
+         */
+        function chiefNoteBlockHtml( a ) {
+                var row = a || {};
+                var note = String( pick( row, 'chief_note', 'chiefNote' ) || '' ).trim();
+                if ( ! note ) {
+                        return '';
+                }
+                var reviewed = String( pick( row, 'chief_reviewed_at', 'chiefReviewedAt' ) || '' );
+                return '<div class="nxa-chief-note" style="margin:16px 0 4px;padding:12px 14px;border:1px solid var(--nxa-border);border-radius:10px;background:var(--nxa-surface-2)">' +
+                                '<h4 style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Nota del capo redattore</h4>' +
+                                '<p style="margin:0;font-size:13px;line-height:1.6;white-space:pre-line">' + esc( note ) + '</p>' +
+                                ( reviewed ? '<p style="margin:8px 0 0;font-size:11.5px;color:var(--nxa-muted)">' + esc( dateIt( reviewed ) ) + '</p>' : '' ) +
+                        '</div>';
+        }
+
         function actionMeta( action ) {
                 return ACTION_META[ String( action || '' ).toLowerCase() ] || ACTION_DEFAULT;
         }
@@ -379,6 +437,47 @@
                         return payload.data;
                 }
                 return payload;
+        }
+
+        /**
+         * v1.1.4: chiamata REST nativa wp/v2 (stessa autenticazione nonce di api(),
+         * root derivata da NexusAdminData.restUrl) usata per il meta _nexus_sources
+         * delle redazioni (contratto nel docblock della vista redazioni.php).
+         */
+        function apiWp( path, options ) {
+                var opts = options || {};
+                var wpRoot = REST.replace( /\/nexus\/v1\/?$/, '' );
+                var method = ( opts.method || 'GET' ).toUpperCase();
+                var init = {
+                        method: method,
+                        headers: {
+                                'X-WP-Nonce': D.nonce,
+                                'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin'
+                };
+                if ( method !== 'GET' && opts.body !== undefined ) {
+                        init.body = JSON.stringify( opts.body );
+                }
+                return fetch( wpRoot.replace( /\/+$/, '' ) + '/' + String( path ).replace( /^\/+/, '' ), init ).then( function ( res ) {
+                        return res.text().then( function ( text ) {
+                                var data = null;
+                                if ( text ) {
+                                        try {
+                                                data = JSON.parse( text );
+                                        } catch ( e ) {
+                                                data = null;
+                                        }
+                                }
+                                if ( ! res.ok ) {
+                                        var err = new Error( ( data && data.message ) ? data.message : 'Errore ' + res.status );
+                                        err.status = res.status;
+                                        err.code = data ? data.code : '';
+                                        throw err;
+                                }
+                                return data || {};
+                        } );
+                } );
         }
 
         /**
@@ -653,8 +752,12 @@
                         var agentName = pick( a, 'agent_name', 'agentName' ) || ( a.agent && a.agent.name ) || 'AI Agent';
                         var sourceName = pick( a, 'source_name', 'sourceName' ) || '';
                         var sourceUrl = pick( a, 'source_url', 'sourceUrl' ) || '';
+                        var statusLine = String( pick( a, 'status' ) || '' ).toLowerCase();
                         var html = '' +
-                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + wpPostBadge( a ) + ' ' + wpViewLink( a ) + '</div>' +
+                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + chiefBadge( a ) + ' ' + wpPostBadge( a ) + ' ' + wpViewLink( a ) + '</div>' +
+                                // v1.1.4: forzatura revisione capo redattore nel dettaglio
+                                // (solo pending_approval; al successo il dettaglio si riapre).
+                                ( statusLine === 'pending_approval' ? '<div style="margin:0 0 12px">' + chiefRunButtonHtml( chiefStatusOf( a ), 'id="nxa-chief-run-btn"' ) + '</div>' : '' ) +
                                 '<h3 style="margin:0 0 4px;font-size:20px;line-height:1.3">' + esc( pick( a, 'title' ) ) + '</h3>' +
                                 ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 10px;color:var(--nxa-muted);font-size:14px">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                                 '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 14px">' +
@@ -682,6 +785,13 @@
                         var factBox = factCheckBoxHtml( a );
                         if ( factBox ) {
                                 html += factBox;
+                        }
+
+                        // v1.1.4: blocco "Nota del capo redattore" (chief_note +
+                        // chief_reviewed_at da serialize_article T-05; assenti → omesso).
+                        var chiefNoteBox = chiefNoteBlockHtml( a );
+                        if ( chiefNoteBox ) {
+                                html += chiefNoteBox;
                         }
 
                         var logs = pick( a, 'publish_logs', 'publishLogs' );
@@ -720,6 +830,16 @@
                         // delle traduzioni come post nativi (una fetch per apertura).
                         bindTranslatePostButtons( qs( '#nxa-translate-post-row' ), num( pick( a, 'id' ) ) || num( id ) );
                         loadTranslationsPosts( num( pick( a, 'id' ) ) || num( id ) );
+                        // v1.1.4: bottone "Revisione capo redattore" nel dettaglio —
+                        // al successo il dettaglio si riapre con badge/note aggiornati.
+                        var chiefBtn = qs( '#nxa-chief-run-btn' );
+                        if ( chiefBtn ) {
+                                chiefBtn.addEventListener( 'click', function () {
+                                        runChiefReview( num( pick( a, 'id' ) ) || num( id ), chiefStatusOf( a ), chiefBtn, function () {
+                                                openArticleModal( num( pick( a, 'id' ) ) || num( id ) );
+                                        } );
+                                } );
+                        }
                 } ).catch( function ( err ) {
                         openModalBody( emptyState( '⚠️', 'Impossibile caricare l’articolo', err.message || '' ) );
                 } );
@@ -1506,6 +1626,31 @@
                 modelField.value = String( pick( a, 'ai_model' ) || '' );
                 descField.value = String( pick( a, 'description' ) || '' );
                 persField.value = String( pick( a, 'personality' ) || '' );
+                // v1.1.4: ruolo, provider AI e ambito capo redattore — campi nuovi
+                // T-06; markup legacy senza i selettori → precompilazioni saltate
+                // (guard null-safe: i campi originali restano obbligatori come prima).
+                var roleField = qs( '#nxa-agent-role', modal );
+                var providerField = qs( '#nxa-agent-provider', modal );
+                var chiefField = qs( '#nxa-agent-chief-field', modal );
+                var scopeField = qs( '#nxa-agent-chief-scope', modal );
+                var termField = qs( '#nxa-agent-chief-term', modal );
+                if ( roleField ) {
+                        roleField.value = String( pick( a, 'role' ) ) === 'capo_redattore' ? 'capo_redattore' : 'giornalista';
+                }
+                if ( providerField ) {
+                        loadAgentProviderOptions( providerField, String( pick( a, 'ai_provider', 'aiProvider' ) || '' ) );
+                }
+                if ( chiefField && scopeField ) {
+                        var scopeRaw = String( pick( a, 'chief_scope', 'chiefScope' ) || '' ).toLowerCase();
+                        scopeField.value = [ 'global', 'category', 'term' ].indexOf( scopeRaw ) >= 0 ? scopeRaw : 'global';
+                }
+                if ( termField ) {
+                        termField.value = String( num( pick( a, 'chief_term_id', 'chiefTermId' ) ) );
+                }
+                updateAgentChiefVisibility( modal );
+                if ( termField ) {
+                        loadAgentChiefTerms( termField, num( pick( a, 'chief_term_id', 'chiefTermId' ) ) );
+                }
                 title.textContent = num( pick( a, 'id' ) ) > 0
                         ? 'Modifica agente: ' + String( pick( a, 'name' ) || '' )
                         : 'Nuovo agente';
@@ -1600,6 +1745,40 @@
                                 openAgentEditor( null );
                         } );
                 }
+
+                // v1.1.4: barra "Creazione rapida" (agents.php T-06) — il preset
+                // prefilla il form e apre il modal nuovo agente; l'invio resta il
+                // normale POST /agents del submit qui sotto.
+                qsa( '.nxa-preset-btn' ).forEach( function ( btn ) {
+                        btn.addEventListener( 'click', function () {
+                                var preset = AGENT_PRESETS[ String( btn.getAttribute( 'data-preset' ) || '' ).toLowerCase() ];
+                                if ( ! preset ) {
+                                        return;
+                                }
+                                var row = {};
+                                for ( var key in preset ) {
+                                        if ( Object.prototype.hasOwnProperty.call( preset, key ) ) {
+                                                row[ key ] = preset[ key ];
+                                        }
+                                }
+                                openAgentEditor( row );
+                        } );
+                } );
+
+                // v1.1.4: cambio ruolo → mostra/nasconde l'ambito capo redattore;
+                // cambio ambito → mostra/nasconde la scelta della redazione.
+                var roleToggle = qs( '#nxa-agent-role' );
+                if ( roleToggle ) {
+                        roleToggle.addEventListener( 'change', function () {
+                                updateAgentChiefVisibility( qs( '#nxa-agent-modal' ) );
+                        } );
+                }
+                var scopeToggle = qs( '#nxa-agent-chief-scope' );
+                if ( scopeToggle ) {
+                        scopeToggle.addEventListener( 'change', function () {
+                                updateAgentChiefVisibility( qs( '#nxa-agent-modal' ) );
+                        } );
+                }
                 // v1.0.7: chiusure — "Annulla", × [data-nxa-agent-close], tasto ESC.
                 var cancelBtn = qs( '#nxa-agent-cancel' );
                 if ( cancelBtn ) {
@@ -1641,6 +1820,25 @@
                         if ( ! fields.status ) {
                                 fields.status = 'active';
                         }
+                        // v1.1.4: ruolo, provider e ambito capo redattore — serializzati
+                        // nei POST/PUT agenti esistenti; markup legacy senza i selettori
+                        // (agents.php vecchio) → campi omessi, payload invariato.
+                        var roleSel = qs( '#nxa-agent-role', form );
+                        if ( roleSel ) {
+                                fields.role = readField( '#nxa-agent-role' ) === 'capo_redattore' ? 'capo_redattore' : 'giornalista';
+                                if ( fields.role === 'capo_redattore' ) {
+                                        var scopeVal = readField( '#nxa-agent-chief-scope' );
+                                        fields.chief_scope = [ 'global', 'category', 'term' ].indexOf( scopeVal ) >= 0 ? scopeVal : 'global';
+                                        fields.chief_term_id = fields.chief_scope === 'term' ? num( readField( '#nxa-agent-chief-term' ) ) : 0;
+                                } else {
+                                        fields.chief_scope = '';
+                                        fields.chief_term_id = 0;
+                                }
+                        }
+                        var providerSel = qs( '#nxa-agent-provider', form );
+                        if ( providerSel ) {
+                                fields.ai_provider = readField( '#nxa-agent-provider' );
+                        }
                         var statusBox = qs( '#nxa-agent-form-status', form );
                         if ( ! fields.name || ! fields.category ) {
                                 if ( statusBox ) {
@@ -1669,6 +1867,259 @@
                         } ).then( function () {
                                 setBtnLoading( saveBtn, false );
                         } );
+                } );
+        }
+
+        /* ---------------- CREAZIONE RAPIDA + RUOLO/PROVIDER/CAPO (v1.1.4) ---------------- */
+
+        /**
+         * v1.1.4: preset della barra "Creazione rapida" in agents.php (T-06):
+         * data-preset → riga di prefill per openAgentEditor (nessun id: resta
+         * "Nuovo agente" e l'invio è il normale POST /agents). Categorie,
+         * descrizioni e personalità allineate al seed dei 7 agenti; solo il
+         * capo porta role/chief_scope. Emoji solo da quelle già presenti nel
+         * progetto (seed agenti in class-nexus-db.php, icone attività qui).
+         */
+        var AGENT_PRESETS = {
+                tech: {
+                        name: 'Giornalista tech',
+                        avatar: '🤖',
+                        category: 'Tecnologia',
+                        description: 'Agente AI specializzato in tecnologia, AI, gadget e innovazione.',
+                        personality: 'Analitico e orientato all’impatto pratico'
+                },
+                sport: {
+                        name: 'Giornalista sport',
+                        avatar: '⚽',
+                        category: 'Sport',
+                        description: 'Agente AI su calcio, sport nazionali e internazionali.',
+                        personality: 'Emozionante e narrativo, con statistiche e analisi tattiche'
+                },
+                economia: {
+                        name: 'Giornalista economia',
+                        avatar: '📈',
+                        category: 'Economia',
+                        description: 'Agente AI su mercati, imprese e finanza personale.',
+                        personality: 'Rigoroso ma accessibile, con dati concreti'
+                },
+                politica: {
+                        name: 'Giornalista politica',
+                        avatar: '🏛️',
+                        category: 'Politica',
+                        description: 'Agente AI che copre politica italiana ed estera con contesto storico.',
+                        personality: 'Equilibrato e oggettivo, con contesto geopolitico'
+                },
+                scienza: {
+                        name: 'Giornalista scienza',
+                        avatar: '🔬',
+                        category: 'Scienza',
+                        description: 'Agente AI su ricerca, spazio, ambiente e scoperte scientifiche.',
+                        personality: 'Divulgativo ma preciso, con spiegazioni chiare'
+                },
+                cultura: {
+                        name: 'Giornalista cultura',
+                        avatar: '🎭',
+                        category: 'Cultura',
+                        description: 'Agente AI su cinema, libri, musica e eventi culturali.',
+                        personality: 'Elegante e riflessivo, con riferimenti storici e artistici'
+                },
+                salute: {
+                        name: 'Giornalista salute',
+                        avatar: '🩺',
+                        category: 'Salute',
+                        description: 'Agente AI su salute, benessere e medicina basata su evidenze.',
+                        personality: 'Rassicurante e basato su evidenze scientifiche'
+                },
+                capo: {
+                        name: 'Capo redattore',
+                        avatar: '📰',
+                        category: 'Direzione',
+                        role: 'capo_redattore',
+                        chief_scope: 'global',
+                        description: 'Legge gli articoli dei giornalisti e li approva, modifica, manda in revisione o rifiuta.',
+                        personality: 'Rigoroso, sintetico e difensore della qualità editoriale'
+                }
+        };
+
+        /**
+         * v1.1.4: visibilità dell'ambito capo redattore nel modal editor — il
+         * blocco #nxa-agent-chief-field compare solo con ruolo capo_redattore,
+         * la scelta della redazione solo con ambito "term". Markup assente →
+         * exit silenzioso (compatibile con agents.php vecchio).
+         */
+        function updateAgentChiefVisibility( modal ) {
+                var root = modal || qs( '#nxa-agent-modal' );
+                if ( ! root ) {
+                        return;
+                }
+                var roleSel = qs( '#nxa-agent-role', root );
+                var chiefBox = qs( '#nxa-agent-chief-field', root );
+                var scopeSel = qs( '#nxa-agent-chief-scope', root );
+                var termSel = qs( '#nxa-agent-chief-term', root );
+                if ( ! roleSel || ! chiefBox ) {
+                        return;
+                }
+                var isCapo = String( roleSel.value || '' ) === 'capo_redattore';
+                chiefBox.hidden = ! isCapo;
+                var scope = scopeSel ? String( scopeSel.value || '' ) : '';
+                if ( termSel ) {
+                        termSel.hidden = ! isCapo || scope !== 'term';
+                }
+        }
+
+        /** v1.1.4: option di riserva per un provider corrente fuori catalogo. */
+        function ensureProviderOption( select, providerId, label ) {
+                var value = String( providerId || '' ).trim();
+                if ( ! select || ! value ) {
+                        return;
+                }
+                for ( var i = 0; i < select.options.length; i++ ) {
+                        if ( String( select.options[ i ].value || '' ) === value ) {
+                                return;
+                        }
+                }
+                var opt = document.createElement( 'option' );
+                opt.setAttribute( 'value', value );
+                opt.textContent = String( label || value );
+                select.appendChild( opt );
+        }
+
+        /**
+         * v1.1.4: riempie #nxa-agent-provider con i provider del catalogo
+         * (GET /tools/catalog T-05 → {providers} come array o mappa id→voce).
+         * La prima option resta "" = "Provider globale (impostazioni)". La
+         * risposta vecchia senza providers (route T-05 non ancora integrata)
+         * o la fetch fallita lasciano il solo provider globale + eventuale
+         * provider corrente dell'agente: mai crash, mai perdita silenziosa.
+         */
+        function fillAgentProviderOptions( select, catalog, currentProvider ) {
+                if ( ! select ) {
+                        return;
+                }
+                var current = String( currentProvider || '' );
+                var providers = ( catalog && typeof catalog === 'object' ) ? catalog.providers : null;
+                var entries = [];
+                if ( Array.isArray( providers ) ) {
+                        for ( var i = 0; i < providers.length; i++ ) {
+                                var item = providers[ i ] || {};
+                                var itemId = String( item.id || '' ).trim();
+                                if ( itemId ) {
+                                        entries.push( { id: itemId, label: String( item.label || itemId ) } );
+                                }
+                        }
+                } else if ( providers && typeof providers === 'object' ) {
+                        for ( var key in providers ) {
+                                if ( Object.prototype.hasOwnProperty.call( providers, key ) ) {
+                                        var entry = providers[ key ] || {};
+                                        entries.push( { id: String( key ), label: String( entry.label || key ) } );
+                                }
+                        }
+                }
+                if ( ! entries.length ) {
+                        ensureProviderOption( select, current, current );
+                        select.value = current;
+                        return;
+                }
+                select.innerHTML = '';
+                var globalOpt = document.createElement( 'option' );
+                globalOpt.setAttribute( 'value', '' );
+                globalOpt.textContent = 'Provider globale (impostazioni)';
+                select.appendChild( globalOpt );
+                for ( var j = 0; j < entries.length; j++ ) {
+                        var opt = document.createElement( 'option' );
+                        opt.setAttribute( 'value', entries[ j ].id );
+                        opt.textContent = entries[ j ].label;
+                        select.appendChild( opt );
+                }
+                ensureProviderOption( select, current, current );
+                select.value = current;
+        }
+
+        /** v1.1.4: cache pagina del catalogo provider (GET /tools/catalog, 60s). */
+        var toolsCatalogCache = { data: null, at: 0, ttl: 60000 };
+
+        /**
+         * v1.1.4: provider corrente impostato SUBITO (anche a catalogo non
+         * ancora caricato), poi la fetch (o la cache) completa la lista.
+         */
+        function loadAgentProviderOptions( providerSelect, currentProvider ) {
+                var current = String( currentProvider || '' );
+                if ( providerSelect && current ) {
+                        ensureProviderOption( providerSelect, current, current );
+                        providerSelect.value = current;
+                }
+                if ( ! providerSelect ) {
+                        return Promise.resolve();
+                }
+                var fresh = toolsCatalogCache.data && ( Date.now() - toolsCatalogCache.at ) < toolsCatalogCache.ttl;
+                if ( fresh ) {
+                        fillAgentProviderOptions( providerSelect, toolsCatalogCache.data, current );
+                        return Promise.resolve();
+                }
+                return api( 'tools/catalog' ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        toolsCatalogCache.data = ( data.catalog && typeof data.catalog === 'object' ) ? data.catalog : data;
+                        toolsCatalogCache.at = Date.now();
+                        fillAgentProviderOptions( providerSelect, toolsCatalogCache.data, current );
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] catalogo strumenti/provider:', err );
+                } );
+        }
+
+        /** v1.1.4: option di riserva per un termine salvato non più in elenco. */
+        function ensureTermOption( select, termId ) {
+                var value = String( num( termId ) );
+                if ( ! select || num( value ) <= 0 ) {
+                        return;
+                }
+                for ( var i = 0; i < select.options.length; i++ ) {
+                        if ( String( select.options[ i ].value || '' ) === value ) {
+                                return;
+                        }
+                }
+                var opt = document.createElement( 'option' );
+                opt.setAttribute( 'value', value );
+                opt.textContent = 'Redazione #' + value;
+                select.appendChild( opt );
+        }
+
+        /**
+         * v1.1.4: riempie #nxa-agent-chief-term con i termini redazioni. Contratto
+         * T-06: il file ha già fetch verso nexus/v1 (getRedazioni, cache pagina
+         * della colonna "Redazioni") quindi si riusa QUELLA route — nessun fetch
+         * nuovo verso wp/v2. Fetch fallita → warn + select col solo placeholder.
+         */
+        function loadAgentChiefTerms( termSelect, savedTermId ) {
+                if ( ! termSelect ) {
+                        return Promise.resolve();
+                }
+                return getRedazioni().then( function ( terms ) {
+                        if ( ! termSelect.parentNode ) {
+                                return null; // modal chiuso nel frattempo: nessun tocco al DOM
+                        }
+                        termSelect.innerHTML = '';
+                        var placeholder = document.createElement( 'option' );
+                        placeholder.setAttribute( 'value', '0' );
+                        placeholder.textContent = 'Seleziona redazione…';
+                        termSelect.appendChild( placeholder );
+                        ( Array.isArray( terms ) ? terms : [] ).forEach( function ( term ) {
+                                var tid = num( pick( term, 'id' ) );
+                                if ( tid <= 0 ) {
+                                        return;
+                                }
+                                var opt = document.createElement( 'option' );
+                                opt.setAttribute( 'value', String( tid ) );
+                                opt.textContent = String( pick( term, 'name' ) || ( 'Redazione #' + tid ) );
+                                termSelect.appendChild( opt );
+                        } );
+                        var saved = num( savedTermId );
+                        if ( saved > 0 ) {
+                                ensureTermOption( termSelect, saved );
+                                termSelect.value = String( saved );
+                        }
+                        return null;
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] redazioni (ambito capo redattore):', err );
                 } );
         }
 
@@ -1813,6 +2264,34 @@
          * 10. CODA DI APPROVAZIONE
          * ================================================================== */
 
+        /**
+         * v1.1.4: forza la revisione capo redattore su un articolo
+         * (POST /chief/run/{id}, route T-05). chiefStatus è il valore
+         * chief_status al momento del render: se non vuoto (articolo già
+         * verificato) chiede conferma. onDone richiamata a OK (reload coda
+         * o riapertura dettaglio); errori → toast, mai crash.
+         */
+        function runChiefReview( id, chiefStatus, btn, onDone ) {
+                if ( num( id ) <= 0 ) {
+                        return;
+                }
+                if ( String( chiefStatus || '' ) !== '' && ! window.confirm( 'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' ) ) {
+                        return;
+                }
+                setBtnLoading( btn, true, 'Verifico…' );
+                api( 'chief/run/' + num( id ), { method: 'POST' } ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        var outcome = chiefStatusLabel( pick( data, 'chief_status', 'chiefStatus' ) );
+                        toast( outcome ? outcome : 'Revisione capo redattore completata.', 'success', 'Capo redattore' );
+                        return typeof onDone === 'function' ? onDone() : null;
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Revisione capo redattore non riuscita' );
+                        setBtnLoading( btn, false );
+                } ).then( function () {
+                        setBtnLoading( btn, false );
+                } );
+        }
+
         function currentQueueFilter() {
                 var select = qs( '#nxa-queue-filter' );
                 if ( ! select ) {
@@ -1836,6 +2315,9 @@
                         // inviamo article_id al run della pipeline; se il backend non supporta
                         // ancora la pubblicazione puntuale risponderà 400 e mostriamo un toast chiaro.
                         ( status === 'approved' ? '<button type="button" class="button nxa-publish-one" data-id="' + id + '">Pubblica</button>' : '' ) +
+                        // v1.1.4: revisione capo redattore forzata (solo pending_approval);
+                        // data-chief-status alimenta la conferma extra se già verificato.
+                        ( status === 'pending_approval' ? chiefRunButtonHtml( chiefStatusOf( a ), 'data-id="' + id + '"' ) : '' ) +
                         '<button type="button" class="button-link nxa-detail" data-id="' + id + '">Dettagli</button>' +
                 '</div>';
 
@@ -1843,6 +2325,7 @@
                         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
                                 categoryChip( pick( a, 'category' ) ) +
                                 badge( status ) +
+                                chiefBadge( a ) +
                                 scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                 wpPostBadge( a ) +
                                 wpViewLink( a ) +
@@ -1978,6 +2461,20 @@
                                                 apiErrorToast( err, 'Pubblicazione non riuscita' );
                                                 setBtnLoading( publish, false );
                                         } );
+                                        return;
+                                }
+
+                                // v1.1.4: revisione capo redattore (POST /chief/run/{id});
+                                // conferma extra se l'articolo è già stato verificato.
+                                var chiefRun = target.closest ? target.closest( '.nxa-chief-run' ) : null;
+                                if ( chiefRun ) {
+                                        runChiefReview(
+                                                num( chiefRun.getAttribute( 'data-id' ) ),
+                                                chiefRun.getAttribute( 'data-chief-status' ) || '',
+                                                chiefRun,
+                                                loadQueueList
+                                        );
+                                        return;
                                 }
                         } );
                 }
@@ -2033,7 +2530,11 @@
                 //  anche nel blocco numerico sotto per essere inviati come numeri)
                 // (v1.0.5: + admin_language, sezione "Lingua e API pubblica")
                 // (v1.0.6: + admin_theme, sezione "Interfaccia" — select #nxa-admin-theme)
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme' ];
+                // (v1.1.4: + tools_search_provider, mcp_servers_text, prov_base_custom
+                //  — sezione "Provider AI per agente" e "Strumenti di ricerca"; le chiavi
+                //  prov_key_* e tools_search_key seguono il pattern solo-se-compilata
+                //  del blocco ai_api_key in fondo a questa funzione)
+                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -2042,7 +2543,9 @@
                 }
 
                 // numerici (v1.0.4: + scala & pro: queue_batch_size, queue_max_attempts)
-                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd', 'queue_batch_size', 'queue_max_attempts' ];
+                // (v1.1.4: + chief_max_rounds, chief_id, tools_max_results,
+                //  tools_read_max_chars, tools_max_rounds, tools_timeout)
+                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd', 'queue_batch_size', 'queue_max_attempts', 'chief_max_rounds', 'chief_id', 'tools_max_results', 'tools_read_max_chars', 'tools_max_rounds', 'tools_timeout' ];
                 for ( i = 0; i < numbers.length; i++ ) {
                         var numField = form.elements[ numbers[ i ] ];
                         if ( numField && numField.value !== undefined && String( numField.value ).trim() !== '' ) {
@@ -2101,6 +2604,18 @@
                         }
                 }
 
+                // checkbox capo redattore + strumenti di ricerca (v1.1.4): presenti → 1,
+                // assenti → 0 (i campi name arrivano con settings.php T-07; se non sono
+                // ancora nel markup qsa torna [] e il payload li omette — stesso pattern
+                // dei blocchi wpFlags/distribFlags/intelFlags/scalaFlags sopra)
+                var chiefFlags = [ 'chief_enabled', 'chief_auto_publish', 'tools_enabled', 'tools_read_page' ];
+                for ( i = 0; i < chiefFlags.length; i++ ) {
+                        var chiefBoxes = qsa( 'input[name="' + chiefFlags[ i ] + '"]', form );
+                        if ( chiefBoxes.length ) {
+                                payload[ chiefFlags[ i ] ] = chiefBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
                 // piattaforme social: checkbox multiple name="social_platforms[]" → CSV
                 var platformInputs = qsa( 'input[name="social_platforms[]"]', form );
                 var platforms = platformInputs
@@ -2115,6 +2630,16 @@
                 var key = form.elements.ai_api_key;
                 if ( key && String( key.value || '' ).trim() !== '' ) {
                         payload.ai_api_key = String( key.value ).trim();
+                }
+
+                // (v1.1.4) chiavi per-provider + tools_search_key: stesso pattern
+                // solo-se-compilata di ai_api_key (password vuota = nessun cambio)
+                var secretNames = [ 'prov_key_openrouter', 'prov_key_openai', 'prov_key_anthropic', 'prov_key_google', 'prov_key_groq', 'prov_key_deepseek', 'prov_key_mistral', 'prov_key_xai', 'prov_key_custom', 'tools_search_key' ];
+                for ( i = 0; i < secretNames.length; i++ ) {
+                        var secretField = form.elements[ secretNames[ i ] ];
+                        if ( secretField && String( secretField.value || '' ).trim() !== '' ) {
+                                payload[ secretNames[ i ] ] = String( secretField.value ).trim();
+                        }
                 }
 
                 return payload;
@@ -2819,6 +3344,73 @@
                 }
         }
 
+        /* v1.1.4: fonti della redazione (meta _nexus_sources) — conversioni tra le
+         * righe della textarea "rss|URL" / "site|URL" e l'array {type, url} che la
+         * REST nativa wp/v2 si aspetta (sanitize_callback server-side: Nexus_Redazioni). */
+        function redSourcesField() {
+                return qs( '#nxa-red-sources' );
+        }
+
+        function parseRedSources( text ) {
+                var out = [];
+                var seen = {};
+                String( text || '' ).split( /\r?\n/ ).forEach( function ( raw ) {
+                        var line = String( raw || '' ).trim();
+                        if ( ! line ) {
+                                return;
+                        }
+                        var parts = line.split( '|' );
+                        var type = ( parts[ 0 ] || '' ).trim().toLowerCase() === 'site' ? 'site' : 'rss';
+                        var url = ( parts.length > 1 ? parts.slice( 1 ).join( '|' ) : line ).trim();
+                        if ( ! url || ! /^https?:\/\//i.test( url ) ) {
+                                return; // riga vuota o URL non valido: ignorata
+                        }
+                        var key = type + ' ' + url.toLowerCase();
+                        if ( seen[ key ] ) {
+                                return;
+                        }
+                        seen[ key ] = 1;
+                        out.push( { type: type, url: url } );
+                } );
+                return out;
+        }
+
+        function redSourcesToText( items ) {
+                return ( Array.isArray( items ) ? items : [] ).map( function ( item ) {
+                        var type = String( pick( item, 'type' ) || 'rss' ).toLowerCase() === 'site' ? 'site' : 'rss';
+                        return type + '|' + String( pick( item, 'url' ) || '' );
+                } ).filter( function ( row ) {
+                        return row.length > 4;
+                } ).join( '\n' );
+        }
+
+        /** Salvataggio fonti via REST nativa wp/v2: array vuoto = cancella tutte. */
+        function saveRedSources( termId, items ) {
+                return apiWp( 'wp/v2/redazioni/' + num( termId ), {
+                        method: 'POST',
+                        body: { meta: { _nexus_sources: items } }
+                } );
+        }
+
+        /** Caricamento fonti in modalità edit (GET wp/v2 context=edit, meta opzionale). */
+        function loadRedSources( termId ) {
+                var field = redSourcesField();
+                if ( ! field ) {
+                        return;
+                }
+                apiWp( 'wp/v2/redazioni/' + num( termId ) + '?context=edit' ).then( function ( term ) {
+                        // se nel frattempo l'editore ha cambiato target, non toccare la textarea
+                        var idField = qs( '#nxa-red-id' );
+                        if ( ! idField || num( idField.value ) !== num( termId ) ) {
+                                return;
+                        }
+                        var meta = term && term.meta ? term.meta : {};
+                        field.value = redSourcesToText( meta._nexus_sources );
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] fonti redazione:', err );
+                } );
+        }
+
         /** v1.1.1: reset del form alla modalità crea (id 0, campi vuoti, cancel nascosto). */
         function resetRedazioneForm() {
                 var form = qs( '#nxa-red-form' );
@@ -2836,6 +3428,10 @@
                 var slugField = qs( '#nxa-red-slug', form );
                 if ( slugField ) {
                         slugField.value = '';
+                }
+                var sourcesField = redSourcesField();
+                if ( sourcesField ) {
+                        sourcesField.value = '';
                 }
                 var select = qs( '#nxa-red-parent', form );
                 if ( select ) {
@@ -2870,6 +3466,7 @@
                 idField.value = String( num( pick( term, 'id' ) ) || 0 );
                 nameField.value = String( pick( term, 'name' ) || '' );
                 slugField.value = String( pick( term, 'slug' ) || '' );
+                loadRedSources( num( pick( term, 'id' ) ) ); // v1.1.4: fonti da meta wp/v2
                 var cancel = qs( '#nxa-red-cancel' );
                 if ( cancel ) {
                         cancel.classList.remove( 'hidden' );
@@ -2939,15 +3536,27 @@
                 if ( slug ) {
                         body.slug = slug; // inviato solo se compilato
                 }
+                // v1.1.4: fonti della redazione — in modifica sempre (array vuoto = pulisce),
+                // in creazione solo se compilate (dopo che il POST restituisce term_id)
+                var sourcesItems = parseRedSources( readField( '#nxa-red-sources' ) );
                 var saveBtn = qs( '#nxa-red-save', form );
                 setBtnLoading( saveBtn, true, 'Salvo…' );
                 var request = editId > 0
                         ? api( 'redazioni/' + editId, { method: 'POST', body: body } )
                         : api( 'redazioni', { method: 'POST', body: body } );
-                request.then( function () {
-                        toast( editId > 0 ? 'Redazione aggiornata.' : 'Redazione creata.', 'success', 'Redazioni' );
-                        resetRedazioneForm();
-                        return loadRedazioniPage();
+                request.then( function ( payload ) {
+                        var savedId = editId > 0 ? editId : num( pick( unwrap( payload ) || {}, 'term_id' ) );
+                        var afterSources = ( savedId > 0 && ( editId > 0 || sourcesItems.length ) )
+                                ? saveRedSources( savedId, sourcesItems ).catch( function ( err ) {
+                                        window.console.warn( '[Nexus] fonti redazione (salvataggio):', err );
+                                        toast( 'Redazione salvata ma fonti non salvate.', 'error', 'Redazioni' );
+                                } )
+                                : Promise.resolve();
+                        return afterSources.then( function () {
+                                toast( editId > 0 ? 'Redazione aggiornata.' : 'Redazione creata.', 'success', 'Redazioni' );
+                                resetRedazioneForm();
+                                return loadRedazioniPage();
+                        } );
                 } ).catch( function ( err ) {
                         apiErrorToast( err, 'Salvataggio redazione non riuscito' );
                 } ).then( function () {
