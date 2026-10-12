@@ -169,7 +169,7 @@ class Nexus_Public_API {
                                                         'type'              => 'string',
                                                         'required'          => false,
                                                         'default'           => '',
-                                                        'sanitize_callback' => 'sanitize_title',
+                                                        'sanitize_callback' => array( __CLASS__, 'sanitize_slug_param' ),
                                                 ),
                                                 'lang'              => array(
                                                         'type'              => 'string',
@@ -233,6 +233,23 @@ class Nexus_Public_API {
         /* =========================================================================
          * AUTENTICAZIONE E RATE LIMIT
          * ======================================================================= */
+
+        /**
+         * Sanitizer per i parametri slug (v1.1.8).
+         *
+         * PERCHÉ ESISTE: WP invoca i sanitize_callback come ( $value, $request, $param )
+         * e sanitize_title usa il 2° argomento come titolo di fallback quando il valore
+         * è vuoto — così il default '' della rotta /articles finiva per diventare
+         * L'OGGETTO WP_REST_Request, il che rendeva fatale il cast (string) nel handler
+         * (HTTP 500 su ogni GET /articles senza filtro redazione, trovato dall'e2e su
+         * WP reale). Il wrapper sanifica SEMPRE e SOLO il valore.
+         *
+         * @param mixed $value Valore del parametro.
+         * @return string
+         */
+        public static function sanitize_slug_param( $value ) {
+                return sanitize_title( (string) $value );
+        }
 
         /**
          * Permission callback per tutte le rotte pubbliche.

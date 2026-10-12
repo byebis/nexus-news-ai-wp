@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.7
+Stable tag: 1.1.8
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -98,6 +98,11 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.8 =
+* Risolto l'errore 500 dell'API pubblica sulla rotta /articles (la principale: la lista degli articoli pubblicati). Il filtro «redazione» usava sanitize_title direttamente come sanitize_callback: WordPress invoca questi callback passando la richiesta come secondo argomento e, con valore vuoto, sanitize_title la usava come titolo di fallback — il parametro finiva per contenere l'oggetto richiesta e il server rispondeva 500 su ogni chiamata. Ora un wrapper dedicato sanifica soltanto il valore; stessa cura per lo slug delle redazioni nel salvataggio con slug vuoto. Trovato dal test end-to-end su WordPress reale con chiave API e verificato live: /articles e /articles?redazione=... rispondono 200 in JSON.
+* Pubblicazione certificata: il test end-to-end conferma che lo stato del post WordPress nativo creato dalla pipeline è quello scelto in Impostazioni → Pubblicazione («Stato predefinito»). Con «Pubblicato» il post nasce pubblico con permalink reale, log di pubblicazione puliti e social non configurati segnalati in modo onesto («skipped»). Se un articolo esce in bozza, basta portare «Stato predefinito» su «Pubblicato».
+* Dashboard certificata anche durante le run: l'ambiente di test ora osserva il pannello live «In redazione ora» MENTRE gli agenti lavorano e la strip si aggiorna in tempo reale (7 snapshot osservati: Raccoglie le fonti → Valuta i materiali → Scrive l'articolo, per agente, con titolo in corso). Regressione completa dei 5 bug della 1.1.7 verde 9/9 su WordPress reale: impostazioni che salvano (anche lo stato «In attesa di revisione»), whitelist chiavi completa, eliminazione agenti, guardie visibilità integre, contatore coda reale.
 
 = 1.1.7 =
 * UCCISA LA VERA CAUSA della "doppia dashboard": la voce "Dashboard" veniva registrata come sottopagina con lo stesso slug del menu — WordPress la attaccava allo stesso hook del pannello principale e la vista veniva stampata DUE volte nella pagina (2× pannelli, statistiche, feed). Ora una sola voce "Dashboard" nel menu e un solo render, verificato e2e su WordPress reale.

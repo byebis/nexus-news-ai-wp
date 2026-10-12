@@ -3,7 +3,7 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.7-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.8-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
@@ -38,10 +38,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 21. [UI che respira, avvii mirati, live redazionale (v1.1.5)](#v115--ui-che-respira-avvii-mirati-live-redazionale)
 22. [Zero mock, IT/EN 100%, impostazioni a sottomenu (v1.1.6)](#v116--zero-mock-iten-100-impostazioni-a-sottomenu)
 23. [E2E su WordPress reale, dashboard singola, test vivi (v1.1.7)](#v117--e2e-su-wordpress-reale-dashboard-singola-test-vivi)
-24. [Installazione](#installazione)
-25. [FAQ tecniche](#faq-tecniche)
-26. [Licenza e crediti](#licenza-e-crediti)
-27. [Changelog](#changelog)
+24. [API pubblica risanata, pipeline certificata (v1.1.8)](#v118--api-pubblica-risanata-pipeline-certificata)
+25. [Installazione](#installazione)
+26. [FAQ tecniche](#faq-tecniche)
+27. [Licenza e crediti](#licenza-e-crediti)
+28. [Changelog](#changelog)
 
 ---
 
@@ -1008,6 +1009,21 @@ Dalla 1.1.5 l'admin **respira** e la redazione si comanda e si osserva dal vivo:
 
 ---
 
+## v1.1.8 — API pubblica risanata, pipeline certificata
+
+La 1.1.8 è la release della certificazione: il giro di test end-to-end su WordPress reale prosegue dove la 1.1.7 si era fermata (regressione dei 5 bug, run redazione e testata con live strip osservata in tempo reale, Nexus Wire, magazine frontend, API pubblica con chiave) e trova — e uccide — un vero bug nascosto dell'API pubblica.
+
+### L'errore 500 dell'API pubblica /articles
+La rotta principale dell'API pubblica rispondeva **500 su ogni chiamata**: il filtro «redazione» registrava `sanitize_title` direttamente come sanitize_callback, ma WordPress invoca questi callback passando la richiesta come **secondo argomento** — e `sanitize_title` usa il secondo argomento come **titolo di fallback** quando il valore è vuoto. Con il default vuoto della rotta, il parametro finiva per contenere **l'oggetto WP_REST_Request** e il cast a stringa nel handler scopriva il fatal. Da 1.1.8 un wrapper dedicato (`sanitize_slug_param`) sanifica sempre e soltanto il valore; la stessa cura va allo slug delle redazioni nel salvataggio con slug vuoto. Verificato live con chiave API: `/articles` e `/articles?redazione=...` rispondono 200 in JSON.
+
+### Pubblicazione: lo stato del post è una scelta, non un bug
+Il test end-to-end certifica la catena completa: articolo → coda → approvazione → pubblicazione → **post WordPress nativo con permalink reale** e log puliti (social non configurati = «skipped» onesto). Lo stato del post creato segue l'impostazione **«Stato predefinito»** in Impostazioni → Pubblicazione: con «Pubblicato» il post nasce pubblico; se un articolo esce in bozza basta portare l'impostazione su «Pubblicato».
+
+### Live strip osservata durante le run
+L'ambiente di test ora vede il pannello «In redazione ora» **mentre gli agenti lavorano**: 7 snapshot reali con agenti che passano da «Raccoglie le fonti» a «Valuta i materiali» a «Scrive l'articolo», con titolo dell'articolo in corso. E la regressione dei 5 bug della 1.1.7 è verde 9/9: impostazioni che salvano, whitelist completa, eliminazione agenti, guardie visibilità, contatore coda.
+
+---
+
 ## v1.1.7 — E2E su WordPress reale, dashboard singola, test vivi
 
 La 1.1.7 nasce da un vero ciclo di **test end-to-end su WordPress reale** (ambiente automatico con WordPress vero + browser Playwright): ogni pagina, ogni bottone, ogni salvataggio, l'intera pipeline editoriale con 9 agenti in parallelo — in italiano e in inglese. E da una caccia ai bug spietata.
@@ -1025,6 +1041,14 @@ La voce «Dashboard» veniva registrata come sottopagina con **lo stesso slug de
 - Ripristinato il link **«Vedi articoli dell\'agente»** nelle card della pagina Agenti (esisteva solo nel fallback noscript).
 - Salvataggio verificato e2e di **tutti i 79 campi** delle 4 pagine Impostazioni (parziale per pagina, whitelist REST).
 - Pipeline completa verificata: **avvio testata con 9 agenti in parallelo → articoli → coda → approvazione → pubblicazione → post WordPress vero + log di pubblicazione + analytics + attività**, tutto verde in italiano e in inglese.
+
+### Il secondo giro della caccia ai bug (e2e spietata)
+- **Impostazioni che non salvavano**: lo stato post «In attesa di revisione» veniva **rifiutato dal REST** (400) anche se la select lo offriva, e **6 chiavi** delle pagine Impostazioni (coda: attiva / dimensione batch / tentativi massimi, API pubblica, lingua admin, autotraduzione) venivano **silenziosamente scartate** dalla whitelist — la UI diceva «salvato» ma al reload tornava tutto com'era. Entrambi i bug trovati dal test automatico con probe GET/PUT/GET, fixati e riverificati.
+- **Eliminazione agenti**: non esisteva né bottone né rotta (solo pausa). Ora `DELETE /agents/{id}` + bottone «Elimina» con conferma; il contenuto resta (gli articoli vengono solo scollegati), i lavori in coda dell'agente vengono ripuliti, l'agente esce dalle redazioni assegnate e il capo redattore si azzera se puntava a lui.
+- **Magazine senza stili nei temi a blocchi**: in WP moderno lo shortcode può essere processato dal blocco core/shortcode **prima** che `wp_enqueue_scripts` registri gli asset — il guard saltava l'enqueue e il magazine usciva **senza CSS e senza JavaScript** (card spente, dettaglio morto). Ora lo shortcode registra e carica da solo gli asset in qualunque momento venga renderizzato (stampa tardiva in footer, nativa WordPress).
+- **Guardie CSS `[hidden]` corrotte** in 4 file (residui di una sanzione automatica della 1.1.3): ripristinate — gli elementi nascosti tornano nascosti anche con i temi che ignorano l'attributo.
+- **Coda approvazioni**: indicatore di caricamento non più bloccato su «attivo» e contatore `#nxa-queue-count` popolato con il totale reale.
+- **Tagline protetta**: la descrizione del sito è contenuto utente WordPress — la traduzione non la tocca mai più (niente «Il giornale of nuova generazione»); dizionario esteso con le stringhe nuove e audit a **zero residui**.
 
 
 ## v1.1.6 — Zero mock, IT/EN 100%, impostazioni a sottomenu

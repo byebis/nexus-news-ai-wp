@@ -955,7 +955,7 @@ class Nexus_Rest {
                                                 'slug'              => array(
                                                         'type'              => 'string',
                                                         'required'          => false,
-                                                        'sanitize_callback' => 'sanitize_title',
+                                                        'sanitize_callback' => array( __CLASS__, 'sanitize_slug_param' ),
                                                 ),
                                                 'parent'            => array(
                                                         'type'              => 'integer',
@@ -3757,6 +3757,22 @@ class Nexus_Rest {
         /* =========================================================================
          * CALLBACK — ADMIN: REDAZIONI (v1.1.1)
          * ======================================================================= */
+
+        /**
+         * Sanitizer per i parametri slug (v1.1.8).
+         *
+         * PERCHÉ ESISTE: WP invoca i sanitize_callback come ( $value, $request, $param )
+         * e sanitize_title usa il 2° argomento come titolo di fallback quando il valore
+         * è vuoto — con uno slug vuoto esplicito (es. slug="" in una PUT redazioni)
+         * il parametro finiva per contenere l'oggetto WP_REST_Request e il handler
+         * falliva con un fatal. Il wrapper sanifica SEMPRE e SOLO il valore.
+         *
+         * @param mixed $value Valore del parametro.
+         * @return string
+         */
+        public static function sanitize_slug_param( $value ) {
+                return sanitize_title( (string) $value );
+        }
 
         /**
          * Sanitize callback per gli agent ID delle redazioni: delega a
