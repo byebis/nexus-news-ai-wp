@@ -83,6 +83,20 @@
  *    Nota UI: le fonti sono opzionali — i giornalisti della redazione le
  *    usano in raccolta e il capo redattore per verificare.
  *
+ * =====================================================================
+ * v1.1.5 — BOTTONE AVVIA REDAZIONE (CONTRATTO-v1.1.5.md §5 T-04)
+ * =====================================================================
+ *
+ * Ogni riga dell'albero (#nxa-red-tree) espone il bottone "Avvia redazione"
+ * (classe nxa-btn-run, data-run-redazione="{id}", primo bottone della riga):
+ * avvia gli agenti della redazione con POST nexus/v1/pipeline/run
+ * {redazione_id: id} (shape §4.1 con results[] e toast riepilogo). Le righe
+ * sono generate da admin.js (template redazioneRowHtml, sezione "AVVII
+ * MIRATI (v1.1.5)"): questa vista non contiene markup di riga (come per
+ * .nxa-red-edit e soci), quindi il bottone atterra SOLO nel template JS.
+ * Handler delegato unico su document con guardia di binding: nessuna
+ * doppia registrazione.
+ *
  * @package Nexus_News_AI
  * @since   1.1.1
  */

@@ -18,7 +18,7 @@
  *   voci selezionate in stringa CSV nel campo social_platforms.
  * - Tutti gli altri campi usano name = chiave esatta di Nexus_DB::default_settings():
  *   mode, collect_interval, max_articles_per_day, auto_approve_score,
- *   site_name, site_tagline, ai_base_url, ai_model, ai_api_key,
+ *   ai_base_url, ai_model, ai_api_key,
  *   post_status, image_model, image_size,
  *   telegram_bot_token, telegram_chat_id, discord_webhook_url,
  *   x_api_key, x_api_secret, x_access_token, x_access_secret,
@@ -63,11 +63,11 @@
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]). Slug data-nxa-acc /
  *   id pannello: pipeline, limits, ai, intelligence, wp-seo, social-publish,
- *   social-distrib, newsletter, indexing, site-identity, scala,
+ *   social-distrib, newsletter, indexing, scala,
  *   language-api, interface. Gruppi: "Pipeline editoriale" (pipeline,
  *   limits), "Intelligenza artificiale" (ai, intelligence), "Pubblicazione &
  *   distribuzione" (wp-seo, social-publish, social-distrib, newsletter,
- *   indexing), "Sito & sistema" (site-identity, scala, language-api,
+ *   indexing), "Sito & sistema" (scala, language-api,
  *   interface). Il testo delle vecchie sezioni h2 è conservato ESATTO nei
  *   .nxa-acc-label; le table.form-table sono SPOSTATE nei pannelli e restano
  *   IDENTICHE al loro interno. NESSUN id/name/for/value dei campi è
@@ -960,31 +960,6 @@ $social_platforms = array(
                 </section>
 
                 <h2 class="nxa-settings-group-title"><?php esc_html_e( 'Sito & sistema', 'nexus-news-ai' ); ?></h2>
-
-                <section class="nxa-acc" data-nxa-acc="site-identity">
-                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-site-identity">
-                                <span class="nxa-acc-label"><?php esc_html_e( 'Identità del sito', 'nexus-news-ai' ); ?></span>
-                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
-                        </button>
-                        <div class="nxa-acc-panel" id="nxa-acc-panel-site-identity" hidden>
-                                <table class="form-table" role="presentation">
-                                        <tbody>
-                                                <tr>
-                                                        <th scope="row"><label for="nxa-site-name"><?php esc_html_e( 'Nome del sito', 'nexus-news-ai' ); ?></label></th>
-                                                        <td>
-                                                                <input type="text" name="site_name" id="nxa-site-name" value="<?php echo esc_attr( $settings['site_name'] ); ?>" class="regular-text" />
-                                                        </td>
-                                                </tr>
-                                                <tr>
-                                                        <th scope="row"><label for="nxa-site-tagline"><?php esc_html_e( 'Tagline del sito', 'nexus-news-ai' ); ?></label></th>
-                                                        <td>
-                                                                <input type="text" name="site_tagline" id="nxa-site-tagline" value="<?php echo esc_attr( $settings['site_tagline'] ); ?>" class="regular-text" />
-                                                        </td>
-                                                </tr>
-                                        </tbody>
-                                </table>
-                        </div>
-                </section>
 
                 <section class="nxa-acc" data-nxa-acc="scala">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-scala">

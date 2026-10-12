@@ -326,6 +326,24 @@ final class Nexus_Shortcodes {
                 $out .= '<div class="nxa-magazine" data-nxa="magazine">';
 
                 /* ---------- Hero ---------- */
+                /* v1.1.5: nome e tagline dal WP nativo (Impostazioni > Generali,
+                 * opzioni blogname e blogdescription). Fallback nell'ordine:
+                 * le vecchie chiavi settings (retrocompatibilita'), poi i
+                 * valori storici di default. */
+                $hero_site_name = trim( (string) get_bloginfo( 'name' ) );
+                if ( '' === $hero_site_name ) {
+                        $hero_site_name = trim( (string) ( $settings['site_name'] ?? '' ) );
+                }
+                if ( '' === $hero_site_name ) {
+                        $hero_site_name = 'Nexus News AI';
+                }
+                $hero_site_tagline = trim( (string) get_bloginfo( 'description' ) );
+                if ( '' === $hero_site_tagline ) {
+                        $hero_site_tagline = trim( (string) ( $settings['site_tagline'] ?? '' ) );
+                }
+                if ( '' === $hero_site_tagline ) {
+                        $hero_site_tagline = 'Il giornale di nuova generazione';
+                }
                 $out .= '<section class="nxa-hero" aria-labelledby="nxa-hero-title">';
                 $out .= '<div class="nxa-hero-inner">';
                 $out .= '<span class="nxa-hero-badge">🤖 ' . sprintf(
@@ -333,8 +351,8 @@ final class Nexus_Shortcodes {
                         esc_html( _n( '%s agente giornalista AI', '%s agenti giornalisti AI', $n_agents, 'nexus-news-ai' ) ),
                         esc_html( number_format_i18n( $n_agents ) )
                 ) . '</span>';
-                $out .= '<h1 class="nxa-hero-title" id="nxa-hero-title">' . esc_html( (string) ( $settings['site_name'] ?? 'Nexus News AI' ) ) . '</h1>';
-                $out .= '<p class="nxa-hero-tagline">' . esc_html( (string) ( $settings['site_tagline'] ?? 'Il giornale di nuova generazione' ) ) . '</p>';
+                $out .= '<h1 class="nxa-hero-title" id="nxa-hero-title">' . esc_html( wp_specialchars_decode( $hero_site_name, ENT_QUOTES ) ) . '</h1>';
+                $out .= '<p class="nxa-hero-tagline">' . esc_html( wp_specialchars_decode( $hero_site_tagline, ENT_QUOTES ) ) . '</p>';
                 $out .= '<div class="nxa-hero-stats">';
                 $out .= '<span class="nxa-hero-stat"><strong>' . esc_html( number_format_i18n( $published_count ) ) . '</strong> ' . esc_html__( 'articoli pubblicati', 'nexus-news-ai' ) . '</span>';
                 $out .= '</div>';

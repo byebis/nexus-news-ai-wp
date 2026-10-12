@@ -2,7 +2,7 @@
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""
-"Project-Id-Version: Nexus News AI 1.1.4\n"
+"Project-Id-Version: Nexus News AI 1.1.5\n"
 "Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
 "POT-Creation-Date: 2026-01-01 00:00+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"

@@ -131,6 +131,20 @@
  * La serializzazione dei 4 campi nuovi nei POST/PUT /agents resta in
  * admin.js. Tutti gli id, data-attributi e classi esistenti restano intatti.
  *
+ * =====================================================================
+ * v1.1.5 — BOTTONI AVVIA (CONTRATTO-v1.1.5.md §5 T-04)
+ * =====================================================================
+ *
+ * Ogni card agente espone il bottone "Avvia" (classe nxa-btn-run,
+ * data-run-agent="{id}", label "▶ Avvia"). Le card live sono generate da
+ * admin.js (agentCardHtml: il bottone è PRIMO nella riga azioni) e il
+ * fallback noscript qui sotto porta la STESSA azione DISABLED (sola
+ * lettura: senza JavaScript nessun handler può partire). Handler unico
+ * delegato su document con guardia di binding (sezione "AVVII MIRATI
+ * (v1.1.5)" di admin.js): POST nexus/v1/pipeline/run {agent_id: id},
+ * bottone .is-busy + spinner (setBtnLoading) durante l'attesa, esito in
+ * toast riepilogo (shape §4.1 con results[], fallback alle chiavi BC).
+ *
  * @package Nexus_News_AI
  */
 
@@ -269,6 +283,10 @@ $nxa_agent_status_labels = array(
                                                         </span>
                                                 </div>
                                                 <div class="nxa-agent-actions">
+                                                        <!-- v1.1.5 (T-04): "Avvia" disabilitato qui (fallback noscript in
+                                                             sola lettura); attivo sulle card generate da admin.js
+                                                             (agentCardHtml) con handler delegato POST pipeline/run. -->
+                                                        <button type="button" class="nxa-btn is-sm nxa-btn-run" data-run-agent="<?php echo esc_attr( $nxa_agent->id ); ?>" disabled>▶ <?php esc_html_e( 'Avvia', 'nexus-news-ai' ); ?></button>
                                                         <button type="button" class="nxa-btn is-sm nxa-agent-toggle" data-agent-id="<?php echo esc_attr( $nxa_agent->id ); ?>" data-next-status="<?php echo esc_attr( 'active' === $nxa_status ? 'paused' : 'active' ); ?>" disabled>
                                                                 <?php echo 'active' === $nxa_status ? esc_html__( 'Metti in pausa', 'nexus-news-ai' ) : esc_html__( 'Riattiva', 'nexus-news-ai' ); ?>
                                                         </button>

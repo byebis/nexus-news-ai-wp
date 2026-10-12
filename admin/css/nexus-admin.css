@@ -2,7 +2,19 @@
  * Nexus News AI — Foglio di stile admin panel (WordPress)
  *
  * Slug plugin: nexus-news-ai
- * Versione:    1.0.6
+ * Versione:    1.1.5
+ *
+ * v1.1.5 — pass design "respira" (contratto §2 T-01): la UI ha troppi
+ * contenitori, si riducono i riquadri-dentro-riquadro. Il contenitore
+ * "scatola" resta UNO per pagina (il wrap principale); le superfici interne
+ * diventano piatte (background trasparente o quasi) e si separano con
+ * whitespace e hairline da 1px molto tenui (token --nxa-hairline). Scala di
+ * spaziatura --nxa-space-1..8 su :root, tipografia piu' comoda (corpo 15px,
+ * line-height 1.6, titoli arieggonti), accordion impostazioni come righe
+ * testuali senza box, form-table con piu' padding verticale, gutter mobile
+ * unico (~16px) al posto del doppio annidato, tema scuro riequilibrato con
+ * gli stessi principi. Nessun markup cambia: le classi esistenti restano
+ * TUTTE valide e usate (selettori orfani verificati e rimossi in log).
  *
  * Tema CHIARO di default dalla 1.0.6: i token su :root descrivono la
  * palette chiara (superfici bianche, bordi sottili, ombre leggere) e
@@ -28,7 +40,7 @@
  *   8. Agenti (.nxa-agents-grid)
  *   9. Coda editoriale (.nxa-queue-list)
  *  10. Activity feed
- *  11. Settings form + toggle switch
+ *  11. Settings form (v1.1.5 flat)
  * 11b. Accordion impostazioni (v1.0.7)
  *  12. Nexus Wire runs
  *  13. Toast
@@ -41,6 +53,8 @@
  *  19. Migrazione contenuti nativi (v1.1.0)
  *  20. Redazioni (v1.1.1)
  *  21. Creazione rapida + badge capo redattore (v1.1.4)
+ *  22. Avvii mirati + live redazionale (v1.1.5: .nxa-btn-run, .nxa-live-*,
+ *      .nxa-run-summary, hr.nxa-hairline)
  */
 
 /* -------------------------------------------------------------------------
@@ -54,6 +68,19 @@
   --nxa-surface-3: #eaeef6;
   --nxa-border: #e2e8f2;
   --nxa-border-soft: rgba(15, 23, 42, 0.08);
+  /* Hairline (v1.1.5): la separazione interna di default. 1px, molto tenue:
+   * sostituisce i riquadri pieni tra superfici sorelle. */
+  --nxa-hairline: var(--nxa-border-soft);
+  /* Scala di spaziatura "respira" (v1.1.5, contratto §2 punto 2):
+   * 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 px. Indipendente dal tema. */
+  --nxa-space-1: 4px;
+  --nxa-space-2: 8px;
+  --nxa-space-3: 12px;
+  --nxa-space-4: 16px;
+  --nxa-space-5: 24px;
+  --nxa-space-6: 32px;
+  --nxa-space-7: 48px;
+  --nxa-space-8: 64px;
   /* Testo */
   --nxa-text: #0f1a33;
   --nxa-text-body: #33415c;
@@ -129,14 +156,16 @@
   --nxa-print-muted: #444444;
 }
 
-/* Override TEMA SCURO (opzionale via setting admin_theme): palette 1.0.5 */
+/* Override TEMA SCURO (opzionale via setting admin_theme): principi "respira"
+ * v1.1.5 — contrasto tra superfici ridotto (il pannello resta la scatola UNA,
+ * l'interno si separa con hairline e whitespace), bordi piu' soft. */
 body.nexus-theme-dark {
   --nxa-bg: #0b0f17;
-  --nxa-surface: #121826;
-  --nxa-surface-2: #1a2234;
+  --nxa-surface: #0f1522;
+  --nxa-surface-2: #161e30;
   --nxa-surface-3: #0d1320;
-  --nxa-border: #232c42;
-  --nxa-border-soft: rgba(148, 163, 184, 0.16);
+  --nxa-border: #1f2940;
+  --nxa-border-soft: rgba(148, 163, 184, 0.13);
   --nxa-text: #e2e8f0;
   --nxa-text-body: #cbd5e1;
   --nxa-muted: #94a3b8;
@@ -152,8 +181,8 @@ body.nexus-theme-dark {
   --nxa-cat-soft: rgba(148, 163, 184, 0.14);
   --nxa-cat-line: rgba(148, 163, 184, 0.35);
   /* Token estesi */
-  --nxa-panel-line: #1e293b;
-  --nxa-line-strong: #2a3550;
+  --nxa-panel-line: #1c2536;
+  --nxa-line-strong: #263149;
   --nxa-heading: #f1f5f9;
   --nxa-link: #7dd3fc;
   --nxa-link-hover: #bae6fd;
@@ -210,19 +239,21 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin: 16px 0;
+  margin: var(--nxa-space-5) 0;
 }
 
+/* Empty state: niente riquadro pieno — solo un perimetro tratteggiato tenue
+ * su fondo trasparente, con molto spazio intorno (v1.1.5 "respira"). */
 .nxa-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 28px;
-  margin: 14px 0;
+  padding: var(--nxa-space-6) var(--nxa-space-4);
+  margin: var(--nxa-space-4) 0;
   text-align: center;
-  background: var(--nxa-surface);
-  border: 1px dashed var(--nxa-border);
+  background: transparent;
+  border: 1px dashed var(--nxa-hairline);
   border-radius: var(--nxa-radius);
   color: var(--nxa-muted);
 }
@@ -285,10 +316,14 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   box-sizing: border-box;
 }
 
+/* Base pannello: la SCATOLA UNICA della pagina (contratto v1.1.5 §2 punto 1).
+ * Tutte le superfici interne diventano piatte; il padding del wrap e' il
+ * gutter principale. v1.1.5: corpo piu' comodo (15px / 1.6) e piu' aria
+ * orizzontale (clamp fino a 36px). */
 .wrap.nexus-admin {
   max-width: 1220px;
-  margin: 16px 20px 28px 2px;
-  padding: clamp(16px, 2.5vw, 28px);
+  margin: 16px 20px 32px 2px;
+  padding: clamp(20px, 3vw, 36px);
   color: var(--nxa-text);
   background:
     radial-gradient(900px 380px at 90% -10%, var(--nxa-glow-2), transparent 60%),
@@ -296,8 +331,8 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
     var(--nxa-bg);
   border: 1px solid var(--nxa-panel-line);
   border-radius: var(--nxa-radius-lg);
-  font-size: 0.92rem;
-  line-height: 1.55;
+  font-size: 0.95rem;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -306,9 +341,9 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 .wrap.nexus-admin h1 {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   padding: 0;
-  font-size: 1.55rem;
+  font-size: 1.7rem;
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -316,20 +351,24 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 /* Sottotitolo di pagina (v1.0.6): frase introduttiva sotto l'h1.
-   v1.1.1: esteso alla root .wrap.nexus-page della vista Redazioni. */
+ * v1.1.1: esteso alla root .wrap.nexus-page della vista Redazioni.
+ * v1.1.5: corpo 15-16px e piu' respiro sotto. */
 .wrap.nexus-admin .nxa-page-subtitle,
 .wrap.nexus-page .nxa-page-subtitle {
-  margin: 0 0 10px;
+  margin: 0 0 var(--nxa-space-4);
   color: var(--nxa-muted);
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
+/* Titoli di sezione: piu' grandi e con molto piu' aria sopra (v1.1.5). */
 .wrap.nexus-admin h2 {
-  margin: 30px 0 12px;
+  margin: var(--nxa-space-7) 0 var(--nxa-space-3);
   padding: 0;
-  font-size: 1.12rem;
+  font-size: 1.3rem;
   font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
   color: var(--nxa-text);
 }
 
@@ -365,6 +404,7 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   border: 1px solid var(--nxa-border);
   color: var(--nxa-code-text);
   font-size: 0.82em;
+  overflow-wrap: anywhere;
 }
 
 /* -------------------------------------------------------------------------
@@ -375,15 +415,15 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 18px;
+  padding: 10px 18px;
   border: 1px solid var(--nxa-line-strong);
   border-radius: var(--nxa-radius-sm);
   background: var(--nxa-btn-bg);
   color: var(--nxa-text);
   font-family: inherit;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   text-decoration: none;
   cursor: pointer;
   appearance: none;
@@ -418,8 +458,8 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 .nxa-btn.is-sm {
-  padding: 6px 12px;
-  font-size: 0.76rem;
+  padding: 7px 14px;
+  font-size: 0.8rem;
   border-radius: 8px;
 }
 
@@ -499,6 +539,17 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   animation: nxa-pulse 1.2s ease-in-out infinite;
 }
 
+/* Varianti "dash" usate dalle card generate da admin.js (nxa-badge--success
+ * ecc., stesso impianto di STATUS_META/ACTION_META): allineate qui alle
+ * tinte di stato del design system, cosi' badge JS e PHP hanno lo stesso
+ * aspetto (v1.1.5: prima esistevano solo nel fallback CSS di admin.js). */
+.nxa-badge.nxa-badge--success { color: var(--nxa-ok-text);   background: var(--nxa-ok-bg);   border-color: var(--nxa-ok-line); }
+.nxa-badge.nxa-badge--warning { color: var(--nxa-warn-text); background: var(--nxa-warn-bg); border-color: var(--nxa-warn-line); }
+.nxa-badge.nxa-badge--error   { color: var(--nxa-err-text);  background: var(--nxa-err-bg);  border-color: var(--nxa-err-line); }
+.nxa-badge.nxa-badge--info    { color: var(--nxa-info-text); background: var(--nxa-info-bg); border-color: var(--nxa-info-line); }
+.nxa-badge.nxa-badge--neutral { color: var(--nxa-muted);     background: var(--nxa-surface-2); }
+.nxa-badge.nxa-badge--primary { color: var(--nxa-accent-1);  background: var(--nxa-accent-1-soft); border-color: var(--nxa-accent-line); }
+
 /* Badge categoria (eredita --nxa-cat da [data-category] sull'antenato) */
 .nxa-badge.nxa-agent-cat {
   color: var(--nxa-cat);
@@ -544,8 +595,8 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 .nxa-stat-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr); /* mobile-first */
-  gap: 12px;
-  margin: 18px 0 6px;
+  gap: var(--nxa-space-4);
+  margin: var(--nxa-space-5) 0 var(--nxa-space-2);
 }
 
 @media (min-width: 782px) {
@@ -560,18 +611,21 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   }
 }
 
+/* Stat "respira" (v1.1.5): niente card piene — numero grande su fondo
+ * trasparente, separazione con hairline verticale a sinistra. L'hover
+ * accende solo la linea: niente traslazioni o ombre. */
 .nxa-stat-card {
-  padding: 16px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius);
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: 0;
+  padding: var(--nxa-space-1) 0 var(--nxa-space-1) var(--nxa-space-4);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--nxa-hairline);
+  border-radius: 0;
+  transition: border-color 0.2s ease;
 }
 
 .nxa-stat-card:hover {
-  border-color: var(--nxa-accent-line);
-  transform: translateY(-2px);
-  box-shadow: var(--nxa-shadow);
+  border-left-color: var(--nxa-accent-line);
 }
 
 .nxa-stat-value {
@@ -590,19 +644,20 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 .nxa-stat-label {
   display: block;
   margin-top: 6px;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--nxa-muted);
+  line-height: 1.5;
 }
 
 .nxa-actions-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 20px 0 8px;
+  gap: var(--nxa-space-2) var(--nxa-space-3);
+  margin: var(--nxa-space-5) 0 var(--nxa-space-2);
 }
 
 /* -------------------------------------------------------------------------
@@ -613,29 +668,30 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   /* v1.0.7 FIX OVERFLOW MOBILE (contratto T-04 §3): colonne fluide auto-fill
    * con minimo 280px ma mai piu' larghe del contenitore (min(100%, 280px)):
    * le card si adattano a ogni larghezza e non traboccano mai in orizzontale.
-   * Sostituisce le colonne fisse 1/2/3 della 1.0.6 (i due media query con
-   * repeat(2)/repeat(3) vengono rimossi: sostituzione autorizzata dal
-   * contratto); gap, margini e tutte le altre proprieta' restano invariati. */
+   * v1.1.5: gap e margini dalla scala di spaziatura. */
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-  gap: 14px;
-  margin: 14px 0;
+  gap: var(--nxa-space-4);
+  margin: var(--nxa-space-5) 0;
 }
 
+/* Card agente "respira" (v1.1.5): superficie trasparente (il riquadro PIENO
+ * resta solo il wrap), bordo hairline 1px, niente ombre ne' traslazioni:
+ * l'hover accende solo il bordo. Il box-sizing ereditato dal wrap tiene le
+ * card dentro la griglia. */
 .nxa-agent-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius-lg);
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: 0;
+  padding: var(--nxa-space-5);
+  background: transparent;
+  border: 1px solid var(--nxa-hairline);
+  border-radius: var(--nxa-radius);
+  transition: border-color 0.2s ease;
 }
 
 .nxa-agent-card:hover {
   border-color: var(--nxa-accent-line);
-  transform: translateY(-2px);
-  box-shadow: var(--nxa-shadow);
 }
 
 .nxa-agent-avatar {
@@ -652,10 +708,10 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 .nxa-agent-name {
-  font-size: 1.02rem;
+  font-size: 1.08rem;
   font-weight: 700;
   color: var(--nxa-text);
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .nxa-agent-cat {
@@ -674,9 +730,9 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 
 .nxa-agent-persona {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: 0.88rem;
   font-style: italic;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--nxa-text-body);
 }
 
@@ -686,9 +742,9 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   align-items: center;
   gap: 8px 14px;
   margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px dashed var(--nxa-border-soft);
-  font-size: 0.74rem;
+  padding-top: var(--nxa-space-3);
+  border-top: 1px solid var(--nxa-hairline);
+  font-size: 0.76rem;
   color: var(--nxa-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -696,382 +752,118 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 /* -------------------------------------------------------------------------
  * 9. Coda editoriale
  * ---------------------------------------------------------------------- */
+/* Lista a righe piatte (v1.1.5): il contenitore non e' piu' una scatola, le
+ * righe si separano con hairline e whitespace. Il markup live e' generato da
+ * admin.js (article.nxa-queue-item, prima stilizzato solo dal fallback CSS
+ * inline di admin.js: qui vince il foglio reale, caricato dopo). Le regole
+ * orfane .nxa-queue-row/-main/-meta/-actions (nessun markup le usa, grep
+ * verificato) sono state rimosse dal pass v1.1.5. */
 .nxa-queue-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 14px 0;
+  gap: 0;
+  margin: var(--nxa-space-4) 0;
 }
 
-.nxa-queue-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
-  padding: 14px 16px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: 12px;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+.nxa-queue-list .nxa-queue-item {
+  /* BLOCCO, non flex: il contenuto della riga (markup admin.js) e' una pila
+   * verticale di chip/titolo/estratto/azioni. Qui solo la pelle piatta. */
+  margin: 0;
+  padding: var(--nxa-space-4) 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.nxa-queue-row:hover {
-  border-color: var(--nxa-accent-line);
+.nxa-queue-list .nxa-queue-item:hover {
   background: var(--nxa-row-hover-bg);
-}
-
-.nxa-queue-main {
-  flex: 1 1 260px;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  color: var(--nxa-text);
-  overflow-wrap: anywhere;
-}
-
-.nxa-queue-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  font-size: 0.73rem;
-  color: var(--nxa-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.nxa-queue-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-@media (max-width: 781px) {
-  .nxa-queue-actions {
-    width: 100%;
-    margin-left: 0;
-  }
 }
 
 /* -------------------------------------------------------------------------
  * 10. Activity feed
  * ---------------------------------------------------------------------- */
+/* Contenitore flat (v1.1.5): la scatola con bordo e sfondo e' sparita, le
+ * righe evento (genera admin.js come .nxa-act-item, gia' con hairline nel
+ * fallback CSS) respirano su fondo trasparente. Le regole orfane
+ * .nxa-activity-item/-icon/-text/-time (markup mai esistito: grep verificato)
+ * sono state rimosse dal pass v1.1.5. */
 .nxa-activity-feed {
   display: flex;
   flex-direction: column;
-  margin: 14px 0;
-  padding: 6px 18px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius);
-}
-
-.nxa-activity-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 13px 2px;
-  border-bottom: 1px solid var(--nxa-border-soft);
-}
-
-.nxa-activity-item:last-child {
-  border-bottom: none;
-}
-
-.nxa-activity-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  font-size: 0.95rem;
-  line-height: 1;
-  border-radius: 10px;
-  background: var(--nxa-surface-2);
-  border: 1px solid var(--nxa-border);
-}
-
-.nxa-activity-item p,
-.nxa-activity-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  padding-top: 5px;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--nxa-text-body);
-  overflow-wrap: anywhere;
-}
-
-.nxa-activity-time {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding-top: 6px;
-  font-size: 0.71rem;
-  color: var(--nxa-muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Varianti stato */
-.nxa-activity-item.is-success .nxa-activity-icon {
-  color: var(--nxa-ok-text);
-  background: var(--nxa-ok-bg);
-  border-color: var(--nxa-ok-line);
-}
-
-.nxa-activity-item.is-warning .nxa-activity-icon {
-  color: var(--nxa-warn-text);
-  background: var(--nxa-warn-bg);
-  border-color: var(--nxa-warn-line);
-}
-
-.nxa-activity-item.is-error .nxa-activity-icon {
-  color: var(--nxa-err-text);
-  background: var(--nxa-err-bg);
-  border-color: var(--nxa-err-line);
+  margin: var(--nxa-space-4) 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 /* -------------------------------------------------------------------------
- * 11. Settings form + toggle switch
+ * 11. Settings form (v1.1.5 "respira")
  * ---------------------------------------------------------------------- */
+/* Il form impostazioni NON e' piu' una card dentro il wrap: fondo
+ * trasparente, niente bordo, niente padding (il gutter lo da' il wrap).
+ * Il ritmo verticale nasce dai titoli di gruppo e dalle righe accordion
+ * (sezione 11b). Le classi orfane .nxa-form-row / .nxa-form-hint (resti del
+ * form pre-1.0.7, grep verificato: nessun uso in viste e admin.js) e il
+ * blocco toggle .nxa-switch (mai consumato da nessun markup) sono stati
+ * rimossi dal pass v1.1.5. */
 .nxa-settings-form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  max-width: 760px;
-  margin: 14px 0;
-  padding: clamp(16px, 2.5vw, 24px);
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius-lg);
-}
-
-.nxa-form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-@media (min-width: 782px) {
-  .nxa-form-row {
-    flex-direction: row;
-    align-items: center;
-  }
-
-  .nxa-form-row > label {
-    flex: 0 0 220px;
-    padding-top: 1px;
-  }
-}
-
-.nxa-form-row label {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--nxa-text);
-}
-
-.wrap.nexus-admin .nxa-form-row input[type="text"],
-.wrap.nexus-admin .nxa-form-row input[type="email"],
-.wrap.nexus-admin .nxa-form-row input[type="url"],
-.wrap.nexus-admin .nxa-form-row input[type="password"],
-.wrap.nexus-admin .nxa-form-row input[type="number"],
-.wrap.nexus-admin .nxa-form-row select,
-.wrap.nexus-admin .nxa-form-row textarea {
-  width: 100%;
-  max-width: 440px;
-  padding: 9px 12px;
-  border: 1px solid var(--nxa-input-line);
-  border-radius: var(--nxa-radius-sm);
-  background: var(--nxa-input-bg);
-  color: var(--nxa-text);
-  font-size: 0.88rem;
-  line-height: 1.4;
-  box-shadow: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.wrap.nexus-admin .nxa-form-row textarea {
-  min-height: 96px;
-  resize: vertical;
-}
-
-.wrap.nexus-admin .nxa-form-row select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--nxa-muted) 50%),
-    linear-gradient(135deg, var(--nxa-muted) 50%, transparent 50%);
-  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
-  padding-right: 34px;
-}
-
-.wrap.nexus-admin .nxa-form-row input:focus,
-.wrap.nexus-admin .nxa-form-row select:focus,
-.wrap.nexus-admin .nxa-form-row textarea:focus {
-  border-color: var(--nxa-accent-1);
-  box-shadow: var(--nxa-ring-accent);
-  outline: none;
-}
-
-.wrap.nexus-admin .nxa-form-row input:focus-visible,
-.wrap.nexus-admin .nxa-form-row select:focus-visible,
-.wrap.nexus-admin .nxa-form-row textarea:focus-visible {
-  outline: 2px solid var(--nxa-focus);
-  outline-offset: 2px;
-}
-
-.nxa-form-hint {
-  font-size: 0.74rem;
-  line-height: 1.5;
-  color: var(--nxa-muted);
-}
-
-/* --- Toggle switch -----------------------------------------------------
- * Markup atteso (variante A, self-contained):
- *   <input type="checkbox" class="nxa-switch" ...>
- * Variante B (label wrapper):
- *   <label class="nxa-switch"><input type="checkbox"><span class="nxa-switch-track"></span></label>
- * ---------------------------------------------------------------------- */
-.wrap.nexus-admin input[type="checkbox"].nxa-switch {
-  appearance: none;
-  -webkit-appearance: none;
-  position: relative;
-  width: 46px;
-  height: 26px;
-  margin: 0;
-  flex: 0 0 auto;
-  border: 1px solid var(--nxa-line-strong);
-  border-radius: 999px;
-  background: var(--nxa-surface-2);
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-  box-shadow: none;
-}
-
-.wrap.nexus-admin input[type="checkbox"].nxa-switch::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--nxa-muted);
-  transform: translateY(-50%);
-  transition: transform 0.2s ease, background-color 0.2s ease;
-}
-
-.wrap.nexus-admin input[type="checkbox"].nxa-switch:checked {
-  border-color: transparent;
-  background: var(--nxa-accent-grad);
-}
-
-.wrap.nexus-admin input[type="checkbox"].nxa-switch:checked::before {
-  transform: translate(20px, -50%);
-  background: var(--nxa-on-accent);
-}
-
-.wrap.nexus-admin input[type="checkbox"].nxa-switch:focus-visible {
-  outline: 2px solid var(--nxa-focus);
-  outline-offset: 2px;
-}
-
-.wrap.nexus-admin input[type="checkbox"].nxa-switch[disabled] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Variante B: label.nxa-switch con input nascosto + .nxa-switch-track */
-.wrap.nexus-admin label.nxa-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.wrap.nexus-admin label.nxa-switch input[type="checkbox"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
+  gap: 0;
+  max-width: 780px;
+  margin: var(--nxa-space-4) 0 0;
   padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  background: transparent;
   border: 0;
+  border-radius: 0;
 }
 
-.wrap.nexus-admin label.nxa-switch .nxa-switch-track {
-  position: relative;
-  display: inline-block;
-  width: 46px;
-  height: 26px;
-  flex: 0 0 auto;
-  border: 1px solid var(--nxa-line-strong);
-  border-radius: 999px;
-  background: var(--nxa-surface-2);
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.wrap.nexus-admin label.nxa-switch .nxa-switch-track::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--nxa-muted);
-  transform: translateY(-50%);
-  transition: transform 0.2s ease, background-color 0.2s ease;
-}
-
-.wrap.nexus-admin label.nxa-switch input:checked + .nxa-switch-track {
-  border-color: transparent;
-  background: var(--nxa-accent-grad);
-}
-
-.wrap.nexus-admin label.nxa-switch input:checked + .nxa-switch-track::before {
-  transform: translate(20px, -50%);
-  background: var(--nxa-on-accent);
-}
-
-.wrap.nexus-admin label.nxa-switch input:focus-visible + .nxa-switch-track {
-  outline: 2px solid var(--nxa-focus);
-  outline-offset: 2px;
+/* Riga di submit: aria sopra generosa dopo l'ultima sezione. */
+.wrap.nexus-admin .nxa-settings-form .submit {
+  margin: var(--nxa-space-6) 0 0;
 }
 
 /* -------------------------------------------------------------------------
  * 11b. Accordion impostazioni (v1.0.7) — contratto T-01 settings.php
- *      Tutti i valori passano dai token: il tema scuro eredita dagli override
- *      gia' presenti su body.nexus-theme-dark senza regole aggiuntive.
+ *      v1.1.5 "respira": niente card per ogni voce. Il toggle e' una RIGA
+ *      TESTUALE pulita (chevron discreto), le voci si separano con hairline
+ *      da 1px, il pannello aperto e' flusso indented leggero (non una card
+ *      dentro card). Tutti i valori passano dai token: il tema scuro eredita
+ *      dagli override gia' presenti su body.nexus-theme-dark.
  * ---------------------------------------------------------------------- */
 
-/* Titolo di gruppo (h2 esterno alle card accordion): margine top generoso,
+/* Titolo di gruppo (h2 esterno alle righe accordion): margine top generoso,
  * gerarchia sopra i titoli di sezione storici. L'underline ::after eredita
- * dalla regola condivisa di h1/h2. */
+ * dalla regola condivisa di h1/h2. Il primo gruppo e' gia' dopo il
+ * sottotitolo di pagina: parte senza aria extra. */
 .wrap.nexus-admin .nxa-settings-group-title {
-  margin: 36px 0 14px;
-  font-size: 1.22rem;
+  margin: var(--nxa-space-6) 0 var(--nxa-space-1);
+  font-size: 1.32rem;
   font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--nxa-heading);
 }
 
-/* Card accordion: superficie, bordo e raggio come le card del pannello.
- * Niente overflow:hidden (taglierebbe l'anello di focus del toggle): il
- * bottone arrotonda da se' i propri angoli superiori. */
-.nxa-acc {
-  margin: 0 0 14px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius);
+.wrap.nexus-admin .nxa-settings-form > .nxa-settings-group-title:first-child {
+  margin-top: 0;
 }
 
+/* Righe accordion: niente superficie, niente raggio; solo un filetto sotto
+ * che separa una voce dall'altra (l'ultima voce di ogni gruppo lo tiene:
+ * chiude il gruppo prima del titolo successivo con lo stesso ritmo). */
+.nxa-acc {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+  border-radius: 0;
+}
+
+/* Toggle: riga testuale. Padding orizzontale minimo (2px): il testo si
+ * allinea al margine del contenuto; il chevron apre l'indent del pannello. */
 .nxa-acc-toggle {
   display: flex;
   align-items: center;
@@ -1079,31 +871,36 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   gap: 12px;
   width: 100%;
   margin: 0;
-  padding: 15px 18px;
+  padding: var(--nxa-space-4) 2px;
   border: 0;
-  border-radius: calc(var(--nxa-radius) - 1px) calc(var(--nxa-radius) - 1px) 0 0;
+  border-radius: 0;
   background: transparent;
   color: var(--nxa-text);
   font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 700;
-  line-height: 1.35;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
   text-align: left;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition: color 0.18s ease;
 }
 
+/* Hover e apertura restano nel testo (niente "piastra" di sfondo). */
 .nxa-acc-toggle:hover {
-  background: var(--nxa-row-hover-bg);
+  color: var(--nxa-link);
 }
 
-/* Anello dentro il bordo della card (specificita' sopra la regola generica
- * di sezione 16, che altrimenti vincerebbe a parita' per ordine). */
+.nxa-acc-toggle[aria-expanded="true"] {
+  color: var(--nxa-heading);
+}
+
+/* Anello di focus: regola specifica per battere, a parita' di ordine,
+ * quella generica di sezione 16 (che altrimenti vincerebbe per ordine). */
 .nxa-acc .nxa-acc-toggle:focus-visible {
   outline: 2px solid var(--nxa-focus);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .nxa-acc-label {
@@ -1113,25 +910,36 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 /* Chevron CSS puro (border right+bottom ruotati): punta in basso da chiuso,
- * in alto da aperto. currentColor segue il tema attivo. */
+ * in alto da aperto. currentColor segue il tema attivo. Discreto: sottile,
+ * attenuato, pieno solo su hover/apertura. */
 .nxa-acc-chevron {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
-  margin-right: 4px;
+  margin-right: 10px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: rotate(45deg);
-  transition: transform 0.2s ease;
+  opacity: 0.45;
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+
+.nxa-acc-toggle:hover .nxa-acc-chevron,
+.nxa-acc-toggle[aria-expanded="true"] .nxa-acc-chevron {
+  opacity: 1;
 }
 
 .nxa-acc-toggle[aria-expanded="true"] .nxa-acc-chevron {
   transform: rotate(225deg);
 }
 
+/* Pannello aperto: flusso indented leggero (niente card dentro card). Il
+ * padding-left 20px allinea i contenuti sotto l'etichetta della riga
+ * (toggle 2px + chevron 8px + gap 10px). Respiro sotto prima della
+ * hairline della voce successiva. */
 .nxa-acc-panel {
-  padding: 2px 18px 20px;
-  border-top: 1px solid var(--nxa-border);
+  padding: 0 2px var(--nxa-space-5) 20px;
+  border-top: 0;
 }
 
 /* OBBLIGATORIA (contratto T-04): il pannello chiuso esce dal layout anche se
@@ -1146,12 +954,45 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   margin: 0;
 }
 
+/* form-table piu' arieggonti (v1.1.5, contratto §2 punto 5): padding
+ * verticale 15px, th di sinistra discreto (peso ridotto, colore body,
+ * niente text-shadow WP). Scope limitato al wrap plugin: le form-table WP
+ * sono usate SOLO dalla pagina Impostazioni (grep verificato). Il blocco
+ * width resta a desktop: su mobile WP impila th/td a blocco e la colonna
+ * fissa da 220px non deve sopravvivere a quel reset. */
+.wrap.nexus-admin .form-table th,
+.wrap.nexus-admin .form-table td {
+  padding-top: 15px;
+  padding-bottom: 15px;
+  vertical-align: top;
+}
+
+.wrap.nexus-admin .form-table th {
+  padding-left: 0;
+  font-weight: 600;
+  color: var(--nxa-text-body);
+  text-shadow: none;
+}
+
+@media (min-width: 782px) {
+  .wrap.nexus-admin .form-table th {
+    width: 220px;
+  }
+}
+
+/* Descrizioni dei campi: grigie ma leggibili (13.5px, interlinea 1.55). */
+.wrap.nexus-admin .form-table .description {
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--nxa-muted);
+}
+
 /* Status del caricamento modelli AI (aria-live, accanto al bottone). */
 .nxa-ai-models-status {
   display: inline-block;
   margin-left: 8px;
-  font-size: 0.74rem;
-  line-height: 1.5;
+  font-size: 0.78rem;
+  line-height: 1.55;
   color: var(--nxa-muted);
   overflow-wrap: anywhere;
 }
@@ -1165,11 +1006,14 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 /* -------------------------------------------------------------------------
  * 12. Nexus Wire runs
  * ---------------------------------------------------------------------- */
+/* Run a righe piatte (v1.1.5): come coda e attivita', si separano con
+ * hairline e whitespace, senza scatole. La regola orfana .nxa-wire-agents
+ * span (markup non esiste: grep verificato) e' stata rimossa. */
 .nxa-wire-runs {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 14px 0;
+  gap: 0;
+  margin: var(--nxa-space-4) 0;
 }
 
 .nxa-wire-run {
@@ -1177,40 +1021,24 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 14px;
-  padding: 14px 16px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: 12px;
-  transition: border-color 0.2s ease;
+  margin: 0;
+  padding: var(--nxa-space-4) 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+  border-radius: 0;
+  transition: background-color 0.2s ease;
 }
 
 .nxa-wire-run:hover {
-  border-color: var(--nxa-accent2-line);
+  background: var(--nxa-row-hover-bg);
 }
 
 .nxa-wire-topic {
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
   color: var(--nxa-text);
-}
-
-.nxa-wire-agents {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.nxa-wire-agents span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--nxa-muted);
-  background: var(--nxa-surface-2);
-  border: 1px solid var(--nxa-border);
 }
 
 .nxa-wire-status {
@@ -1261,28 +1089,34 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   background: var(--nxa-surface);
   border: 1px solid var(--nxa-line-strong);
   color: var(--nxa-text);
-  font-size: 0.84rem;
-  line-height: 1.45;
+  font-size: 0.88rem;
+  line-height: 1.5;
   box-shadow: var(--nxa-shadow-lg);
   animation: nxa-toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.nxa-toast.is-success {
+.nxa-toast.is-success,
+.nxa-toast.nxa-toast--success {
   border-color: var(--nxa-ok-line);
   box-shadow: inset 3px 0 0 var(--nxa-ok-text), var(--nxa-shadow-lg);
 }
 
-.nxa-toast.is-error {
+.nxa-toast.is-error,
+.nxa-toast.nxa-toast--error {
   border-color: var(--nxa-err-line);
   box-shadow: inset 3px 0 0 var(--nxa-err-text), var(--nxa-shadow-lg);
 }
 
-.nxa-toast.is-info {
+.nxa-toast.is-info,
+.nxa-toast.nxa-toast--info {
   border-color: var(--nxa-info-line);
   box-shadow: inset 3px 0 0 var(--nxa-info-text), var(--nxa-shadow-lg);
 }
 
-.nxa-toast .nxa-toast-close {
+/* Chiusura toast: il markup di admin.js usa nxa-toast__close (doppio
+ * underscore); il selettore storico nxa-toast-close era orfano ed e' stato
+ * riallineato al nome reale (v1.1.5, grep verificato su admin.js). */
+.nxa-toast .nxa-toast__close {
   margin-left: auto;
   padding: 0 2px;
   border: 0;
@@ -1294,7 +1128,7 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   cursor: pointer;
 }
 
-.nxa-toast .nxa-toast-close:hover {
+.nxa-toast .nxa-toast__close:hover {
   opacity: 1;
 }
 
@@ -1396,7 +1230,7 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 .nxa-modal-body {
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   line-height: 1.65;
   color: var(--nxa-text-body);
 }
@@ -1427,18 +1261,6 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   border: 1px solid var(--nxa-border);
   color: var(--nxa-code-text);
   font-size: 0.82em;
-}
-
-.nxa-modal-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--nxa-border-soft);
-  font-size: 0.74rem;
-  color: var(--nxa-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 body.nxa-lock-scroll {
@@ -1719,6 +1541,7 @@ body.nxa-lock-scroll {
 @media (prefers-reduced-motion: reduce) {
   .nxa-spinner,
   .nxa-badge.is-error::before,
+  .nxa-live-dot--running,
   .nxa-skeleton::after {
     animation: none;
   }
@@ -1732,16 +1555,11 @@ body.nxa-lock-scroll {
   .nxa-btn,
   .nxa-agent-card,
   .nxa-stat-card,
-  .nxa-queue-row,
+  .nxa-queue-item,
   .nxa-wire-run,
   .nxa-modal-close,
   .wrap.nexus-admin a {
     transition: none;
-  }
-
-  .nxa-agent-card:hover,
-  .nxa-stat-card:hover {
-    transform: none;
   }
 }
 
@@ -1750,7 +1568,7 @@ body.nxa-lock-scroll {
  * ---------------------------------------------------------------------- */
 @media print {
   .nxa-actions-row,
-  .nxa-queue-actions,
+  .nxa-btn-row,
   .nxa-toolbar,
   .nxa-skeleton,
   .nxa-toast,
@@ -1776,10 +1594,9 @@ body.nxa-lock-scroll {
 
   .nxa-stat-card,
   .nxa-agent-card,
-  .nxa-queue-row,
+  .nxa-queue-item,
   .nxa-activity-feed,
   .nxa-wire-run,
-  .nxa-settings-form,
   .nxa-empty {
     background: var(--nxa-print-bg);
     border-color: var(--nxa-print-line);
@@ -1797,10 +1614,10 @@ body.nxa-lock-scroll {
   }
 
   .wrap.nexus-admin p,
-  .nxa-queue-meta,
-  .nxa-activity-time,
   .nxa-agent-meta,
-  .nxa-form-hint {
+  .nxa-act-time,
+  .nxa-live-last,
+  .nxa-live-updated {
     color: var(--nxa-print-muted);
   }
 }
@@ -1852,8 +1669,8 @@ body.nxa-lock-scroll {
   overflow-wrap: anywhere;
 }
 
-/* Riga azioni card (noscript): wrap garantito, stesso comportamento del
- * contenitore inline che admin.js usa nelle card JS. */
+/* Riga azioni card (noscript di agents.php): wrap garantito, stesso
+ * comportamento del contenitore inline che admin.js usa nelle card JS. */
 .nxa-agent-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1869,28 +1686,33 @@ body.nxa-lock-scroll {
   min-width: 0;
 }
 
-/* Media e codice non spingono mai il pannello in orizzontale. */
-.wrap.nexus-admin img,
-.wrap.nexus-admin video,
-.wrap.nexus-admin iframe {
-  max-width: 100%;
-}
-
-.wrap.nexus-admin code {
-  overflow-wrap: anywhere;
-}
-
-.wrap.nexus-admin pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 782px) {
-  /* Toolbar: gia' in wrap dalla 1.0.6; qui row-gap dedicato e bottoni su una
-   * riga ciascuno (il wrap avviene tra bottoni, non dentro l'etichetta). */
+  /* GUTTER UNICO (v1.1.5, contratto §2 punto 6): via il doppio margine+padding
+   * annidato che si vedeva nello screenshot di Anton (20+20px). Margine
+   * esterno 6px + padding interno 10px = 16px effettivi di gutter per il
+   * contenuto, senza scatole intermedie (le superfici interne sono piatte). */
+  .wrap.nexus-admin {
+    margin: 12px 6px 20px;
+    padding: var(--nxa-space-4) 10px;
+    border-radius: var(--nxa-radius);
+  }
+
+  /* Toolbar: gia' in wrap dalla 1.0.6; qui row-gap dedicato. */
   .wrap.nexus-admin .nxa-toolbar {
     flex-wrap: wrap;
     row-gap: 8px;
+  }
+
+  /* Bottoni delle barre azioni: full-width e touch-friendly (target 44px).
+   * I preset di creazione rapida restano in flusso ma con target 44px. */
+  .wrap.nexus-admin .nxa-toolbar .nxa-btn,
+  .wrap.nexus-admin .nxa-actions-row .nxa-btn {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+
+  .wrap.nexus-admin .nxa-preset-btn {
+    min-height: 44px;
   }
 
   .wrap.nexus-admin .nxa-toolbar .nxa-btn {
@@ -1898,7 +1720,7 @@ body.nxa-lock-scroll {
   }
 
   /* Nessun input WP o Nexus puo' eccedere il contenitore (incluse le
-   * .regular-text da 25em di WP e i campi form-row con tetto 440px). */
+   * .regular-text da 25em di WP). */
   .wrap.nexus-admin input.regular-text,
   .wrap.nexus-admin input[type="text"],
   .wrap.nexus-admin input[type="email"],
@@ -1911,19 +1733,18 @@ body.nxa-lock-scroll {
     max-width: 100%;
   }
 
-  .wrap.nexus-admin .nxa-form-row input[type="text"],
-  .wrap.nexus-admin .nxa-form-row input[type="email"],
-  .wrap.nexus-admin .nxa-form-row input[type="url"],
-  .wrap.nexus-admin .nxa-form-row input[type="password"],
-  .wrap.nexus-admin .nxa-form-row input[type="number"],
-  .wrap.nexus-admin .nxa-form-row select,
-  .wrap.nexus-admin .nxa-form-row textarea {
-    max-width: 100%;
-  }
-
   /* Stat: 2 colonne (base mobile-first confermata al breakpoint WP). */
   .wrap.nexus-admin .nxa-stat-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Titoli: un po' piu' compatti in altezza, il respiro lo danno i margini. */
+  .wrap.nexus-admin h1 {
+    font-size: 1.45rem;
+  }
+
+  .wrap.nexus-admin h2 {
+    margin-top: var(--nxa-space-6);
   }
 
   /* Badge/chip/categorie/punteggi: le etichette lunghe vanno a capo invece
@@ -1931,7 +1752,7 @@ body.nxa-lock-scroll {
   .wrap.nexus-admin .nxa-badge,
   .wrap.nexus-admin .nxa-agent-cat,
   .wrap.nexus-admin .nxa-score,
-  .wrap.nexus-admin .nxa-wire-agents span {
+  .wrap.nexus-admin .nxa-red-chip {
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -2137,16 +1958,14 @@ body.nxa-lock-scroll {
   min-width: 0;
 }
 
-/* Barrette statistiche: chip con numero forte + label muted, stesso
- * impianto delle stat esistenti (sezione 7) in versione compatta. Ogni
- * figlio diretto renderizzato da T-03 diventa una chip; il numero e'
- * il testo in evidenza dentro la chip. */
+/* Chip statistiche (v1.1.5): perimetro hairline su fondo trasparente al
+ * posto della pillola piena: restano leggibili e respirano. */
 .nxa-red-stats {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 12px;
-  margin: 12px 0 2px;
+  margin: var(--nxa-space-3) 0 2px;
 }
 
 .nxa-red-stats:empty {
@@ -2159,11 +1978,11 @@ body.nxa-lock-scroll {
   gap: 7px;
   margin: 0;
   padding: 8px 14px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
+  background: transparent;
+  border: 1px solid var(--nxa-hairline);
   border-radius: 999px;
   font-size: 0.78rem;
-  line-height: 1.4;
+  line-height: 1.5;
   color: var(--nxa-muted);
 }
 
@@ -2176,16 +1995,15 @@ body.nxa-lock-scroll {
   font-variant-numeric: tabular-nums;
 }
 
-/* Card del form: bordo, radius e padding del design system (famiglia
- * delle card agenti). I campi dentro restano quelli standard di WP: qui
- * si da' solo ritmo verticale e il tetto di larghezza per non traboccare
- * dalla colonna stretta (il width 25em di WP su .regular-text e' il
- * rischio classico: vale qui la retroguardia del fix 1.0.7). */
+/* Colonna del form: FLAT (v1.1.5) — niente card dentro il wrap: i campi
+ * respirano sul fondo del pannello, la separazione dalla colonna dell'albero
+ * la fa il gap della griglia. Il tetto di larghezza contro il trabocco resta
+ * (retroguardia del fix 1.0.7 contro il width 25em di WP). */
 .nxa-red-formcol {
-  padding: 18px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius-lg);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 #nxa-red-form {
@@ -2217,8 +2035,8 @@ body.nxa-lock-scroll {
 }
 
 /* Scelta agenti nel form: lista compatta di label (checkbox WP nativa +
- * avatar + nome) che va a capo senza espandere la colonna. Superficie
- * leggermente rientrata per staccarla dagli altri campi. */
+ * avatar + nome) che va a capo senza espandere la colonna. Solo una tinta
+ * leggerissima, niente bordo: non e' un riquadro, e' un inset. */
 #nxa-red-agents {
   display: flex;
   flex-wrap: wrap;
@@ -2226,7 +2044,7 @@ body.nxa-lock-scroll {
   min-width: 0;
   padding: 10px 12px;
   background: var(--nxa-surface-2);
-  border: 1px solid var(--nxa-border-soft);
+  border: 0;
   border-radius: var(--nxa-radius-sm);
 }
 
@@ -2245,21 +2063,22 @@ body.nxa-lock-scroll {
   flex: 0 0 auto;
 }
 
-/* Stato vuoto dell'albero: box tratteggiato muted con CTA. Il display e'
- * guardato da :not() su classe hidden WP e attributo hidden perche' la
- * regola display non deve mai vincere sui due meccanismi che nascondono
- * il box (la regola generica su attributo hidden della sezione 4 copre
- * solo la root .wrap.nexus-admin, questa pagina usa una root diversa). */
+/* Stato vuoto dell'albero: perimetro tratteggiato tenue su fondo
+ * trasparente (v1.1.5) con CTA. Il display e' guardato da :not() su classe
+ * hidden WP e attributo hidden perche' la regola display non deve mai
+ * vincere sui due meccanismi che nascondono il box (la regola generica su
+ * attributo hidden della sezione 4 copre solo la root .wrap.nexus-admin,
+ * questa pagina usa una root diversa). */
 #nxa-red-empty:not(.hidden):not([hidden]) {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 34px 20px;
-  margin: 2px 0 12px;
+  padding: var(--nxa-space-6) var(--nxa-space-5);
+  margin: 2px 0 var(--nxa-space-3);
   text-align: center;
-  background: var(--nxa-surface);
-  border: 1px dashed var(--nxa-border);
+  background: transparent;
+  border: 1px dashed var(--nxa-hairline);
   border-radius: var(--nxa-radius);
   color: var(--nxa-muted);
 }
@@ -2282,15 +2101,16 @@ body.nxa-lock-scroll {
 /* Righe dell'albero: blocchi flessibili separati da un filetto sotto,
  * wrap garantito per le righe lunghe su mobile. Indentazione per livello
  * via classi generate da T-03 (nessuno stile inline): la regola padding
- * della riga resta la base, le classi di profondita' la raffinano. */
+ * della riga resta la base, le classi di profondita' la raffinano.
+ * v1.1.5: padding verticale piu' generoso (12px). */
 .nxa-red-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
   min-width: 0;
-  padding: 9px 4px;
-  border-bottom: 1px solid var(--nxa-border-soft);
+  padding: var(--nxa-space-3) 4px;
+  border-bottom: 1px solid var(--nxa-hairline);
   transition: background-color 0.15s ease;
 }
 
@@ -2350,7 +2170,8 @@ body.nxa-lock-scroll {
 
 /* Chips degli agenti assegnati: badge tondi con avatar emoji + nome,
  * stesso impianto delle chip del Wire (sezione 12). Nowrap voluto: il
- * nome viene troncato dal contenitore invece di rompere la riga. */
+ * nome viene troncato dal contenitore invece di rompere la riga.
+ * v1.1.5: perimetro hairline, fondo trasparente. */
 .nxa-red-agents-chips {
   display: flex;
   flex-wrap: wrap;
@@ -2365,9 +2186,9 @@ body.nxa-lock-scroll {
   gap: 5px;
   max-width: 100%;
   padding: 2px 9px;
-  border: 1px solid var(--nxa-border);
+  border: 1px solid var(--nxa-hairline);
   border-radius: 999px;
-  background: var(--nxa-surface-2);
+  background: transparent;
   color: var(--nxa-muted);
   font-size: 0.7rem;
   font-weight: 600;
@@ -2460,19 +2281,19 @@ body.nxa-lock-scroll {
  * 21. Creazione rapida + badge capo redattore (v1.1.4)
  * ---------------------------------------------------------------------- */
 /* Barra preset sopra la lista agenti (agents.php T-06): contenitore
- * flessibile che spezza su mobile; i bottoni portano .nxa-btn e qui ne
- * affinano solo le proporzioni a pillola compatta. Zero colori nuovi:
+ * flessibile che spezza su mobile. FLAT (v1.1.5): niente scatola attorno
+ * ai preset, i bottoni pillola parlano da soli. Zero colori nuovi:
  * solo token esistenti, tema scuro ereditato. */
 .nxa-preset-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  background: var(--nxa-surface);
-  border: 1px solid var(--nxa-border);
-  border-radius: var(--nxa-radius-sm);
+  margin: 0 0 var(--nxa-space-4);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .nxa-preset-bar-label {
@@ -2487,8 +2308,8 @@ body.nxa-lock-scroll {
 
 .nxa-preset-btn {
   flex: 0 1 auto;
-  padding: 6px 12px;
-  font-size: 0.76rem;
+  padding: 7px 13px;
+  font-size: 0.78rem;
   border-radius: 999px;
 }
 
@@ -2539,4 +2360,192 @@ body.nxa-lock-scroll {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--nxa-muted);
+}
+
+/* -------------------------------------------------------------------------
+ * 22. Avvii mirati + live redazionale (v1.1.5) — contratto §2 punto 9 T-01
+ *     Stili pronti per il markup che atterra con T-03/T-04/T-05 (bottoni
+ *     "Avvia" su agenti/redazioni/testata, pannello "In redazione ora" in
+ *     dashboard, riepilogo post-run). Solo token: tema scuro ereditato dagli
+ *     override su body.nexus-theme-dark (meccanismo sezioni 11b/14b/18/20).
+ * ---------------------------------------------------------------------- */
+
+/* Filetto di separazione (T-05): la linea orizzontale leggera che sostituisce
+ * i riquadri tra gruppi di contenuti. Margine generoso da scala spaziatura. */
+hr.nxa-hairline {
+  border: 0;
+  border-top: 1px solid var(--nxa-hairline);
+  margin: var(--nxa-space-6) 0;
+}
+
+/* Bottone "Avvia" (T-04): variante del bottone base in tinta accento (light
+ * = viola brand, dark = azzurro chiaro via --nxa-link). Porta la base
+ * completa: funziona sia come .nxa-btn.nxa-btn-run sia da solo. */
+.nxa-btn-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--nxa-accent-line);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-btn-bg);
+  color: var(--nxa-link);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  text-shadow: none;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.nxa-btn-run:hover {
+  border-color: var(--nxa-accent-1);
+  background: var(--nxa-accent-1-soft);
+  color: var(--nxa-link-hover);
+}
+
+/* Stato busy (set da admin.js insieme a setBtnLoading/disabled): non
+ * cliccabile, attenuato. Lo spinner dentro e' gia' gestito dalla regola
+ * .nxa-btn .nxa-spinner (sezione 15). */
+.nxa-btn-run.is-busy,
+.nxa-btn-run[disabled] {
+  pointer-events: none;
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+
+/* Riepilogo post-run (T-04, toast o blocco dashboard): si attacca sotto il
+ * messaggio con una hairline, niente scatole dentro il toast. */
+.nxa-run-summary {
+  min-width: 0;
+  margin: var(--nxa-space-2) 0 0;
+  padding: var(--nxa-space-3) 0 0;
+  border-top: 1px solid var(--nxa-hairline);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--nxa-text-body);
+  overflow-wrap: anywhere;
+}
+
+.nxa-run-summary ul,
+.nxa-run-summary ol {
+  margin: var(--nxa-space-1) 0 0;
+  padding-left: 18px;
+}
+
+.nxa-run-summary li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.nxa-run-summary strong,
+.nxa-run-summary b {
+  color: var(--nxa-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Striscia "In redazione ora" (T-04, dashboard #nxa-live-strip): contenitore
+ * flat a righe — la scatola resta la sezione, le righe si separano con
+ * hairline. Il titolo della strip usa l'h2/h3 di pagina esistente. */
+.nxa-live-strip,
+#nxa-live-strip {
+  margin: var(--nxa-space-2) 0 0;
+}
+
+.nxa-live-strip:empty,
+#nxa-live-strip:empty {
+  display: none;
+}
+
+/* Riga agente: dot di stato + avatar/nome + passo corrente + ultima azione.
+ * Flex-wrap: su mobile i campi secondari scendono a riga propria senza
+ * traboccare. */
+.nxa-live-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 12px;
+  min-width: 0;
+  padding: var(--nxa-space-3) 2px;
+  border-bottom: 1px solid var(--nxa-hairline);
+}
+
+.nxa-live-agent:last-child {
+  border-bottom: 0;
+}
+
+.nxa-live-agent strong {
+  font-weight: 600;
+  color: var(--nxa-text);
+  overflow-wrap: anywhere;
+}
+
+.nxa-live-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--nxa-muted);
+}
+
+/* Varianti di stato (T-04 le setta da running/status dell'endpoint /live):
+ * running verde pulsante, paused ambra, error rossa, idle grigia tenue. */
+.nxa-live-dot--running {
+  background: var(--nxa-ok-text);
+  animation: nxa-pulse 1.6s ease-in-out infinite;
+}
+
+.nxa-live-dot--paused {
+  background: var(--nxa-warn-text);
+}
+
+.nxa-live-dot--error {
+  background: var(--nxa-err-text);
+}
+
+.nxa-live-dot--idle {
+  background: var(--nxa-muted);
+  opacity: 0.45;
+}
+
+/* Passo corrente ("Scrive l'articolo" + titolo se presente). */
+.nxa-live-step {
+  min-width: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--nxa-text-body);
+  overflow-wrap: anywhere;
+}
+
+/* Ultima azione relativa ("Ultima azione: 2 min fa"): secondaria. */
+.nxa-live-last {
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Intestazione strip ("N agenti al lavoro · aggiornato alle HH:MM"). */
+.nxa-live-updated {
+  display: block;
+  margin: 0 0 var(--nxa-space-1);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--nxa-muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-live-dot--running {
+    animation: none;
+  }
 }

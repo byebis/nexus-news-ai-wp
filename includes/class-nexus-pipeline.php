@@ -35,6 +35,23 @@
  *   - CRON TICK: dopo il giro degli agenti, il capo redattore rilegge fino a 3
  *     articoli in attesa (Nexus_Chief::run_for_pending( 3 )), giri di revisione inclusi.
  *
+ * v1.1.5 — "Avvii mirati + live redazionale" (T-03):
+ *   - STATO RUNTIME AGENTE: option 'nexus_agent_runtime' (array
+ *     agent_id => {step, label, article_id, article_title, since}) alimentata
+ *     nei punti chiave della pipeline con set_runtime(): collect
+ *     ("Raccoglie le fonti"), evaluate ("Valuta i materiali"), rewrite
+ *     ("Scrive l'articolo"), publish ("Pubblica"), chief ("Revisione del
+ *     capo redattore", impostata sul giornalista proprietario dell'articolo
+ *     in chief_dispatch). clear_runtime() a fine run SEMPRE (try/finally in
+ *     run_full, anche su eccezione); l'option viene scritta con
+ *     update_option solo quando lo stato cambia realmente (no write storm).
+ *     La coda non ha bisogno di handler dedicati: i suoi core handler
+ *     (pipeline_run_full/collect/evaluate/rewrite/publish) delegano a QUESTI
+ *     metodi, quindi lo stato runtime si aggiorna da solo anche via coda.
+ *     Le chiamate standalone (REST pipeline/collect e pipeline/publish)
+ *     puliscono lo stato nell'handler REST; i job di coda standalone sono
+ *     coperti dal filtro anti-stato-vecchio sull'endpoint /live (30 min).
+ *
  * v1.0.3 — "Redazione Intelligente" (difensivo: ogni integrazione è guarded e mai fatale):
  *   - Modello AI per-agente in fase rewrite (agents.ai_model, fallback ai_model globale);
  *     modello economico ai_model_cheap (fallback ai_model) per collect, evaluate e fact-check.
@@ -59,6 +76,9 @@
  * Nexus_Pipeline::cron_tick()                                → array{ok, ran, results, timestamp}
  * Nexus_Pipeline::wire_run( $topic )                         → array{ok, run}
  * Nexus_Pipeline::wire_runs( $limit = 20 )                   → array
+ * Nexus_Pipeline::set_runtime( $agent_id, $step, $label, $article_id = 0, $article_title = '' ) → void (v1.1.5)
+ * Nexus_Pipeline::clear_runtime( $agent_id )                 → void (v1.1.5)
+ * Nexus_Pipeline::get_runtime()                              → array (v1.1.5)
  *
  * @package Nexus_News_AI
  */
@@ -66,6 +86,12 @@
 defined( 'ABSPATH' ) || exit;
 
 class Nexus_Pipeline {
+
+        /**
+         * Option dello stato runtime per agente (v1.1.5, pannello live).
+         * Shape: array agent_id => {step, label, article_id, article_title, since}.
+         */
+        const RUNTIME_OPTION = 'nexus_agent_runtime';
 
         /**
          * FASE 1 — Raccolta notizie per un agente.
@@ -93,6 +119,9 @@ class Nexus_Pipeline {
                         $out['skipped'] = true;
                         return $out;
                 }
+
+                // v1.1.5: stato runtime per il pannello live "In redazione ora".
+                self::set_runtime( (int) $agent->id, 'collect', 'Raccoglie le fonti' );
 
                 $category    = (string) $agent->category;
                 $personality = self::agent_personality( $agent );
@@ -285,6 +314,9 @@ class Nexus_Pipeline {
 
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
 
+                // v1.1.5: stato runtime per il pannello live (fase di valutazione).
+                self::set_runtime( (int) $article->agent_id, 'evaluate', 'Valuta i materiali', (int) $article_id, (string) $article->title );
+
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di valutazione viene saltata.
                 if ( ! self::budget_allows( 'valutazione', (int) $article->agent_id ) ) {
                         $out['error'] = 'Fase di valutazione saltata: budget mensile esaurito.';
@@ -348,6 +380,9 @@ class Nexus_Pipeline {
 
                 $agent = $article->agent_id ? Nexus_DB::get_agent( $article->agent_id ) : null;
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
+
+                // v1.1.5: stato runtime per il pannello live (fase di scrittura).
+                self::set_runtime( (int) $article->agent_id, 'rewrite', 'Scrive l\'articolo', (int) $article_id, (string) $article->title );
 
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di riscrittura viene saltata.
                 if ( ! self::budget_allows( 'riscrittura', (int) $article->agent_id ) ) {
@@ -503,6 +538,9 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
+                // v1.1.5: stato runtime per il pannello live (fase di pubblicazione).
+                self::set_runtime( (int) $article->agent_id, 'publish', 'Pubblica', (int) $article_id, (string) $article->title );
+
                 $logs = Nexus_Publisher::publish( $article );
                 if ( empty( $logs ) ) {
                         $out['error'] = 'Nessuna piattaforma di pubblicazione configurata o articolo non valido.';
@@ -552,8 +590,30 @@ class Nexus_Pipeline {
         }
 
         /**
-         * Pipeline completa per un agente: rispetta i toggle delle impostazioni
-         * (auto_collect / auto_evaluate / auto_rewrite / auto_publish) e la modalità.
+         * Pipeline completa per un agente (facciata v1.1.5).
+         *
+         * Delega il corpo a run_full_agent e garantisce la pulizia dello stato
+         * runtime con clear_runtime() in un blocco finally: a fine run (successo,
+         * ritorno anticipato o eccezione propagata al chiamante) l'agente non
+         * resta "in redazione" sul pannello live.
+         *
+         * @param int $agent_id ID agente.
+         * @return array{ok:bool, collected:int, evaluated:int, rewritten:int, published:int, messages:array}
+         */
+        public static function run_full( $agent_id ) {
+                try {
+                        return self::run_full_agent( $agent_id );
+                } finally {
+                        // v1.1.5: lo stato runtime va sempre rimosso a fine run,
+                        // successo o errore (il finally gira anche su eccezione).
+                        self::clear_runtime( absint( $agent_id ) );
+                }
+        }
+
+        /**
+         * Corpo della pipeline completa per un agente: rispetta i toggle delle
+         * impostazioni (auto_collect / auto_evaluate / auto_rewrite /
+         * auto_publish) e la modalità.
          *
          * - fully_autonomous + punteggio >= auto_approve_score dopo la riscrittura
          *   → approvazione + pubblicazione automatiche.
@@ -563,7 +623,7 @@ class Nexus_Pipeline {
          * @param int $agent_id ID agente.
          * @return array{ok:bool, collected:int, evaluated:int, rewritten:int, published:int, messages:array}
          */
-        public static function run_full( $agent_id ) {
+        private static function run_full_agent( $agent_id ) {
                 $summary = array(
                         'ok'        => false,
                         'agent_id'  => absint( $agent_id ),
@@ -723,7 +783,7 @@ class Nexus_Pipeline {
                         if ( $rewritten_now ) {
                                 $chief_article = Nexus_DB::get_article( $article_id );
                                 if ( $chief_article && 'pending_approval' === $chief_article->status ) {
-                                        self::chief_dispatch( $article_id );
+                                        self::chief_dispatch( $article_id, (int) $chief_article->agent_id, (string) $chief_article->title );
                                 }
                         }
                 }
@@ -802,10 +862,17 @@ class Nexus_Pipeline {
          * difensive: senza Nexus_Chief (versioni precedenti) o con capo
          * disattivato il flusso resta identico alla versione precedente.
          *
-         * @param int $article_id ID articolo in pending_approval.
+         * v1.1.5: prima dell'invio imposta lo stato runtime 'chief' sul
+         * giornalista proprietario dell'articolo (etichetta "Revisione del capo
+         * redattore"): e' l'agente su cui il pannello live mostra il lavoro in
+         * corso. Lo stato viene rimosso dal finally di run_full.
+         *
+         * @param int    $article_id    ID articolo in pending_approval.
+         * @param int    $agent_id      ID giornalista proprietario (0 = nessuno).
+         * @param string $article_title Titolo dell'articolo (per il pannello live).
          * @return void
          */
-        private static function chief_dispatch( $article_id ) {
+        private static function chief_dispatch( $article_id, $agent_id = 0, $article_title = '' ) {
                 if ( ! class_exists( 'Nexus_Chief' ) || ! method_exists( 'Nexus_Chief', 'enabled' ) ) {
                         return; // Capo redattore non disponibile: flusso invariato.
                 }
@@ -817,6 +884,10 @@ class Nexus_Pipeline {
                 } catch ( Throwable $e ) {
                         return; // Mai bloccare la pipeline per un errore del capo redattore.
                 }
+
+                // v1.1.5: stato runtime per il live sulla fase di revisione del
+                // capo redattore (mostrata sul giornalista proprietario).
+                self::set_runtime( absint( $agent_id ), 'chief', 'Revisione del capo redattore', absint( $article_id ), (string) $article_title );
 
                 if ( class_exists( 'Nexus_Queue' ) && method_exists( 'Nexus_Queue', 'dispatch' ) ) {
                         try {
@@ -1013,6 +1084,98 @@ class Nexus_Pipeline {
                         return array();
                 }
                 return array_values( array_slice( $runs, 0, max( 1, absint( $limit ) ) ) );
+        }
+
+        /* ================= RUNTIME AGENTE PER IL LIVE (v1.1.5, T-03) =================
+         *
+         * Stato "cosa sta facendo l'agente adesso" salvato nella option
+         * nexus_agent_runtime (array agent_id => {step, label, article_id,
+         * article_title, since}). Alimenta GET /nexus/v1/live per il pannello
+         * "In redazione ora" della dashboard. update_option SOLO quando lo
+         * stato cambia realmente (polling e fasi successive non riscrivono
+         * sempre). since e' ISO8601 UTC (gmdate('c')): il consumer puo'
+         * calcolare da quanto gira senza ambiguita' di fuso.
+         */
+
+        /**
+         * Imposta (o aggiorna) lo stato runtime di un agente.
+         *
+         * La option viene scritta solo se lo stato cambia realmente (stesso
+         * step/label/articolo = nessuna scrittura, since resta invariato):
+         * evita write storm con polling e fasi ravvicinate.
+         *
+         * @param int    $agent_id      ID agente (minimo 1, altri valori ignorati).
+         * @param string $step          Fase logica (collect|evaluate|rewrite|publish|chief).
+         * @param string $label         Etichetta italiana per il pannello live.
+         * @param int    $article_id    ID articolo in lavorazione (0 = nessuno).
+         * @param string $article_title Titolo articolo in lavorazione.
+         * @return void
+         */
+        public static function set_runtime( $agent_id, $step, $label, $article_id = 0, $article_title = '' ) {
+                $agent_id = absint( $agent_id );
+                if ( $agent_id < 1 ) {
+                        return;
+                }
+
+                $state = array(
+                        'step'          => sanitize_key( (string) $step ),
+                        'label'         => self::clip( (string) $label, 120 ),
+                        'article_id'    => absint( $article_id ),
+                        'article_title' => self::clip( (string) $article_title, 200 ),
+                        'since'         => gmdate( 'c' ),
+                );
+
+                $runtime = get_option( self::RUNTIME_OPTION, array() );
+                if ( ! is_array( $runtime ) ) {
+                        $runtime = array();
+                }
+
+                // Nessuna scrittura se lo stato non cambia (no write storm).
+                $current = isset( $runtime[ $agent_id ] ) ? $runtime[ $agent_id ] : null;
+                if ( is_array( $current )
+                        && isset( $current['step'], $current['label'], $current['article_id'], $current['article_title'] )
+                        && (string) $current['step'] === $state['step']
+                        && (string) $current['label'] === $state['label']
+                        && (int) $current['article_id'] === $state['article_id']
+                        && (string) $current['article_title'] === $state['article_title'] ) {
+                        return;
+                }
+
+                $runtime[ $agent_id ] = $state;
+                update_option( self::RUNTIME_OPTION, $runtime, false );
+        }
+
+        /**
+         * Rimuove lo stato runtime di un agente (fine run, successo o errore).
+         *
+         * Nessuna scrittura se l'agente non ha uno stato da rimuovere.
+         *
+         * @param int $agent_id ID agente (minimo 1, altri valori ignorati).
+         * @return void
+         */
+        public static function clear_runtime( $agent_id ) {
+                $agent_id = absint( $agent_id );
+                if ( $agent_id < 1 ) {
+                        return;
+                }
+
+                $runtime = get_option( self::RUNTIME_OPTION, array() );
+                if ( ! is_array( $runtime ) || ! array_key_exists( $agent_id, $runtime ) ) {
+                        return;
+                }
+
+                unset( $runtime[ $agent_id ] );
+                update_option( self::RUNTIME_OPTION, $runtime, false );
+        }
+
+        /**
+         * Legge l'intera option dello stato runtime (array agent_id => stato).
+         *
+         * @return array Sempre un array (option corrotta o assente = array vuoto).
+         */
+        public static function get_runtime() {
+                $runtime = get_option( self::RUNTIME_OPTION, array() );
+                return is_array( $runtime ) ? $runtime : array();
         }
 
         /* ================= HELPER PRIVATI ================= */

@@ -17,12 +17,13 @@
  *   POST   /nexus/v1/articles/{id}/approve         body {note}
  *   POST   /nexus/v1/articles/{id}/reject          body {note}
  *   POST   /nexus/v1/pipeline/collect              body {agent_id: 0=tutti}
- *   POST   /nexus/v1/pipeline/run                  body {agent_id: 0=tutti}
+ *   POST   /nexus/v1/pipeline/run                  body {agent_id, redazione_id, agent_ids[]} (v1.1.5: avvii mirati, scope agent_ids > redazione_id > agent_id, risposta {ok, scope, results[], summary} + chiavi BC al top-level per run di un agente singolo)
  *   POST   /nexus/v1/pipeline/publish              body {article_id}
  *   GET    /nexus/v1/settings
  *   PUT    /nexus/v1/settings                      body JSON parziale
  *   GET    /nexus/v1/activity                      args: limit, agent_id
  *   GET    /nexus/v1/stats
+ *   GET    /nexus/v1/live                          stato live della redazione {updated_at, agents[], redazioni[], testata} per il pannello "In redazione ora" (v1.1.5, pensato per polling ~5s)
  *   POST   /nexus/v1/wire/run                      body {topic} (obbligatorio, max 200 char)
  *   GET    /nexus/v1/wire/runs                     args: limit
  *   GET    /nexus/v1/jobs, /nexus/v1/jobs/stats; POST /nexus/v1/jobs/process, /nexus/v1/jobs/cleanup, /nexus/v1/jobs/{id}/retry, /nexus/v1/jobs/{id}/cancel (v1.0.4)
@@ -74,6 +75,15 @@ defined( 'ABSPATH' ) || exit;
 class Nexus_Rest {
 
         const NAMESPACE_URI = 'nexus/v1';
+
+        /**
+         * Età massima (secondi) di uno stato runtime considerato valido
+         * dall'endpoint /live (v1.1.5): oltre questa soglia lo stato è un
+         * residuo (crash, job di coda finiti senza clear) e l'agente viene
+         * mostrato come non in esecuzione. 30 minuti: un run reale non ci
+         * mette così tanto e le fasi aggiornano lo stato a ogni passo.
+         */
+        const LIVE_RUNTIME_TTL = 1800;
 
         /**
          * Cache agenti per la serializzazione degli articoli (1 query per agente per request).
@@ -361,6 +371,20 @@ class Nexus_Rest {
                                                         'default'           => 0,
                                                         'sanitize_callback' => 'absint',
                                                 ),
+                                                // v1.1.5: avvio mirato per redazione (subtree incluso).
+                                                'redazione_id'      => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 0,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                // v1.1.5: avvio mirato su una lista esplicita di agenti.
+                                                'agent_ids'         => array(
+                                                        'type'              => 'array',
+                                                        'required'          => false,
+                                                        'default'           => array(),
+                                                        'sanitize_callback' => array( __CLASS__, 'sanitize_redazione_agent_ids' ),
+                                                ),
                                         ),
                                 ),
                         )
@@ -439,6 +463,20 @@ class Nexus_Rest {
                                 array(
                                         'methods'             => WP_REST_Server::READABLE,
                                         'callback'            => array( __CLASS__, 'rest_stats' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.5: stato live della redazione (pannello "In redazione ora",
+                // polling ~5s dalla dashboard: solo query raggruppate, niente N+1).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/live',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_live' ),
                                         'permission_callback' => $admin_permission,
                                 ),
                         )
@@ -1616,13 +1654,235 @@ class Nexus_Rest {
         }
 
         /**
-         * POST /pipeline/run — pipeline completa per un agente o per tutti gli agenti attivi.
+         * POST /pipeline/run — pipeline completa (v1.1.5: avvii mirati).
+         *
+         * Scope accettati (tutti opzionali, risolti in ordine): agent_ids
+         * (lista esplicita di agent ID) > redazione_id (subtree completo via
+         * API reali di Nexus_Redazioni) > agent_id (0 = intera testata, solo
+         * agenti attivi, come da comportamento storico). Esecuzione per agente
+         * con try/catch: un agente in errore NON blocca gli altri.
+         *
+         * Risposta (shape contrattuale §4.1): {ok, scope: testata|redazione|
+         * agent|agents, results[], summary} con results[] = {agent_id, name,
+         * ok, collected, evaluated, rewritten, published, messages, error} e
+         * summary = {agents, collected, published, errors}. BC: come v1.1.4
+         * la chiave success vale true quando la richiesta è stata eseguita
+         * (i vecchi risultati non restituivano mai WP_Error: l'api() di
+         * admin.js la usa per decidere se lanciare l'errore; gli errori
+         * per-agente viaggiano in ok/results/summary/errors + message e il
+         * consumer v1.1.5 li rende come riepilogo "info"); quando il run ha
+         * UN solo agente il suo risultato viene promosso al top-level con le
+         * chiavi che run_full restituisce oggi (agent_id, agent, collected,
+         * evaluated, rewritten, published, messages) per i consumer
+         * esistenti. In caso di redazione senza agenti (o testata senza
+         * agenti attivi) la risposta è ok con results vuoti e "message"
+         * esplicativo in italiano; stesso campo su errori parziali.
          *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_pipeline_run( $request ) {
-                return self::run_pipeline_for_agents( absint( $request->get_param( 'agent_id' ) ), 'run_full' );
+                if ( ! is_callable( array( 'Nexus_Pipeline', 'run_full' ) ) ) {
+                        return self::err( 'nexus_rest_pipeline_missing', __( 'Modulo pipeline non disponibile.', 'nexus-news-ai' ), 500 );
+                }
+
+                $agent_ids    = array_values( array_filter( array_map( 'absint', (array) $request->get_param( 'agent_ids' ) ) ) );
+                $redazione_id = absint( $request->get_param( 'redazione_id' ) );
+                $agent_id     = absint( $request->get_param( 'agent_id' ) );
+
+                /* ---- Risoluzione scope: agent_ids > redazione_id > agent_id ---- */
+                $scope   = '';
+                $targets = array();
+                $message = '';
+
+                if ( ! empty( $agent_ids ) ) {
+                        $scope   = 'agents';
+                        $targets = self::pipeline_run_agents_existing( $agent_ids );
+                        if ( empty( $targets ) ) {
+                                return self::err( 'nexus_rest_agent_not_found', __( 'Nessun agente valido tra quelli indicati.', 'nexus-news-ai' ), 404 );
+                        }
+                } elseif ( $redazione_id > 0 ) {
+                        $scope = 'redazione';
+                        if ( ! class_exists( 'Nexus_Redazioni' ) || ! method_exists( 'Nexus_Redazioni', 'agents_for_term' ) ) {
+                                return self::err(
+                                        'nexus_rest_redazioni_missing',
+                                        __( 'Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                        502
+                                );
+                        }
+                        $term = get_term( $redazione_id, Nexus_Redazioni::TAX );
+                        if ( ! $term instanceof WP_Term ) {
+                                return self::err( 'nexus_rest_redazione_not_found', __( 'Redazione non trovata.', 'nexus-news-ai' ), 404 );
+                        }
+                        $ids     = self::pipeline_run_redazione_agent_ids( $redazione_id );
+                        $targets = self::pipeline_run_agents_existing( $ids );
+                        if ( empty( $targets ) ) {
+                                $name    = (string) $term->name;
+                                $message = '' !== $name
+                                        ? sprintf( __( 'La redazione "%s" non ha agenti assegnati: nessun avvio.', 'nexus-news-ai' ), $name )
+                                        : __( 'La redazione selezionata non ha agenti assegnati: nessun avvio.', 'nexus-news-ai' );
+                        }
+                } elseif ( $agent_id > 0 ) {
+                        $scope = 'agent';
+                        $agent = Nexus_DB::get_agent( $agent_id );
+                        if ( ! $agent ) {
+                                return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                        }
+                        $targets = array( $agent );
+                } else {
+                        $scope = 'testata';
+                        foreach ( Nexus_DB::agents() as $agent ) {
+                                if ( 'active' === $agent->status ) {
+                                        $targets[] = $agent;
+                                }
+                        }
+                        if ( empty( $targets ) ) {
+                                $message = __( 'Nessun agente attivo in redazione: nessun avvio.', 'nexus-news-ai' );
+                        }
+                }
+
+                /* ---- Esecuzione per agente: un errore non blocca gli altri ---- */
+                $results = array();
+                foreach ( $targets as $agent ) {
+                        $entry = array(
+                                'agent_id'  => (int) $agent->id,
+                                'name'      => (string) $agent->name,
+                                'ok'        => false,
+                                'collected' => 0,
+                                'evaluated' => 0,
+                                'rewritten' => 0,
+                                'published' => 0,
+                                'messages'  => array(),
+                                'error'     => null,
+                        );
+
+                        try {
+                                $res = Nexus_Pipeline::run_full( (int) $agent->id );
+                                if ( is_wp_error( $res ) ) {
+                                        $entry['error'] = $res->get_error_message();
+                                } elseif ( is_array( $res ) ) {
+                                        $entry['ok']        = ! empty( $res['ok'] );
+                                        $entry['collected'] = isset( $res['collected'] ) ? (int) $res['collected'] : 0;
+                                        $entry['evaluated'] = isset( $res['evaluated'] ) ? (int) $res['evaluated'] : 0;
+                                        $entry['rewritten'] = isset( $res['rewritten'] ) ? (int) $res['rewritten'] : 0;
+                                        $entry['published'] = isset( $res['published'] ) ? (int) $res['published'] : 0;
+                                        $entry['messages']  = array_values( array_map( 'strval', (array) ( isset( $res['messages'] ) ? $res['messages'] : array() ) ) );
+                                } else {
+                                        $entry['error'] = __( 'La pipeline non ha restituito un risultato valido.', 'nexus-news-ai' );
+                                }
+                        } catch ( Throwable $e ) {
+                                $msg = trim( (string) $e->getMessage() );
+                                if ( function_exists( 'mb_substr' ) ) {
+                                        $msg = mb_substr( $msg, 0, 300 );
+                                } else {
+                                        $msg = substr( $msg, 0, 300 );
+                                }
+                                $entry['error'] = '' !== $msg ? $msg : __( 'Errore sconosciuto durante la pipeline.', 'nexus-news-ai' );
+                        }
+
+                        $results[] = $entry;
+                }
+
+                /* ---- Riepilogo (shape contrattuale) ---- */
+                $sum_collected = 0;
+                $sum_published = 0;
+                $errors        = 0;
+                foreach ( $results as $r ) {
+                        $sum_collected += $r['collected'];
+                        $sum_published += $r['published'];
+                        if ( null !== $r['error'] || ! $r['ok'] ) {
+                                $errors++;
+                        }
+                }
+                $all_ok = 0 === $errors;
+
+                $response = array(
+                        'ok'      => $all_ok,
+                        'scope'   => $scope,
+                        'results' => $results,
+                        'summary' => array(
+                                'agents'    => count( $results ),
+                                'collected' => $sum_collected,
+                                'published' => $sum_published,
+                                'errors'    => $errors,
+                        ),
+                        // BC v1.1.4: true = richiesta eseguita (come la vecchia shape,
+                        // dove i risultati per-agente non restituivano mai WP_Error).
+                        // L'api() di admin.js la usa come guardia: con false lancerebbe
+                        // l'errore e il consumer v1.1.5 perderebbe il riepilogo results/.
+                        // Gli errori per-agente restano in ok/results/summary/errors.
+                        'success' => true,
+                );
+
+                if ( '' !== $message ) {
+                        $response['message'] = $message;
+                } elseif ( ! $all_ok ) {
+                        $response['message'] = sprintf(
+                                __( 'Avvio completato con errori: %1$d di %2$d agenti hanno riportato problemi.', 'nexus-news-ai' ),
+                                $errors,
+                                count( $results )
+                        );
+                }
+
+                /* ---- BC: run con un solo agente → chiavi di run_full al top-level ---- */
+                if ( 1 === count( $results ) ) {
+                        $only                  = $results[0];
+                        $response['agent_id']  = $only['agent_id'];
+                        $response['agent']     = $only['name'];
+                        $response['collected'] = $only['collected'];
+                        $response['evaluated'] = $only['evaluated'];
+                        $response['rewritten'] = $only['rewritten'];
+                        $response['published'] = $only['published'];
+                        $response['messages']  = $only['messages'];
+                }
+
+                return rest_ensure_response( $response );
+        }
+
+        /**
+         * Agenti realmente esistenti tra gli ID richiesti (dedup incluso:
+         * un solo passaggio su Nexus_DB::agents()).
+         *
+         * @param array $agent_ids Agent ID richiesti.
+         * @return array Righe agente (stesso ordine di Nexus_DB::agents()).
+         */
+        private static function pipeline_run_agents_existing( $agent_ids ) {
+                $want = array_fill_keys( array_map( 'absint', (array) $agent_ids ), true );
+                $out  = array();
+                foreach ( Nexus_DB::agents() as $agent ) {
+                        if ( isset( $want[ (int) $agent->id ] ) ) {
+                                $out[] = $agent;
+                        }
+                }
+                return $out;
+        }
+
+        /**
+         * Agent ID del subtree di una redazione (dedup) tramite le API reali
+         * di Nexus_Redazioni: agents_for_term (unione termine + discendenti),
+         * con fallback esplicito su descendant_ids + agent_ids_for_term per
+         * versioni precedenti del modulo.
+         *
+         * @param int $term_id Term ID radice.
+         * @return array Agent ID (int, unici, senza lo 0).
+         */
+        private static function pipeline_run_redazione_agent_ids( $term_id ) {
+                if ( method_exists( 'Nexus_Redazioni', 'agents_for_term' ) ) {
+                        return array_values( array_filter( array_map( 'absint', (array) Nexus_Redazioni::agents_for_term( $term_id ) ) ) );
+                }
+
+                $ids = array();
+                if ( method_exists( 'Nexus_Redazioni', 'descendant_ids' ) && method_exists( 'Nexus_Redazioni', 'agent_ids_for_term' ) ) {
+                        foreach ( (array) Nexus_Redazioni::descendant_ids( $term_id ) as $tid ) {
+                                foreach ( (array) Nexus_Redazioni::agent_ids_for_term( $tid ) as $aid ) {
+                                        $aid = absint( $aid );
+                                        if ( $aid > 0 ) {
+                                                $ids[] = $aid;
+                                        }
+                                }
+                        }
+                }
+                return array_values( array_unique( $ids ) );
         }
 
         /**
@@ -1651,6 +1911,12 @@ class Nexus_Rest {
 
                 if ( is_wp_error( $res ) ) {
                         return self::err( 'nexus_rest_publish_failed', $res->get_error_message(), 500 );
+                }
+
+                // v1.1.5: pubblicazione standalone → nessun run che pulisce lo
+                // stato runtime della fase "Pubblica": rimuovilo qui.
+                if ( is_callable( array( 'Nexus_Pipeline', 'clear_runtime' ) ) && ! empty( $article->agent_id ) ) {
+                        Nexus_Pipeline::clear_runtime( (int) $article->agent_id );
                 }
 
                 $fresh = Nexus_DB::get_article( $article_id );
@@ -1744,6 +2010,280 @@ class Nexus_Rest {
         public static function rest_stats( $request ) {
                 unset( $request );
                 return rest_ensure_response( Nexus_DB::stats() );
+        }
+
+        /**
+         * GET /live — stato live della redazione (v1.1.5, pannello "In redazione ora").
+         *
+         * Shape contrattuale (§4.3): {updated_at: ISO8601, agents: [{id, name,
+         * avatar, status: active|paused|error, running, current: {step, label,
+         * article_id, article_title, since}|null, last_action: {action, detail,
+         * status, created_at}|null, today: {articles, runs}}], redazioni:
+         * [{id, name, agents, running}], testata: {running, total}}.
+         *
+         * Fonti: agenti da Nexus_DB::agents(), runtime da
+         * Nexus_Pipeline::get_runtime() (option nexus_agent_runtime; stati più
+         * vecchi di LIVE_RUNTIME_TTL trattati come residui e ignorati), ultima
+         * azione per agente da nexus_activity_logs con UNA query raggruppata,
+         * articoli e run di oggi con DUE query raggruppate (GROUP BY agent_id).
+         * Niente N+1: endpoint leggero pensato per polling ~5s. today.runs =
+         * righe di attività 'collecting' di oggi per agente (un run della
+         * pipeline parte sempre dalla raccolta).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_live( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'agents' ) ) {
+                        return self::err(
+                                'nexus_rest_db_missing',
+                                __( 'Il modulo database non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $agent_rows = Nexus_DB::agents();
+                $runtime    = self::live_runtime_states();
+
+                $agent_ids = array();
+                foreach ( $agent_rows as $row ) {
+                        $agent_ids[] = (int) $row->id;
+                }
+
+                $last_actions = self::live_last_actions( $agent_ids );
+                $today_counts = self::live_today_counts( $agent_ids );
+
+                /* ---- Agenti ---- */
+                $agents_out = array();
+                $running    = 0;
+                foreach ( $agent_rows as $row ) {
+                        $aid = (int) $row->id;
+
+                        $status = (string) ( isset( $row->status ) ? $row->status : 'paused' );
+                        if ( ! in_array( $status, array( 'active', 'paused', 'error' ), true ) ) {
+                                $status = 'paused';
+                        }
+
+                        $current = isset( $runtime[ $aid ] ) ? $runtime[ $aid ] : null;
+                        if ( is_array( $current ) ) {
+                                $running++;
+                        }
+
+                        $counts = isset( $today_counts[ $aid ] ) ? $today_counts[ $aid ] : array();
+                        $avatar = (string) ( isset( $row->avatar ) ? $row->avatar : '' );
+
+                        $agents_out[] = array(
+                                'id'          => $aid,
+                                'name'        => (string) $row->name,
+                                'avatar'      => '' !== $avatar ? $avatar : '🤖',
+                                'status'      => $status,
+                                'running'     => is_array( $current ),
+                                'current'     => $current,
+                                'last_action' => isset( $last_actions[ $aid ] ) ? $last_actions[ $aid ] : null,
+                                'today'       => array(
+                                        'articles' => isset( $counts['articles'] ) ? (int) $counts['articles'] : 0,
+                                        'runs'     => isset( $counts['runs'] ) ? (int) $counts['runs'] : 0,
+                                ),
+                        );
+                }
+
+                /* ---- Redazioni: agenti del ramo + quanti sono in esecuzione ---- */
+                $redazioni_out = array();
+                if ( class_exists( 'Nexus_Redazioni' )
+                        && method_exists( 'Nexus_Redazioni', 'all_terms' )
+                        && method_exists( 'Nexus_Redazioni', 'agents_for_term' ) ) {
+                        $existing = array_fill_keys( $agent_ids, true );
+                        foreach ( Nexus_Redazioni::all_terms() as $term ) {
+                                $ramo_ids = array_values( array_filter( array_map( 'absint', (array) Nexus_Redazioni::agents_for_term( (int) $term->term_id ) ) ) );
+                                $count_agents  = 0;
+                                $count_running = 0;
+                                foreach ( $ramo_ids as $ramo_agent_id ) {
+                                        if ( isset( $existing[ $ramo_agent_id ] ) ) {
+                                                $count_agents++;
+                                                if ( isset( $runtime[ $ramo_agent_id ] ) ) {
+                                                        $count_running++;
+                                                }
+                                        }
+                                }
+                                $redazioni_out[] = array(
+                                        'id'      => (int) $term->term_id,
+                                        'name'    => (string) $term->name,
+                                        'agents'  => $count_agents,
+                                        'running' => $count_running,
+                                );
+                        }
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'updated_at' => gmdate( 'c' ),
+                                'agents'     => $agents_out,
+                                'redazioni'  => $redazioni_out,
+                                'testata'    => array(
+                                        'running' => $running,
+                                        'total'   => count( $agent_rows ),
+                                ),
+                        )
+                );
+        }
+
+        /**
+         * Stati runtime validi (non più vecchi di LIVE_RUNTIME_TTL) normalizzati
+         * per il pannello live: array agent_id => {step, label, article_id,
+         * article_title, since}. Gli stati residui (crash, job di coda conclusi
+         * senza clear) oltre soglia vengono ignorati: l'agente appare fermo.
+         *
+         * @return array
+         */
+        private static function live_runtime_states() {
+                $runtime = is_callable( array( 'Nexus_Pipeline', 'get_runtime' ) ) ? Nexus_Pipeline::get_runtime() : array();
+                if ( ! is_array( $runtime ) ) {
+                        return array();
+                }
+
+                $out = array();
+                foreach ( $runtime as $key => $state ) {
+                        $agent_id = absint( $key );
+                        if ( $agent_id < 1 || ! is_array( $state ) ) {
+                                continue;
+                        }
+
+                        $since = isset( $state['since'] ) ? strtotime( (string) $state['since'] ) : false;
+                        if ( false === $since || ( time() - $since ) > self::LIVE_RUNTIME_TTL ) {
+                                continue; // Stato residuo: trattato come non in esecuzione.
+                        }
+
+                        $out[ $agent_id ] = array(
+                                'step'          => isset( $state['step'] ) ? (string) $state['step'] : '',
+                                'label'         => isset( $state['label'] ) ? (string) $state['label'] : '',
+                                'article_id'    => isset( $state['article_id'] ) ? absint( $state['article_id'] ) : 0,
+                                'article_title' => isset( $state['article_title'] ) ? (string) $state['article_title'] : '',
+                                'since'         => isset( $state['since'] ) ? (string) $state['since'] : '',
+                        );
+                }
+                return $out;
+        }
+
+        /**
+         * Ultima azione per agente da nexus_activity_logs con UNA sola query
+         * raggruppata (MAX(id) per agent_id): array agent_id => {action,
+         * detail, status, created_at}. created_at convertito in RFC3339
+         * (ISO8601, fuso del sito) per il diff lato client.
+         *
+         * @param array $agent_ids Agent ID da considerare.
+         * @return array
+         */
+        private static function live_last_actions( $agent_ids ) {
+                global $wpdb;
+
+                $out = array();
+                $ids = array_values( array_filter( array_map( 'absint', (array) $agent_ids ) ) );
+                if ( empty( $ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return $out;
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( empty( $tables['activity_logs'] ) ) {
+                        return $out;
+                }
+                $table = $tables['activity_logs'];
+
+                $placeholders = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+                $sql          = "SELECT t.agent_id, t.action, t.detail, t.status, t.created_at"
+                        . " FROM {$table} AS t"
+                        . " INNER JOIN ("
+                        . " SELECT agent_id, MAX( id ) AS last_id FROM {$table}"
+                        . " WHERE agent_id IN ( {$placeholders} ) GROUP BY agent_id"
+                        . " ) AS m ON m.last_id = t.id";
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql, $ids ) );
+
+                if ( ! is_array( $rows ) ) {
+                        return $out;
+                }
+
+                foreach ( $rows as $row ) {
+                        $detail = trim( (string) ( isset( $row->detail ) ? $row->detail : '' ) );
+                        if ( function_exists( 'mb_substr' ) ) {
+                                $detail = mb_substr( $detail, 0, 200 );
+                        } else {
+                                $detail = substr( $detail, 0, 200 );
+                        }
+
+                        $created = (string) ( isset( $row->created_at ) ? $row->created_at : '' );
+                        if ( '' !== $created && function_exists( 'mysql_to_rfc3339' ) ) {
+                                $created = mysql_to_rfc3339( $created );
+                        }
+
+                        $out[ (int) $row->agent_id ] = array(
+                                'action'     => (string) $row->action,
+                                'detail'     => $detail,
+                                'status'     => (string) $row->status,
+                                'created_at' => $created,
+                        );
+                }
+                return $out;
+        }
+
+        /**
+         * Articoli creati oggi e run di oggi per agente con DUE query
+         * raggruppate (GROUP BY agent_id): array agent_id => {articles, runs}.
+         * Un run della pipeline parte sempre dalla raccolta: runs = righe di
+         * attività 'collecting' di oggi per agente (colonne reali:
+         * articles.agent_id + articles.created_at, activity_logs.action +
+         * activity_logs.created_at).
+         *
+         * @param array $agent_ids Agent ID da considerare.
+         * @return array
+         */
+        private static function live_today_counts( $agent_ids ) {
+                global $wpdb;
+
+                $out = array();
+                $ids = array_values( array_filter( array_map( 'absint', (array) $agent_ids ) ) );
+                if ( empty( $ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return $out;
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( empty( $tables['articles'] ) || empty( $tables['activity_logs'] ) ) {
+                        return $out;
+                }
+
+                $today_start  = substr( current_time( 'mysql' ), 0, 10 ) . ' 00:00:00';
+                $placeholders = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+                $args         = array_merge( $ids, array( $today_start ) );
+
+                $sql_articles = "SELECT agent_id, COUNT( * ) AS n FROM {$tables['articles']}"
+                        . " WHERE agent_id IN ( {$placeholders} ) AND created_at >= %s GROUP BY agent_id";
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql_articles, $args ) );
+                if ( is_array( $rows ) ) {
+                        foreach ( $rows as $row ) {
+                                $out[ (int) $row->agent_id ] = array(
+                                        'articles' => (int) $row->n,
+                                        'runs'     => 0,
+                                );
+                        }
+                }
+
+                $sql_runs = "SELECT agent_id, COUNT( * ) AS n FROM {$tables['activity_logs']}"
+                        . " WHERE agent_id IN ( {$placeholders} ) AND action = 'collecting' AND created_at >= %s GROUP BY agent_id";
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql_runs, $args ) );
+                if ( is_array( $rows ) ) {
+                        foreach ( $rows as $row ) {
+                                $aid = (int) $row->agent_id;
+                                if ( ! isset( $out[ $aid ] ) ) {
+                                        $out[ $aid ] = array(
+                                                'articles' => 0,
+                                                'runs'     => 0,
+                                        );
+                                }
+                                $out[ $aid ]['runs'] = (int) $row->n;
+                        }
+                }
+
+                return $out;
         }
 
         /* =========================================================================
@@ -2223,6 +2763,12 @@ class Nexus_Rest {
         /**
          * Esegue collect() o run_full() su un agente singolo o su tutti gli agenti attivi.
          *
+         * Dalla v1.1.5 usato solo da /pipeline/collect (l'handler di
+         * /pipeline/run gestisce in proprio gli avvii mirati §4.1). Al termine
+         * di una raccolta standalone rimuove lo stato runtime 'collect'
+         * impostato da Nexus_Pipeline::collect() (non essendo un run completo
+         * non c'è un finally che lo pulisca).
+         *
          * @param int    $agent_id ID agente, 0 = tutti gli agenti attivi.
          * @param string $method   'collect'|'run_full'.
          * @return WP_REST_Response|WP_Error
@@ -2264,6 +2810,14 @@ class Nexus_Rest {
                 foreach ( $results as $r ) {
                         if ( ! empty( $r['success'] ) ) {
                                 $ok++;
+                        }
+                }
+
+                // v1.1.5: raccolta standalone → nessun run completo che pulisce
+                // lo stato runtime: rimuovilo per ogni agente toccato.
+                if ( 'collect' === $method && is_callable( array( 'Nexus_Pipeline', 'clear_runtime' ) ) ) {
+                        foreach ( $targets as $agent ) {
+                                Nexus_Pipeline::clear_runtime( (int) $agent->id );
                         }
                 }
 

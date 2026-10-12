@@ -24,6 +24,7 @@
  *
  * v1.1.3: modal dettaglio mobile-safe (flex-start, dvh, overflow-wrap) e link "Vedi bozza WordPress" (wpViewLink).
  * v1.1.4: barra "Creazione rapida" con preset agenti (prefill + modal), editor con ruolo/provider AI/ambito capo redattore, badge e "Nota del capo redattore" in coda e dettaglio, bottone "Revisione capo redattore" (POST /chief/run/{id}) e flag settings capo/strumenti.
+ * v1.1.5: bottoni "Avvia" (agente/redazione/testata) sul POST pipeline/run esteso con toast riepilogo e blocco .nxa-run-summary, e pannello live "In redazione ora" in dashboard (#nxa-live-strip: GET /live con polling 5s solo a pagina visibile, 404 → strip nascosta in silenzio).
  *
  * @package Nexus_News_AI
  */
@@ -1492,7 +1493,11 @@
                         '</div>' +
                         // v1.0.7: riga azioni in contenitore flex wrap: i nuovi
                         // "Modifica"/"Clona" + il toggle di stato preesistente.
+                        // v1.1.5: "Avvia" (nxa-btn-run, data-run-agent) è il primo
+                        // bottone: azione primaria della card (POST pipeline/run
+                        // agent_id, handler delegato nella sezione AVVII MIRATI).
                         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                                '<button type="button" class="button nxa-btn-run" data-run-agent="' + esc( pick( agent, 'id' ) ) + '">▶ Avvia</button>' +
                                 '<button type="button" class="button nxa-agent-edit" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Modifica</button>' +
                                 '<button type="button" class="button nxa-agent-clone" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Clona</button>' +
                                 '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
@@ -2534,7 +2539,10 @@
                 //  — sezione "Provider AI per agente" e "Strumenti di ricerca"; le chiavi
                 //  prov_key_* e tools_search_key seguono il pattern solo-se-compilata
                 //  del blocco ai_api_key in fondo a questa funzione)
-                var simple = [ 'mode', 'site_name', 'site_tagline', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom' ];
+                // (v1.1.5: - site_name, site_tagline — la sezione "Identità del sito" è
+                //  stata rimossa: nome e tagline sono nativi WP, il magazine li legge da
+                //  bloginfo; la whitelist REST li conserva per retrocompatibilità)
+                var simple = [ 'mode', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom' ];
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -3175,7 +3183,12 @@
                 var toggle = hasChildren
                         ? '<button type="button" class="nxa-red-toggle" data-id="' + id + '" aria-expanded="true" aria-label="Mostra o nascondi le sub-redazioni">▾</button>'
                         : '';
+                // v1.1.5: "Avvia redazione" (nxa-btn-run, data-run-redazione) è
+                // il primo bottone della riga: lancia la pipeline per TUTTI gli
+                // agenti della redazione (POST pipeline/run redazione_id,
+                // handler delegato nella sezione AVVII MIRATI di admin.js).
                 var actions =
+                        '<button type="button" class="button-link nxa-btn-run" data-run-redazione="' + id + '">▶ Avvia redazione</button>' +
                         '<button type="button" class="button-link nxa-red-edit" data-id="' + id + '">Modifica</button>' +
                         '<button type="button" class="button-link nxa-red-del" data-id="' + id + '">Elimina</button>' +
                         ( slug ? '<button type="button" class="button-link nxa-red-view" data-slug="' + esc( slug ) + '">Archivio ↗</button>' : '' );
@@ -3702,6 +3715,587 @@
                         var agentId = num( cell.getAttribute( 'data-agent-id' ) );
                         cell.innerHTML = agentRedazioniChipsHtml( terms, agentId );
                 } );
+        }
+
+        /* ==================================================================
+         * 13-quater. AVVII MIRATI (v1.1.5)
+         * ==================================================================
+         *
+         * Bottoni "Avvia" (contratto v1.1.5 §5.1, endpoint esteso T-03 §4.1):
+         *  - [data-run-agent]     → POST pipeline/run { agent_id: id }
+         *    (card agente: agentCardHtml qui sopra + fallback noscript in
+         *    agents.php, dove il bottone resta disabilitato in sola lettura);
+         *  - [data-run-redazione] → POST pipeline/run { redazione_id: id }
+         *    (riga della pagina Redazioni: template redazioneRowHtml);
+         *  - [data-run-testata]   → POST pipeline/run { agent_id: 0 }
+         *    (dashboard "Avvia testata", window.confirm con N agenti).
+         *
+         * UN SOLO listener delegato su document con guardia di binding
+         * (stesso approccio della guardia redazioniBound): i bottoni vengono
+         * rigenerati dai re-render (loadAgents, loadRedazioniPage) senza mai
+         * duplicare i listener. Il bottone storico .nxa-run-pipeline resta
+         * intatto con il suo handler in loadDashboard.
+         *
+         * Risposta: shape §4.1 (results[] + summary) → toast "Avvio
+         * completato: N agenti · X raccolti · Y pubblicati · Z errori" e
+         * blocco .nxa-run-summary nella dashboard; results[] presente ma nel
+         * formato v1.1.4 (righe success/agent_name, summary assente) →
+         * riepilogo degradato onesto con riusciti e falliti; results[]
+         * assente → chiavi BC top-level, identiche a quelle del vecchio
+         * handler. Errori sempre in apiErrorToast; a fine run si ricaricano
+         * SOLO i dati della pagina corrente (RUN_REFRESH: funzioni dati dei
+         * LOADERS senza i bind, che duplicherebbero listener su nodi statici).
+         */
+
+        var runButtonsBound = false;
+
+        /** Mappa scope risposta §4.1 → etichetta IT del blocco riepilogo. */
+        function runScopeLabel( scope ) {
+                var map = {
+                        testata:   'Intera testata',
+                        redazione: 'Redazione',
+                        agent:     'Singolo agente',
+                        agents:    'Più agenti'
+                };
+                return map[ String( scope || '' ).toLowerCase() ] || 'Avvio';
+        }
+
+        /** Esito booleano di UNA riga results[]: accetta ok (§4.1) o success (v1.1.4). */
+        function runResultOk( r ) {
+                if ( ! r || typeof r !== 'object' ) {
+                        return false;
+                }
+                if ( r.ok === true ) {
+                        return true;
+                }
+                if ( r.ok === false ) {
+                        return false;
+                }
+                if ( r.success === true ) {
+                        return true;
+                }
+                if ( r.success === false ) {
+                        return false;
+                }
+                return true;
+        }
+
+        /** Testo errore di UNA riga: error (§4.1) o result stringato (v1.1.4). */
+        function runResultErrorText( r ) {
+                if ( ! r || typeof r !== 'object' ) {
+                        return '';
+                }
+                var e = String( pick( r, 'error' ) || '' );
+                if ( e ) {
+                        return e;
+                }
+                if ( r.success === false && r.result && typeof r.result === 'string' ) {
+                        return r.result;
+                }
+                return '';
+        }
+
+        /** Riga del blocco .nxa-run-summary: esito e contatori di UN agente. */
+        function runSummaryRowHtml( row ) {
+                var r = row || {};
+                var id = num( pick( r, 'agent_id', 'agentId' ) );
+                var name = String( pick( r, 'name' ) || pick( r, 'agent_name' ) || agentNameById( id ) || ( 'Agente #' + id ) );
+                var errorText = runResultErrorText( r );
+                var ok = runResultOk( r );
+                var hasCounts = pick( r, 'collected' ) !== undefined || pick( r, 'evaluated' ) !== undefined ||
+                        pick( r, 'rewritten' ) !== undefined || pick( r, 'published' ) !== undefined;
+                var stats = hasCounts
+                        ? ' <span class="nxa-run-summary-stats">Raccolti ' + fmt( pick( r, 'collected' ) ) +
+                                ' · Valutati ' + fmt( pick( r, 'evaluated' ) ) +
+                                ' · Riscritti ' + fmt( pick( r, 'rewritten' ) ) +
+                                ' · Pubblicati ' + fmt( pick( r, 'published' ) ) + '</span>'
+                        : '';
+                return '<div class="nxa-run-summary-row">' +
+                                '<strong>' + esc( name ) + '</strong> ' +
+                                ( ok
+                                        ? '<span class="nxa-badge nxa-badge--success">OK</span>'
+                                        : '<span class="nxa-badge nxa-badge--error">Errore</span>' ) +
+                                stats +
+                                ( errorText ? '<span class="nxa-run-summary-error">' + esc( errorText ) + '</span>' : '' ) +
+                        '</div>';
+        }
+
+        /**
+         * Blocco .nxa-run-summary con dettaglio per agente: dove ha senso,
+         * cioè nella dashboard (sezione attività). Le altre pagine si
+         * affidano al toast riepilogo; markup assente → exit silenzioso.
+         */
+        function renderRunSummaryBlock( data ) {
+                var section = qs( '.nxa-section-activity' );
+                if ( ! section || ! data || ! Array.isArray( data.results ) || ! data.results.length ) {
+                        return;
+                }
+                qsa( '.nxa-run-summary', section ).forEach( function ( old ) {
+                        if ( old.parentNode ) {
+                                old.parentNode.removeChild( old );
+                        }
+                } );
+                var html = '<div class="nxa-run-summary" role="status">' +
+                                '<p class="nxa-run-summary-title">Esito avvio — ' + esc( runScopeLabel( pick( data, 'scope' ) ) ) + '</p>' +
+                                data.results.map( runSummaryRowHtml ).join( '' ) +
+                        '</div>';
+                var heading = qs( 'h2', section );
+                if ( heading && heading.insertAdjacentHTML ) {
+                        heading.insertAdjacentHTML( 'afterend', html );
+                } else {
+                        section.insertAdjacentHTML( 'afterbegin', html );
+                }
+        }
+
+        /**
+         * Toast di esito. Tree di shape in ordine di preferenza, tutto
+         * difensivo: (1) §4.1 con summary o righe name/ok → riepilogo
+         * contrattuale (summary quando c'è, altrimenti ricalcolato dalle
+         * righe); (2) results[] formato v1.1.4 → riusciti e falliti; (3)
+         * results[] assente → chiavi BC del vecchio handler. results[]
+         * vuoto → messaggio onesto della risposta senza contatori a zero.
+         */
+        function announceRunOutcome( data ) {
+                var d = data || {};
+                var results = Array.isArray( d.results ) ? d.results : null;
+
+                if ( ! results ) {
+                        /* BC v1.1.4: nessuna results[], stesse chiavi del vecchio handler. */
+                        toast(
+                                'Raccolte: ' + num( pick( d, 'collected', 'collected_count' ) ) +
+                                ' · Valutate: ' + num( pick( d, 'evaluated', 'evaluated_count' ) ) +
+                                ' · Riscritte: ' + num( pick( d, 'rewritten', 'rewritten_count' ) ) +
+                                ' · Pubblicate: ' + num( pick( d, 'published', 'published_count' ) ),
+                                'success', 'Pipeline completata'
+                        );
+                        return;
+                }
+
+                if ( ! results.length ) {
+                        /* Redazione senza agenti (T-03: ok + messaggio chiaro). */
+                        toast( String( pick( d, 'message' ) || 'Nessun agente da avviare in questo ambito.' ), 'info', 'Avvio' );
+                        return;
+                }
+
+                var isNewShape = !!( d.summary && typeof d.summary === 'object' );
+                if ( ! isNewShape ) {
+                        for ( var i = 0; i < results.length; i++ ) {
+                                if ( results[ i ] && ( results[ i ].name !== undefined || results[ i ].ok !== undefined ) ) {
+                                        isNewShape = true;
+                                        break;
+                                }
+                        }
+                }
+
+                if ( isNewShape ) {
+                        var summary = ( d.summary && typeof d.summary === 'object' ) ? d.summary : null;
+                        var agents = summary ? num( pick( summary, 'agents' ) ) : results.length;
+                        var collected = 0;
+                        var published = 0;
+                        var errors = 0;
+                        if ( summary ) {
+                                collected = num( pick( summary, 'collected' ) );
+                                published = num( pick( summary, 'published' ) );
+                                errors = num( pick( summary, 'errors' ) );
+                        } else {
+                                results.forEach( function ( r ) {
+                                        collected += num( pick( r, 'collected' ) );
+                                        published += num( pick( r, 'published' ) );
+                                        if ( ! runResultOk( r ) ) {
+                                                errors++;
+                                        }
+                                } );
+                        }
+                        toast(
+                                'Avvio completato: ' + fmt( agents ) + ( agents === 1 ? ' agente' : ' agenti' ) +
+                                ' · ' + fmt( collected ) + ( collected === 1 ? ' raccolto' : ' raccolti' ) +
+                                ' · ' + fmt( published ) + ( published === 1 ? ' pubblicato' : ' pubblicati' ) +
+                                ' · ' + fmt( errors ) + ( errors === 1 ? ' errore' : ' errori' ),
+                                errors > 0 ? 'info' : 'success', 'Redazione al lavoro'
+                        );
+                        renderRunSummaryBlock( d );
+                        return;
+                }
+
+                /* results[] formato v1.1.4 (success/agent_name, senza contatori):
+                 * riepilogo degradato onesto con riusciti e falliti. */
+                var okCount = 0;
+                results.forEach( function ( r ) {
+                        if ( runResultOk( r ) ) {
+                                okCount++;
+                        }
+                } );
+                var errCount = results.length - okCount;
+                toast(
+                        'Avvio completato: ' + fmt( results.length ) + ( results.length === 1 ? ' agente' : ' agenti' ) +
+                        ' · ' + fmt( okCount ) + ( okCount === 1 ? ' riuscito' : ' riusciti' ) +
+                        ( errCount ? ' · ' + fmt( errCount ) + ( errCount === 1 ? ' fallito' : ' falliti' ) : '' ),
+                        errCount > 0 ? 'info' : 'success', 'Redazione al lavoro'
+                );
+                renderRunSummaryBlock( d );
+        }
+
+        /**
+         * Refresh dei SOLO dati della pagina corrente a fine run. Usa le
+         * funzioni dati invocate dai LOADERS SENZA rieseguire i bind:
+         * bindAgents/bindQueue/loadDashboard aggiungono listener su nodi
+         * statici (griglia, toolbar, form) e rieseguirli duplicherebbe i
+         * click handler. Pagine senza loader dati → nessun refresh.
+         */
+        var RUN_REFRESH = {
+                dashboard: function () { return refreshDashboardData(); },
+                agents: function () { return loadAgents( true ); },
+                queue: loadQueueList,
+                activity: loadActivity,
+                redazioni: loadRedazioniPage,
+                wire: loadWireRuns
+        };
+
+        function refreshCurrentPageData() {
+                var pageEl = qs( '.wrap.nexus-admin[data-page]' ) || qs( '[data-page]' );
+                var page = pageEl ? String( pageEl.getAttribute( 'data-page' ) || '' ).trim() : '';
+                var refresh = RUN_REFRESH[ page ];
+                if ( ! refresh ) {
+                        return Promise.resolve();
+                }
+                return Promise.resolve().then( refresh ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] refresh post-run "' + page + '":', err );
+                } );
+        }
+
+        /**
+         * POST pipeline/run condiviso dai tre bottoni: bottone .is-busy +
+         * spinner (setBtnLoading) durante l'attesa, esito in announceRunOutcome,
+         * errori in apiErrorToast, poi refresh dei dati della pagina corrente
+         * e hint immediato alla strip live. Mai eccezioni verso l'utente.
+         */
+        function runPipeline( body, btn, loadingLabel ) {
+                setBtnLoading( btn, true, loadingLabel || 'Avvio…' );
+                if ( btn.classList ) {
+                        btn.classList.add( 'is-busy' );
+                }
+                api( 'pipeline/run', { method: 'POST', body: body } ).then( function ( payload ) {
+                        announceRunOutcome( unwrap( payload ) || {} );
+                        refreshCurrentPageData();
+                        liveTickSoon();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Avvio non riuscito' );
+                } ).then( function () {
+                        setBtnLoading( btn, false );
+                        if ( btn.classList ) {
+                                btn.classList.remove( 'is-busy' );
+                        }
+                } );
+        }
+
+        /**
+         * N agenti per il confirm "Avvia testata": dal conteggio già caricato
+         * (cache pagina getAgents); cache vuota → una fetch; errore → 0 e la
+         * conferma usa il testo generico (l'azione non viene mai bloccata).
+         */
+        function testataAgentCount() {
+                if ( agentsCache.list && agentsCache.list.length ) {
+                        return Promise.resolve( agentsCache.list.length );
+                }
+                return getAgents( true ).then( function ( agents ) {
+                        return Array.isArray( agents ) ? agents.length : 0;
+                } ).catch( function () {
+                        return 0;
+                } );
+        }
+
+        /**
+         * Binding delegato singolo dei bottoni Avvia (chiamato a fine sezione:
+         * listener su document, non dipende dal DOM già pronto). Il ramo
+         * testata chiede conferma PRIMA di qualsiasi richiesta; N arriva
+         * dalla cache agenti se già caricata, altrimenti da una fetch.
+         */
+        function bindRunButtons() {
+                if ( runButtonsBound ) {
+                        return;
+                }
+                runButtonsBound = true;
+                document.addEventListener( 'click', function ( ev ) {
+                        var btn = ( ev.target && ev.target.closest )
+                                ? ev.target.closest( '[data-run-agent],[data-run-redazione],[data-run-testata]' )
+                                : null;
+                        if ( ! btn || btn.disabled ) {
+                                return;
+                        }
+                        var agentId = num( btn.getAttribute( 'data-run-agent' ) );
+                        if ( agentId > 0 ) {
+                                runPipeline( { agent_id: agentId }, btn, 'Avvio…' );
+                                return;
+                        }
+                        var redazioneId = num( btn.getAttribute( 'data-run-redazione' ) );
+                        if ( redazioneId > 0 ) {
+                                runPipeline( { redazione_id: redazioneId }, btn, 'Avvio redazione…' );
+                                return;
+                        }
+                        if ( btn.getAttribute( 'data-run-testata' ) !== null ) {
+                                testataAgentCount().then( function ( count ) {
+                                        var message = count > 0
+                                                ? 'Avviare l’intera testata? Verranno avviati ' + fmt( count ) + ' agenti.'
+                                                : 'Avviare l’intera testata? Verranno avviati tutti gli agenti.';
+                                        if ( ! window.confirm( message ) ) {
+                                                return;
+                                        }
+                                        runPipeline( { agent_id: 0 }, btn, 'Testata in corso…' );
+                                } );
+                        }
+                } );
+        }
+
+        bindRunButtons();
+
+        /* ==================================================================
+         * 13-quinquies. LIVE REDAZIONALE (v1.1.5)
+         * ==================================================================
+         *
+         * Pannello "In redazione ora" (#nxa-live-strip, markup T-04 nella
+         * dashboard): GET /live (contratto T-03 §4.3, shape FROZEN) al
+         * caricamento e polling ogni 5 secondi SOLO con la dashboard visibile.
+         *  - pausa su visibilitychange hidden, ripresa su visible;
+         *  - MAI polling da altre pagine: l'init esce subito se la strip non
+         *    esiste (la dashboard è l'unica pagina che la contiene);
+         *  - rendering difensivo: ogni campo mancante degrada a testo onesto
+         *    ("In attesa di avvio", "Ultima azione: …"), mai eccezioni;
+         *  - /live 404 (plugin v1.1.4) → strip nascosta in silenzio e polling
+         *    fermato: la route non apparirà a caldo, inutile insistere;
+         *  - altri errori → riga discreta nella strip, MAI toast (il polling
+         *    ogni 5 secondi non deve fare spam di notifiche).
+         *
+         * Classi consumate dal CSS (T-01): .nxa-live-strip, .nxa-live-agent,
+         * .nxa-live-dot (+ --running|--paused|--error|--idle), .nxa-live-step,
+         * .nxa-live-last, .nxa-live-updated.
+         */
+
+        var LIVE_POLL_MS = 5000;
+        var liveTimer = null;
+        var liveInFlight = false;
+        var liveStopped = false;
+        var liveBound = false;
+
+        function liveStripEl() {
+                return qs( '#nxa-live-strip' );
+        }
+
+        /** Variante del pallino da running/status (running prima di tutto). */
+        function liveDotVariant( agent ) {
+                var a = agent || {};
+                if ( a.running ) {
+                        return 'nxa-live-dot--running';
+                }
+                var status = String( pick( a, 'status' ) || '' ).toLowerCase();
+                if ( status === 'paused' ) {
+                        return 'nxa-live-dot--paused';
+                }
+                if ( status === 'error' ) {
+                        return 'nxa-live-dot--error';
+                }
+                return 'nxa-live-dot--idle';
+        }
+
+        /** Fase corrente: current.label + titolo articolo, altrimenti attesa. */
+        function liveStepText( agent ) {
+                var current = ( agent && agent.current && typeof agent.current === 'object' ) ? agent.current : null;
+                if ( ! current ) {
+                        return 'In attesa di avvio';
+                }
+                var label = String( pick( current, 'label' ) || '' );
+                var title = String( pick( current, 'article_title', 'articleTitle' ) || '' );
+                if ( label && title ) {
+                        return label + ' — ' + title;
+                }
+                return label || title || 'In attesa di avvio';
+        }
+
+        /** Ultima azione con tempo umano it-IT (riusa timeAgoIt del file). */
+        function liveLastText( agent ) {
+                var last = ( agent && agent.last_action && typeof agent.last_action === 'object' ) ? agent.last_action : null;
+                if ( ! last ) {
+                        return '';
+                }
+                var detail = String( pick( last, 'detail' ) || '' ).trim();
+                var when = String( timeAgoIt( pick( last, 'created_at', 'createdAt' ) ) );
+                var hasWhen = when && when !== 'Mai';
+                if ( detail && hasWhen ) {
+                        return detail + ' · ' + when;
+                }
+                if ( detail ) {
+                        return detail;
+                }
+                return hasWhen ? 'Ultima azione: ' + when : '';
+        }
+
+        /** "HH:MM" dall'ISO della risposta (fallback: adesso), it-IT. */
+        function liveClock( iso ) {
+                var date = iso ? new Date( String( iso ).replace( ' ', 'T' ) ) : new Date();
+                if ( isNaN( date.getTime() ) ) {
+                        date = new Date();
+                }
+                try {
+                        return date.toLocaleTimeString( 'it-IT', { hour: '2-digit', minute: '2-digit' } );
+                } catch ( e ) {
+                        var hh = date.getHours();
+                        var mm = date.getMinutes();
+                        return ( hh < 10 ? '0' : '' ) + hh + ':' + ( mm < 10 ? '0' : '' ) + mm;
+                }
+        }
+
+        /** Riga agente della strip (difensiva: campi mancanti → default). */
+        function liveAgentRowHtml( agent ) {
+                var a = agent || {};
+                var avatar = String( pick( a, 'avatar' ) || '🤖' );
+                var name = String( pick( a, 'name' ) || ( 'Agente #' + num( pick( a, 'id' ) ) ) );
+                var last = liveLastText( a );
+                return '<div class="nxa-live-agent">' +
+                                '<span class="nxa-live-dot ' + liveDotVariant( a ) + '" aria-hidden="true"></span>' +
+                                '<span class="nxa-live-avatar" aria-hidden="true">' + esc( avatar ) + '</span>' +
+                                '<strong class="nxa-live-name">' + esc( name ) + '</strong>' +
+                                '<span class="nxa-live-step">' + esc( liveStepText( a ) ) + '</span>' +
+                                ( last ? '<span class="nxa-live-last">' + esc( last ) + '</span>' : '' ) +
+                        '</div>';
+        }
+
+        /**
+         * Render della strip: intestazione .nxa-live-updated ("In redazione
+         * ora: N agenti al lavoro · aggiornato alle HH:MM", N calcolato dai
+         * dati renderizzati, fallback testata.running) + riga per agente,
+         * oppure stato vuoto onesto a zero agenti.
+         */
+        function renderLiveStrip( data ) {
+                var strip = liveStripEl();
+                if ( ! strip ) {
+                        return;
+                }
+                var d = unwrap( data ) || {};
+                var agents = Array.isArray( d.agents ) ? d.agents : [];
+                var runningCount = 0;
+                agents.forEach( function ( a ) {
+                        if ( a && a.running ) {
+                                runningCount++;
+                        }
+                } );
+                var testata = ( d.testata && typeof d.testata === 'object' ) ? d.testata : null;
+                if ( ! agents.length && testata && pick( testata, 'running' ) !== undefined ) {
+                        runningCount = num( pick( testata, 'running' ) );
+                }
+                var html = '<p class="nxa-live-updated">In redazione ora: ' + fmt( runningCount ) +
+                        ( runningCount === 1 ? ' agente al lavoro' : ' agenti al lavoro' ) +
+                        ' · aggiornato alle ' + esc( liveClock( pick( d, 'updated_at', 'updatedAt' ) ) ) + '</p>';
+                html += agents.length
+                        ? agents.map( liveAgentRowHtml ).join( '' )
+                        : emptyState( '🤖', 'Nessun agente configurato', 'Crea gli agenti dalla pagina Agenti per vedere la redazione al lavoro.' );
+                strip.hidden = false;
+                strip.innerHTML = html;
+        }
+
+        /** Nasconde la strip (endpoint assente): nessun titolo orfano resta. */
+        function hideLiveStrip() {
+                var strip = liveStripEl();
+                if ( strip ) {
+                        strip.hidden = true;
+                        strip.innerHTML = '';
+                }
+        }
+
+        function stopLivePolling() {
+                if ( liveTimer ) {
+                        window.clearInterval( liveTimer );
+                        liveTimer = null;
+                }
+        }
+
+        /**
+         * Una lettura /live: guardie anti-sovrapposizione (liveInFlight),
+         * anti-polling a tab nascosta (document.hidden) e anti-polling dopo
+         * lo stop (liveStopped). Errori gestiti in handleLiveError.
+         */
+        function liveTick() {
+                if ( liveInFlight || liveStopped || document.hidden ) {
+                        return;
+                }
+                var strip = liveStripEl();
+                if ( ! strip ) {
+                        liveStopped = true;
+                        stopLivePolling();
+                        return;
+                }
+                liveInFlight = true;
+                api( 'live' ).then( function ( payload ) {
+                        liveInFlight = false;
+                        renderLiveStrip( payload );
+                } ).catch( function ( err ) {
+                        liveInFlight = false;
+                        handleLiveError( err );
+                } );
+        }
+
+        /** Hint post-run: una lettura immediata della strip, se è attiva. */
+        function liveTickSoon() {
+                if ( ! liveStopped && liveStripEl() ) {
+                        liveTick();
+                }
+        }
+
+        function handleLiveError( err ) {
+                if ( err && err.status === 404 ) {
+                        liveStopped = true;
+                        stopLivePolling();
+                        hideLiveStrip();
+                        window.console.warn( '[Nexus] live: endpoint /live non disponibile, pannello nascosto.' );
+                        return;
+                }
+                var strip = liveStripEl();
+                if ( ! strip ) {
+                        return;
+                }
+                strip.innerHTML = '<p class="nxa-live-updated">In redazione ora: stato non disponibile (' +
+                        esc( ( err && err.message ) ? err.message : 'errore di rete' ) + ')</p>';
+        }
+
+        function startLivePolling() {
+                if ( liveTimer || liveStopped ) {
+                        return;
+                }
+                liveTick(); // prima lettura immediata
+                liveTimer = window.setInterval( liveTick, LIVE_POLL_MS );
+        }
+
+        function onLiveVisibility() {
+                if ( document.hidden ) {
+                        stopLivePolling(); // pausa: zero richieste a tab nascosta
+                } else if ( ! liveStopped && liveStripEl() ) {
+                        startLivePolling(); // ripresa immediata al ritorno
+                }
+        }
+
+        /**
+         * Init del pannello live: SOLO se #nxa-live-strip esiste (dashboard).
+         * Guardia doppia (liveBound + attributo data-nxa-live) contro doppie
+         * init; visibilitychange è registrato SOLO qui, quindi le altre
+         * pagine non hanno nessun listener e nessun timer.
+         */
+        function initLiveRedazionale() {
+                var strip = liveStripEl();
+                if ( ! strip || liveBound ) {
+                        return;
+                }
+                liveBound = true;
+                strip.setAttribute( 'data-nxa-live', 'on' );
+                showSkeleton( strip, 2 ); // copre la prima fetch
+                document.addEventListener( 'visibilitychange', onLiveVisibility );
+                startLivePolling();
+        }
+
+        /* Boot locale del pannello live: stesso dual-path del boot principale
+         * (il listener DOMContentLoaded è registrato dopo quello del boot e
+         * parte quindi dopo; script già oltre "loading" → init immediato). */
+        if ( document.readyState === 'loading' ) {
+                document.addEventListener( 'DOMContentLoaded', initLiveRedazionale );
+        } else {
+                initLiveRedazionale();
         }
 
         /* ==================================================================

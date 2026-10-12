@@ -81,13 +81,28 @@
  * alla lista Articoli. Guard class_exists: senza la classe fondamenta la
  * card non viene stampata (degradazione senza fatal).
  *
+ * v1.1.5 — Contratto "Respira" (T-04): nella toolbar arriva il bottone
+ * "Avvia testata" (classe nxa-btn-run, data-run-testata="1") che avvia
+ * l'intera testata con POST pipeline/run {agent_id:0} dopo window.confirm in
+ * italiano ("Avviare l'intera testata? Verranno avviati N agenti."); dentro
+ * la sezione nxa-section-activity il contenitore vuoto #nxa-live-strip ospita
+ * il pannello live "In redazione ora" renderizzato da admin.js (GET /live +
+ * polling 5 secondi solo con la pagina visibile; endpoint assente → strip
+ * nascosta in silenzio, nessun titolo orfano). Il bottone storico
+ * .nxa-run-pipeline e il feed #nxa-activity-feed restano intatti.
+ *
  * @package Nexus_News_AI
  */
 
 defined( 'ABSPATH' ) || exit;
 
 $nexus_settings = Nexus_DB::get_settings();
-$nexus_tagline  = isset( $nexus_settings['site_tagline'] ) ? $nexus_settings['site_tagline'] : '';
+// v1.1.5: tagline WP nativa (blogdescription) — la sezione "Identità del sito" è
+// stata rimossa dalle impostazioni; fallback BC al vecchio setting se WP è vuoto.
+$nexus_tagline  = trim( (string) get_bloginfo( 'description' ) );
+if ( '' === $nexus_tagline ) {
+        $nexus_tagline = isset( $nexus_settings['site_tagline'] ) ? (string) $nexus_settings['site_tagline'] : '';
+}
 
 /*
  * v1.1.0 (T-06) — Contenuti nativi: primo numero = articoli Nexus collegati
@@ -194,6 +209,10 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
 
         <div class="nxa-toolbar">
                 <button type="button" class="nxa-btn nxa-btn-primary nxa-run-pipeline"><?php echo esc_html__( 'Esegui pipeline completa', 'nexus-news-ai' ); ?></button>
+                <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
+                     (sezione AVVII MIRATI): window.confirm con il numero di agenti già
+                     caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1). -->
+                <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia testata', 'nexus-news-ai' ); ?></button>
                 <button type="button" class="nxa-btn nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
                 <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
                 <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
@@ -331,6 +350,12 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
 
         <div class="nxa-section nxa-section-activity">
                 <h2><?php echo esc_html__( 'Feed attività', 'nexus-news-ai' ); ?></h2>
+                <!-- v1.1.5 (T-04): pannello live "In redazione ora" (contratto §5.2).
+                     Contenitore vuoto: intestazione .nxa-live-updated e righe
+                     .nxa-live-agent sono renderizzate da admin.js (GET /live + polling
+                     5s solo con la dashboard visibile; endpoint assente → la strip
+                     viene nascosta in silenzio, senza lasciare titoli orfani). -->
+                <div id="nxa-live-strip" class="nxa-live-strip"></div>
                 <div id="nxa-activity-feed" class="nxa-activity-feed">
                         <p class="screen-reader-text"><?php echo esc_html__( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
                         <div class="nxa-skeleton"></div>

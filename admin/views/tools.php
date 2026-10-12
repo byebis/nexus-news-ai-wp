@@ -32,6 +32,13 @@
  * (v1.1.0 §2 T-03) e consuma i selettori fissi elencati nel CONTRATTO DOM sotto.
  * La card non si renderizza se Nexus_Native non esiste (guard difensiva PHP).
  *
+ * CONTRATTO v1.1.5 ("Respira", CONTRATTO-v1.1.5.md §6 T-05): sgrassata delle
+ * superfici annidate — dentro le card di sezione, .nxa-tools-defs e
+ * .nxa-tools-tablewrap non disegnano più una box dentro la box (niente bordo,
+ * raggio o sfondo duplicati rispetto alla sezione che le contiene): restano
+ * come griglia di definizione e contenimento scroll orizzontale. Nessun id,
+ * data-*, classe o selettore rinominato o rimosso; markup e script invariati.
+ *
  * CONTRATTO REST (rotte definite nel §2 T-03, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/export        → { version, exported_at, site_url, settings, agents }
  *                                  ATTENZIONE: il file esportato contiene segreti
@@ -415,12 +422,11 @@ $queue_rows = array(
   }
 
   /* Griglia di definizione (Ambiente, Coda lavori): etichette muted a sinistra,
-     valori con cifre tabulari allineati a destra in colonna. */
+     valori con cifre tabulari allineati a destra in colonna. v1.1.5 "respira":
+     dentro la card di sezione la lista non raddoppia il contenitore (niente
+     bordo, raggio o sfondo annidati); separano le righe le loro hairline. */
   .nxa-tools-defs {
     margin: 0 0 8px;
-    border: 1px solid var(--nxa-border);
-    border-radius: var(--nxa-radius-sm);
-    background: var(--nxa-surface);
   }
 
   .nxa-tools-def {
@@ -455,13 +461,12 @@ $queue_rows = array(
     word-break: break-word;
   }
 
-  /* Tabelle (Tabelle database, Eventi WP-Cron): card con bordo token, intestazioni
-     leggibili, righe hover. */
+  /* Tabelle (Tabelle database, Eventi WP-Cron): intestazioni leggibili, righe
+     hover. v1.1.5 "respira": il wrapper resta solo come contenimento scroll
+     orizzontale su mobile e non disegna una card dentro la card di sezione
+     (niente bordo, raggio o sfondo annidati). */
   .nxa-tools-tablewrap {
     margin: 0 0 8px;
-    border: 1px solid var(--nxa-border);
-    border-radius: var(--nxa-radius-sm);
-    background: var(--nxa-surface);
     overflow: auto;
   }
 

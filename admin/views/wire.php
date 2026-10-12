@@ -34,37 +34,45 @@
  * condivisa max-width:100% di T-04. Nessun id, data-* e selettore consumato
  * da admin.js modificato; nessuno style inline nuovo.
  *
+ * v1.1.5 — pass "respira" (CONTRATTO-v1.1.5.md §6 T-05): launcher e storico
+ * sono separati da una hairline (hr.nxa-hairline, stile a cura di T-01) per
+ * dare respiro tra le due sezioni. Nessun wrapper rimosso: la vista non
+ * contiene box annidati; nessun id, data-* o selettore consumato da admin.js
+ * modificato.
+ *
  * @package Nexus_News_AI
  */
 
 defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap nexus-admin" data-page="wire">
-	<h1><?php esc_html_e( 'Nexus Wire', 'nexus-news-ai' ); ?></h1>
+        <h1><?php esc_html_e( 'Nexus Wire', 'nexus-news-ai' ); ?></h1>
 
-	<p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva multi-agente: tre agenti propongono i loro angoli editoriali su un tema e il direttore AI fonde tutto in un articolo.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva multi-agente: tre agenti propongono i loro angoli editoriali su un tema e il direttore AI fonde tutto in un articolo.', 'nexus-news-ai' ); ?></p>
 
-	<form id="nxa-wire-form" class="nxa-wire-form">
-		<label class="screen-reader-text" for="nxa-wire-topic"><?php esc_html_e( 'Tema da sviluppare', 'nexus-news-ai' ); ?></label>
-		<input type="text" id="nxa-wire-topic" name="topic" class="nxa-wire-topic regular-text" maxlength="200" autocomplete="off" placeholder="<?php esc_attr_e( "Tema da sviluppare (es. l'impatto dell'AI sulle notizie elettorali)", 'nexus-news-ai' ); ?>" />
-		<button type="submit" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Avvia redazione collettiva', 'nexus-news-ai' ); ?></button>
-	</form>
+        <form id="nxa-wire-form" class="nxa-wire-form">
+                <label class="screen-reader-text" for="nxa-wire-topic"><?php esc_html_e( 'Tema da sviluppare', 'nexus-news-ai' ); ?></label>
+                <input type="text" id="nxa-wire-topic" name="topic" class="nxa-wire-topic regular-text" maxlength="200" autocomplete="off" placeholder="<?php esc_attr_e( "Tema da sviluppare (es. l'impatto dell'AI sulle notizie elettorali)", 'nexus-news-ai' ); ?>" />
+                <button type="submit" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Avvia redazione collettiva', 'nexus-news-ai' ); ?></button>
+        </form>
 
-	<h2><?php esc_html_e( 'Storico delle redazioni collettive', 'nexus-news-ai' ); ?></h2>
+        <hr class="nxa-hairline" />
 
-	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
-	<div id="nxa-wire-runs" class="nxa-wire-runs nxa-table-wrap" aria-live="polite" aria-busy="true">
-		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento dello storico…', 'nexus-news-ai' ); ?></p>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-	</div>
+        <h2><?php esc_html_e( 'Storico delle redazioni collettive', 'nexus-news-ai' ); ?></h2>
 
-	<noscript>
-		<div class="nxa-empty">
-			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
-			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
-			<p><?php esc_html_e( 'Attiva JavaScript per avviare la redazione collettiva e visualizzare lo storico.', 'nexus-news-ai' ); ?></p>
-		</div>
-	</noscript>
+        <!-- SKELETON: righe statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
+        <div id="nxa-wire-runs" class="nxa-wire-runs nxa-table-wrap" aria-live="polite" aria-busy="true">
+                <p class="screen-reader-text"><?php esc_html_e( 'Caricamento dello storico…', 'nexus-news-ai' ); ?></p>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+        </div>
+
+        <noscript>
+                <div class="nxa-empty">
+                        <span class="dashicons dashicons-warning" aria-hidden="true"></span>
+                        <p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+                        <p><?php esc_html_e( 'Attiva JavaScript per avviare la redazione collettiva e visualizzare lo storico.', 'nexus-news-ai' ); ?></p>
+                </div>
+        </noscript>
 </div>
