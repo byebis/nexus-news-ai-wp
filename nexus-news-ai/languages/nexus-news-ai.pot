@@ -1,0 +1,811 @@
+# Copyright (C) 2026 byebis
+# This file is distributed under the MIT License.
+msgid ""
+msgstr ""
+"Project-Id-Version: Nexus News AI 1.1.7\n"
+"Report-Msgid-Bugs-To: https://github.com/byebis/nexus-news-ai/issues\n"
+"POT-Creation-Date: 2026-01-01 00:00+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: ITALIANO <LL@li.org>\n"
+"Language: it_IT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Domain: nexus-news-ai\n"
+
+#: admin/views/dashboard.php admin/class-nexus-admin.php
+msgid "Dashboard"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Coda di approvazione"
+msgstr ""
+
+#: admin/views/agents.php
+msgid "Agenti giornalisti"
+msgstr ""
+
+#: admin/views/activity.php
+msgid "Attività"
+msgstr ""
+
+#: admin/views/wire.php
+msgid "Nexus Wire — Redazione collettiva"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Impostazioni"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Esegui pipeline completa"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Approva"
+msgstr ""
+
+#: admin/views/queue.php
+msgid "Rifiuta"
+msgstr ""
+
+#: admin/views/wire.php
+msgid "Avvia Nexus Wire"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Raccolta notizie"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Valutazione"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Riscrittura AI"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "Pubblicazione multi-piattaforma"
+msgstr ""
+
+#: includes/class-nexus-publisher.php
+msgid "Pubblicato"
+msgstr ""
+
+#: includes/class-nexus-pipeline.php
+msgid "In attesa"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave AI (OpenRouter-compatible)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modalità semi-autonoma"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modalità completamente autonoma"
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Leggi l'articolo"
+msgstr ""
+
+# v1.0.1 — Pubblicazione WordPress & SEO
+#: admin/views/settings.php
+msgid "Pubblicazione WordPress & SEO"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblica come post WordPress reali (CPT nexus_article)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Stato dei post creati"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Genera immagini in evidenza con l'AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modello immagini (vuoto = default)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Dimensione immagini"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ottimizzazione SEO"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Genera meta title/description con l'AI"
+msgstr ""
+
+#: admin/views/dashboard.php admin/views/queue.php
+msgid "Post WP"
+msgstr ""
+
+#: includes/class-nexus-cpt.php
+msgid "Redazione AI"
+msgstr ""
+
+# v1.0.2 — Distribuzione reale (settings social/newsletter/ping + shortcode [nexus_subscribe])
+#: admin/views/settings.php
+msgid "Distribuzione sociale"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Newsletter"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Indicizzazione"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Iscriviti alla newsletter"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Email"
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Grazie! Controlla la tua casella email per confermare l'iscrizione."
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Sei già iscritto."
+msgstr ""
+
+#: includes/class-nexus-newsletter.php
+msgid "Digest Nexus"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "IndexNow (Bing e altri)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "WebSub (PubSubHubbub)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Token del bot Telegram da @BotFather"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Webhook Discord"
+msgstr ""
+
+# v1.0.3 — Redazione intelligente (settings, dashboard, traduzioni, fact-check)
+#: admin/views/settings.php
+msgid "Redazione intelligente"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Modello economico (screening)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Fact-check automatico con citazioni"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Soglia minima fact-check (0-100)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Budget mensile AI (USD)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quando il budget è esaurito"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Traduzioni AI degli articoli"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lingue di traduzione"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Uso AI"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Costo stimato"
+msgstr ""
+
+#: assets/js/admin.js
+msgid "Traduzione completata"
+msgstr ""
+
+#: includes/class-nexus-publisher.php templates/single-nexus_article.php public/class-nexus-shortcodes.php
+msgid "Fonti verificate"
+msgstr ""
+
+# v1.1.0 — Tutto nativo (utenti bot degli agenti, ruolo nexus_ai_journalist)
+#: includes/class-nexus-native.php
+msgid "Giornalista AI"
+msgstr ""
+
+# v1.1.1 — Redazioni gerarchiche (tassonomia, viste admin, REST, capabilities, shortcode)
+#: includes/class-nexus-redazioni.php admin/class-nexus-admin.php admin/views/redazioni.php admin/views/dashboard.php
+msgid "Redazioni"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Redazione"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Cerca redazioni"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Tutte le redazioni"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php admin/views/redazioni.php
+msgid "Redazione madre"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Redazione madre:"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Modifica redazione"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Aggiorna redazione"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Aggiungi redazione"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Nome nuova redazione"
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Nessuna redazione trovata."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Agenti giornalisti assegnati alla redazione."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Nome redazione mancante o tassonomia non attiva."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php includes/class-nexus-rest.php
+msgid "Redazione madre non trovata."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Creazione redazione non riuscita."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Organizza la testata in redazioni gerarchiche: una redazione madre può contenere sub-redazioni (es. Sport → Calcio, Basket, F1) e ogni redazione ha i suoi agenti assegnati. Ogni redazione ha anche un archivio pubblico con il tema attivo."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "JavaScript è disattivato: la gestione delle redazioni richiede JavaScript (form e albero sono riempiti via REST)."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Nome redazione"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Es. Redazione Sport, Redazione Calcio."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Slug (opzionale)"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Vuoto = slug generato dal nome."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Lascia la prima voce per una redazione di primo livello; scegli una redazione madre per annidare una sub-redazione (es. Calcio dentro Sport)."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Agenti assegnati"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Segna gli agenti che lavorano in questa redazione: la lista delle caselle è riempita da admin.js."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Crea redazione"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Annulla"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Nessuna redazione"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Crea la prima redazione con il form accanto: potrai annidarvi sub-redazioni e assegnare gli agenti (es. Sport con Calcio, Basket e F1)."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Caricamento redazioni…"
+msgstr ""
+
+#: admin/views/agents.php
+msgid "Redazioni:"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Agenti assegnati: %s"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Crea la prima redazione dalla pagina Redazioni."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "%s articolo"
+msgid_plural "%s articoli"
+msgstr[0] ""
+msgstr[1] ""
+
+#: admin/views/dashboard.php
+msgid "Agente #%d"
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il nome della redazione è obbligatorio."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Redazione non trovata."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il nome della redazione non può essere vuoto."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Una redazione non può essere madre di se stessa."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "La redazione madre scelta è una sub-redazione di questa: lo spostamento creerebbe un ciclo."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Nessun campo da aggiornare."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Eliminazione della redazione non riuscita."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Redazione \"%1$s\" eliminata. Le %2$d sub-redazioni sono state riassegnate da WordPress alla redazione madre precedente (o al primo livello se non esisteva); gli articoli hanno perso solo questo termine e mantengono le altre redazioni assegnate."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Redazione \"%s\" eliminata. Gli articoli hanno perso solo questo termine e mantengono le altre redazioni assegnate."
+msgstr ""
+
+#: includes/class-nexus-caps.php
+msgid "Redazione assegnata"
+msgstr ""
+
+#: includes/class-nexus-caps.php
+msgid "(tutte — nessuna restrizione)"
+msgstr ""
+
+#: includes/class-nexus-caps.php
+msgid "L'utente edita solo gli articoli della redazione scelta e delle sue sub-redazioni (esempio: Redazione Sport include Calcio, Basket e F1). Solo un amministratore puo' modificare questo campo."
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Redazione non trovata: %s"
+msgstr ""
+
+# v1.1.2 — Multilingua nativo (traduzioni come post WP collegati: translate, REST multilang, switcher, settings, dashboard)
+#: includes/class-nexus-translate.php
+msgid "Articolo o lingua non validi."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Servizio multilingua non disponibile al momento."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "L'articolo non ha un post WordPress nativo: pubblica o migra l'articolo prima."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "L'articolo è già in questa lingua."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Traduzione non riuscita: titolo tradotto mancante."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito: ambiente WordPress incompleto."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito: %s"
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Aggiornamento del post tradotto non riuscito."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita: ambiente WordPress incompleto."
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita: %s"
+msgstr ""
+
+#: includes/class-nexus-translate.php
+msgid "Pubblicazione del post tradotto non riuscita."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo multilingua non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro lang mancante o non valido."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo traduzioni non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo traduzioni non ha restituito un risultato valido."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Traduzione non riuscita per un motivo non specificato dal modulo traduzioni."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "L'articolo non ha ancora un post WordPress nativo: pubblicalo per attivare le traduzioni come post."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo multilingua non è disponibile: impossibile elencare le traduzioni collegate."
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Lingua non trovata: %s"
+msgstr ""
+
+#: public/class-nexus-shortcodes.php
+msgid "Traduzione non disponibile"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "predefinita"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Polylang è attivo: le associazioni tra lingue usano Polylang."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "WPML è attivo: le associazioni tra lingue usano WPML."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Collegamento interno Nexus: nessun plugin di lingua attivo (compatibile con Polylang e WPML se li installerai)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Il modulo multilingua non risulta caricato: stato non verificabile."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nessuna lingua attiva rilevata."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Elenco non disponibile: il modulo multilingua non risulta caricato."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Multilingua — post tradotti nativi"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Driver di lingua"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lingue del sito"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Traduzioni come post"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblica automaticamente le traduzioni come post"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Al publish di un articolo, per ogni lingua attiva viene creato il post tradotto collegato (traduzioni AI attive richieste)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nota"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "I post tradotti restano contenuti nativi di WordPress: sopravvivono al plugin. Le associazioni lingua con Polylang o WPML si gestiscono dalle loro interfacce."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Collegamento interno Nexus."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Associazioni gestite da Polylang."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Associazioni gestite da WPML."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Multilingua"
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Nessun post tradotto ancora."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "Apri la lista Articoli."
+msgstr ""
+
+#: admin/views/dashboard.php
+msgid "%1$s — %2$s articolo"
+msgid_plural "%1$s — %2$s articoli"
+msgstr[0] ""
+msgstr[1] ""
+
+# v1.1.4 — Redazione completa (capo redattore AI, provider per agente, strumenti di ricerca)
+#: admin/views/settings.php
+msgid "Provider AI per agente"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "URL base del provider Personalizzato"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ogni agente può scegliere provider e modello nella pagina Agenti; senza chiave qui il provider non è selezionabile. Il provider globale (sopra) resta il fallback."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Capo redattore AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Attiva il capo redattore AI"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Il giornalista AI scrive l'articolo e il capo redattore AI lo legge: lo approva, lo modifica, richiede una revisione o lo rifiuta. Con gli strumenti di ricerca attivi il capo verifica anche le fonti online. L'umano resta sempre sovrano: può approvare o rifiutare dalla coda come oggi."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Pubblicazione automatica dopo approvazione del capo redattore"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Deselezionato = human-in-the-loop: l'articolo resta in bozza con il badge del capo redattore e l'approvazione resta a te."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Giri massimi di revisione (1-5)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quante volte il capo può richiedere una revisione al giornalista AI prima di lasciare l'articolo all'umano (predefinito 2)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Agente capo redattore (0 = automatico)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "ID dell'agente con ruolo capo redattore da usare sempre. 0 = automatico: viene scelto il primo capo redattore attivo."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Strumenti di ricerca per gli agenti"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Strumenti di ricerca"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Attiva gli strumenti di ricerca per gli agenti"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Ricerca web, lettura pagine, scoperta feed RSS e client MCP: gli agenti li usano per raccogliere fonti durante la raccolta e il capo redattore per verificare le notizie."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Provider di ricerca web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Tavily"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Serper"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Brave"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Nessuno"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Servizio usato per cercare notizie online. Nessuno disattiva la ricerca web (lettura pagine e client MCP restano disponibili)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave API del provider di ricerca"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Chiave del servizio di ricerca scelto (Tavily, Serper o Brave). Salvata nel database del sito, mai mostrata in chiaro."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Risultati per ricerca (1-10)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Numero massimo di risultati restituiti da ogni ricerca web (predefinito 5)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Lettura pagine web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Consenti lettura pagine web"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Gli agenti possono aprire le pagine trovate dalla ricerca (o indicate nei prompt) per leggerne il testo completo."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Caratteri massimi per pagina (500-20000)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Testo massimo estratto da ogni pagina web letta da un agente (predefinito 6000)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Giri di strumenti per risposta (0-6)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Quante volte l'AI può usare uno strumento in fila prima della risposta finale. 0 = loop disattivato (predefinito 3)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Timeout richieste (secondi, 5-30)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Tempo massimo per ogni richiesta di ricerca o lettura di pagina (predefinito 15 secondi)."
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Server MCP (uno per riga)"
+msgstr ""
+
+#: admin/views/settings.php
+msgid "Un server per riga nel formato nome|URL|tokenOpzionale (le righe che iniziano con # sono commenti). Solo server MCP compatibili con il trasporto Streamable HTTP (JSON-RPC 2.0 su HTTP): il token, se presente, viene inviato come Authorization: Bearer."
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Fonti della redazione"
+msgstr ""
+
+#: admin/views/redazioni.php
+msgid "Una riga per fonte: rss|URL per un feed RSS diretto, site|URL per un sito di cui scoprire il feed automaticamente. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare."
+msgstr ""
+
+#: includes/class-nexus-redazioni.php
+msgid "Fonti della redazione (feed RSS o siti da cui scoprire i feed)."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Provider di ricerca non valido. Valori ammessi: tavily, serper, brave, none."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Gli strumenti di ricerca non sono disponibili: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Strumento non valido. Valori ammessi: search, read, feeds, mcp."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro query mancante per il test di ricerca."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro url mancante per il test di lettura pagina."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro url mancante per il test di RSS discovery."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro server mancante per il test MCP."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Parametro tool_name mancante per il test MCP."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Il modulo capo redattore non è disponibile: verifica che il plugin sia aggiornato."
+msgstr ""
+
+#: includes/class-nexus-rest.php
+msgid "Capo redattore non disponibile: attivalo nelle impostazioni."
+msgstr ""
