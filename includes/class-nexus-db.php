@@ -27,6 +27,8 @@
  * Nexus_DB::bump_view( $id )           — incrementa views
  * Nexus_DB::add_reaction( $id, $emoji )
  * Nexus_DB::drop_tables()              — usato da uninstall.php
+ * Nexus_DB::bump_job_failure()         — incremento atomico tentativi job (v1.1.9)
+ * Nexus_DB::insert_article_revision()  — snapshot articolo pre-modifica (v1.1.9)
  *
  * v1.1.4 — NUOVE COLONNE (contratto T-02):
  *   nexus_agents:  ai_provider (provider AI dedicato dell'agente, '' = provider globale
@@ -74,6 +76,8 @@ class Nexus_DB {
 
         const OPTION_SETTINGS = 'nexus_settings';
         const DB_VERSION_KEY  = 'nexus_db_version';
+        const DB_REVISION_KEY = 'nexus_db_revision';
+        const DB_REVISION     = 2; // v1.1.9 — schema v2: claim_token, revisioni, unique content_hash, provider
 
         /**
          * Default settings (portati da Prisma Settings model).
@@ -204,6 +208,7 @@ class Nexus_DB {
                 $usage   = $wpdb->prefix . 'nexus_usage_logs';
                 $transl  = $wpdb->prefix . 'nexus_translations';
                 $jobs    = $wpdb->prefix . 'nexus_jobs';
+                $revs    = $wpdb->prefix . 'nexus_article_revisions';
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -241,7 +246,7 @@ class Nexus_DB {
                                 source_url TEXT NULL,
                                 image_url TEXT NULL,
                                 wp_post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                                content_hash CHAR(32) NOT NULL DEFAULT '',
+                                content_hash CHAR(32) NULL DEFAULT NULL,
                                 factcheck_score DECIMAL(5,2) NOT NULL DEFAULT 0,
                                 citations LONGTEXT NULL,
                                 status VARCHAR(30) NOT NULL DEFAULT 'draft',
@@ -262,7 +267,7 @@ class Nexus_DB {
                                 KEY category (category(100)),
                                 KEY agent_id (agent_id),
                                 KEY wp_post_id (wp_post_id),
-                                KEY content_hash (content_hash)
+                                UNIQUE KEY content_hash (content_hash)
                         ) {$charset};",
                         "CREATE TABLE {$plogs} (
                                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -315,6 +320,7 @@ class Nexus_DB {
                                 agent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 action VARCHAR(50) NOT NULL DEFAULT '',
                                 model VARCHAR(120) NOT NULL DEFAULT '',
+                                provider VARCHAR(64) NOT NULL DEFAULT '',
                                 prompt_tokens INT UNSIGNED NOT NULL DEFAULT 0,
                                 completion_tokens INT UNSIGNED NOT NULL DEFAULT 0,
                                 total_tokens INT UNSIGNED NOT NULL DEFAULT 0,
@@ -341,6 +347,7 @@ class Nexus_DB {
                                 hook VARCHAR(100) NOT NULL DEFAULT '',
                                 args LONGTEXT NULL,
                                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                                claim_token VARCHAR(64) NOT NULL DEFAULT '',
                                 priority INT NOT NULL DEFAULT 10,
                                 attempts INT UNSIGNED NOT NULL DEFAULT 0,
                                 max_attempts INT UNSIGNED NOT NULL DEFAULT 3,
@@ -353,7 +360,20 @@ class Nexus_DB {
                                 PRIMARY KEY  (id),
                                 KEY status_sched (status(20), scheduled_at),
                                 KEY hook (hook(100)),
-                                KEY priority (priority)
+                                KEY priority (priority),
+                                KEY claim_token (claim_token)
+                        ) {$charset};",
+                        "CREATE TABLE {$revs} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                article_id BIGINT UNSIGNED NOT NULL,
+                                editor VARCHAR(100) NOT NULL DEFAULT '',
+                                title TEXT NULL,
+                                subtitle TEXT NULL,
+                                summary TEXT NULL,
+                                content LONGTEXT NULL,
+                                created_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                KEY article_id (article_id)
                         ) {$charset};",
                 );
         }
@@ -372,7 +392,9 @@ class Nexus_DB {
                 // scorse. Idempotente: gira a ogni attivazione/upgrade e non fa
                 // nulla quando non ci sono righe da rimuovere.
                 self::cleanup_broken_rows();
+                self::migrate_schema_v2();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
+                update_option( self::DB_REVISION_KEY, (string) self::DB_REVISION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
                         update_option( self::OPTION_SETTINGS, self::default_settings(), false );
                 }
@@ -383,8 +405,55 @@ class Nexus_DB {
          * Upgrade schema quando la versione cambia.
          */
         public static function maybe_upgrade() {
-                if ( get_option( self::DB_VERSION_KEY ) !== NEXUS_VERSION ) {
+                if ( get_option( self::DB_VERSION_KEY ) !== NEXUS_VERSION
+                        || (int) get_option( self::DB_REVISION_KEY ) < self::DB_REVISION ) {
                         self::install();
+                }
+        }
+
+        /**
+         * Migrazione schema v2 (v1.1.9) per installazioni esistenti — idempotente.
+         *
+         * dbDelta aggiunge colonne e indici nuovi ma NON converte in modo affidabile
+         * una KEY esistente in UNIQUE né cambia l'nullabilità su tutti i setup: qui
+         * lo si fa a mano con guardie (ogni passo gira solo se serve). Effetto:
+         * l'anti-duplicato degli articoli diventa atomico a livello DB (UNIQUE) e
+         * i legacy con hash vuoto diventano NULL (più NULL ammessi da UNIQUE).
+         *
+         * @return void
+         */
+        private static function migrate_schema_v2() {
+                global $wpdb;
+                $arts = self::tables()['articles'];
+
+                // 1) content_hash nullable.
+                $nullable = $wpdb->get_row( $wpdb->prepare(
+                        "SELECT IS_NULLABLE AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'content_hash'",
+                        DB_NAME, $arts
+                ) );
+                if ( $nullable && 'NO' === $nullable->n ) {
+                        $wpdb->query( "ALTER TABLE {$arts} MODIFY content_hash CHAR(32) NULL DEFAULT NULL" ); // phpcs:ignore WordPress.DB
+                }
+                $wpdb->query( "UPDATE {$arts} SET content_hash = NULL WHERE content_hash = ''" ); // phpcs:ignore WordPress.DB
+
+                // 2) dedupe preventivo: resta l'hash solo all'articolo più recente.
+                $wpdb->query( "UPDATE {$arts} a JOIN {$arts} b ON a.content_hash = b.content_hash AND a.id < b.id SET a.content_hash = NULL WHERE a.content_hash IS NOT NULL" ); // phpcs:ignore WordPress.DB
+
+                // 3) UNIQUE KEY content_hash, solo se assente o non unique.
+                $not_unique = (int) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = 'content_hash' AND NON_UNIQUE = 1",
+                        DB_NAME, $arts
+                ) );
+                $any = (int) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = 'content_hash'",
+                        DB_NAME, $arts
+                ) );
+                if ( $not_unique ) {
+                        $wpdb->query( "ALTER TABLE {$arts} DROP INDEX content_hash" ); // phpcs:ignore WordPress.DB
+                        $any = 0;
+                }
+                if ( ! $any ) {
+                        $wpdb->query( "ALTER TABLE {$arts} ADD UNIQUE KEY content_hash (content_hash)" ); // phpcs:ignore WordPress.DB
                 }
         }
 
@@ -437,6 +506,7 @@ class Nexus_DB {
                         'usage_logs'    => $wpdb->prefix . 'nexus_usage_logs',
                         'translations'  => $wpdb->prefix . 'nexus_translations',
                         'jobs'          => $wpdb->prefix . 'nexus_jobs',
+                        'revisions'     => $wpdb->prefix . 'nexus_article_revisions',
                 );
         }
 
@@ -777,6 +847,7 @@ class Nexus_DB {
         public static function insert_article( $data ) {
                 global $wpdb;
                 $now = current_time( 'mysql' );
+                $content_hash = preg_replace( '/[^a-f0-9]/', '', strtolower( (string) ( $data['content_hash'] ?? '' ) ) );
                 $row = array(
                         'title'         => sanitize_text_field( $data['title'] ?? '' ),
                         'subtitle'      => sanitize_text_field( $data['subtitle'] ?? '' ),
@@ -787,6 +858,7 @@ class Nexus_DB {
                         'source_name'   => sanitize_text_field( $data['source_name'] ?? '' ),
                         'source_url'    => esc_url_raw( $data['source_url'] ?? '' ),
                         'image_url'     => esc_url_raw( $data['image_url'] ?? '' ),
+                        'content_hash'  => '' !== $content_hash ? $content_hash : null,
                         'status'        => sanitize_key( $data['status'] ?? 'draft' ),
                         'quality_score' => (float) ( $data['quality_score'] ?? 0 ),
                         'read_time'     => absint( $data['read_time'] ?? 3 ),
@@ -988,6 +1060,7 @@ class Nexus_DB {
                         'agent_id'          => absint( $data['agent_id'] ?? 0 ),
                         'action'            => sanitize_key( $data['action'] ?? '' ),
                         'model'             => sanitize_text_field( (string) ( $data['model'] ?? '' ) ),
+                        'provider'          => sanitize_key( (string) ( $data['provider'] ?? '' ) ),
                         'prompt_tokens'     => absint( $data['prompt_tokens'] ?? 0 ),
                         'completion_tokens' => absint( $data['completion_tokens'] ?? 0 ),
                         'total_tokens'      => absint( $data['total_tokens'] ?? 0 ),
@@ -997,7 +1070,7 @@ class Nexus_DB {
                 $ok = $wpdb->insert(
                         self::tables()['usage_logs'],
                         $row,
-                        array( '%d', '%s', '%s', '%d', '%d', '%d', '%f', '%s' )
+                        array( '%d', '%s', '%s', '%s', '%d', '%d', '%d', '%f', '%s' )
                 );
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
@@ -1333,7 +1406,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'status', 'priority', 'attempts', 'max_attempts', 'scheduled_at', 'started_at', 'completed_at', 'last_error', 'args' ) )
+                        array_flip( array( 'status', 'priority', 'attempts', 'max_attempts', 'scheduled_at', 'started_at', 'completed_at', 'last_error', 'args', 'claim_token' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -1348,7 +1421,44 @@ class Nexus_DB {
         }
 
         /**
+         * Incremento ATOMICO dei tentativi di un job fallito (v1.1.9).
+         *
+         * Sostituisce il read-then-write di update_job per il contatore attempts:
+         * due runner che falliscono lo stesso job nello stesso istante non possono
+         * più sovrascriversi a vicenda il contatore. Aggiorna solo i job 'running'
+         * (guardia di stato) e ritorna il nuovo valore di attempts, 0 se il job non
+         * era in esecuzione (già ripreso da un altro runner).
+         *
+         * @param int    $id    ID del job.
+         * @param string $error Errore da registrare (troncato a 1000 caratteri).
+         * @return int
+         */
+        public static function bump_job_failure( $id, $error = '' ) {
+                global $wpdb;
+                $table = self::tables()['jobs'];
+                $wpdb->query( $wpdb->prepare(
+                        "UPDATE {$table} SET attempts = attempts + 1, last_error = %s, updated_at = %s WHERE id = %d AND status = 'running'",
+                        mb_substr( (string) $error, 0, 1000 ),
+                        current_time( 'mysql' ),
+                        absint( $id )
+                ) ); // phpcs:ignore WordPress.DB
+                if ( ! $wpdb->rows_affected ) {
+                        return 0;
+                }
+                return (int) $wpdb->get_var( $wpdb->prepare( "SELECT attempts FROM {$table} WHERE id = %d", absint( $id ) ) );
+        }
+
+        /**
          * Claim atomico dei lavori pendenti in scadenza: li marca 'running' e li ritorna.
+         *
+         * v1.1.9 — davvero atomico. Il vecchio schema (SELECT id → UPDATE → SELECT
+         * per started_at) faceva eseguire lo stesso job a due runner nello stesso
+         * secondo: il SELECT finale non era vincolato agli id reclamati. Ora un
+         * UNICO statement UPDATE con claim_token univoco per runner: la sottoquery
+         * materializza i candidati, ma la guardia esterna `AND j.status = 'pending'`
+         * viene rivalutata da InnoDB al momento del lock di ogni riga, quindi chi
+         * arriva secondo su righe già prese le salta; il SELECT finale restituisce
+         * SOLO le righe aggiornate da QUESTO runner (claim_token corrispondente).
          *
          * @param int $limit Numero massimo di lavori da rivendicare.
          * @return array
@@ -1358,27 +1468,33 @@ class Nexus_DB {
                 $table = self::tables()['jobs'];
                 $now   = current_time( 'mysql' );
                 $limit = max( 1, absint( $limit ) );
+                $token = wp_generate_password( 32, false, false );
 
-                $ids = $wpdb->get_col( $wpdb->prepare(
-                        "SELECT id FROM {$table} WHERE status = 'pending' AND scheduled_at <= %s ORDER BY priority ASC, id ASC LIMIT %d",
+                $claimed = $wpdb->query( $wpdb->prepare(
+                        "UPDATE {$table} j
+                         SET j.status = 'running', j.started_at = %s, j.updated_at = %s, j.claim_token = %s
+                         WHERE j.id IN (
+                             SELECT id FROM (
+                                 SELECT id FROM {$table}
+                                 WHERE status = 'pending' AND scheduled_at <= %s
+                                 ORDER BY priority ASC, id ASC
+                                 LIMIT %d
+                             ) c
+                         ) AND j.status = 'pending'",
+                        $now,
+                        $now,
+                        $token,
                         $now,
                         $limit
-                ) );
-                if ( empty( $ids ) ) {
-                        return array();
-                }
-
-                $ids_in = implode( ',', array_map( 'absint', $ids ) );
-                $claimed = $wpdb->query( $wpdb->prepare(
-                        "UPDATE {$table} SET status = 'running', started_at = %s, updated_at = %s WHERE id IN ({$ids_in}) AND status = 'pending'",
-                        $now,
-                        $now
-                ) ); // phpcs:ignore
+                ) ); // phpcs:ignore WordPress.DB
                 if ( ! $claimed ) {
                         return array();
                 }
 
-                return (array) $wpdb->get_results( "SELECT * FROM {$table} WHERE status = 'running' AND started_at = '{$now}' ORDER BY priority ASC, id ASC" ); // phpcs:ignore
+                return (array) $wpdb->get_results( $wpdb->prepare(
+                        "SELECT * FROM {$table} WHERE claim_token = %s ORDER BY priority ASC, id ASC",
+                        $token
+                ) );
         }
 
         /**
@@ -1475,6 +1591,68 @@ class Nexus_DB {
 
         /* ============ UNINSTALL ============ */
 
+        /* ============ REVISIONI ARTICOLI (v1.1.9) ============ */
+
+        /**
+         * Snapshot dell'articolo PRIMA di una modifica che sovrascrive il testo
+         * (es. edit del capo redattore): preserva l'originale per un eventuale
+         * ripristino/diff in admin. Ritorna l'id della revisione, 0 se fallisce.
+         *
+         * @param int    $article_id ID articolo.
+         * @param string $editor     Etichetta di chi sta per modificare (es. "capo redattore: Nome").
+         * @return int
+         */
+        public static function insert_article_revision( $article_id, $editor = '' ) {
+                global $wpdb;
+                $article = self::get_article( absint( $article_id ) );
+                if ( ! $article ) {
+                        return 0;
+                }
+                $ok = $wpdb->insert(
+                        self::tables()['revisions'],
+                        array(
+                                'article_id' => absint( $article_id ),
+                                'editor'     => sanitize_text_field( (string) $editor ),
+                                'title'      => (string) $article->title,
+                                'subtitle'   => (string) $article->subtitle,
+                                'summary'    => (string) $article->summary,
+                                'content'    => (string) $article->content,
+                                'created_at' => current_time( 'mysql' ),
+                        ),
+                        array( '%d', '%s', '%s', '%s', '%s', '%s', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        /**
+         * Revisioni di un articolo, dalla più recente.
+         *
+         * @param int $article_id ID articolo.
+         * @param int $limit      Max revisioni ritornate (1-100).
+         * @return array
+         */
+        public static function get_article_revisions( $article_id, $limit = 20 ) {
+                global $wpdb;
+                $t = self::tables()['revisions'];
+                return (array) $wpdb->get_results( $wpdb->prepare(
+                        "SELECT * FROM {$t} WHERE article_id = %d ORDER BY id DESC LIMIT %d",
+                        absint( $article_id ),
+                        min( 100, max( 1, absint( $limit ) ) )
+                ) );
+        }
+
+        /**
+         * Singola revisione.
+         *
+         * @param int $revision_id ID revisione.
+         * @return object|null
+         */
+        public static function get_article_revision( $revision_id ) {
+                global $wpdb;
+                $t = self::tables()['revisions'];
+                return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d", absint( $revision_id ) ) );
+        }
+
         public static function drop_tables() {
                 global $wpdb;
                 foreach ( self::tables() as $table ) {
@@ -1483,5 +1661,8 @@ class Nexus_DB {
                 delete_option( self::OPTION_SETTINGS );
                 delete_option( self::DB_VERSION_KEY );
                 delete_option( 'nexus_wire_runs' );
+                delete_option( self::DB_REVISION_KEY );
+                delete_option( 'nexus_agent_runtime' );
+                delete_option( 'nexus_native_migration' );
         }
 }

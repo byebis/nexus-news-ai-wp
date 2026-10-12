@@ -192,6 +192,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_usage_logs',   // v1.0.3 — tracking uso AI
                 $prefix . 'nexus_translations', // v1.0.3 — traduzioni AI degli articoli
                 $prefix . 'nexus_jobs',         // v1.0.4 — coda lavori Scala & Pro
+                $prefix . 'nexus_article_revisions', // v1.1.9 — snapshot capo redattore
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
