@@ -1086,6 +1086,10 @@
                         '<p style="font-size:12.5px;color:var(--nxa-muted);margin:10px 0 6px;line-height:1.55">' + esc( pick( agent, 'description' ) || '' ) + '</p>' +
                         '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 10px"><em>“' + esc( pick( agent, 'personality' ) || '' ) + '”</em></p>' +
                         '<p style="font-size:11.5px;color:var(--nxa-muted);margin:0 0 12px">Ultimo run: ' + esc( timeAgoIt( pick( agent, 'last_run', 'lastRun' ) ) ) + '</p>' +
+                        // v1.1.0: badge autore bot nativo — la riga compare solo se
+                        // l'agente ha un utente WP collegato (wp_user_id arriva con le
+                        // route v1.1.0; response vecchie non lo hanno: riga omessa).
+                        ( num( pick( agent, 'wp_user_id' ) ) > 0 ? '<p class="nxa-agent-wp-author">Autore WP attivo</p>' : '' ) +
                         // Modello AI dedicato (v1.0.3): vuoto = modello globale da settings.
                         '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
                                 '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
@@ -1234,6 +1238,7 @@
                 modal.hidden = false;
                 document.body.style.overflow = 'hidden';
                 fillModelDatalists(); // v1.0.7: solo cache, nessun fetch dal modal
+                loadWpCategories(); // v1.1.0: datalist categorie native (cache 60s, fetch solo in questo contesto)
                 nameField.focus();
         }
 
@@ -1465,6 +1470,64 @@
                         setModelsStatus( message );
                 } ).then( function () {
                         setBtnLoading( loadBtn, false );
+                } );
+        }
+
+        /* ==================================================================
+         * 9-ter. CATEGORIE NATIVE (v1.1.0)
+         * ================================================================== */
+
+        /**
+         * v1.1.0: cache client delle categorie WP native (GET /wp/categories,
+         * risposta { categories: [ { id, name, slug, count } ] }). La fetch
+         * parte SOLO quando si apre l'editor agenti: nessun fetch automatico
+         * fuori dal contesto agenti. Cache valida 60 secondi; errore →
+         * datalist vuota e la modal funziona comunque (input libero).
+         */
+        var wpCategoriesCache = { list: null, at: 0, ttl: 60000 };
+
+        /** v1.1.0: svuota e riempie #nxa-agent-category-list con opzioni value="{name}". */
+        function fillCategoryDatalist() {
+                var list = qs( '#nxa-agent-category-list' );
+                if ( ! list ) {
+                        return;
+                }
+                list.innerHTML = '';
+                var cats = wpCategoriesCache.list || [];
+                for ( var i = 0; i < cats.length; i++ ) {
+                        var name = String( pick( cats[ i ], 'name' ) || '' ).trim();
+                        if ( ! name ) {
+                                continue;
+                        }
+                        var option = document.createElement( 'option' );
+                        option.setAttribute( 'value', name );
+                        list.appendChild( option );
+                }
+        }
+
+        /**
+         * v1.1.0: GET /wp/categories con cache 60s, chiamata da openAgentEditor.
+         * Datalist assente (markup T-02 non ancora atterrato o pagina senza
+         * modal agenti) → nessun fetch, exit silenzioso. Fetch fallita →
+         * warn in console e datalist resta vuota: l'editor resta pienamente
+         * usabile (l'utente digita la categoria a mano).
+         */
+        function loadWpCategories() {
+                var list = qs( '#nxa-agent-category-list' );
+                if ( ! list ) {
+                        return Promise.resolve();
+                }
+                var fresh = wpCategoriesCache.list && ( Date.now() - wpCategoriesCache.at ) < wpCategoriesCache.ttl;
+                if ( fresh ) {
+                        fillCategoryDatalist();
+                        return Promise.resolve();
+                }
+                return api( 'wp/categories' ).then( function ( payload ) {
+                        wpCategoriesCache.list = getList( payload, [ 'categories', 'items', 'list' ] );
+                        wpCategoriesCache.at = Date.now();
+                        fillCategoryDatalist();
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] categorie native:', err );
                 } );
         }
 
@@ -2011,6 +2074,160 @@
         }
 
         /* ==================================================================
+         * 13-bis. MIGRAZIONE CONTENUTI NATIVI (v1.1.0)
+         * ================================================================== */
+
+        /**
+         * v1.1.0: card "Migrazione contenuti nativi" (Strumenti). Loop di
+         * batch POST /native/migrate {limit:20} finché finished === true o
+         * errore HTTP; per ogni batch aggiorna barra e label con done/total.
+         * Guardia anti-stallo: se un batch non muove né done né remaining si
+         * interrompe con errore onesto (mai loop infinito, mai successo
+         * simulato). Markup T-01: #nxa-native-run (bottone),
+         * #nxa-native-progress con barra .nxa-native-progress-fill e
+         * #nxa-native-progress-label, #nxa-native-report (errori, max 10) e
+         * #nxa-native-status (esito onesto, aria-live).
+         */
+        var nativeMigrateRunning = false;
+
+        /** v1.1.0: voce errori del batch → testo leggibile (stringa o oggetto). */
+        function nativeErrorText( item ) {
+                if ( ! item ) {
+                        return '';
+                }
+                if ( typeof item === 'string' ) {
+                        return item;
+                }
+                if ( item.message ) {
+                        return String( item.message );
+                }
+                if ( item.error ) {
+                        return String( item.error );
+                }
+                try {
+                        return JSON.stringify( item );
+                } catch ( e ) {
+                        return String( item );
+                }
+        }
+
+        /** v1.1.0: barra (width %, guard total 0) + label "X di Y". */
+        function setNativeProgress( done, total ) {
+                var fill = qs( '.nxa-native-progress-fill' );
+                var label = qs( '#nxa-native-progress-label' );
+                var safeTotal = num( total );
+                var pct = safeTotal > 0 ? ( num( done ) / safeTotal ) * 100 : 0;
+                if ( pct < 0 ) {
+                        pct = 0;
+                }
+                if ( pct > 100 ) {
+                        pct = 100;
+                }
+                if ( fill ) {
+                        fill.style.width = pct.toFixed( 1 ) + '%';
+                }
+                if ( label ) {
+                        label.textContent = fmt( done ) + ' di ' + fmt( total );
+                }
+        }
+
+        /** v1.1.0: report errori (max 10); nessun errore → box nascosto e pulito. */
+        function renderNativeReport( errors ) {
+                var box = qs( '#nxa-native-report' );
+                if ( ! box ) {
+                        return;
+                }
+                var list = Array.isArray( errors ) ? errors : [];
+                if ( ! list.length ) {
+                        box.hidden = true;
+                        box.innerHTML = '';
+                        return;
+                }
+                var max = Math.min( list.length, 10 );
+                var html = '';
+                for ( var i = 0; i < max; i++ ) {
+                        html += '<li>' + esc( nativeErrorText( list[ i ] ) ) + '</li>';
+                }
+                box.innerHTML = html;
+                box.hidden = false;
+        }
+
+        /**
+         * v1.1.0: batch successivi finché finished === true. Stato in state
+         * (errors accumulati, done, ultimo done/remaining per la guardia
+         * anti-stallo). Errore HTTP → l'Error di api() propaga al chiamante.
+         */
+        function runNativeMigrationBatches( state ) {
+                return api( 'native/migrate', { method: 'POST', body: { limit: 20 } } ).then( function ( payload ) {
+                        var d = unwrap( payload ) || {};
+                        var done = num( pick( d, 'done' ) );
+                        var total = num( pick( d, 'total' ) );
+                        var remaining = num( pick( d, 'remaining' ) );
+                        setNativeProgress( done, total );
+                        var batchErrors = Array.isArray( d.errors ) ? d.errors : [];
+                        for ( var i = 0; i < batchErrors.length; i++ ) {
+                                state.errors.push( nativeErrorText( batchErrors[ i ] ) );
+                        }
+                        state.done = done;
+                        if ( d.finished === true ) {
+                                return null;
+                        }
+                        if ( done === state.lastDone && remaining === state.lastRemaining ) {
+                                throw new Error( 'La migrazione non sta progredendo: interrotta dopo un batch senza movimenti.' );
+                        }
+                        state.lastDone = done;
+                        state.lastRemaining = remaining;
+                        return runNativeMigrationBatches( state );
+                } );
+        }
+
+        /**
+         * v1.1.0: binding del bottone #nxa-native-run — chiamata dal loader
+         * "tools" di LOADERS. Bottone assente (altri contesti) → exit
+         * silenzioso. Durante il loop il bottone resta disabilitato e viene
+         * SEMPRE riabilitato alla fine (ramo finale after-catch = finally:
+         * ESC/refresh safe).
+         */
+        function bindNativeMigration() {
+                var btn = qs( '#nxa-native-run' );
+                if ( ! btn ) {
+                        return;
+                }
+                btn.addEventListener( 'click', function () {
+                        if ( nativeMigrateRunning ) {
+                                return;
+                        }
+                        var progress = qs( '#nxa-native-progress' );
+                        var status = qs( '#nxa-native-status' );
+                        var state = { errors: [], done: 0, lastDone: -1, lastRemaining: -1 };
+                        nativeMigrateRunning = true;
+                        setBtnLoading( btn, true, 'Migrazione in corso…' );
+                        if ( progress ) {
+                                progress.hidden = false;
+                        }
+                        setNativeProgress( 0, 0 );
+                        renderNativeReport( [] );
+                        if ( status ) {
+                                status.textContent = '';
+                        }
+                        runNativeMigrationBatches( state ).then( function () {
+                                renderNativeReport( state.errors );
+                                if ( status ) {
+                                        status.textContent = 'Migrazione completata: ' + fmt( state.done ) + ' articoli convertiti';
+                                }
+                        } ).catch( function ( err ) {
+                                renderNativeReport( state.errors );
+                                if ( status ) {
+                                        status.textContent = 'Migrazione interrotta: ' + ( ( err && err.message ) ? err.message : 'errore sconosciuto' );
+                                }
+                        } ).then( function () {
+                                nativeMigrateRunning = false;
+                                setBtnLoading( btn, false );
+                        } );
+                } );
+        }
+
+        /* ==================================================================
          * 14. ROUTER + BOOT
          * ================================================================== */
 
@@ -2026,6 +2243,11 @@
                 },
                 activity: loadActivity,
                 settings: bindSettings,
+                tools: function () {
+                        // v1.1.0: migrazione contenuti nativi (card Strumenti, T-01);
+                        // bottone #nxa-native-run assente → exit silenzioso.
+                        bindNativeMigration();
+                },
                 wire: function () {
                         bindWire();
                         return loadWireRuns();

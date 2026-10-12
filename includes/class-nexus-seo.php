@@ -197,7 +197,10 @@ class Nexus_SEO {
          * @return void
          */
         public static function print_head_meta() {
-                if ( ! is_singular( 'nexus_article' ) ) {
+                // v1.1.0 dual-mode: meta SEO anche sui post nativi, non solo sul CPT legacy.
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ? Nexus_Native::query_post_types() : array( 'post', 'nexus_article' );
+
+                if ( ! is_singular( $types ) ) {
                         return;
                 }
 
@@ -345,7 +348,10 @@ class Nexus_SEO {
          * @return string
          */
         public static function filter_title( $title ) {
-                if ( ! is_singular( 'nexus_article' ) ) {
+                // v1.1.0 dual-mode: title tag anche sui post nativi, non solo sul CPT legacy.
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ? Nexus_Native::query_post_types() : array( 'post', 'nexus_article' );
+
+                if ( ! is_singular( $types ) ) {
                         return $title;
                 }
 

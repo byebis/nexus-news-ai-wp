@@ -4,11 +4,11 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.7
+Stable tag: 1.1.0
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST. Dalla 1.0.4 la redazione scala: coda lavori stile Action Scheduler con retry automatico e pagina «Coda Lavori», comandi WP-CLI (`wp nexus`), blocchi Gutenberg nativi (ultimi articoli e form newsletter) e pagina Analytics (serie giornaliera, costi AI, breakdown per piattaforma e per agente, top articoli, iscritti). Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** con informazioni di sistema, esporta/importa configurazione JSON e gestione della chiave, **API pubblica** `nexus-public/v1` (articoli, agenti e statistiche con chiave `X-Api-Key` e rate limit 120 richieste/minuto), supporto **multisite** con installazione automatica delle tabelle sui nuovi siti e interfaccia admin **bilingue** italiano/inglese (sperimentale).
+Il giornale di nuova generazione, scritto da 7 agenti giornalisti AI. Pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Gli articoli approvati diventano post WordPress reali (CPT nexus_article) con immagini in evidenza AI, SEO automatico, pubblicazione social reale su Telegram/Discord/X/LinkedIn e newsletter con double opt-in. Dalla 1.0.3 la redazione è «intelligente»: modello AI per-agente con modello economico per screening/valutazione/fact-check, tracking dell'uso AI (token e costo stimato in USD) con budget mensile stop/warn, fact-check automatico con punteggio e citazioni (blocco «Fonti verificate» sugli articoli), anti-duplicato via hash del titolo e traduzioni AI multi-lingua via REST. Dalla 1.0.4 la redazione scala: coda lavori stile Action Scheduler con retry automatico e pagina «Coda Lavori», comandi WP-CLI (`wp nexus`), blocchi Gutenberg nativi (ultimi articoli e form newsletter) e pagina Analytics (serie giornaliera, costi AI, breakdown per piattaforma e per agente, top articoli, iscritti). Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** con informazioni di sistema, esporta/importa configurazione JSON e gestione della chiave, **API pubblica** `nexus-public/v1` (articoli, agenti e statistiche con chiave `X-Api-Key` e rate limit 120 richieste/minuto), supporto **multisite** con installazione automatica delle tabelle sui nuovi siti e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.1.0 la redazione è «tutto nativo»: gli articoli pubblicati diventano post WordPress NATIVI (post) con autore bot (utenti con ruolo nexus_ai_journalist: byline e pagina autore reali), categorie native della testata e tag automatici deterministici, i vecchi articoli CPT si convertono con la migrazione 1-click in Strumenti (barra di progresso batched) e la pubblicazione può passare per lo stato «In attesa di revisione» (post_status pending).
 
 == Description ==
 
@@ -30,7 +30,7 @@ Nexus News AI è il giornale di nuova generazione, scritto da intelligenze artif
 2. **Valutazione**: ogni notizia riceve un punteggio di qualità (0-100).
 3. **Riscrittura AI**: le bozze migliori vengono riscritte in stile editoriale dal modello AI configurato (OpenRouter-compatible).
 4. **Approvazione**: in modalità semi-autonoma l'articolo entra in coda di approvazione e aspetta un revisore umano; in modalità completamente autonoma viene auto-approvato se supera la soglia di qualità.
-5. **Pubblicazione multi-piattaforma**: per **blog la pubblicazione è reale** — l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `/nexus/{slug}/`), collegato al database Nexus e con fallback legacy `/?nexus_article={id}`; dalla 1.0.2 **Telegram, Discord, X e LinkedIn sono reali** quando abilitati con le credenziali nei settings (altrimenti log "skipped" onesto), mentre Facebook e Instagram restano **simulati in modo onesto**, con log consultabili per ogni articolo.
+5. **Pubblicazione multi-piattaforma**: per **blog la pubblicazione è reale** — l'articolo diventa un **post WordPress vero** (dalla 1.1.0 un **post nativo** con autore bot, categoria e tag reali; il CPT `nexus_article` resta per i permalink legacy `/nexus/{slug}/`), collegato al database Nexus e con fallback legacy `/?nexus_article={id}`; dalla 1.0.2 **Telegram, Discord, X e LinkedIn sono reali** quando abilitati con le credenziali nei settings (altrimenti log "skipped" onesto), mentre Facebook e Instagram restano **simulati in modo onesto**, con log consultabili per ogni articolo.
 
 Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di approvazione, attività, Nexus Wire, impostazioni) e fruibile in frontend con uno **shortcode magazine** moderno, reazioni emoji e modal di lettura.
 
@@ -46,7 +46,8 @@ Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di ap
 * **Shortcode**: [nexus_magazine], [nexus_articles category="Tecnologia" limit="6" layout="list"], [nexus_wire], [nexus_subscribe].
 * **Cron automatico**: WP-Cron pianifica raccolta, valutazione, riscrittura e pubblicazione secondo l'intervallo configurato.
 * **REST API nexus/v1**: tutti i dati e le azioni della redazione sono esposti via REST (agents, articles, approve/reject, pipeline collect/run, settings, activity, stats, wire, route pubbliche per il magazine, health).
-* **Pubblicazione come post WordPress reali**: CPT `nexus_article` con permalink `/nexus/{slug}/`, categorie e tag native e template single dedicato (fallback al front-end Nexus legacy).
+* **Pubblicazione come post WordPress reali**: dalla 1.1.0 post NATIVI (`post`) con autore bot, categorie e tag native; il CPT `nexus_article` resta per i permalink legacy `/nexus/{slug}/` e il template single dedicato (fallback al front-end Nexus legacy).
+* **Tutto nativo (v1.1.0)**: ogni agente è anche un utente bot WordPress con ruolo `nexus_ai_journalist` (solo `read`, niente wp-admin: byline e pagina autore reali), la sua categoria è agganciata a una categoria WP reale della testata, gli articoli ricevono tag automatici deterministici (nessuna chiamata AI), la migrazione 1-click in Strumenti converte i vecchi articoli CPT con barra di progresso batched, `post_status` ammette `pending` («In attesa di revisione») e 4 nuove rotte REST admin: GET /wp/categories, POST /native/migrate, GET /native/migrate/status, POST /native/migrate/reset. Le tabelle Nexus restano per l'operativo (coda, costi, log, iscritti).
 * **Immagini in evidenza AI**: featured image generata con l'AI (modello e dimensione configurabili), con fallback su immagine articolo e placeholder locale.
 * **SEO**: meta title/description generate con l'AI, Open Graph, JSON-LD NewsArticle e compatibilità Yoast SEO / RankMath.
 * **Pubblicazione multi-piattaforma**: blog reale (post WP del CPT `nexus_article`, fallback legacy `/?nexus_article={id}`) + social reali su Telegram, Discord, X e LinkedIn (credenziali nei settings; canali non configurati = log "skipped" onesto) + social simulati dichiarati (Facebook, Instagram) — log onesti e consultabili per ogni articolo.
@@ -59,7 +60,7 @@ Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di ap
 == Installation ==
 
 1. Carica la cartella `nexus-news-ai` dentro `wp-content/plugins/` (via FTP o "Plugin → Aggiungi nuovo → Carica plugin" con lo zip).
-2. Attiva il plugin dalla pagina **Plugin** di WordPress: all'attivazione vengono create le 5 tabelle `wp_nexus_*` e i 7 agenti vengono inseriti automaticamente.
+2. Attiva il plugin dalla pagina **Plugin** di WordPress: all'attivazione vengono create le 9 tabelle `wp_nexus_*` e i 7 agenti vengono inseriti automaticamente; dalla 1.1.0 viene registrato anche il ruolo «Giornalista AI» per gli utenti bot degli agenti.
 3. Vai in **Nexus News → Impostazioni** e inserisci la tua **chiave AI** (API OpenRouter-compatible, es. openrouter.ai): la pipeline la richiede in ogni fase (anche la raccolta seleziona i candidati con il modello). Senza chiave magazine, admin panel, coda, REST e pubblicazione funzionano comunque.
 4. [Opzionale] Per una schedulazione affidabile imposta un **cron di sistema** che chiama `wp-cron.php` ogni ora (WP-Cron integrato funziona già, ma su siti a basso traffico può ritardare).
 5. Crea una pagina (es. "Magazine") e inserisci lo shortcode **[nexus_magazine]**: il tuo giornale è online.
@@ -86,7 +87,19 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 **No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
 
+= Come funziona la pubblicazione «tutto nativo»? =
+
+Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `post`): compaiono in home, negli archivi e nel feed del tema come qualunque post, con la categoria reale della testata e tag deterministici derivati da titolo e riassunto (nessuna chiamata AI). Ogni agente ha un **utente bot** con ruolo `nexus_ai_journalist` (sola capability `read`, nessun accesso a wp-admin) e firma i post: byline e pagina autore sono quelle del tema. I vecchi articoli del CPT `nexus_article` restano funzionanti (permalink `/nexus/{slug}/`) e si convertono con la **migrazione 1-click** in Strumenti → «Migrazione contenuti nativi»: conversione a batch con barra di progresso, autore bot e categoria nativa assegnati, stato WordPress e meta di collegamento conservati. Le tabelle Nexus restano per l'operativo: coda lavori, costi AI, log, iscritti.
+
 == Changelog ==
+
+= 1.1.0 =
+* Contenuti "tutto nativo": gli articoli nuovi pubblicano come post WordPress NATIVI (post type 'post', filtrabile con nexus_native_post_type) nella home, negli archivi e nel feed del tema, con categorie e tag reali; il CPT nexus_article resta registrato per i permalink legacy /nexus/{slug}/ e le letture sono dual-mode (post + nexus_article) finché la migrazione non è completata.
+* Agenti come autori reali: ogni agente diventa un utente bot WordPress (login nexus_agent_{id}) con ruolo dedicato nexus_ai_journalist («Giornalista AI», sola capability read, nessun accesso a wp-admin) e firma i post come post_author: byline e pagina autore del tema; nuove colonne wp_user_id/term_id su wp_nexus_agents con upgrade automatico delle tabelle.
+* Categorie native agganciate agli agenti (categoria WP reale creata se manca) e tag automatici deterministici (3-5 tag da titolo e riassunto, nessuna chiamata AI).
+* Migrazione 1-click in Strumenti: card «Migrazione contenuti nativi» con contatori (post CPT residui, agenti senza utente bot/categoria), bottone «Avvia migrazione», barra di progresso batched e report onesto degli errori; conversione CPT → post nativi con autore bot, categoria nativa, meta di collegamento e stato WP conservati.
+* Nuovo stato post_status «pending» («In attesa di revisione»): flusso editoriale bozza → revisione → pubblicato.
+* 4 nuove rotte REST admin: GET /wp/categories, POST /native/migrate, GET /native/migrate/status, POST /native/migrate/reset.
 
 = 1.0.7 =
 * Impostazioni in 4 gruppi con accordion: Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione e Sito & sistema; ogni sezione si apre e chiude con un click, i valori restano salvati anche a pannello chiuso e lo stato aperto/chiuso viene ricordato dal browser (localStorage). Nessun setting nuovo.
@@ -140,6 +153,9 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+«Tutto nativo»: i contenuti nuovi diventano post WordPress nativi con autore bot (byline e pagina autore reali del tema), categorie e tag della testata; la migrazione 1-click in Strumenti converte i vecchi articoli CPT con barra di progresso e i permalink legacy /nexus/{slug}/ restano validi. Nessun setting nuovo: solo l'opzione post_status guadagna «In attesa di revisione» (pending). L'aggiornamento aggiunge due colonne a wp_nexus_agents e registra il ruolo «Giornalista AI» per gli utenti bot degli agenti.
 
 = 1.0.7 =
 «Impostazioni & Agenti Pro»: le Impostazioni si leggono in 4 gruppi ad accordion (stato ricordato nel browser), i modelli AI si caricano dal provider con suggerimenti nei campi, gli agenti si creano, modificano e clonano dall'editor dedicato (il clone nasce in pausa) e la pagina Strumenti guadagna la diagnostica AI. Nessun setting nuovo: l'aggiornamento non richiede ritocchi alla configurazione.

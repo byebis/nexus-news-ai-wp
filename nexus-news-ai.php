@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. 7 agenti giornalisti AI con pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.0.7
+ * Version:     1.1.0
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.0.7' );
+define( 'NEXUS_VERSION', '1.1.0' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -33,6 +33,7 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-pipeline.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cron.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rest.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cpt.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-native.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-telegram.php';
@@ -68,11 +69,13 @@ function nexus_deactivate() {
 /**
  * Attivazione v1.0.1: dopo l'installazione registra il CPT nexus_article
  * e ripulisce le rewrite rules, così i permalink /nexus/{slug}/ funzionano subito.
+ * v1.1.0: registra anche il ruolo "Giornalista AI" per gli utenti bot degli agenti.
  */
 function nexus_activate() {
         Nexus_Cpt::register_cpt();
         Nexus_Cpt::register_taxonomies();
         Nexus_Cpt::register_meta();
+        Nexus_Native::register_role();
         flush_rewrite_rules();
 }
 register_activation_hook( __FILE__, 'nexus_activate' );
@@ -86,6 +89,7 @@ function nexus_bootstrap() {
         Nexus_Shortcodes::init();
         Nexus_Cron::init();
         Nexus_Cpt::init();
+        Nexus_Native::init();
         Nexus_SEO::init();
         Nexus_Newsletter::init();
         Nexus_Ping::init();

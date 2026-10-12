@@ -72,6 +72,22 @@
  * Tutti gli id, data-attributi e classi esistenti consumati da admin.js
  * restano intatti.
  *
+ * =====================================================================
+ * v1.1.0 — CATEGORIA NATIVA + AUTORE BOT (CONTRATTO-v1.1.0.md §2 T-02)
+ * =====================================================================
+ *
+ * Il campo categoria #nxa-agent-category porta l'attributo
+ * list="nxa-agent-category-list" ed è seguito subito dalla datalist VUOTA
+ * #nxa-agent-category-list (admin.js T-03 la riempie via REST con
+ * GET /nexus/v1/wp/categories quando la modal si apre; cache client 60s;
+ * se la richiesta fallisce la datalist resta vuota e l'input resta libero).
+ * La categoria salvata diventa una categoria reale della testata: l'articolo
+ * pubblicato come post nativo eredita autore bot (utente con ruolo
+ * nexus_ai_journalist) e sezione (term di categoria nativo).
+ * I badge autore bot sulle card agente (riga "Autore WP attivo", classe
+ * .nxa-agent-wp-author) sono generati da admin.js (T-03) dentro
+ * #nxa-agents-grid e NON sono nel markup di questa vista.
+ *
  * @package Nexus_News_AI
  */
 
@@ -221,8 +237,10 @@ $nxa_agent_status_labels = array(
                                         <p class="nxa-agent-field"><label for="nxa-agent-avatar"><?php esc_html_e( 'Avatar (emoji)', 'nexus-news-ai' ); ?></label>
                                                 <input type="text" id="nxa-agent-avatar" name="avatar" maxlength="20" placeholder="🤖" /></p>
                                         <p class="nxa-agent-field"><label for="nxa-agent-category"><?php esc_html_e( 'Categoria', 'nexus-news-ai' ); ?></label>
-                                                <input type="text" id="nxa-agent-category" name="category" maxlength="100" required />
-                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'Unica per agente (es. tecnologia, sport).', 'nexus-news-ai' ); ?></span></p>
+                                                <input type="text" id="nxa-agent-category" name="category" maxlength="100" list="nxa-agent-category-list" required />
+                                                <datalist id="nxa-agent-category-list"></datalist>
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'Unica per agente (es. tecnologia, sport).', 'nexus-news-ai' ); ?></span>
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'La categoria diventa una categoria reale della testata e l’articolo erediterà autore e sezione.', 'nexus-news-ai' ); ?></span></p>
                                         <p class="nxa-agent-field"><label for="nxa-agent-status"><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></label>
                                                 <select id="nxa-agent-status" name="status"><option value="active"><?php esc_html_e( 'Attivo', 'nexus-news-ai' ); ?></option><option value="paused"><?php esc_html_e( 'In pausa', 'nexus-news-ai' ); ?></option></select></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-model"><?php esc_html_e( 'Modello AI (vuoto = globale)', 'nexus-news-ai' ); ?></label>

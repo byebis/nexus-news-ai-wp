@@ -120,7 +120,10 @@ class Nexus_Ping {
                         return;
                 }
 
-                if ( 'nexus_article' !== $post->post_type ) {
+                // v1.1.0 dual-mode: schedula il ping anche per i post nativi, non solo per il CPT legacy.
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ? Nexus_Native::query_post_types() : array( 'post', 'nexus_article' );
+
+                if ( ! in_array( $post->post_type, $types, true ) ) {
                         return;
                 }
 
@@ -159,8 +162,11 @@ class Nexus_Ping {
 
                 $post = get_post( $post_id );
 
+                // v1.1.0 dual-mode: tipi ammessi (post nativo + CPT legacy).
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ? Nexus_Native::query_post_types() : array( 'post', 'nexus_article' );
+
                 // Guard: post esistente, tipo corretto e realmente pubblicato.
-                if ( ! $post instanceof WP_Post || 'nexus_article' !== $post->post_type || 'publish' !== $post->post_status ) {
+                if ( ! $post instanceof WP_Post || ! in_array( $post->post_type, $types, true ) || 'publish' !== $post->post_status ) {
                         return;
                 }
 

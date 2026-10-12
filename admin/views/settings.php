@@ -88,6 +88,14 @@
  *   salvata, al click sul bottone o al blur del campo chiave — qui solo
  *   markup statico.
  *
+ * - CONTRATTO v1.1.0 ("Tutto nativo", T-06): la checkbox enable_wp_posts
+ *   (id e name invariati) ora pubblica post WordPress NATIVI del sito
+ *   (post type "post", visibili in home, con categorie, tag e autore reali):
+ *   label e descrizione aggiornate di conseguenza. Il select post_status
+ *   (#nxa-post-status) ammette anche "pending" (In attesa di revisione):
+ *   flusso WordPress bozza, revisione, pubblicato. Nessun name o id
+ *   rinominato: collectSettings (admin.js) resta valido.
+ *
  * @package Nexus_News_AI
  */
 
@@ -338,9 +346,9 @@ $social_platforms = array(
                                                         <td>
                                                                 <label for="nxa-enable-wp-posts">
                                                                         <input type="checkbox" name="enable_wp_posts" id="nxa-enable-wp-posts" value="1" <?php checked( (int) $settings['enable_wp_posts'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Pubblica come post WordPress reali (CPT nexus_article)', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Pubblica post WordPress nativi', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Se attivo, gli articoli pubblicati diventano post reali del CPT "nexus_article"; se disattivo resta il front-end legacy di Nexus.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Se attivo, gli articoli pubblicati diventano post WordPress nativi del sito: compaiono nella home, con categorie, tag e autore reali; se disattivo resta il front-end legacy di Nexus.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
@@ -349,8 +357,9 @@ $social_platforms = array(
                                                                 <select name="post_status" id="nxa-post-status">
                                                                         <option value="publish" <?php selected( $settings['post_status'], 'publish' ); ?>><?php esc_html_e( 'Pubblicati subito', 'nexus-news-ai' ); ?></option>
                                                                         <option value="draft" <?php selected( $settings['post_status'], 'draft' ); ?>><?php esc_html_e( 'Salvati come bozze', 'nexus-news-ai' ); ?></option>
+                                                                        <option value="pending" <?php selected( $settings['post_status'], 'pending' ); ?>><?php esc_html_e( 'In attesa di revisione', 'nexus-news-ai' ); ?></option>
                                                                 </select>
-                                                                <p class="description"><?php esc_html_e( 'Stato WordPress assegnato ai post creati dal publisher (publish = pubblicati, draft = bozze da revisionare).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Stato WordPress assegnato ai post creati dal publisher (publish = pubblicati, draft = bozze, pending = in attesa di revisione).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>

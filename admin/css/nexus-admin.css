@@ -38,6 +38,7 @@
  *  16. Accessibilita' (focus, reduced-motion)
  *  17. Stampa
  *  18. Fix overflow mobile + wrapper tabelle (v1.0.7)
+ *  19. Migrazione contenuti nativi (v1.1.0)
  */
 
 /* -------------------------------------------------------------------------
@@ -1971,4 +1972,128 @@ body.nxa-lock-scroll {
     margin-left: 0;
     text-align: left;
   }
+}
+
+/* -------------------------------------------------------------------------
+ * 19. Migrazione contenuti nativi (v1.1.0) — card "Migrazione contenuti
+ *     nativi" in Strumenti (markup T-01 tools.php, logica T-03 admin.js)
+ *     e riga badge autore bot nelle card agente (T-03 cardHTML). La card
+ *     vive nella root .wrap.nexus-tools (fuori da .wrap.nexus-admin): i
+ *     selettori con id sono quindi globali, come tutte le classi nxa-
+ *     prefissate del foglio. Nessun valore colore grezzo: solo
+ *     var(--nxa-*) / currentColor / inherit, dark theme ereditato per
+ *     costruzione (stesso meccanismo delle sezioni 11b/14b/18).
+ * ---------------------------------------------------------------------- */
+
+/* Progresso migrazione. Struttura da contratto T-01: #nxa-native-progress
+ * e' il blocco esterno con attributo hidden, la traccia della barra e'
+ * #nxa-native-progress-bar e il fill interno e' .nxa-native-progress-fill
+ * (larghezza percentuale scritta da admin.js come stile inline). */
+#nxa-native-progress {
+  margin: 12px 0 0;
+  min-width: 0;
+}
+
+/* Traccia: superficie token, altezza 10px, radius a pillola e clip degli
+ * angoli del fill. Larghezza fluida al 100% del contenitore: mai oltre. */
+#nxa-native-progress-bar {
+  height: 10px;
+  background: var(--nxa-surface-3);
+  border-radius: var(--nxa-radius-sm);
+  overflow: hidden;
+}
+
+/* Fill: parte da width 0 per non mostrare progresso finto prima che
+ * admin.js scriva la percentuale reale. Token accent: il contratto nomina
+ * var(--nxa-accent), token NON presente nel design system 1.0.6 (esistono
+ * --nxa-accent-1, --nxa-accent-2 e --nxa-accent-grad): si usa quindi con
+ * fallback su --nxa-accent-1, cosi' se l'integratore definira' --nxa-accent
+ * prevarra' quella, altrimenti vince l'accento brand esistente. Il
+ * min-height e' una rete di sicurezza: se il fill venisse mai montato in
+ * un contenitore senza altezza resta comunque leggibile come micro barra. */
+.nxa-native-progress-fill {
+  width: 0;
+  height: 100%;
+  min-height: 10px;
+  background: var(--nxa-accent, var(--nxa-accent-1));
+  transition: width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nxa-native-progress-fill {
+    transition: none;
+  }
+}
+
+/* Label "X di Y" (T-03, e' un <p> nel markup T-01): margini azzerati sotto
+ * (default del paragrafo), discreta, muted e wrap-safe. */
+#nxa-native-progress-label {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Report della migrazione (T-01 mostra/nasconde, T-03 lo popola con gli
+ * errori reali del batch, max 10, come <ul> con <li>): lista compatta su
+ * superficie per staccarla dal resto della card. I messaggi lunghi (URL,
+ * titoli, messaggi REST) vanno a capo senza spingere il pannello in
+ * orizzontale; niente pallini di default (marcatori fuori dal box con
+ * padding corto): le voci si separano con una linea tratteggiata token. */
+#nxa-native-report {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  max-width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--nxa-text-body);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  overflow-wrap: anywhere;
+  list-style: none;
+}
+
+#nxa-native-report ul,
+#nxa-native-report ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#nxa-native-report li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+#nxa-native-report li + li {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--nxa-border-soft);
+}
+
+/* Riga micro badge "Autore WP attivo" (T-03 cardHTML, presente solo quando
+ * l'agente ha un utente bot nativo associato): testo muted con puntino
+ * verde di stato. Il dot usa il token di successo esistente --nxa-ok-text
+ * (verde gia' temato light e dark) con fallback currentColor come da
+ * contratto; il ::before e' inline-block cosi' la riga resta un blocco
+ * che va a capo naturalmente senza layout flex dedicato. */
+.nxa-agent-wp-author {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+.nxa-agent-wp-author::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--nxa-ok-text, currentColor);
+  vertical-align: middle;
 }

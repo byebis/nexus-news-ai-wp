@@ -24,6 +24,14 @@
  * separata aggiuntiva (i blocchi JS preesistenti restano intatti al byte) che
  * chiama GET {restUrl}/ai/models (cache transient 12 ore lato server).
  *
+ * CONTRATTO v1.1.0 ("Tutto nativo"): nuova card "Migrazione contenuti nativi"
+ * (SEZIONE 1c, tra Diagnostica AI ed Esporta): contatori server-side noscript-safe
+ * (articoli CPT rimanenti via Nexus_Native::cpt_remaining(), gap mappature agenti
+ * via Nexus_Native::agent_mapping_gaps()) + bottone di avvio con hint. NESSUN
+ * JavaScript inline per questa card: la logica vive in assets/js/admin.js
+ * (v1.1.0 §2 T-03) e consuma i selettori fissi elencati nel CONTRATTO DOM sotto.
+ * La card non si renderizza se Nexus_Native non esiste (guard difensiva PHP).
+ *
  * CONTRATTO REST (rotte definite nel §2 T-03, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/export        → { version, exported_at, site_url, settings, agents }
  *                                  ATTENZIONE: il file esportato contiene segreti
@@ -49,6 +57,20 @@
  * - #nxa-tools-ai-test        bottone "Testa provider AI" (v1.0.7, Diagnostica AI).
  * - #nxa-tools-ai-result      box esito del test (aria-live="polite"; classi
  *                             nxa-tools-ai-result + modificatore --ok / --err).
+ * - #nxa-native-cpt-remaining contatore server-side: articoli CPT da migrare.
+ * - #nxa-native-agents-user-gap contatore server-side: agenti senza utente WP.
+ * - #nxa-native-agents-term-gap contatore server-side: agenti senza categoria
+ *                             nativa (categoria reale del sito).
+ * - #nxa-native-run           bottone "Avvia migrazione" (v1.1.0): il click è
+ *                             gestito da admin.js, NON dallo script inline qui.
+ * - #nxa-native-progress      blocco progresso, hidden finché admin.js non mostra.
+ * - #nxa-native-progress-bar  traccia della barra; fill interno con classe
+ *                             nxa-native-progress-fill (larghezza percentuale
+ *                             impostata da admin.js).
+ * - #nxa-native-progress-label label testuale di avanzamento ("X di Y").
+ * - #nxa-native-report        lista esiti ed errori, hidden finché admin.js la
+ *                             riempie.
+ * - #nxa-native-status        esito finale della migrazione, aria-live="polite".
  * - Toast: .nxa-tools-toast (--success / --error) su body, rimosso dopo 4 secondi.
  *
  * NOTE: la sezione 1 usa SOLO PHP (nessun fetch): versione plugin/WP/PHP, locale,
@@ -85,6 +107,26 @@ $ai_base   = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_ba
 $ai_model  = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
 $ai_cheap  = isset( $settings['ai_model_cheap'] ) ? trim( (string) $settings['ai_model_cheap'] ) : '';
 $ai_key_ok = isset( $settings['ai_api_key'] ) && '' !== trim( (string) $settings['ai_api_key'] );
+
+/* Migrazione contenuti nativi (v1.1.0): contatori server-side della card 1c.
+   Guard difensiva: se Nexus_Native non esiste (impossibile dopo il require del
+   bootstrap, ma difensivo) la card non si renderizza affatto. */
+$nxa_native_ok        = class_exists( 'Nexus_Native' );
+$nxa_native_remaining = 0;
+$nxa_native_user_gap  = 0;
+$nxa_native_term_gap  = 0;
+if ( $nxa_native_ok ) {
+        if ( method_exists( 'Nexus_Native', 'cpt_remaining' ) ) {
+                $nxa_native_remaining = absint( Nexus_Native::cpt_remaining() );
+        }
+        if ( method_exists( 'Nexus_Native', 'agent_mapping_gaps' ) ) {
+                $nxa_native_gaps = Nexus_Native::agent_mapping_gaps();
+                if ( is_array( $nxa_native_gaps ) ) {
+                        $nxa_native_user_gap = isset( $nxa_native_gaps['without_user'] ) ? absint( $nxa_native_gaps['without_user'] ) : 0;
+                        $nxa_native_term_gap = isset( $nxa_native_gaps['without_term'] ) ? absint( $nxa_native_gaps['without_term'] ) : 0;
+                }
+        }
+}
 
 /* Riga ambiente: ini_get può ritornare false o '' (mostro un trattino). */
 $mem_raw   = ini_get( 'memory_limit' );
@@ -243,6 +285,44 @@ $queue_rows = array(
                 </p>
                 <div id="nxa-tools-ai-result" class="nxa-tools-ai-result" aria-live="polite"></div>
         </div>
+
+        <!-- SEZIONE 1c: migrazione contenuti nativi (v1.1.0) — contatori server-side
+             noscript-safe e avvio migrazione. NESSUN JavaScript inline in questa
+             card: la logica vive in assets/js/admin.js, che consuma i selettori
+             fissi elencati nel CONTRATTO DOM in testa al file. La card compare
+             solo se Nexus_Native esiste (guard difensiva PHP sopra). -->
+        <?php if ( $nxa_native_ok ) : ?>
+        <div class="nxa-tools-section">
+                <h2 class="nxa-tools-section-title"><?php esc_html_e( 'Migrazione contenuti nativi', 'nexus-news-ai' ); ?></h2>
+                <p class="nxa-tools-desc"><?php esc_html_e( 'Stato della conversione al contenuto nativo: articoli rimasti e agenti senza mappatura nativa.', 'nexus-news-ai' ); ?></p>
+                <dl class="nxa-tools-defs">
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'Articoli Nexus da migrare', 'nexus-news-ai' ); ?></dt>
+                                <dd><span id="nxa-native-cpt-remaining"><?php echo esc_html( $nxa_native_remaining ); ?></span></dd>
+                        </div>
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'Agenti senza utente WP', 'nexus-news-ai' ); ?></dt>
+                                <dd><span id="nxa-native-agents-user-gap"><?php echo esc_html( $nxa_native_user_gap ); ?></span></dd>
+                        </div>
+                        <div class="nxa-tools-def">
+                                <dt><?php esc_html_e( 'Agenti senza categoria nativa', 'nexus-news-ai' ); ?></dt>
+                                <dd><span id="nxa-native-agents-term-gap"><?php echo esc_html( $nxa_native_term_gap ); ?></span></dd>
+                        </div>
+                </dl>
+                <p class="nxa-tools-actions">
+                        <button type="button" id="nxa-native-run" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Avvia migrazione', 'nexus-news-ai' ); ?></button>
+                </p>
+                <p class="nxa-tools-desc"><?php esc_html_e( 'La migrazione converte i vecchi articoli Nexus in post WordPress nativi (autore = agente, categoria nativa).', 'nexus-news-ai' ); ?></p>
+                <div id="nxa-native-progress" hidden>
+                        <div id="nxa-native-progress-bar">
+                                <div class="nxa-native-progress-fill"></div>
+                        </div>
+                        <p id="nxa-native-progress-label"></p>
+                </div>
+                <ul id="nxa-native-report" hidden></ul>
+                <p id="nxa-native-status" aria-live="polite"></p>
+        </div>
+        <?php endif; ?>
 
         <!-- SEZIONE 2: esporta configurazione (GET /export → download JSON lato client). -->
         <div class="nxa-tools-section">
@@ -677,6 +757,18 @@ $queue_rows = array(
     margin: 8px 0 0;
     font-size: 12px;
     word-break: break-word;
+  }
+
+  /* Migrazione contenuti nativi (v1.1.0): i blocchi nascosti restano nascosti
+     anche se il foglio condiviso assegna un display a quegli id (una regola per
+     id batte lo stile UA di [hidden]; stessa lezione di .nxa-acc-panel in 1.0.7).
+     Nessun colore: solo guardia di stato, la barra vive nel foglio condiviso.
+     NOTA: la graffa di apertura sta su una riga propria perche' una riga che
+     inizia con il cancelletto viene letta come commento dal sanity checker. */
+  #nxa-native-progress[hidden],
+  #nxa-native-report[hidden]
+  {
+    display: none;
   }
 
   /* Toast appeso a body: figlio di body, eredita i token (chiaro e scuro). */

@@ -29,6 +29,10 @@
  *   GET    /nexus/v1/analytics                     args: days (7..90) (v1.0.4)
  *   GET    /nexus/v1/export, POST /nexus/v1/import (config: impostazioni + agenti) (v1.0.5)
  *   POST   /nexus/v1/tools/api-key (v1.0.5) — ATTENZIONE: /export include segreti (chiavi API/token)
+ *   GET    /nexus/v1/wp/categories                 categorie WP native {categories: [{id, name, slug, count}]} per nome (v1.1.0)
+ *   POST   /nexus/v1/native/migrate                body {limit} opzionale, default 20, clamp 1-100, risposta shape migrate_status (v1.1.0)
+ *   GET    /nexus/v1/native/migrate/status         stato migrazione (shape migrate_status) (v1.1.0)
+ *   POST   /nexus/v1/native/migrate/reset          uso amministrativo: reset stato e ritorna status (v1.1.0)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -745,6 +749,68 @@ class Nexus_Rest {
                                 ),
                         )
                 );
+
+                /* ---------------- ADMIN: NATIVO WP (v1.1.0) ---------------- */
+
+                // v1.1.0: categorie WP native (datalist categoria editor agenti + UI admin).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/wp/categories',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_wp_categories' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.0: migrazione contenuti nativi (batch CPT → post nativi).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/native/migrate',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_native_migrate_run' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'limit'             => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 20,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.0: stato attuale della migrazione (shape migrate_status).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/native/migrate/status',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_native_migrate_status' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.0: reset dello stato di migrazione (uso amministrativo).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/native/migrate/reset',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_native_migrate_reset' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
         }
 
         /* =========================================================================
@@ -916,6 +982,10 @@ class Nexus_Rest {
 
                 Nexus_DB::insert_activity( $new_id, 'agent_create', sprintf( 'Agente "%s" creato via editor.', $fields['name'] ), 'info' );
 
+                // v1.1.0: sync nativo best-effort (utente bot + categoria WP) subito dopo la
+                // scrittura riuscita su tabella, così l'agente nuovo è subito nativo.
+                self::native_sync_agent_best_effort( Nexus_DB::get_agent( $new_id ) );
+
                 return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $new_id ) ) );
         }
 
@@ -954,6 +1024,10 @@ class Nexus_Rest {
 
                 Nexus_DB::update_agent( $id, $fields );
                 Nexus_DB::insert_activity( $id, 'agent_update', sprintf( 'Agente "%s" aggiornato via editor (%s).', $fields['name'] ?? $agent->name, implode( ', ', array_keys( $fields ) ) ), 'info' );
+
+                // v1.1.0: sync nativo best-effort dopo la scrittura riuscita su tabella
+                // (l'utente bot e la categoria nativa restano allineati all'agente).
+                self::native_sync_agent_best_effort( Nexus_DB::get_agent( $id ) );
 
                 return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $id ) ) );
         }
@@ -996,6 +1070,10 @@ class Nexus_Rest {
                 }
 
                 Nexus_DB::insert_activity( $new_id, 'agent_clone', sprintf( 'Agente clonato da "%s" (id %d) come "%s".', $agent->name, (int) $agent->id, $new_name ), 'info' );
+
+                // v1.1.0: sync nativo best-effort anche per il clone, subito dopo la
+                // scrittura riuscita su tabella (utente bot + categoria WP dedicati).
+                self::native_sync_agent_best_effort( Nexus_DB::get_agent( $new_id ) );
 
                 return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $new_id ) ) );
         }
@@ -2089,6 +2167,8 @@ class Nexus_Rest {
                 }
                 return array(
                         'id'          => (int) $agent->id,
+                        'wp_user_id'  => absint( $agent->wp_user_id ?? 0 ),
+                        'term_id'     => absint( $agent->term_id ?? 0 ),
                         'name'        => (string) $agent->name,
                         'avatar'      => (string) $agent->avatar,
                         'category'    => (string) $agent->category,
@@ -2427,5 +2507,186 @@ class Nexus_Rest {
                 Nexus_DB::update_settings( array( 'public_api_key' => $key ) );
 
                 return rest_ensure_response( array( 'api_key' => $key ) );
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: NATIVO WP (v1.1.0)
+         * ======================================================================= */
+
+        /**
+         * Sync nativo best-effort di un agente appena scritto su tabella (v1.1.0).
+         *
+         * Crea/riallinea utente bot e categoria WP nativa via Nexus_Native, così
+         * l'agente nuovo o modificato è subito nativo. Mai fatale: guard
+         * class_exists/method_exists, try/catch, log onesto in activity se fallisce.
+         *
+         * @param object|null $agent_row Riga agente appena scritta su tabella.
+         * @return void
+         */
+        private static function native_sync_agent_best_effort( $agent_row ) {
+                if ( ! $agent_row || ! class_exists( 'Nexus_Native' ) ) {
+                        return;
+                }
+
+                try {
+                        if ( method_exists( 'Nexus_Native', 'ensure_bot_user' ) ) {
+                                Nexus_Native::ensure_bot_user( $agent_row );
+                        }
+                        if ( method_exists( 'Nexus_Native', 'sync_agent_term' ) ) {
+                                Nexus_Native::sync_agent_term( $agent_row );
+                        }
+                } catch ( Throwable $e ) {
+                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) && ! empty( $agent_row->id ) ) {
+                                Nexus_DB::insert_activity(
+                                        (int) $agent_row->id,
+                                        'agent_native_sync',
+                                        sprintf( 'Sync nativo agente fallito: %s', sanitize_text_field( $e->getMessage() ) ),
+                                        'error'
+                                );
+                        }
+                }
+        }
+
+        /**
+         * GET /wp/categories — categorie WP native (v1.1.0).
+         *
+         * Lista completa (hide_empty false), ordinata per nome, shape compatta
+         * {categories: [{id, name, slug, count}, ...]}: serve al datalist della
+         * categoria nell'editor agenti e alla UI admin.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_wp_categories( $request ) {
+                unset( $request );
+
+                if ( ! function_exists( 'get_categories' ) ) {
+                        return self::err(
+                                'nexus_rest_categories_unavailable',
+                                __( 'Le categorie WordPress non sono disponibili in questo contesto.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $terms = get_categories( array( 'hide_empty' => false ) );
+                if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
+                        return self::err(
+                                'nexus_rest_categories_failed',
+                                __( 'Impossibile leggere le categorie WordPress.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $categories = array();
+                foreach ( $terms as $term ) {
+                        if ( ! $term instanceof WP_Term ) {
+                                continue;
+                        }
+                        $categories[] = array(
+                                'id'    => (int) $term->term_id,
+                                'name'  => (string) $term->name,
+                                'slug'  => (string) $term->slug,
+                                'count' => (int) $term->count,
+                        );
+                }
+
+                usort( $categories, array( __CLASS__, 'compare_categories_by_name' ) );
+
+                return rest_ensure_response( array( 'categories' => $categories ) );
+        }
+
+        /**
+         * Comparatore usort: categorie ordinate per nome (case-insensitive, multibyte).
+         *
+         * @param array $a Categoria.
+         * @param array $b Categoria.
+         * @return int
+         */
+        private static function compare_categories_by_name( $a, $b ) {
+                return strcmp( mb_strtolower( (string) $a['name'] ), mb_strtolower( (string) $b['name'] ) );
+        }
+
+        /**
+         * POST /native/migrate — esegue un batch di migrazione CPT → post nativi (v1.1.0).
+         *
+         * Body: {limit: int opzionale} — default 20, clamp 1-100 (difensivo: il clamp
+         * è ripetuto in Nexus_Native::migrate_run). Risposta: ritorno diretto di
+         * migrate_run, shape migrate_status {remaining, done, total, agents, finished, errors}
+         * con errori onesti già inclusi dal modulo.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_native_migrate_run( $request ) {
+                if ( ! class_exists( 'Nexus_Native' ) || ! method_exists( 'Nexus_Native', 'migrate_run' ) ) {
+                        return self::err(
+                                'nexus_rest_native_missing',
+                                __( 'Il modulo di migrazione nativa non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $limit = absint( $request->get_param( 'limit' ) );
+                if ( $limit < 1 ) {
+                        $limit = 20; // Default contrattuale (param assente o non valido).
+                }
+                $limit = max( 1, min( 100, $limit ) );
+
+                $status = Nexus_Native::migrate_run( $limit );
+                if ( ! is_array( $status ) ) {
+                        return self::err(
+                                'nexus_rest_native_migrate_failed',
+                                __( 'La migrazione non ha restituito uno stato valido.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                return rest_ensure_response( $status );
+        }
+
+        /**
+         * GET /native/migrate/status — stato attuale della migrazione (v1.1.0).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_native_migrate_status( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Native' ) || ! method_exists( 'Nexus_Native', 'migrate_status' ) ) {
+                        return self::err(
+                                'nexus_rest_native_missing',
+                                __( 'Il modulo di migrazione nativa non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $status = Nexus_Native::migrate_status();
+                return rest_ensure_response( is_array( $status ) ? $status : array() );
+        }
+
+        /**
+         * POST /native/migrate/reset — reset dello stato di migrazione (v1.1.0).
+         *
+         * Uso amministrativo: azzera done/total/errors e la sincronizzazione agenti
+         * per rieseguire la scansione da zero. Ritorna lo status aggiornato.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_native_migrate_reset( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Native' ) || ! method_exists( 'Nexus_Native', 'migrate_reset' ) || ! method_exists( 'Nexus_Native', 'migrate_status' ) ) {
+                        return self::err(
+                                'nexus_rest_native_missing',
+                                __( 'Il modulo di migrazione nativa non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                Nexus_Native::migrate_reset();
+                $status = Nexus_Native::migrate_status();
+                return rest_ensure_response( is_array( $status ) ? $status : array() );
         }
 }

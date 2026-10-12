@@ -145,11 +145,15 @@ class Nexus_DB {
                                 status VARCHAR(20) NOT NULL DEFAULT 'active',
                                 personality TEXT NULL,
                                 ai_model VARCHAR(100) NOT NULL DEFAULT '',
+                                wp_user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                                term_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 last_run DATETIME NULL DEFAULT NULL,
                                 created_at DATETIME NOT NULL,
                                 updated_at DATETIME NOT NULL,
                                 PRIMARY KEY  (id),
-                                UNIQUE KEY category (category(100))
+                                UNIQUE KEY category (category(100)),
+                                KEY wp_user_id (wp_user_id),
+                                KEY term_id (term_id)
                         ) {$charset};",
                         "CREATE TABLE {$arts} (
                                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -396,13 +400,21 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'last_run' ) )
+                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'last_run', 'wp_user_id', 'term_id' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
                 }
                 $allowed['updated_at'] = current_time( 'mysql' );
                 $formats               = array_fill( 0, count( $allowed ), '%s' );
+                // v1.1.0: colonne di integrazione nativa sempre intere (bot user + categoria WP).
+                foreach ( array( 'wp_user_id', 'term_id' ) as $nxa_int_field ) {
+                        $nxa_pos = array_search( $nxa_int_field, array_keys( $allowed ), true );
+                        if ( false !== $nxa_pos ) {
+                                $allowed[ $nxa_int_field ] = absint( $allowed[ $nxa_int_field ] );
+                                $formats[ $nxa_pos ]       = '%d';
+                        }
+                }
                 if ( isset( $allowed['last_run'] ) && null === $allowed['last_run'] ) {
                         $formats[ count( $allowed ) - 1 ] = 'NULL';
                 }
@@ -426,6 +438,8 @@ class Nexus_DB {
                         'status'      => sanitize_key( $data['status'] ?? 'active' ),
                         'personality' => sanitize_textarea_field( $data['personality'] ?? '' ),
                         'ai_model'    => sanitize_text_field( $data['ai_model'] ?? '' ),
+                        'wp_user_id'  => absint( $data['wp_user_id'] ?? 0 ),
+                        'term_id'     => absint( $data['term_id'] ?? 0 ),
                         'created_at'  => $now,
                         'updated_at'  => $now,
                 );

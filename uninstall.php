@@ -28,6 +28,14 @@
  * intelligente": wp_nexus_usage_logs (tracking uso AI: token e costo stimato)
  * e wp_nexus_translations (traduzioni AI degli articoli).
  *
+ * Dalla v1.1.0 "Tutto nativo": rimuove anche gli UTENTI BOT degli agenti
+ * (user_login 'nexus_agent_{id}', ruolo nexus_ai_journalist) con le loro
+ * capabilities, il ruolo "Giornalista AI" e l'opzione di stato migrazione
+ * nexus_native_migration + cache transients dei modelli (nexus_ai_models_*).
+ * I post NATIVI 'post' generati dal plugin NON vengono cancellati: dalla
+ * v1.1.0 sono articoli a tutti gli effetti del sito (autore bot, categorie
+ * native) — disinstallare il plugin non deve cancellare la testata.
+ *
  * @package Nexus_News_AI
  */
 
@@ -46,6 +54,50 @@ function nexus_uninstall_delete_options() {
         delete_option( 'nexus_settings' );
         delete_option( 'nexus_db_version' );
         delete_option( 'nexus_wire_runs' );
+        delete_option( 'nexus_native_migration' ); // v1.1.0 — stato migrazione nativa
+}
+
+/**
+ * Rimuove gli utenti bot degli agenti e il ruolo "Giornalista AI" (v1.1.0).
+ *
+ * Gli utenti bot sono identificati dal login canonico 'nexus_agent_{id}'
+ * (Nexus_Native::ensure_bot_user): cancellazione diretta via $wpdb per non
+ * dipendere da wp_delete_user (non sempre caricato in uninstall) e dalle
+ * classi del plugin. Vengono rimossi anche i transients di cache modelli.
+ *
+ * @return void
+ */
+function nexus_uninstall_delete_bot_users() {
+        global $wpdb;
+
+        // Utenti bot: solo i login canonici del plugin, mai altri utenti del sito.
+        $bot_ids = $wpdb->get_col(
+                $wpdb->prepare( "SELECT ID FROM {$wpdb->users} WHERE user_login LIKE %s", 'nexus_agent\_%' )
+        );
+
+        if ( ! empty( $bot_ids ) ) {
+                foreach ( $bot_ids as $bot_id ) {
+                        $bot_id = (int) $bot_id;
+                        $wpdb->delete( $wpdb->usermeta, array( 'user_id' => $bot_id ), array( '%d' ) );
+                        $wpdb->delete( $wpdb->users, array( 'ID' => $bot_id ), array( '%d' ) );
+                }
+        }
+
+        // Ruolo dedicato (se il registro ruoli è disponibile).
+        if ( function_exists( 'remove_role' ) ) {
+                remove_role( 'nexus_ai_journalist' );
+        }
+
+        // Transients cache modelli AI (v1.0.7) + voci di scadenza.
+        $like_transient = $wpdb->esc_like( '_transient_nexus_ai_models_' ) . '%';
+        $like_timeout   = $wpdb->esc_like( '_transient_timeout_nexus_ai_models_' ) . '%';
+        $wpdb->query(
+                $wpdb->prepare(
+                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+                        $like_transient,
+                        $like_timeout
+                )
+        );
 }
 
 /**
@@ -142,6 +194,10 @@ function nexus_uninstall_drop_tables_direct() {
 /* ---------------- 0) Post WordPress reali (CPT nexus_article, v1.0.1) ---------------- */
 
 nexus_uninstall_delete_wp_posts();
+
+/* ---------------- 0b) Utenti bot agenti + ruolo + cache modelli (v1.1.0) ---------------- */
+
+nexus_uninstall_delete_bot_users();
 
 /* ---------------- 1) Eventi cron (newsletter + ping, v1.0.2) ---------------- */
 

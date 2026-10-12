@@ -45,6 +45,17 @@
  * (.nxa-activity-item p ha overflow-wrap:anywhere; la griglia agenti è fluida).
  * Nessun id, data-* o selettore consumato da admin.js modificato.
  *
+ * v1.1.0 — Contratto "Tutto nativo" (T-06): nella griglia statistiche è
+ * presente una stat-card server-side aggiuntiva "Contenuti nativi". Nessun
+ * id nuovo consumato da admin.js: il JS scrive solo sui nodi #nxa-stat-*
+ * elencati qui sotto, quindi i valori di questa card non vengono sovrascritti.
+ * Primo numero: articoli Nexus collegati a un post WordPress nativo (COUNT
+ * sulla tabella articoli con wp_post_id maggiore di 0, query difensiva via
+ * $wpdb e Nexus_DB::tables(), guard su classe e metodo). Secondo numero
+ * (mostrato solo se la classe esiste): articoli del vecchio CPT ancora da
+ * migrare, via Nexus_Native::cpt_remaining() con guard class_exists e
+ * method_exists. Nessun JavaScript nuovo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -52,6 +63,26 @@ defined( 'ABSPATH' ) || exit;
 
 $nexus_settings = Nexus_DB::get_settings();
 $nexus_tagline  = isset( $nexus_settings['site_tagline'] ) ? $nexus_settings['site_tagline'] : '';
+
+/*
+ * v1.1.0 (T-06) — Contenuti nativi: primo numero = articoli Nexus collegati
+ * a un post WordPress nativo (wp_post_id maggiore di 0, COUNT difensivo via
+ * $wpdb e Nexus_DB::tables()); secondo numero = articoli del vecchio CPT
+ * ancora da migrare (Nexus_Native::cpt_remaining()). Guard difensive: se le
+ * classi/metodi non esistono la card mostra solo il primo numero (o zero).
+ */
+$nexus_native_linked    = 0;
+$nexus_native_remaining = null;
+if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
+        $nexus_tables = Nexus_DB::tables();
+        if ( is_array( $nexus_tables ) && ! empty( $nexus_tables['articles'] ) ) {
+                global $wpdb;
+                $nexus_native_linked = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$nexus_tables['articles']} WHERE wp_post_id > 0" );
+        }
+}
+if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'cpt_remaining' ) ) {
+        $nexus_native_remaining = (int) Nexus_Native::cpt_remaining();
+}
 ?>
 <div class="wrap nexus-admin" data-page="dashboard">
 
@@ -94,6 +125,13 @@ $nexus_tagline  = isset( $nexus_settings['site_tagline'] ) ? $nexus_settings['si
                 <div class="nxa-stat-card">
                         <span class="nxa-stat-value" id="nxa-stat-views">—</span>
                         <span class="nxa-stat-label"><?php echo esc_html__( 'Visualizzazioni', 'nexus-news-ai' ); ?></span>
+                </div>
+                <div class="nxa-stat-card">
+                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_native_linked ); ?></span>
+                        <span class="nxa-stat-label"><?php echo esc_html__( 'Contenuti nativi', 'nexus-news-ai' ); ?></span>
+                        <?php if ( null !== $nexus_native_remaining ) : ?>
+                                <span class="nxa-stat-label"><?php echo esc_html( $nexus_native_remaining ); ?> <?php echo esc_html__( 'da migrare', 'nexus-news-ai' ); ?></span>
+                        <?php endif; ?>
                 </div>
         </div>
 

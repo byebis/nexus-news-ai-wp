@@ -5,11 +5,15 @@
  * Canale 'blog' (v1.0.1 — "Contenuti Veri"):
  *  - enable_wp_posts = 0 (legacy) → l'articolo vive solo nel database Nexus e viene
  *    servito tramite home_url( '/?nexus_article={id}' ). Nessun post WordPress reale.
- *  - enable_wp_posts = 1 (WordPress reale) → wp_insert_post / wp_update_post sul CPT
- *    'nexus_article': titolo, contenuto (wp_kses_post), estratto (summary) e slug
- *    derivati dall'articolo Nexus; post_status dalle impostazioni ('publish'|'draft').
- *    Categoria WP nativa riusata o creata dal nome articolo, meta di collegamento
- *    _nexus_article_id e sincronizzazione di wp_post_id su wp_nexus_articles.
+ *  - enable_wp_posts = 1 (WordPress reale) → wp_insert_post / wp_update_post.
+ *    v1.1.0 "Tutto nativo" — i post sono sul post type NATIVO 'post' (filtrabile
+ *    con 'nexus_native_post_type'): post_author = utente bot dell'agente
+ *    (Nexus_Native::ensure_bot_user), categoria nativa della testata
+ *    (Nexus_Native::article_term_id, prima il term dell'agente), tag nativi
+ *    deterministici (Nexus_Native::article_tags), titolo, contenuto (wp_kses_post),
+ *    estratto (summary) e slug derivati dall'articolo Nexus; post_status dalle
+ *    impostazioni ('publish'|'draft'). Meta di collegamento _nexus_article_id e
+ *    sincronizzazione di wp_post_id su wp_nexus_articles.
  *    Subito dopo la pubblicazione vengono invocati — senza MAI bloccarla —
  *    Nexus_Image::ensure_featured() e Nexus_SEO::optimize() (classi v1.0.1, se
  *    presenti: guard con class_exists + try/catch).
@@ -265,15 +269,16 @@ class Nexus_Publisher {
                         $content .= $citations;
                 }
 
-                // Stato del post ammesso: 'publish' | 'draft'.
+                // Stato del post ammesso: 'publish' | 'draft' | 'pending' (v1.1.0: revisione WP nativa).
                 $post_status = isset( $settings['post_status'] ) ? sanitize_key( (string) $settings['post_status'] ) : 'publish';
-                if ( ! in_array( $post_status, array( 'publish', 'draft' ), true ) ) {
+                if ( ! in_array( $post_status, array( 'publish', 'draft', 'pending' ), true ) ) {
                         $post_status = 'publish';
                 }
 
                 // Se l'articolo è già collegato a un post WP esistente si aggiorna, senza duplicare.
                 $wp_post_id = isset( $article->wp_post_id ) ? absint( $article->wp_post_id ) : 0;
 
+                // v1.1.0 "Tutto nativo": autore bot dell'agente, categoria nativa e tag.
                 $post_args = array(
                         'post_title'   => $title,
                         'post_content' => $content,
@@ -281,6 +286,18 @@ class Nexus_Publisher {
                         'post_status'  => $post_status,
                         'post_name'    => sanitize_title( $title ),
                 );
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_author_id' ) ) {
+                        $nxa_author = absint( Nexus_Native::article_author_id( $article ) );
+                        if ( $nxa_author > 0 ) {
+                                $post_args['post_author'] = $nxa_author;
+                        }
+                }
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_tags' ) ) {
+                        $nxa_tags = Nexus_Native::article_tags( $article );
+                        if ( ! empty( $nxa_tags ) ) {
+                                $post_args['tags_input'] = $nxa_tags;
+                        }
+                }
 
                 if ( $wp_post_id > 0 && get_post( $wp_post_id ) ) {
                         // Aggiornamento del post esistente (title/content/excerpt aggiornati).
@@ -288,10 +305,10 @@ class Nexus_Publisher {
                         $result          = wp_update_post( $post_args, true );
                         $note            = 'Aggiornato post WordPress esistente';
                 } else {
-                        // Inserimento di un nuovo post sul CPT dedicato.
-                        $post_args['post_type'] = 'nexus_article';
+                        // v1.1.0: inserimento come POST NATIVO (filtrabile con 'nexus_native_post_type').
+                        $post_args['post_type'] = apply_filters( 'nexus_native_post_type', 'post' );
                         $result                 = wp_insert_post( $post_args, true );
-                        $note                   = 'Post WordPress reale (CPT nexus_article)';
+                        $note                   = 'Post WordPress nativo';
                 }
 
                 if ( is_wp_error( $result ) || 0 === absint( $result ) ) {
@@ -301,8 +318,12 @@ class Nexus_Publisher {
 
                 $post_id = absint( $result );
 
-                // Categoria WP nativa: termine riusato o creato, poi assegnato al post.
-                $category_id = self::ensure_category( $article );
+                // Categoria WP nativa (v1.1.0): prima il term dell'agente, fallback dal nome articolo.
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_term_id' ) ) {
+                        $category_id = absint( Nexus_Native::article_term_id( $article ) );
+                } else {
+                        $category_id = self::ensure_category( $article );
+                }
                 if ( $category_id > 0 ) {
                         wp_set_post_categories( $post_id, array( $category_id ) );
                 }
