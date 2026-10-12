@@ -748,6 +748,48 @@
                 document.body.classList.remove( 'nxa-modal-open' );
         }
 
+        /* v1.1.7: una sola delega sul modal per aprire il dettaglio dalle liste
+         * in modal (es. articoli dell'agente .nxa-agent-article-open[data-id]). */
+        var agentArticleModalBound = false;
+
+        function bindAgentArticleListModal() {
+                if ( agentArticleModalBound ) {
+                        return;
+                }
+                var modal = ensureModal();
+                agentArticleModalBound = true;
+                modal.addEventListener( 'click', function ( ev ) {
+                        var open = ( ev.target && ev.target.closest ) ? ev.target.closest( '.nxa-agent-article-open' ) : null;
+                        if ( open ) {
+                                openArticleModal( num( open.getAttribute( 'data-id' ) ) );
+                        }
+                } );
+        }
+
+        /* v1.1.7: chiusura delle modali statiche delle viste ([data-nxa-close-modal],
+         * hook documentato in queue.php per #nxa-queue-modal e riutilizzabile):
+         * il bottone .nxa-modal-close delle viste non aveva nessun handler in
+         * admin.js (wiring morto). Delega globale, registrata una volta sola. */
+        var staticModalClosersBound = false;
+
+        function bindStaticModalClosers() {
+                if ( staticModalClosersBound ) {
+                        return;
+                }
+                staticModalClosersBound = true;
+                document.addEventListener( 'click', function ( ev ) {
+                        var btn = ( ev.target && ev.target.closest ) ? ev.target.closest( '[data-nxa-close-modal]' ) : null;
+                        if ( ! btn ) {
+                                return;
+                        }
+                        var modal = btn.closest ? btn.closest( '.nxa-modal' ) : null;
+                        if ( modal ) {
+                                modal.hidden = true;
+                        }
+                        document.body.classList.remove( 'nxa-modal-open' );
+                } );
+        }
+
         /** Modal di dettaglio: GET /articles/{id} → titolo, meta, contenuto, log. */
         function openArticleModal( id ) {
                 openModalBody( '<div class="nxa-skeleton" style="width:70%"></div><div class="nxa-skeleton"></div><div class="nxa-skeleton" style="width:40%"></div>' );
@@ -1504,6 +1546,12 @@
                         // v1.1.5: "Avvia" (nxa-btn-run, data-run-agent) è il primo
                         // bottone: azione primaria della card (POST pipeline/run
                         // agent_id, handler delegato nella sezione AVVII MIRATI).
+                        // v1.1.7 (T-B2): "Vedi articoli dell'agente" ORA è renderizzato
+                        // anche nelle card JS (prima esisteva solo nel <noscript> di
+                        // agents.php, lasciando l'handler delegato
+                        // .nxa-agent-articles-link senza markup: wiring morto).
+                        // Stessa classe/data-* del noscript: nxa-btn is-sm +
+                        // nxa-agent-articles-link + data-agent-id + href="#".
                         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
                                 '<button type="button" class="button nxa-btn-run" data-run-agent="' + esc( pick( agent, 'id' ) ) + '">▶ Avvia</button>' +
                                 '<button type="button" class="button nxa-agent-edit" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Modifica</button>' +
@@ -1511,6 +1559,8 @@
                                 '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
                                         ( isActive ? 'Metti in pausa' : 'Riattiva' ) +
                                 '</button>' +
+                                '<a class="nxa-btn is-sm nxa-agent-articles-link" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" href="#">Vedi articoli dell’agente</a>' +
+                                '<button type="button" class="button nxa-agent-delete" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-name="' + esc( pick( agent, 'name' ) ) + '">Elimina</button>' +
                         '</div>' +
                 '</div>';
         }
@@ -1555,6 +1605,28 @@
                                 } );
                         } );
 
+                        // v1.1.7: eliminazione agente (DELETE /agents/{id}). Il contenuto
+                        // resta: gli articoli vengono solo scollegati dall'autore.
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var del = ev.target.closest ? ev.target.closest( '.nxa-agent-delete' ) : null;
+                                if ( ! del || del.disabled ) {
+                                        return;
+                                }
+                                var id = num( del.getAttribute( 'data-agent-id' ) );
+                                var name = del.getAttribute( 'data-name' ) || '';
+                                if ( ! window.confirm( 'Eliminare l’agente "' + name + '"? Gli articoli restano pubblicati ma senza autore assegnato.' ) ) {
+                                        return;
+                                }
+                                setBtnLoading( del, true, 'Elimino…' );
+                                api( 'agents/' + id, { method: 'DELETE' } ).then( function () {
+                                        toast( 'Agente eliminato.', 'success', 'Fatto' );
+                                        return loadAgents( true );
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Impossibile eliminare l’agente' );
+                                        setBtnLoading( del, false );
+                                } );
+                        } );
+
                         // Salva modello AI dedicato (v1.0.3): POST /agents/{id}/model {model}
                         // → risposta serialize_agent: aggiorna la riga locale (niente reload).
                         grid.addEventListener( 'click', function ( ev ) {
@@ -1586,6 +1658,45 @@
                                 } ).catch( function ( err ) {
                                         apiErrorToast( err, 'Salvataggio modello non riuscito' );
                                         setBtnLoading( saveBtn, false );
+                                } );
+                        } );
+
+                        // v1.1.7: "Vedi articoli dell'agente" (.nxa-agent-articles-link,
+                        // markup PHP statico agents.php con data-agent-id) — link senza
+                        // handler (wiring rotto: click = href="#" inerte). Ora apre la
+                        // modal con la lista articoli dell'agente (GET /articles
+                        // ?agent_id=&per_page=20) e il dettaglio al click sulla riga.
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var link = ev.target.closest ? ev.target.closest( '.nxa-agent-articles-link' ) : null;
+                                if ( ! link ) {
+                                        return;
+                                }
+                                ev.preventDefault();
+                                var agentId = num( link.getAttribute( 'data-agent-id' ) );
+                                if ( agentId <= 0 ) {
+                                        return;
+                                }
+                                openModalBody( '<div class="nxa-skeleton"></div><div class="nxa-skeleton"></div><div class="nxa-skeleton" style="width:60%"></div>' );
+                                bindAgentArticleListModal();
+                                api( 'articles?agent_id=' + agentId + '&per_page=20' ).then( function ( payload ) {
+                                        var d = unwrap( payload ) || {};
+                                        var list = getList( d, [ 'articles', 'items', 'list' ] );
+                                        if ( ! list.length ) {
+                                                openModalBody( emptyState( '📄', 'Nessun articolo', 'Questo agente non ha ancora prodotto articoli.' ) );
+                                                return;
+                                        }
+                                        var rows = '';
+                                        for ( var i = 0; i < list.length; i++ ) {
+                                                rows += '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--nxa-border)">' +
+                                                        badge( pick( list[ i ], 'status' ) ) +
+                                                        '<button type="button" class="button-link nxa-agent-article-open" data-id="' + esc( num( pick( list[ i ], 'id' ) ) ) + '" style="flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                                                                esc( pick( list[ i ], 'title' ) || '(senza titolo)' ) +
+                                                        '</button>' +
+                                                '</div>';
+                                        }
+                                        openModalBody( rows );
+                                } ).catch( function ( err ) {
+                                        openModalBody( emptyState( '⚠️', 'Impossibile caricare gli articoli', err.message || '' ) );
                                 } );
                         } );
                 }
@@ -2361,6 +2472,7 @@
                         return Promise.resolve();
                 }
                 showSkeleton( list, 4 );
+                list.setAttribute( 'aria-busy', 'true' );
                 var status = currentQueueFilter();
                 var query = '?per_page=20&page=1' + ( status ? '&status=' + encodeURIComponent( status ) : '' );
                 return api( 'articles' + query ).then( function ( payload ) {
@@ -2369,7 +2481,17 @@
                                 ? items.map( queueItemHtml ).join( '' )
                                 : emptyState( '🗂️', 'Nessun articolo in coda',
                                         status ? 'Nessun articolo con lo stato selezionato.' : 'Esegui la raccolta per generare nuovi articoli.' );
+                        // v1.1.7: aria-busy non deve restare "true" per sempre (rimasto dal markup
+                        // server-side) e il contatore #nxa-queue-count non veniva mai popolato.
+                        list.removeAttribute( 'aria-busy' );
+                        var count = qs( '#nxa-queue-count' );
+                        if ( count ) {
+                                var unwrapped = unwrap( payload );
+                                var total = ( unwrapped && typeof unwrapped.total === 'number' ) ? unwrapped.total : items.length;
+                                count.textContent = ( 1 === total ) ? '1 articolo in coda' : total + ' articoli in coda';
+                        }
                 } ).catch( function ( err ) {
+                        list.removeAttribute( 'aria-busy' );
                         list.innerHTML = emptyState( '⚠️', 'Impossibile caricare la coda', err.message || '' );
                         window.console.warn( '[Nexus] coda:', err );
                 } );
@@ -3055,7 +3177,129 @@
         }
 
         /* ==================================================================
-         * 13-ter. REDAZIONI GERARCHICHE (v1.1.1)
+         * 13-ter. TEST DEGLI STRUMENTI (v1.1.7) — POST /tools/test
+         * ==================================================================
+         *
+         * Card "Test degli strumenti" della pagina Strumenti (markup T-B2 in
+         * tools.php): select #nxa-tools-test-tool (search|read|feeds), input
+         * #nxa-tools-test-input (placeholder dinamico per strumento), bottone
+         * #nxa-tools-test-run e box esito #nxa-tools-test-result. La rotta
+         * POST /tools/test (callback rest_tools_test, già funzionante) vuole
+         * query per tool=search e url per tool=read|feeds: il body viene
+         * costruito di conseguenza. Errori HTTP 400 onesti (tool/query/url
+         * mancanti) → messaggio del body WP nel box con modificatore --warn,
+         * mai toast. Markup assente (altri contesti) → exit silenzioso.
+         */
+
+        var toolsTestBusy = false;
+
+        /** v1.1.7: placeholder dell'input per lo strumento selezionato. */
+        function toolsTestPlaceholder( tool ) {
+                if ( tool === 'read' ) {
+                        return 'https://esempio.it/pagina';
+                }
+                if ( tool === 'feeds' ) {
+                        return 'https://esempio.it';
+                }
+                return 'es. intelligenza artificiale';
+        }
+
+        /**
+         * v1.1.7: render dell'esito nel box #nxa-tools-test-result. ok →
+         * modificatore --ok con il JSON dello strumento in <code>; esito
+         * negativo (ok=false o campo error) → --warn con l'errore e l'eventuale
+         * JSON; il JSON è CLIPPATO lato server a 4000 caratteri e inserito via
+         * esc() (mai HTML dello strumento nel DOM).
+         */
+        function renderToolsTestResult( box, tool, data ) {
+                if ( ! box ) {
+                        return;
+                }
+                var d = data || {};
+                var error = String( pick( d, 'error' ) || '' ).trim();
+                var json = String( pick( d, 'result' ) || '' );
+                var ok = d.ok === true && '' === error;
+                if ( ok ) {
+                        box.className = 'nxa-tools-result nxa-tools-result--ok';
+                        box.innerHTML = 'Test riuscito (' + esc( tool ) + '). Esito dello strumento:' +
+                                '<code class="nxa-tools-test-json">' + esc( json || '(nessun output)' ) + '</code>';
+                        return;
+                }
+                box.className = 'nxa-tools-result nxa-tools-result--warn';
+                box.innerHTML = 'Test non riuscito (' + esc( tool ) + '): ' +
+                        esc( error || 'lo strumento ha restituito un esito negativo.' ) +
+                        ( json ? '<code class="nxa-tools-test-json">' + esc( json ) + '</code>' : '' );
+        }
+
+        /**
+         * v1.1.7: binding della card "Test degli strumenti" — chiamata dal
+         * loader "tools" di LOADERS (accanto a bindNativeMigration). Bottone
+         * assente → exit silenzioso. Durante la chiamata il bottone resta
+         * disabilitato (setBtnLoading) e viene SEMPRE riabilitato alla fine.
+         */
+        function bindToolsTest() {
+                var btn = qs( '#nxa-tools-test-run' );
+                if ( ! btn ) {
+                        return;
+                }
+                var toolSel = qs( '#nxa-tools-test-tool' );
+                var input = qs( '#nxa-tools-test-input' );
+                var box = qs( '#nxa-tools-test-result' );
+
+                function syncInput() {
+                        var tool = toolSel ? String( toolSel.value || 'search' ) : 'search';
+                        if ( input ) {
+                                input.placeholder = toolsTestPlaceholder( tool );
+                        }
+                }
+                if ( toolSel ) {
+                        toolSel.addEventListener( 'change', syncInput );
+                        syncInput();
+                }
+
+                btn.addEventListener( 'click', function () {
+                        if ( toolsTestBusy ) {
+                                return;
+                        }
+                        var tool = toolSel ? String( toolSel.value || 'search' ) : 'search';
+                        var value = input ? String( input.value || '' ).trim() : '';
+                        if ( ! value ) {
+                                if ( box ) {
+                                        box.className = 'nxa-tools-result nxa-tools-result--warn';
+                                        box.textContent = 'Inserisci una query o un URL da testare.';
+                                }
+                                return;
+                        }
+                        var body = { tool: tool };
+                        if ( tool === 'search' ) {
+                                body.query = value;
+                        } else {
+                                body.url = value;
+                        }
+                        toolsTestBusy = true;
+                        setBtnLoading( btn, true, 'Test in corso…' );
+                        if ( box ) {
+                                box.className = 'nxa-tools-result';
+                                box.textContent = 'Test in corso…';
+                        }
+                        api( 'tools/test', { method: 'POST', body: body } ).then( function ( payload ) {
+                                renderToolsTestResult( box, tool, unwrap( payload ) || {} );
+                        } ).catch( function ( err ) {
+                                // Errori 400 onesti della rotta (tool/query/url mancanti):
+                                // messaggio WP nel box, senza toast.
+                                if ( box ) {
+                                        box.className = 'nxa-tools-result nxa-tools-result--warn';
+                                        box.textContent = 'Test non riuscito: ' + ( ( err && err.message ) ? err.message : 'errore sconosciuto' );
+                                }
+                        } ).then( function () {
+                                toolsTestBusy = false;
+                                setBtnLoading( btn, false );
+                        } );
+                } );
+        }
+
+        /* ==================================================================
+         * 13-quater. REDAZIONI GERARCHICHE (v1.1.1)
          * ================================================================== */
 
         /**
@@ -4062,6 +4306,9 @@
 
         bindRunButtons();
 
+        // v1.1.7: chiusura modali statiche delle viste ([data-nxa-close-modal]).
+        bindStaticModalClosers();
+
         /* ==================================================================
          * 13-quinquies. LIVE REDAZIONALE (v1.1.5)
          * ==================================================================
@@ -4375,6 +4622,18 @@
                         // v1.1.0: migrazione contenuti nativi (card Strumenti, T-01);
                         // bottone #nxa-native-run assente → exit silenzioso.
                         bindNativeMigration();
+                        // v1.1.7 (T-B2): card "Test degli strumenti" (POST /tools/test,
+                        // promessa v1.1.4); markup assente → exit silenzioso.
+                        bindToolsTest();
+                },
+                // v1.1.7 (T-B2): viste self-contained con script inline proprio
+                // (jobs.php, analytics.php): il boot non deve stampare il warn
+                // "pagina sconosciuta" — loader no-op, nessun binding condiviso.
+                jobs: function () {
+                        return null;
+                },
+                analytics: function () {
+                        return null;
                 },
                 redazioni: function () {
                         // v1.1.1: pagina "Redazioni" (markup T-01, REST T-02) —

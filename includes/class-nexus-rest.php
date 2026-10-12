@@ -218,6 +218,20 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.7: eliminazione agente (contenuto preservato, riferimenti puliti).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents/(?P<id>[0-9]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::DELETABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_delete' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
                 // v1.0.7: modelli disponibili dal provider AI (auto-load da chiave API).
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -1403,6 +1417,31 @@ class Nexus_Rest {
                 self::native_sync_agent_best_effort( Nexus_DB::get_agent( $new_id ) );
 
                 return rest_ensure_response( self::serialize_agent( Nexus_DB::get_agent( $new_id ) ) );
+        }
+
+        /**
+         * DELETE /agents/{id} — elimina l'agente (v1.1.7).
+         * La storia editoriale resta: gli articoli vengono scollegati (agent_id = 0),
+         * job pending/running rimossi, assegnazioni redazioni pulite, chief_id
+         * azzerato se puntava a questo agente. Il dettaglio è in Nexus_DB::delete_agent().
+         */
+        public static function rest_agent_delete( $request ) {
+                $id    = absint( $request->get_param( 'id' ) );
+                $agent = Nexus_DB::get_agent( $id );
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+                $deleted = Nexus_DB::delete_agent( $id );
+                if ( ! $deleted ) {
+                        return self::err( 'nexus_rest_agent_delete_failed', __( 'Impossibile eliminare l\'agente.', 'nexus-news-ai' ), 500 );
+                }
+                return rest_ensure_response(
+                        array(
+                                'deleted' => true,
+                                'id'      => $id,
+                                'name'    => (string) $agent->name,
+                        )
+                );
         }
 
         /**
@@ -2928,6 +2967,13 @@ class Nexus_Rest {
                         'tools_read_max_chars' => 'absint',
                         'tools_max_rounds'     => 'absint',
                         'tools_timeout'        => 'absint',
+                        // Sistema (v1.1.6): coda, API pubblica, lingua admin, autotraduzione (v1.1.7: chiavi prima scartate dalla whitelist).
+                        'admin_language'       => 'sanitize_key',
+                        'enable_queue'         => 'absint',
+                        'queue_batch_size'     => 'absint',
+                        'queue_max_attempts'   => 'absint',
+                        'enable_public_api'    => 'absint',
+                        'enable_autotranslate_posts' => 'absint',
                         'mcp_servers_text'     => 'sanitize_textarea_field',
                 );
 
@@ -2964,6 +3010,10 @@ class Nexus_Rest {
                         'chief_auto_publish',
                         'tools_enabled',
                         'tools_read_page',
+                        // Sistema (v1.1.7): coerenza con le chiavi aggiunte in mappa.
+                        'enable_queue',
+                        'enable_public_api',
+                        'enable_autotranslate_posts',
                 ) as $flag ) {
                         if ( isset( $out[ $flag ] ) ) {
                                 $out[ $flag ] = $out[ $flag ] ? 1 : 0;
@@ -2973,6 +3023,11 @@ class Nexus_Rest {
                 // Tema admin: ammessi solo light | dark (v1.0.6), fallback chiaro.
                 if ( isset( $out['admin_theme'] ) && ! in_array( $out['admin_theme'], array( 'light', 'dark' ), true ) ) {
                         $out['admin_theme'] = 'light';
+                }
+
+                // Lingua admin: ammesse solo auto | it | en (v1.0.5), fallback auto (V117-T-B2).
+                if ( isset( $out['admin_language'] ) && ! in_array( $out['admin_language'], array( 'auto', 'it', 'en' ), true ) ) {
+                        $out['admin_language'] = 'auto';
                 }
 
                 // Chiave IndexNow: solo caratteri alfanumerici (formato richiesto dal protocollo).
@@ -3008,11 +3063,11 @@ class Nexus_Rest {
                         );
                 }
 
-                // Valida lo stato dei post WordPress creati dal publisher.
-                if ( isset( $out['post_status'] ) && ! in_array( $out['post_status'], array( 'publish', 'draft' ), true ) ) {
+                // Valida lo stato dei post WordPress creati dal publisher (v1.1.7: 'pending' ammesso, la UI lo offre dalla v1.1.5).
+                if ( isset( $out['post_status'] ) && ! in_array( $out['post_status'], array( 'publish', 'draft', 'pending' ), true ) ) {
                         return self::err(
                                 'nexus_rest_invalid_post_status',
-                                __( 'Stato post non valido. Valori ammessi: publish, draft.', 'nexus-news-ai' ),
+                                __( 'Stato post non valido. Valori ammessi: publish, draft, pending.', 'nexus-news-ai' ),
                                 400
                         );
                 }
@@ -3063,6 +3118,14 @@ class Nexus_Rest {
                 // Timeout richieste strumenti: 5-30 secondi (v1.1.4).
                 if ( isset( $out['tools_timeout'] ) ) {
                         $out['tools_timeout'] = min( 30, max( 5, (int) $out['tools_timeout'] ) );
+                }
+
+                // Coda lavori: batch 1-50, tentativi 1-10 (v1.0.4; limiti del markup, V117-T-B2).
+                if ( isset( $out['queue_batch_size'] ) ) {
+                        $out['queue_batch_size'] = min( 50, max( 1, absint( $out['queue_batch_size'] ) ) );
+                }
+                if ( isset( $out['queue_max_attempts'] ) ) {
+                        $out['queue_max_attempts'] = min( 10, max( 1, absint( $out['queue_max_attempts'] ) ) );
                 }
 
                 return $out;

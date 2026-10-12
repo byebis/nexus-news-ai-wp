@@ -462,7 +462,13 @@ defined( 'ABSPATH' ) || exit;
         (function () {
                 'use strict';
 
-                /* Guard: la vista dipende dai dati localizzati in pagina dal plugin. */
+                /* v1.1.7: la guardia NON esce più per sempre. NexusAdminData è
+                 * localizzata nei FOOTER admin (wp_enqueue_script in_footer): quando
+                 * questo script inline gira durante il parsing la variabile non esiste
+                 * ancora e la vecchia guardia chiudeva l'IIFE — pagina Coda Lavori
+                 * morta in ogni lingua. Tutto il corpo ora vive in avvia(), invocata
+                 * subito o al DOM ready (stesso pattern di tools.php). */
+                function avvia() {
                 if (!window.NexusAdminData || !window.NexusAdminData.restUrl || !window.NexusAdminData.nonce) {
                         if (window.console && window.console.warn) {
                                 window.console.warn('[Nexus News AI] NexusAdminData non disponibile: vista Coda Lavori non inizializzata.');
@@ -824,5 +830,14 @@ defined( 'ABSPATH' ) || exit;
                                 load({ silent: true });
                         }
                 }, 15000);
+                }
+
+                /* v1.1.7: avvio differito al DOM ready quando lo script inline viene
+                 * eseguito durante il parsing (NexusAdminData vive nei footer). */
+                if ('loading' === document.readyState) {
+                        document.addEventListener('DOMContentLoaded', avvia);
+                } else {
+                        avvia();
+                }
         })();
 </script>

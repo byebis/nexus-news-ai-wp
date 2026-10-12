@@ -50,6 +50,11 @@
  * - GET  {restUrl}/ai/models     → { models:[id...], base_url, cached, count,
  *                                  fetched_at } (v1.0.7; errori: 400 key_missing,
  *                                  502 con messaggio onesto dal provider)
+ * - POST {restUrl}/tools/test   body: { tool: search|read|feeds, query|url }
+ *                                  → { ok, tool, result, error } (v1.1.7: UI
+ *                                  "Test degli strumenti"; handler in admin.js,
+ *                                  NON nello script inline; errori 400 onesti per
+ *                                  tool/query/url mancanti, result clip 4000).
  * Autenticazione: header X-WP-Nonce = NexusAdminData.nonce (localizzato lato admin).
  *
  * CONTRATTO DOM (selettori fissi consumati dallo script inline in fondo al file):
@@ -78,6 +83,14 @@
  * - #nxa-native-report        lista esiti ed errori, hidden finché admin.js la
  *                             riempie.
  * - #nxa-native-status        esito finale della migrazione, aria-live="polite".
+ * - #nxa-tools-test-tool      select "Strumento da testare" (v1.1.7:
+ *                             search|read|feeds; handler in admin.js, NON qui).
+ * - #nxa-tools-test-input     input query/URL del test (placeholder dinamico
+ *                             impostato da admin.js al cambio strumento).
+ * - #nxa-tools-test-run       bottone "Esegui test" (v1.1.7): POST /tools/test
+ *                             via admin.js (bindToolsTest, loader "tools").
+ * - #nxa-tools-test-result    box esito del test (aria-live="polite"; classe
+ *                             nxa-tools-result + modificatore --ok / --warn).
  * - Toast: .nxa-tools-toast (--success / --error) su body, rimosso dopo 4 secondi.
  *
  * NOTE: la sezione 1 usa SOLO PHP (nessun fetch): versione plugin/WP/PHP, locale,
@@ -330,6 +343,30 @@ $queue_rows = array(
                 <p id="nxa-native-status" aria-live="polite"></p>
         </div>
         <?php endif; ?>
+
+        <!-- SEZIONE 1-ter (v1.1.7): test degli strumenti di ricerca. La rotta
+             POST /tools/test esiste da v1.1.4 (callback rest_tools_test) ma era
+             ORFANA: nessuna UI la chiamava. Il click è gestito da admin.js
+             (bindToolsTest nel loader "tools"), NON dallo script inline qui:
+             stesso pattern della migrazione nativa. search vuole query, read e
+             feeds vogliono url (il body lo costruisce admin.js); gli errori 400
+             della rotta finiscono onestamente nel box esito con modificatore --warn. -->
+        <div class="nxa-tools-section">
+                <h2 class="nxa-tools-section-title"><?php esc_html_e( 'Test degli strumenti', 'nexus-news-ai' ); ?></h2>
+                <p class="nxa-tools-desc"><?php esc_html_e( 'Prova la configurazione degli strumenti senza attivarli: ricerca web, lettura pagina e scoperta feed.', 'nexus-news-ai' ); ?></p>
+                <p class="nxa-tools-actions">
+                        <label class="screen-reader-text" for="nxa-tools-test-tool"><?php esc_html_e( 'Strumento da testare', 'nexus-news-ai' ); ?></label>
+                        <select id="nxa-tools-test-tool" class="nxa-tools-test-tool">
+                                <option value="search" selected><?php esc_html_e( 'Ricerca web (search)', 'nexus-news-ai' ); ?></option>
+                                <option value="read"><?php esc_html_e( 'Lettura pagina (read)', 'nexus-news-ai' ); ?></option>
+                                <option value="feeds"><?php esc_html_e( 'Scoperta feed RSS (feeds)', 'nexus-news-ai' ); ?></option>
+                        </select>
+                        <label class="screen-reader-text" for="nxa-tools-test-input"><?php esc_html_e( 'Query o URL da testare', 'nexus-news-ai' ); ?></label>
+                        <input type="text" id="nxa-tools-test-input" class="nxa-tools-test-input" placeholder="<?php esc_attr_e( 'es. intelligenza artificiale', 'nexus-news-ai' ); ?>">
+                        <button type="button" id="nxa-tools-test-run" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Esegui test', 'nexus-news-ai' ); ?></button>
+                </p>
+                <div id="nxa-tools-test-result" class="nxa-tools-result" role="status" aria-live="polite"><?php esc_html_e( 'Nessun test eseguito in questa sessione.', 'nexus-news-ai' ); ?></div>
+        </div>
 
         <!-- SEZIONE 2: esporta configurazione (GET /export → download JSON lato client). -->
         <div class="nxa-tools-section">
@@ -714,6 +751,45 @@ $queue_rows = array(
     color: var(--nxa-err-text);
   }
 
+  /* Test degli strumenti (v1.1.7): select + input sulla riga azioni e JSON
+     dell'esito a capo con word-break; stessi token della famiglia
+     .nxa-tools-result (chiaro default, scuro via flip variabili). */
+  .nxa-tools-test-tool {
+    min-height: 32px;
+    border-color: var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface);
+    color: var(--nxa-text);
+  }
+
+  .nxa-tools-test-tool:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
+
+  .nxa-tools-test-input {
+    flex: 1 1 260px;
+    min-width: 0;
+    min-height: 32px;
+    border-color: var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+  }
+
+  .nxa-tools-test-input:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
+
+  .nxa-tools-test-json {
+    display: block;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+    overflow: auto;
+  }
+
   /* Diagnostica AI (v1.0.7): box esito del test provider, nascosto finché vuoto.
      Stessi token di .nxa-tools-result: chiaro default, scuro via flip variabili. */
   .nxa-tools-ai-result {
@@ -861,19 +937,36 @@ $queue_rows = array(
 </style>
 
 <script>
-        (function () {
+        (function nxaToolsBoot() {
                 'use strict';
 
-                /* Guard: la vista dipende dai dati localizzati in pagina dal plugin. */
-                if (!window.NexusAdminData || !window.NexusAdminData.restUrl || !window.NexusAdminData.nonce) {
+                /* v1.1.7: NexusAdminData è localizzata nei FOOTER admin (wp_enqueue_script
+                   con in_footer=true): durante il parsing del body il global non esiste
+                   ancora, quindi il guard sotto usciva SEMPRE e i bottoni restavano morti
+                   ("i test non funzionano"). Se il DOM è ancora in parsing, riprogramma
+                   questa IIFE a DOM ready (i dati footer sono già eseguiti) invece di
+                   uscire: stesso pattern già usato dalla vista analytics. */
+                if ('loading' === document.readyState) {
+                        document.addEventListener('DOMContentLoaded', function () { nxaToolsBoot(); });
+                        return;
+                }
+
+                /* Guard: la vista dipende dai dati localizzati in pagina dal plugin.
+                   v1.1.7: il nome del global NON compare mai come letterale in questo
+                   script: in lingua EN Nexus_I18n::translate_html() applica strtr su
+                   tutto l'HTML della vista (incluse le stringhe JS inline) e la voce di
+                   dizionario 'Data' => 'Date' corrompeva l'identificatore (guard sempre
+                   falsa). Lo ricostruiamo a runtime da frammenti non traducibili. */
+                var NAD = window['Nexus' + 'Admin' + 'Da' + 'ta'];
+                if (!NAD || !NAD.restUrl || !NAD.nonce) {
                         if (window.console && window.console.warn) {
-                                window.console.warn('[Nexus News AI] NexusAdminData non disponibile: vista Strumenti non inizializzata.');
+                                window.console.warn('[Nexus News AI] Dati admin non disponibili: vista Strumenti non inizializzata.');
                         }
                         return;
                 }
 
-                var base = String(window.NexusAdminData.restUrl).replace(/\/+$/, '');
-                var nonce = window.NexusAdminData.nonce;
+                var base = String(NAD.restUrl).replace(/\/+$/, '');
+                var nonce = NAD.nonce;
 
                 /* Riferimenti DOM (selettori fissi del markup sopra). */
                 var exportBtn = document.getElementById('nxa-tools-export');
@@ -1217,12 +1310,22 @@ $queue_rows = array(
            lista <code>, nota cache (12 ore) e base_url usato. Errore: messaggio
            onesto dal body WP {code,message,data.status} nel box (stile errore) +
            toast. La chiave non tocca mai il browser: la usa solo il server. */
-        (function () {
+        (function nxaToolsAiBoot() {
                 'use strict';
 
-                if (!window.NexusAdminData || !window.NexusAdminData.restUrl || !window.NexusAdminData.nonce) {
+                /* v1.1.7: attesa DOM ready — NexusAdminData vive nei footer admin
+                   (vedi IIFE nxaToolsBoot sopra per il meccanismo completo). */
+                if ('loading' === document.readyState) {
+                        document.addEventListener('DOMContentLoaded', function () { nxaToolsAiBoot(); });
+                        return;
+                }
+
+                /* v1.1.7: nome del global ricostruito a runtime (in EN il dizionario
+                   i18n corrompe il letterale 'Data' => 'Date'). */
+                var NAD = window['Nexus' + 'Admin' + 'Da' + 'ta'];
+                if (!NAD || !NAD.restUrl || !NAD.nonce) {
                         if (window.console && window.console.warn) {
-                                window.console.warn('[Nexus News AI] NexusAdminData non disponibile: diagnostica AI non inizializzata.');
+                                window.console.warn('[Nexus News AI] Dati admin non disponibili: diagnostica AI non inizializzata.');
                         }
                         return;
                 }
@@ -1234,8 +1337,8 @@ $queue_rows = array(
                         return;
                 }
 
-                var base = String(window.NexusAdminData.restUrl).replace(/\/+$/, '');
-                var nonce = window.NexusAdminData.nonce;
+                var base = String(NAD.restUrl).replace(/\/+$/, '');
+                var nonce = NAD.nonce;
                 var originalLabel = testBtn.textContent;
                 var busy = false;
                 var toastEl = null;

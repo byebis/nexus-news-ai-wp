@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.6
+Stable tag: 1.1.7
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -98,6 +98,15 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.7 =
+* UCCISA LA VERA CAUSA della "doppia dashboard": la voce "Dashboard" veniva registrata come sottopagina con lo stesso slug del menu — WordPress la attaccava allo stesso hook del pannello principale e la vista veniva stampata DUE volte nella pagina (2× pannelli, statistiche, feed). Ora una sola voce "Dashboard" nel menu e un solo render, verificato e2e su WordPress reale.
+* Pagina Strumenti risanata (i "test non funzionano"): gli script inline partivano prima che i dati di sessione fossero disponibili e in inglese una voce del dizionario corrompeva il nome dell'oggetto JS — i bottoni Test AI, Esporta, Importa, Genera chiave e Migrazione ora rispondono tutti (12/12 verificati e2e su WordPress reale, anche con cache AI fredda e in italiano).
+* Coda Lavori di nuovo viva: la guardia degli script inline usciva per sempre (stessa malattia degli Strumenti) e la pagina restava morta in ogni lingua; ora si avvia al momento giusto.
+* Analytics di nuovo vivo anche in inglese: un identificatore italiano nel codice del grafico veniva rinominato dal traduttore (ReferenceError silenzioso). Fix strutturale: la traduzione non tocca MAI gli script inline (i testi che producono sono tradotti lato client da i18n.js) né il contenuto utente (la tagline del sito non diventa più "Il giornale of nuova generazione").
+* Nuova card "Test degli strumenti" (promessa v1.1.4): prova ricerca web, lettura pagina e RSS direttamente dalla pagina Strumenti.
+* Ripristinato il link "Vedi articoli dell'agente" nelle card della pagina Agenti (esisteva solo nel fallback noscript).
+* Rilevazione e2e su WORDPRESS REALE (nuovo ambiente di test automatico con browser): avvio testata con 9 agenti in parallelo → articoli → coda → approvazione → pubblicazione → post WordPress vero + log; salvataggio verificato di tutti i 79 campi delle 4 pagine Impostazioni; analytics, attività, lavori e i 12 controlli di Strumenti; tutto verde in italiano e in inglese.
 
 = 1.1.6 =
 * ZERO MOCK (richiesta esplicita): eliminata la pubblicazione social simulata — un canale non configurato ora produce un errore onesto ("Canale social non configurato") senza più ID/URL finti ("sim_xxx", social.example) né status "published" finto; Facebook e Instagram escono dalla lista piattaforme (non hanno integrazione reale: Telegram, Discord, X, LinkedIn e Blog restano i canali veri); sweep completo del codice con report hit-by-hit nel changelog del repo.

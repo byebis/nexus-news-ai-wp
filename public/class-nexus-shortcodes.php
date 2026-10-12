@@ -172,9 +172,31 @@ final class Nexus_Shortcodes {
          * Registra (senza enqueue) CSS e JS pubblico + oggetto NexusPublicData.
          * L'enqueue reale avviene in enqueue_assets() durante il rendering shortcode.
          *
+         * v1.1.7: la registrazione è estratta in register_public_assets() così
+         * enqueue_assets() può richiamarla da sola: nei temi a blocchi lo shortcode
+         * può essere processato dal blocco core/shortcode PRIMA di wp_enqueue_scripts
+         * (il canvas dei template renderizza il contenuto prima di wp_head): al
+         * momento del rendering l'handle non era ancora registrato e il vecchio
+         * guard saltava l'enqueue — magazine senza CSS e senza JS. Ora lo shortcode
+         * si registra gli asset da solo, in qualsiasi momento venga renderizzato
+         * (stampa tardiva in footer: print_late_styles + print_footer_scripts di core).
+         *
          * @return void
          */
         public static function enqueue_public() {
+                self::register_public_assets();
+        }
+
+        /**
+         * Registrazione vera e propria di CSS/JS pubblico + localizzazione.
+         * Idempotente: chiamabile sia da wp_enqueue_scripts sia da enqueue_assets().
+         *
+         * @return void
+         */
+        private static function register_public_assets() {
+                if ( wp_script_is( 'nexus-public', 'registered' ) ) {
+                        return;
+                }
                 wp_register_style(
                         'nexus-public',
                         NEXUS_PLUGIN_URL . 'public/css/nexus-public.css',
@@ -202,15 +224,17 @@ final class Nexus_Shortcodes {
         }
 
         /**
-         * Enqueue reale degli asset (chiamato solo durante il rendering shortcode).
+         * Enqueue reale degli asset (chiamato durante il rendering shortcode).
+         * v1.1.7: se l'handle non è ancora registrato (shortcode renderizzato
+         * prima di wp_enqueue_scripts, es. blocco core/shortcode nei temi a
+         * blocchi) registra al volo e poi enqueue — mai più asset mancanti.
          *
          * @return void
          */
         private static function enqueue_assets() {
-                if ( wp_script_is( 'nexus-public', 'registered' ) ) {
-                        wp_enqueue_style( 'nexus-public' );
-                        wp_enqueue_script( 'nexus-public' );
-                }
+                self::register_public_assets();
+                wp_enqueue_style( 'nexus-public' );
+                wp_enqueue_script( 'nexus-public' );
         }
 
         /* ========================= [nexus_magazine] ========================= */

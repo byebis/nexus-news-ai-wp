@@ -43,10 +43,18 @@ function nexus_i18n_extra_dict() {
         return array(
             ' (cache)' => ' (cache)',
             ' articoli convertiti' => ' articles converted',
-            ' di ' => ' of ',
+            // NOTA v1.1.7 (T-C): la chiave frammentaria con la sola preposizione
+            // "di" (con spazi laterali) mappata su "of" e' stata RIMOSSA. Era il
+            // colpevole del "Frankenstein" in e2e: lo strtr su tutto l'HTML
+            // sostituiva la preposizione DENTRO la tagline utente del sito
+            // ("Il giornale di nuova generazione" diventava "Il giornale of
+            // nuova generazione"). Le chiavi del dizionario devono essere FRASI
+            // INTERE della UI, mai parole/preposizioni generiche; il contenuto
+            // utente non va tradotto (v. Nexus_I18n::translate_html).
             '(dalla cache, 12 ore)' => '(from cache, 12 hours)',
             '(senza titolo)' => '(untitled)',
             '0 = nessun limite. Le stime si basano sui token usati.' => '0 = no limit. Estimates are based on the tokens used.',
+            '1 articolo in coda' => '1 article in queue',
             '1 giorno fa' => '1 day ago',
             '1 ora fa' => '1 hour ago',
             'Access secret X' => 'X access secret',
@@ -56,7 +64,15 @@ function nexus_i18n_extra_dict() {
             'Access token secret OAuth 1.0a dell’account.' => 'OAuth 1.0a access token secret of the account.',
             'Access token X' => 'X access token',
             'Adesso' => 'Just now',
+            'Agente AI che copre politica italiana ed estera con contesto storico.' => 'AI agent covering Italian and international politics with historical context.',
+            'Agente AI specializzato in tecnologia, AI, gadget e innovazione.' => 'AI agent specialized in technology, AI, gadgets and innovation.',
+            'Agente AI su calcio, sport nazionali e internazionali.' => 'AI agent for football, national and international sports.',
+            'Agente AI su cinema, libri, musica e eventi culturali.' => 'AI agent for cinema, books, music and cultural events.',
+            'Agente AI su mercati, imprese e finanza personale.' => 'AI agent for markets, business and personal finance.',
+            'Agente AI su salute, benessere e medicina basata su evidenze.' => 'AI agent for health, wellness and evidence-based medicine.',
             'Agente clonato: nasce in pausa.' => 'Agent cloned: it starts paused.',
+            // v1.1.7 (T-C2): toast di eliminazione agente (admin.js bindAgents, DELETE /agents/{id}).
+            'Agente eliminato.' => 'Agent deleted.',
             'Agente messo in pausa.' => 'Agent paused.',
             'Agente non trovato: ricarica la pagina.' => 'Agent not found: reload the page.',
             'Agente riattivato.' => 'Agent reactivated.',
@@ -196,6 +212,8 @@ function nexus_i18n_extra_dict() {
             'errore sconosciuto' => 'unknown error',
             'Esegui la raccolta per generare nuovi articoli.' => 'Run a collection to generate new articles.',
             'Esegui pipeline completa' => 'Run full pipeline',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Esegui test' => 'Run test',
             'Esempio di richiesta' => 'Request example',
             'Espone articoli pubblicati, agenti e statistiche via REST pubblica con autenticazione X-Api-Key (rate limit 120 richieste/minuto). Genera la chiave nella pagina Strumenti.' => 'Exposes published articles, agents and stats via a public REST API with X-Api-Key authentication (rate limit 120 requests/minute). Generate the key on the Tools page.',
             'Esporta configurazione' => 'Export configuration',
@@ -242,7 +260,11 @@ function nexus_i18n_extra_dict() {
             'Import completato con errori' => 'Import completed with errors',
             'Importa configurazione' => 'Import configuration',
             'Impossibile aggiornare lo stato' => 'Unable to update the status',
+            // v1.1.7 (T-C2): titolo del toast di errore per DELETE /agents/{id}
+            // (admin.js apiErrorToast): apostrofo TIPOGRAFICO come nel sorgente JS.
+            'Impossibile eliminare l’agente' => 'Unable to delete the agent',
             'Impossibile caricare gli agenti' => 'Unable to load the agents',
+            'Impossibile caricare gli articoli' => 'Unable to load the articles',
             'Impossibile caricare la coda' => 'Unable to load the queue',
             'Impossibile caricare lo storico' => 'Unable to load the history',
             'Impossibile caricare l’articolo' => 'Unable to load the article',
@@ -263,6 +285,9 @@ function nexus_i18n_extra_dict() {
             'Informazioni di sistema' => 'System information',
             'Iniziato' => 'Started',
             'Inserisci un argomento di almeno 3 caratteri.' => 'Enter a topic of at least 3 characters.',
+            // v1.1.7 (T-C2): guard input vuoto del pannello "Test degli strumenti"
+            // (admin.js bindToolsTest, box.textContent).
+            'Inserisci una query o un URL da testare.' => 'Enter a query or a URL to test.',
             'Intelligenza artificiale' => 'Artificial intelligence',
             'Intelligenza artificiale e lavoro' => 'Artificial intelligence and work',
             'Interfaccia' => 'Interface',
@@ -297,6 +322,8 @@ function nexus_i18n_extra_dict() {
             'Le chiamate AI degli agenti appariranno qui con il tracking v1.0.3.' => 'AI agent calls will appear here with v1.0.3 tracking.',
             'Lettura del file non riuscita.' => 'Could not read the file.',
             'Lettura delle fonti in arrivo…' => 'Reading incoming sources…',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Lettura pagina (read)' => 'Page reading (read)',
             'Limite memoria (memory_limit)' => 'Memory limit (memory_limit)',
             'Limiti e qualità' => 'Limits and quality',
             'Lingua dell\'interfaccia admin' => 'Admin interface language',
@@ -336,11 +363,15 @@ function nexus_i18n_extra_dict() {
             'Nessun agente configurato' => 'No agents configured',
             'Nessun agente in tabella' => 'No agents in the table',
             'Nessun agente in tabella: riattiva il plugin per rigenerare il set iniziale dei 7 agenti.' => 'No agents in the table: reactivate the plugin to regenerate the initial set of 7 agents.',
+            // v1.1.7 (T-C): titolo empty-state del modal articoli (admin.js, emptyState).
+            'Nessun articolo' => 'No articles',
             'Nessun articolo con lo stato selezionato.' => 'No articles with the selected status.',
             'Nessun articolo in coda' => 'No articles in queue',
             'Nessun consumo AI questo mese' => 'No AI usage this month',
             'Nessun dato nel periodo' => 'No data in the period',
             'Nessun lavoro in coda' => 'No jobs in queue',
+            // v1.1.7 (T-C): box esito pannello "Test degli strumenti" (tools.php v1.1.7).
+            'Nessun test eseguito in questa sessione.' => 'No tests run in this session.',
             'Nessuna attività registrata' => 'No activity recorded',
             'Nessuna chiave generata' => 'No key generated yet',
             'Nessuna esecuzione del Wire' => 'No Wire runs yet',
@@ -378,6 +409,8 @@ function nexus_i18n_extra_dict() {
             'Predefinito OpenRouter' => 'OpenRouter default',
             'Programmatore' => 'Scheduled',
             'Prossima esecuzione' => 'Next run',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Prova la configurazione degli strumenti senza attivarli: ricerca web, lettura pagina e scoperta feed.' => 'Try the tools configuration without activating it: web search, page reading and feed discovery.',
             'Pubblica' => 'Publish',
             'Pubblica post WordPress nativi' => 'Publish native WordPress posts',
             'Pubblicati' => 'Published',
@@ -395,6 +428,8 @@ function nexus_i18n_extra_dict() {
             'Punteggio fact-check AI' => 'AI fact-check score',
             'Punteggio qualità' => 'Quality score',
             'Quadrata (1024x1024)' => 'Square (1024x1024)',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Query o URL da testare' => 'Query or URL to test',
             'Qualità media' => 'Average quality',
             'Quando il budget è esaurito' => 'When the budget is exhausted',
             'Quanti lavori al massimo vengono eseguiti a ogni tick del runner (default 5).' => 'How many jobs at most are executed at each runner tick (default 5).',
@@ -466,6 +501,10 @@ function nexus_i18n_extra_dict() {
             'Stato aggiornato' => 'Status updated',
             'Stato dei post creati' => 'Created posts status',
             'Stato della conversione al contenuto nativo: articoli rimasti e agenti senza mappatura nativa.' => 'Native content conversion status: remaining articles and agents without native mapping.',
+            // v1.1.7 (T-C2): messaggio REST di validazione post_status
+            // (class-nexus-rest.php sanitize_settings_payload, esito 400 onesto
+            // mostrato nel toast da apiErrorToast).
+            'Stato post non valido. Valori ammessi: publish, draft, pending.' => 'Invalid post status. Allowed values: publish, draft, pending.',
             'Stato WordPress assegnato ai post creati dal publisher (publish = pubblicati, draft = bozze, pending = in attesa di revisione).' => 'WordPress status assigned to the posts created by the publisher (publish = published, draft = drafts, pending = pending review).',
             'Storico delle redazioni collettive' => 'Collective newsroom history',
             'Successo' => 'Success',
@@ -528,6 +567,10 @@ function nexus_i18n_extra_dict() {
             ' (tutte — nessuna restrizione)' => ' (all — no restriction)',
             '▶ Avvia' => '▶ Run',
             '▶ Avvia redazione' => '▶ Run desk',
+            // v1.1.7 (T-C): il bottone dashboard concatena "▶ " fuori dalla chiamata
+            // di traduzione: senza la chiave con il prefisso strtr matchava prima
+            // '▶ Avvia' e lasciava "testata" in italiano ("▶ Run testata").
+            '▶ Avvia testata' => '▶ Run masthead',
             '⛔ Capo redattore: rifiutato' => '⛔ Editor-in-chief: rejected',
             '✏ Capo redattore: modificato' => '✏ Editor-in-chief: edited',
             '🎖 Capo redattore: visto' => '🎖 Editor-in-chief: approved',
@@ -579,6 +622,10 @@ function nexus_i18n_extra_dict() {
             'Crea la prima redazione dalla pagina Redazioni.' => 'Create the first desk from the Desks page.',
             'Crea gli agenti dalla pagina Agenti per vedere la redazione al lavoro.' => 'Create the agents from the Agents page to see the newsroom at work.',
             'Crea redazione' => 'Create desk',
+            // v1.1.7 (T-C): barra preset agenti (agents.php v1.1.4) — etichetta e
+            // aria-label resi da PHP fuori da __(): tradotti dal buffer.
+            'Creazione rapida:' => 'Quick creation:',
+            'Creazione rapida agenti' => 'Quick creation agents',
             'Deselezionato = human-in-the-loop: l\'articolo resta in bozza con il badge del capo redattore e l\'approvazione resta a te.' => 'Unchecked = human-in-the-loop: the article stays in draft with the editor-in-chief badge and approval stays with you.',
             'Driver di lingua' => 'Language driver',
             'Elenco non disponibile: il modulo multilingua non risulta caricato.' => 'List not available: the multilanguage module does not appear to be loaded.',
@@ -657,11 +704,14 @@ function nexus_i18n_extra_dict() {
             'Redazione salvata ma fonti non salvate.' => 'Desk saved but sources not saved.',
             'Redazioni' => 'Desks',
             'Redazioni:' => 'Desks:',
+            'Ricerca web (search)' => 'Web search (search)',
             'Ricerca web, lettura pagine, scoperta feed RSS e client MCP: gli agenti li usano per raccogliere fonti durante la raccolta e il capo redattore per verificare le notizie.' => 'Web search, page reading, RSS feed discovery and MCP client: the agents use them to collect sources during collection and the editor-in-chief to verify the news.',
             'Rimuovi immagine in evidenza' => 'Remove featured image',
             'Risultati per ricerca (1-10)' => 'Results per search (1-10)',
             'Rigoroso, sintetico e difensore della qualità editoriale' => 'Rigorous, concise and a defender of editorial quality',
             'Salva le impostazioni e riprova.' => 'Save the settings and try again.',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Scoperta feed RSS (feeds)' => 'RSS feed discovery (feeds)',
             'Seleziona redazione…' => 'Select desk…',
             'Segna gli agenti che lavorano in questa redazione: la lista delle caselle è riempita da admin.js.' => 'Check the agents working in this desk: the checkbox list is filled by admin.js.',
             'Server MCP (uno per riga)' => 'MCP servers (one per line)',
@@ -671,7 +721,14 @@ function nexus_i18n_extra_dict() {
             'Stato delle traduzioni non disponibile.' => 'Translations status not available.',
             'Strumenti di ricerca' => 'Search tools',
             'Strumenti di ricerca per gli agenti' => 'Search tools for the agents',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Strumento da testare' => 'Tool to test',
             'Tempo massimo per ogni richiesta di ricerca o lettura di pagina (predefinito 15 secondi).' => 'Max time for each search or page reading request (default 15 seconds).',
+            // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
+            'Test degli strumenti' => 'Tools test',
+            // v1.1.7 (T-C2): stato di caricamento del pannello test (admin.js
+            // bindToolsTest: setBtnLoading + box.textContent).
+            'Test in corso…' => 'Test running…',
             'Testata in corso…' => 'Masthead running…',
             'Testo massimo estratto da ogni pagina web letta da un agente (predefinito 6000).' => 'Max text extracted from each web page read by an agent (default 6000).',
             'Timeout richieste (secondi, 5-30)' => 'Request timeout (seconds, 5-30)',
@@ -689,9 +746,19 @@ function nexus_i18n_extra_dict() {
             'Visualizza articolo Nexus' => 'View Nexus article',
             'WPML è attivo: le associazioni tra lingue usano WPML.' => 'WPML is active: language associations use WPML.',
             'Avviare l\'intera testata? Verranno avviati tutti gli agenti.' => 'Run the entire masthead? All the agents will be started.',
+            // v1.1.7 (T-C): hint empty-state del modal articoli (admin.js, emptyState).
+            'Questo agente non ha ancora prodotto articoli.' => 'This agent has not produced any articles yet.',
             'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' => 'This article has already been reviewed by the editor-in-chief. Run a new review?',
             'Distribuzione social' => 'Social distribution',
             'errore di rete' => 'network error',
+            // v1.1.7 (T-C): placeholder input pannello "Test degli strumenti" (tools.php).
+            'es. intelligenza artificiale' => 'e.g. artificial intelligence',
+            // v1.1.7 (T-C2): placeholder JS del pannello test (admin.js
+            // toolsTestPlaceholder) e fallback di errore del box esito
+            // (admin.js renderToolsTestResult, nodo testo).
+            'https://esempio.it/pagina' => 'https://example.com/page',
+            'https://esempio.it' => 'https://example.com',
+            'lo strumento ha restituito un esito negativo.' => 'the tool returned a negative outcome.',
             'predefinita' => 'default',
             'salva prima la chiave' => 'save the key first',
             'sorgente' => 'source',
@@ -774,6 +841,14 @@ The agents will collect the news, evaluate it, rewrite it and publish the articl
 Le sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' => '"?
 
 Child desks will be reassigned to the parent desk. Articles are not deleted.',
+            // v1.1.7 (T-C2): frammenti del confirm di eliminazione agente
+            // (admin.js bindAgents: 'Eliminare l’agente "' + name + '"? Gli
+            // articoli restano pubblicati ma senza autore assegnato.'):
+            // apostrofo TIPOGRAFICO in "l’agente" e virgolette dritte attorno
+            // al nome, esattamente come nel sorgente JS (stessa via di nxaT
+            // usata dai frammenti del confirm redazione).
+            'Eliminare l’agente "' => 'Delete agent "',
+            '"? Gli articoli restano pubblicati ma senza autore assegnato.' => '"? Articles stay published but without an assigned author.',
 
             /* ---- v1.1.6 (T-01b): frammenti degli <script> inline delle viste (strtr lato PHP) ---- */
             ' annullato' => ' cancelled',
@@ -1013,6 +1088,29 @@ function nexus_i18n_extra_patterns() {
             're'  => '([\d.,]+) articolo coperto',
             'tpl' => '$1 article covered',
         ),
+        // v1.1.7 (T-C2): contatore coda approvazioni (#nxa-queue-count, admin.js
+        // loadQueueList: '1 articolo in coda' / total + ' articoli in coda') e
+        // messaggi di eliminazione agente (log attività DB + confirm composto).
+        // PRIMA dei frammenti generici "N articolo/i": l'ordine conta, il
+        // generico trasformerebbe "articoli" lasciando "in coda" in italiano
+        // (e il pattern deve poter tradurre anche il frammento puro
+        // ' articoli in coda' concatenato da admin.js).
+        array(
+            're'  => ' articoli in coda',
+            'tpl' => ' articles in queue',
+        ),
+        array(
+            're'  => ' articolo in coda',
+            'tpl' => ' article in queue',
+        ),
+        array(
+            're'  => 'Agente "(.*?)" eliminato\.',
+            'tpl' => 'Agent "$1" deleted.',
+        ),
+        array(
+            're'  => 'Eliminare l’agente "(.*?)"\? Gli articoli restano pubblicati ma senza autore assegnato\.',
+            'tpl' => 'Delete agent "$1"? Articles stay published but without an assigned author.',
+        ),
         array(
             're'  => '([\d.,]+) articoli\b(?! convertiti| coperti)',
             'tpl' => '$1 articles',
@@ -1092,6 +1190,13 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Raccolto (\d+) candidato \(analisi evergreen: RSS non disponibile\)\.',
             'tpl' => 'Collected $1 candidate (evergreen analysis: RSS not available).',
+        ),
+        array(
+            // v1.1.7 (T-C): variante singolare del messaggio di raccolta (il
+            // codice pipeline usa il plurale anche con n=1: "Raccolti 1 nuovi
+            // candidati da …"). Deve precedere il pattern generico.
+            're'  => 'Raccolti 1 nuovi candidati da (.+?)\.',
+            'tpl' => 'Collected 1 new candidate from $1.',
         ),
         array(
             're'  => 'Raccolti ([\d.,]+) nuovi candidati da (.+?)\.',
@@ -1667,6 +1772,31 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => '(\d+) redazione\b',
             'tpl' => '$1 desk',
+        ),
+        // v1.1.7 (T-C): aria-label dell'input modello per agente (admin.js,
+        // agentCardHtml): "Modello AI per " + nome agente (contenuto utente).
+        array(
+            're'  => 'Modello AI per (.+)$',
+            'tpl' => 'AI model for $1',
+        ),
+        // v1.1.7 (T-C): esiti del pannello "Test degli strumenti" (admin.js
+        // v1.1.7, zona tools-test di T-B2): messaggi compositi con nome
+        // strumento/esito variabile renderizzati come nodi testo del DOM.
+        array(
+            're'  => 'Test riuscito \(([^)]+)\)\. Esito dello strumento:',
+            'tpl' => 'Test succeeded ($1). Tool output:',
+        ),
+        array(
+            're'  => 'Test non riuscito \(([^)]+)\): ',
+            'tpl' => 'Test failed ($1): ',
+        ),
+        array(
+            're'  => 'Test non riuscito: ',
+            'tpl' => 'Test failed: ',
+        ),
+        array(
+            're'  => '\(nessun output\)',
+            'tpl' => '(no output)',
         ),
     );
 }

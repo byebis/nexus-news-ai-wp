@@ -673,8 +673,11 @@ defined( 'ABSPATH' ) || exit;
                                         .then( function ( data ) {
                                                 render( data );
                                         } )
-                                        .catch( function () {
+                                        .catch( function ( e ) {
                                                 mostraErrore();
+                                                if ( window.console && window.console.error ) {
+                                                        window.console.error( '[Nexus News AI] analytics:', e && e.message ? e.message : e );
+                                                }
                                         } );
                         }
 

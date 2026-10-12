@@ -618,6 +618,69 @@ class Nexus_DB {
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
+        /**
+         * Elimina un agente (v1.1.7). Il contenuto resta: gli articoli dell'agente
+         * vengono solo scollegati (agent_id = 0), le righe attività restano come
+         * storia. Pulizia coerente dei riferimenti operativi:
+         * - job in coda che puntano all'agente (args JSON) → eliminati;
+         * - assegnazioni nelle redazioni (term_meta _nexus_agents) → rimosse;
+         * - capo redattore selezionato nelle impostazioni (chief_id) → azzerato
+         *   se puntava a questo agente;
+         * - l'eventuale utente WP nativo (wp_user_id) e il termine categoria
+         *   (term_id) NON vengono toccati: sono oggetti WordPress, non del plugin.
+         *
+         * @param int $id
+         * @return bool true se una riga agente è stata eliminata.
+         */
+        public static function delete_agent( $id ) {
+                global $wpdb;
+                $id = absint( $id );
+                if ( ! $id ) {
+                        return false;
+                }
+                $agent = self::get_agent( $id );
+                if ( ! $agent ) {
+                        return false;
+                }
+                $deleted = $wpdb->delete( self::tables()['agents'], array( 'id' => $id ), array( '%d' ) );
+                if ( ! $deleted ) {
+                        return false;
+                }
+                // Articoli: solo scollegamento, il contenuto editoriale non si cancella.
+                $wpdb->update( self::tables()['articles'], array( 'agent_id' => 0 ), array( 'agent_id' => $id ), array( '%d' ), array( '%d' ) );
+                // Job non ancora eseguiti che referenziano l'agente negli args JSON.
+                $wpdb->query( $wpdb->prepare( "DELETE FROM " . self::tables()['jobs'] . " WHERE status IN ( 'pending', 'running' ) AND args LIKE %s", '%"agent_id":' . $id . '%' ) );
+                // Assegnazioni nelle redazioni (WP nativo: term_meta della tassonomia nexus_redazione).
+                if ( class_exists( 'Nexus_Redazioni' ) && taxonomy_exists( Nexus_Redazioni::TAX ) ) {
+                        $terms = get_terms( array(
+                                'taxonomy'   => Nexus_Redazioni::TAX,
+                                'hide_empty' => false,
+                                'fields'     => 'ids',
+                                'meta_key'   => Nexus_Redazioni::META_AGENTS,
+                                'meta_value' => $id,
+                                'number'     => 0,
+                        ) );
+                        if ( is_array( $terms ) ) {
+                                foreach ( $terms as $term_id ) {
+                                        $ids = get_term_meta( $term_id, Nexus_Redazioni::META_AGENTS, true );
+                                        if ( ! is_array( $ids ) ) {
+                                                continue;
+                                        }
+                                        $ids = array_values( array_diff( array_map( 'absint', $ids ), array( $id ) ) );
+                                        update_term_meta( $term_id, Nexus_Redazioni::META_AGENTS, $ids );
+                                }
+                        }
+                }
+                // Capo redattore globale nelle impostazioni: se era questo agente, azzera.
+                $settings = self::get_settings();
+                if ( ! empty( $settings['chief_id'] ) && absint( $settings['chief_id'] ) === $id ) {
+                        $settings['chief_id'] = 0;
+                        self::update_settings( $settings );
+                }
+                self::insert_activity( 0, 'agent', sprintf( 'Agente "%s" eliminato.', $agent->name ), 'info' );
+                return true;
+        }
+
         /* ============ ARTICLES ============ */
 
         /**

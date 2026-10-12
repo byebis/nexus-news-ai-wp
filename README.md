@@ -3,7 +3,7 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.6-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.7-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
@@ -37,10 +37,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 20. [Capo redattore AI, provider per agente, strumenti di ricerca (v1.1.4)](#v114--capo-redattore-ai-provider-per-agente-strumenti-di-ricerca)
 21. [UI che respira, avvii mirati, live redazionale (v1.1.5)](#v115--ui-che-respira-avvii-mirati-live-redazionale)
 22. [Zero mock, IT/EN 100%, impostazioni a sottomenu (v1.1.6)](#v116--zero-mock-iten-100-impostazioni-a-sottomenu)
-23. [Installazione](#installazione)
-24. [FAQ tecniche](#faq-tecniche)
-25. [Licenza e crediti](#licenza-e-crediti)
-26. [Changelog](#changelog)
+23. [E2E su WordPress reale, dashboard singola, test vivi (v1.1.7)](#v117--e2e-su-wordpress-reale-dashboard-singola-test-vivi)
+24. [Installazione](#installazione)
+25. [FAQ tecniche](#faq-tecniche)
+26. [Licenza e crediti](#licenza-e-crediti)
+27. [Changelog](#changelog)
 
 ---
 
@@ -1006,6 +1007,25 @@ Dalla 1.1.5 l'admin **respira** e la redazione si comanda e si osserva dal vivo:
 - Nuova rotta **`GET /nexus/v1/live`** leggera (3 query raggruppate, pensata per il polling, permessi admin) alimentata dalla nuova opzione runtime `nexus_agent_runtime` scritta dalla pipeline nei punti chiave e pulita a fine lavoro (anche in errore): zero tabelle nuove, zero modifiche allo schema.
 
 ---
+
+## v1.1.7 — E2E su WordPress reale, dashboard singola, test vivi
+
+La 1.1.7 nasce da un vero ciclo di **test end-to-end su WordPress reale** (ambiente automatico con WordPress vero + browser Playwright): ogni pagina, ogni bottone, ogni salvataggio, l'intera pipeline editoriale con 9 agenti in parallelo — in italiano e in inglese. E da una caccia ai bug spietata.
+
+### La vera causa della «doppia dashboard»
+La voce «Dashboard» veniva registrata come sottopagina con **lo stesso slug del menu principale**: WordPress la aggancia allo stesso hook del pannello top-level ed eseguiva **entrambi i callback** — la vista dashboard veniva stampata **due volte** nella pagina (2× pannelli, statistiche, feed attività). Dalla 1.1.7 una sola voce «Dashboard» e un solo render, verificato con conteggi DOM automatizzati.
+
+### Strumenti, Coda Lavori e Analytics tornano vivi
+- **Strumenti**: gli script inline partivano prima che i dati di sessione fossero disponibili e, in inglese, una voce del dizionario corrompeva il nome dell'oggetto JS — i bottoni Test AI, Esporta, Importa, Genera chiave, Copia e Migrazione non rispondevano. Ora tutto risponde (12/12 verificati e2e, anche con cache AI fredda e in italiano).
+- **Coda Lavori**: la stessa guardia usciva per sempre → pagina morta in ogni lingua. Ora si avvia al momento giusto.
+- **Analytics in inglese**: un identificatore italiano nel codice del grafico (`tooltipGiorno(creati, pubblicati)`) veniva rinominato dal traduttore con ReferenceError silenzioso. Fix strutturale: **la traduzione non tocca mai gli script inline** (i testi che producono sono tradotti lato client da i18n.js) né il **contenuto utente** (la tagline del sito non diventa più «Il giornale of nuova generazione»).
+
+### Nuovo e ripristinato
+- Nuova card **«Test degli strumenti»** (promessa della 1.1.4): prova ricerca web, lettura pagina e RSS dalla pagina Strumenti.
+- Ripristinato il link **«Vedi articoli dell\'agente»** nelle card della pagina Agenti (esisteva solo nel fallback noscript).
+- Salvataggio verificato e2e di **tutti i 79 campi** delle 4 pagine Impostazioni (parziale per pagina, whitelist REST).
+- Pipeline completa verificata: **avvio testata con 9 agenti in parallelo → articoli → coda → approvazione → pubblicazione → post WordPress vero + log di pubblicazione + analytics + attività**, tutto verde in italiano e in inglese.
+
 
 ## v1.1.6 — Zero mock, IT/EN 100%, impostazioni a sottomenu
 

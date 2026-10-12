@@ -201,6 +201,34 @@ class Nexus_I18n {
          * Traduce un blocco di HTML con sostituzioni a match esatti.
          * Se la traduzione non è attiva ritorna l'input invariato.
          *
+         * v1.1.7 (T-C): i nodi di CONTENUTO UTENTE (es. tagline del sito in
+         * dashboard) vengono estratti PRIMA dello strtr e reinseriti identici
+         * dopo: la tagline è un setting del sito (get_bloginfo('description')
+         * / site_tagline), non UI del plugin, e non deve mai essere tradotta
+         * (in e2e una chiave corta del dizionario produceva il testo
+         * Frankenstein "Il giornale of nuova generazione").
+         *
+         * In più le chiavi "parola semplice" del dizionario (solo lettere
+         * ASCII, es. 'Mai', 'Vedi', 'Errore') NON passano da strtr (che fa
+         * match di sottostringa e corrompe ogni occorrenza dentro altre
+         * parole o identificatori: caso reale 'Data' => 'Date' trasformava il
+         * global JS NexusAdminData in NexusAdminDate) ma da una sostituzione
+         * con confini di parola (\b): stesso risultato sulle etichette UI,
+         * zero collisioni dentro identificatori, URL e contenuto utente.
+         *
+         * v1.1.7 (T-C, secondo caso Frankenstein): le viste renderizzano le
+         * stringhe con esc_html__()/esc_attr__(), che trasformano apostrofi e
+         * virgolette in entita' HTML DENTRO il buffer (&#039; &quot;): una
+         * chiave del dizionario con l'apostrofo grezzo (es. il sottotitolo
+         * dashboard "…colpo d'occhio: articoli pubblicati…") non matcha mai
+         * la frase intera e strtr la frammenta sulle sole chiavi corte senza
+         * apostrofi ("… articles published, agents at work e consumo AI del
+         * mese."). Per ogni chiave con caratteri escapabili viene generata a
+         * runtime la variante escapata equivalente (stessa codifica di WP:
+         * ENT_QUOTES, double_encode=false) mappata sulla traduzione escapata:
+         * la frase intera torna a vincere sul frammento (strtr preferisce
+         * sempre la chiave piu' lunga per posizione).
+         *
          * @param string $html HTML renderizzato dalla vista.
          * @return string
          */
@@ -212,7 +240,242 @@ class Nexus_I18n {
                 if ( empty( $dict ) ) {
                         return $html;
                 }
-                return strtr( (string) $html, $dict );
+                $html = (string) $html;
+
+                $held = array();
+                $html = self::hold_user_content( $html, $dict, $held );
+
+                /*
+                 * v1.1.7: gli script inline non passano MAI dalla traduzione.
+                 * Il codice JS delle viste contiene identificatori in italiano
+                 * (caso reale: tooltipGiorno( creati, pubblicati ) in analytics.php):
+                 * le chiavi del dizionario a confini di parola li rinominano in
+                 * inglese e in lingua EN il JS muore con ReferenceError
+                 * ("creati is not defined"). I testi generati dal JS sono
+                 * tradotti lato client da i18n.js (MutationObserver sui nodi di
+                 * testo): qui il JS resta intatto byte per byte.
+                 */
+                $script_nodes = array();
+                if ( preg_match_all( '~<script\b[^>]*>.*?</script>~is', $html, $script_nodes ) && ! empty( $script_nodes[0] ) ) {
+                        foreach ( $script_nodes[0] as $node ) {
+                                if ( '' === $node || isset( $held[ $node ] ) ) {
+                                        continue;
+                                }
+                                $token   = self::hold_token( $html, $dict, count( $held ) );
+                                $held[ $token ] = $node;
+                                $html    = str_replace( $node, $token, $html );
+                        }
+                }
+
+                /*
+                 * v1.1.7 (T-C): il dizionario viene diviso in due parti prima
+                 * della sostituzione (vedi docblock sopra per il perche').
+                 */
+                $word_dict = array();
+                $rest_dict = array();
+                foreach ( $dict as $key => $value ) {
+                        if ( preg_match( '/^[A-Za-z]{2,}$/', $key ) ) {
+                                $word_dict[ $key ] = $value;
+                        } else {
+                                $rest_dict[ $key ] = $value;
+                        }
+                }
+
+                /*
+                 * v1.1.7 (T-C): varianti HTML-escaped delle chiavi (secondo caso
+                 * Frankenstein, vedi docblock sopra). Le viste escapano le
+                 * stringhe (esc_html__/esc_attr__), quindi la forma presente nel
+                 * buffer non e' quella grezza: senza la variante la chiave intera
+                 * non matcha e strtr frammenta la frase sulle chiavi corte.
+                 */
+                $esc_variants = self::escaped_variants( $rest_dict );
+                if ( ! empty( $esc_variants ) ) {
+                        $rest_dict = array_merge( $rest_dict, $esc_variants );
+                }
+
+                if ( ! empty( $rest_dict ) ) {
+                        $html = strtr( $html, $rest_dict );
+                }
+                $html = self::translate_whole_words( $html, $word_dict );
+
+                if ( ! empty( $held ) ) {
+                        $html = str_replace( array_keys( $held ), array_values( $held ), $html );
+                }
+                return $html;
+        }
+
+        /**
+         * Genera le varianti HTML-escaped delle chiavi del dizionario (v1.1.7 T-C).
+         *
+         * esc_html()/esc_attr() di WP (_wp_specialchars con ENT_QUOTES e
+         * double_encode=false) convertono & < > ' " nelle rispettive entita'
+         * senza ricodificare le entita' gia' presenti: qui si applica la stessa
+         * trasformazione (htmlspecialchars con double_encode=false) alla chiave
+         * e alla traduzione. Solo le chiavi che contengono almeno un carattere
+         * escapabile producono una variante (le altre sono identiche al buffer);
+         * una variante che collida con una chiave esistente viene scartata:
+         * vince la voce già presente nel dizionario.
+         *
+         * @param array $dict Dizionario (chiavi grezze) della passata strtr.
+         * @return array Varianti chiave-escapata => traduzione-escapata.
+         */
+        private static function escaped_variants( $dict ) {
+                $variants = array();
+                foreach ( $dict as $key => $value ) {
+                        if ( ! preg_match( '/[&<>\'"]/', (string) $key ) ) {
+                                continue;
+                        }
+                        $escaped_key = htmlspecialchars( (string) $key, ENT_QUOTES, 'UTF-8', false );
+                        if ( '' === $escaped_key || $escaped_key === (string) $key ) {
+                                continue;
+                        }
+                        if ( isset( $dict[ $escaped_key ] ) || isset( $variants[ $escaped_key ] ) ) {
+                                continue;
+                        }
+                        $variants[ $escaped_key ] = htmlspecialchars( (string) $value, ENT_QUOTES, 'UTF-8', false );
+                }
+                return $variants;
+        }
+
+        /**
+         * Traduce le chiavi "parola semplice" con confini di parola (v1.1.7 T-C).
+         *
+         * strtr con una chiave come 'Data' matcha anche la coda di
+         * "NexusAdminData"; con \b la sostituzione avviene solo quando la
+         * parola e' intera: stesso effetto sulle etichette UI renderizzate
+         * dalle viste, zero danni dentro identificatori, URL e contenuto
+         * utente. Le chiavi sono ordinate per lunghezza decrescente cosi' una
+         * chiave piu' lunga ha la precedenza su un suo prefisso, come farebbe
+         * strtr. Il nodo tagline e gli altri nodi utente sono gia' trattenuti
+         * (hold_user_content) quindi non raggiungono mai questa funzione.
+         *
+         * @param string $html      HTML con i nodi utente gia' trattenuti.
+         * @param array  $word_dict Mappa chiave => traduzione (solo [A-Za-z]{2,}).
+         * @return string
+         */
+        private static function translate_whole_words( $html, $word_dict ) {
+                if ( '' === $html || empty( $word_dict ) ) {
+                        return $html;
+                }
+
+                uksort( $word_dict, array( __CLASS__, 'key_length_desc' ) );
+
+                $parts = array();
+                foreach ( array_keys( $word_dict ) as $key ) {
+                        $parts[] = preg_quote( $key, '/' );
+                }
+                $regex = '/\b(?:' . implode( '|', $parts ) . ')\b/';
+
+                return preg_replace_callback(
+                        $regex,
+                        function ( $matches ) use ( $word_dict ) {
+                                $key = $matches[0];
+                                return isset( $word_dict[ $key ] ) ? $word_dict[ $key ] : $key;
+                        },
+                        $html
+                );
+        }
+
+        /**
+         * Callback di ordinamento per uksort: chiavi piu' lunghe prima
+         * (a parita' di lunghezza, ordine alfabetico per determinismo).
+         *
+         * @param string $a Prima chiave.
+         * @param string $b Seconda chiave.
+         * @return int
+         */
+        private static function key_length_desc( $a, $b ) {
+                $diff = strlen( $b ) - strlen( $a );
+                if ( 0 !== $diff ) {
+                        return $diff;
+                }
+                return strcmp( $a, $b );
+        }
+
+        /**
+         * Regex dei nodi di contenuto utente da NON tradurre (v1.1.7 T-C).
+         *
+         * Ogni pattern cattura il nodo HTML INTERO (<p ...>...</p>): viene
+         * sostituito da un placeholder prima dello strtr e ripristinato dopo.
+         * Il testo dentro questi nodi e' contenuto scritto dall'utente
+         * (setting del sito), non stringhe UI del plugin.
+         *
+         * @return array Lista di pattern regex PCRE (delimitatori inclusi).
+         */
+        private static function user_content_patterns() {
+                return array(
+                        // Tagline WP nativa renderizzata in dashboard
+                        // (admin/views/dashboard.php: <p class="nxa-tagline">).
+                        '#<p\b[^>]*nxa-tagline[^>]*>.*?</p>#s',
+                        // v1.1.7 (T-C): nome della redazione nella card "Redazioni"
+                        // della dashboard (nxa-red-top-name = nome del termine
+                        // scelto dall'utente in Nexus_Redazioni): stesso principio
+                        // della tagline, il contenuto utente non si traduce mai.
+                        '#<span\b[^>]*nxa-red-top-name[^>]*>.*?</span>#s',
+                );
+        }
+
+        /**
+         * Sostituisce i nodi di contenuto utente con placeholder sicuri.
+         *
+         * Il placeholder e' un token che: (a) non compare gia' nell'HTML,
+         * (b) non contiene nessuna chiave del dizionario come sottostringa
+         * (cosi' lo strtr non puo' toccarlo).
+         *
+         * @param string $html  HTML della vista (modificato per riferimento).
+         * @param array  $dict  Dizionario attivo.
+         * @param array  $held  Mappa token => nodo originale (output).
+         * @return string HTML con i nodi utente sostituiti da token.
+         */
+        private static function hold_user_content( $html, $dict, &$held ) {
+                foreach ( self::user_content_patterns() as $pattern ) {
+                        $matches = array();
+                        if ( ! preg_match_all( $pattern, $html, $matches ) || empty( $matches[0] ) ) {
+                                continue;
+                        }
+                        foreach ( $matches[0] as $node ) {
+                                if ( '' === $node || isset( $held[ $node ] ) ) {
+                                        continue;
+                                }
+                                $token   = self::hold_token( $html, $dict, count( $held ) );
+                                $held[ $token ] = $node;
+                                $html    = str_replace( $node, $token, $html );
+                        }
+                }
+                return $html;
+        }
+
+        /**
+         * Token placeholder unico e "strtr-proof".
+         *
+         * @param string $html  HTML corrente.
+         * @param array  $dict  Dizionario attivo.
+         * @param int    $index Indice progressivo del nodo trattenuto.
+         * @return string
+         */
+        private static function hold_token( $html, $dict, $index ) {
+                $index = (int) $index;
+                do {
+                        $token = '@@NEXUS_I18N_HOLD_' . $index . '_@@';
+                        $index++;
+                } while ( false !== strpos( $html, $token ) || self::dict_key_in( $token, $dict ) );
+                return $token;
+        }
+
+        /**
+         * True se una chiave del dizionario e' sottostringa del token.
+         *
+         * @param string $token Token candidato.
+         * @param array  $dict  Dizionario attivo.
+         * @return bool
+         */
+        private static function dict_key_in( $token, $dict ) {
+                foreach ( array_keys( $dict ) as $key ) {
+                        if ( '' !== $key && false !== strpos( $token, $key ) ) {
+                                return true;
+                        }
+                }
+                return false;
         }
 
         /**

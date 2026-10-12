@@ -26,6 +26,12 @@
  *     ├── Impostazioni pubblicazione  slug nexus-settings-pubblicazione → admin/views/settings-pubblicazione.php
  *     └── Impostazioni sistema    slug nexus-settings-sistema      → admin/views/settings-sistema.php
  *
+ * NOTA v1.1.7: la voce "Dashboard" NON è una sottopagina registrata: è la
+ * voce auto-generata da add_menu_page per il top-level, rinominata in
+ * register_menu(). Un add_submenu_page('nexus-news', ..., 'nexus-news', ...)
+ * produrrebbe lo stesso hook WordPress del top-level
+ * ('toplevel_page_nexus-news') e la dashboard verrebbe renderizzata 2 volte.
+ *
  * BC v1.1.6: lo slug storico nexus-settings resta registrato e mappato sulla
  * vista settings-contenuti (URL e link esterni con page=nexus-settings
  * continuano a funzionare) ma la voce di menu viene rimossa subito dopo la
@@ -119,6 +125,14 @@ class Nexus_Admin {
         /**
          * Registra la pagina di menu principale e le sottopagine.
          *
+         * La Dashboard è SOLO la pagina top-level: non esiste alcun
+         * add_submenu_page con slug figlio 'nexus-news' (slug figlio uguale
+         * allo slug parent genera lo stesso hook 'toplevel_page_nexus-news'
+         * già registrato da add_menu_page e il secondo callback finirebbe sulla
+         * stessa azione → vista renderizzata 2 volte). La voce "Dashboard" del
+         * sottomenu è la voce auto-generata da add_menu_page, rinominata in
+         * coda al metodo.
+         *
          * @return void
          */
         public static function register_menu() {
@@ -133,7 +147,6 @@ class Nexus_Admin {
                 );
 
                 $submenus = array(
-                        'nexus-news'      => __( 'Dashboard', 'nexus-news-ai' ),
                         'nexus-agents'    => __( 'Agenti', 'nexus-news-ai' ),
                         'nexus-redazioni' => __( 'Redazioni', 'nexus-news-ai' ),
                         'nexus-queue'     => __( 'Coda Approvazioni', 'nexus-news-ai' ),
@@ -163,6 +176,19 @@ class Nexus_Admin {
                                 $slug,
                                 array( __CLASS__, 'render_current_page' )
                         );
+                }
+
+                // v1.1.7: la voce "Dashboard" è la voce auto-generata da
+                // add_menu_page (prima posizione del sottomenu, slug
+                // 'nexus-news'): qui viene solo rinominata. NON si registra
+                // add_submenu_page('nexus-news', ..., 'nexus-news'): con slug
+                // figlio == slug parent WordPress ritorna da
+                // get_plugin_page_hookname() lo stesso hook già usato dal
+                // top-level ('toplevel_page_nexus-news') e il secondo callback
+                // (render_current_page) si aggiungerebbe alla stessa azione
+                // della pagina, renderizzando la dashboard due volte.
+                if ( isset( $GLOBALS['submenu']['nexus-news'][0] ) ) {
+                        $GLOBALS['submenu']['nexus-news'][0][0] = __( 'Dashboard', 'nexus-news-ai' );
                 }
 
                 // BC v1.1.6: la voce "Impostazioni" non appare più nel menu (al suo
@@ -198,7 +224,8 @@ class Nexus_Admin {
          * Carica CSS/JS solo sulle pagine del plugin (hook contenente "nexus-").
          *
          * Hook attesi:
-         *   toplevel_page_nexus-news
+         *   toplevel_page_nexus-news (unico hook della dashboard: il top-level
+         *     non ha sottopagine con slug identico, vedi register_menu)
          *   nexus-news_page_nexus-agents|nexus-queue|nexus-activity|nexus-wire
          *   nexus-news_page_nexus-settings-* (contenuti|ai|pubblicazione|sistema)
          *   nexus-news_page_nexus-settings (BC v1.1.6, slug storico)

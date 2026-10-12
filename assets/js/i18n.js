@@ -19,6 +19,20 @@
  *    poi stringa trimmata) → traduzione; altrimenti pattern; altrimenti testo
  *    originale. Usata da admin.js (nxaT) per i frammenti dei confirm().
  * 3. La traduzione lato PHP delle viste avviene in Nexus_I18n::translate_html().
+ * 4. v1.1.7 (T-C): oltre a #wpbody-content (contenuto plugin) viene tradotta
+ *    anche la sidebar #adminmenu: le voci di menu del plugin (add_menu_page /
+ *    add_submenu_page) sono renderizzate da WordPress FUORI dal buffer della
+ *    vista, quindi translate_html() non le raggiunge e in EN restavano
+ *    italiane ("Agenti", "Impostazioni contenuti", …). Solo nodi testo:
+ *    gli attributi WP della sidebar non vengono toccati.
+ * 5. v1.1.7 (T-C2): window.confirm viene avvolto. I dialoghi nativi non sono
+ *    nodi DOM, quindi l'observer non li raggiunge: i confirm costruiti da
+ *    admin.js SENZA nxaT (es. conferma di eliminazione agente, stringa
+ *    concatenata al nome in admin.js) restavano in italiano in EN. Il wrapper
+ *    traduce SOLO l'argomento stringa con la stessa pipeline (mappa esatta,
+ *    poi pattern) prima di delegare al confirm nativo; il risultato booleano
+ *    è invariato e con la mappa vuota (admin in IT) il comportamento è
+ *    identico al nativo.
  *
  * Anti-loop: durante la sostituzione l'observer è disconnesso; le mutazioni generate
  * dalla traduzione stessa non vengono riprocessate. Skip su script/style/textarea/input testuali.
@@ -80,6 +94,14 @@
 
         function rootEl() {
                 return document.getElementById( 'wpbody-content' ) || document.body;
+        }
+
+        /**
+         * Sidebar admin: le voci di menu del plugin vivono qui, fuori da
+         * #wpbody-content (v1.1.7 T-C). null se adminmenu non esiste.
+         */
+        function adminMenuEl() {
+                return document.getElementById( 'adminmenu' );
         }
 
         function isSkip( el ) {
@@ -166,6 +188,25 @@
         }
 
         window.NexusI18nTranslate = translateString;
+
+        /**
+         * v1.1.7 (T-C2): wrapper trasparente di window.confirm (v. punto 5 del
+         * docblock). Idempotente: il flag __nexusI18nWrapped evita il doppio
+         * avvolgimento se il file venisse rieseguito. Nessun tocco ad alert/prompt
+         * (nessuna stringa UI del plugin li usa).
+         */
+        function wrapConfirm() {
+                if ( typeof window.confirm !== 'function' || window.confirm.__nexusI18nWrapped ) {
+                        return;
+                }
+                var nativeConfirm = window.confirm;
+                var wrapped = function ( message ) {
+                        var text = ( typeof message === 'string' ) ? translateString( message ) : message;
+                        return nativeConfirm.call( window, text );
+                };
+                wrapped.__nexusI18nWrapped = true;
+                window.confirm = wrapped;
+        }
 
         /* ---------------- nodi testo ---------------- */
 
@@ -261,7 +302,13 @@
                                                 }
                                         }
                                 }
-                                if ( tag !== 'INPUT' && el.hasAttribute( 'placeholder' ) ) {
+                                // v1.1.7 (T-C): il placeholder viene tradotto anche sugli
+                                // INPUT: il strtr lato PHP traduce già i placeholder
+                                // nell'HTML server-rendered (attributi inclusi); il
+                                // guard JS creava un'incoerenza (placeholder degli
+                                // input creati da admin.js restati in italiano, es.
+                                // "vuoto = modello globale" nel modal agente).
+                                if ( el.hasAttribute( 'placeholder' ) ) {
                                         setAttrTranslated( el, 'placeholder' );
                                 }
                                 if ( el.hasAttribute( 'title' ) ) {
@@ -308,11 +355,32 @@
                         // Riprocessa l'intera root: semplice, idempotente e immune a nodi spostati.
                         walkText( rootEl() );
                         translateAttrs( rootEl() );
+                        // v1.1.7 (T-C): anche la sidebar (soli nodi testo).
+                        var menu = adminMenuEl();
+                        if ( menu ) {
+                                walkText( menu );
+                        }
                 } catch ( e ) {
                         /* degrada con grazia */
                 }
-                observer.observe( rootEl(), { childList: true, subtree: true, attributes: true, attributeFilter: [ 'placeholder', 'title', 'aria-label', 'value' ] } );
+                reobserve();
                 busy = false;
+        }
+
+        /**
+         * Riascolta le mutazioni dopo il disconnect di flush() (v1.1.7 T-C):
+         * root principale + sidebar adminmenu (solo childList/subtree: la
+         * sidebar non ha placeholder/title del plugin da tradurre).
+         */
+        function reobserve() {
+                if ( ! observer ) {
+                        return;
+                }
+                observer.observe( rootEl(), { childList: true, subtree: true, attributes: true, attributeFilter: [ 'placeholder', 'title', 'aria-label', 'value' ] } );
+                var menu = adminMenuEl();
+                if ( menu ) {
+                        observer.observe( menu, { childList: true, subtree: true } );
+                }
         }
 
         function schedule() {
@@ -343,6 +411,11 @@
                 busy = true;
                 walkText( root );
                 translateAttrs( root );
+                // v1.1.7 (T-C): prima passata anche sulla sidebar (soli nodi testo).
+                var menu = adminMenuEl();
+                if ( menu ) {
+                        walkText( menu );
+                }
                 busy = false;
 
                 if ( ! window.MutationObserver ) {
@@ -352,10 +425,14 @@
                 observer = new MutationObserver( function () {
                         schedule();
                 } );
-                observer.observe( root, { childList: true, subtree: true, attributes: true, attributeFilter: [ 'placeholder', 'title', 'aria-label', 'value' ] } );
+                reobserve();
         }
 
         compilePatterns();
+
+        // Il wrapper di confirm non dipende dal DOM: viene installato subito,
+        // anche se start() dovesse uscire presto (radice assente, mappa vuota).
+        wrapConfirm();
 
         if ( 'loading' !== document.readyState ) {
                 start();
