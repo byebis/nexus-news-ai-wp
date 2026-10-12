@@ -54,6 +54,16 @@
  *   (righe "nome|url|tokenOpzionale").
  *   update_settings() itera default_settings(): le chiavi nuove sono subito
  *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ * v1.1.6 — TIMESTAMP VERI + ZERO MOCK (contratto T-03):
+ *   insert_activity(): QUINTO formato '%s' per created_at. Prima: 5 campi con
+ *   4 soli formati → wpdb riciclava il primo formato ('%d') per l'ultimo campo
+ *   → la stringa data veniva valutata come numero (2024) → DATETIME invalido →
+ *   '0000-00-00 00:00:00' nel feed attività (screenshot di Anton).
+ *   install(): pulizia one-time v1.1.6 delle righe danneggiate (cleanup_broken_rows):
+ *   activity_logs con created_at '0000-00-00 00:00:00' (date non recuperabili)
+ *   e publish_logs generati dal vecchio fallback simulato (post_id 'sim_%',
+ *   status 'published' che non ha mai pubblicato nulla): conservarli sarebbe
+ *   esporre dati falsi nel feed, nei log e in analytics.
  *
  * @package Nexus_News_AI
  */
@@ -79,7 +89,9 @@ class Nexus_DB {
                         'auto_publish'       => 0,
                         'collect_interval'   => 3600,
                         'max_articles_per_day' => 10,
-                        'social_platforms'   => 'blog,twitter,facebook,linkedin,instagram',
+                        // v1.1.6: solo canali con integrazione reale (niente facebook/instagram,
+                        // che non avevano API e finivano nella pubblicazione simulata rimossa).
+                        'social_platforms'   => 'blog,twitter,telegram,discord,linkedin',
                         'site_name'          => 'Nexus News AI',
                         'site_tagline'       => 'Il giornale di nuova generazione',
                         // Config AI (specifico plugin WP).
@@ -347,7 +359,7 @@ class Nexus_DB {
         }
 
         /**
-         * Crea tabelle + seed.
+         * Crea tabelle + seed + pulizia righe danneggiate.
          */
         public static function install() {
                 require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -355,6 +367,11 @@ class Nexus_DB {
                 foreach ( $sqls as $sql ) {
                         dbDelta( $sql );
                 }
+                // v1.1.6 (contratto T-03, ZERO MOCK): dopo dbDelta si rimuovono le
+                // righe senza data vera e le pubblicazioni finte delle versioni
+                // scorse. Idempotente: gira a ogni attivazione/upgrade e non fa
+                // nulla quando non ci sono righe da rimuovere.
+                self::cleanup_broken_rows();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
                         update_option( self::OPTION_SETTINGS, self::default_settings(), false );
@@ -368,6 +385,38 @@ class Nexus_DB {
         public static function maybe_upgrade() {
                 if ( get_option( self::DB_VERSION_KEY ) !== NEXUS_VERSION ) {
                         self::install();
+                }
+        }
+
+        /**
+         * Pulizia one-time v1.1.6 delle righe danneggiate (contratto T-03, ZERO MOCK).
+         *
+         *  - activity_logs con created_at '0000-00-00 00:00:00': causate dal bug
+         *    dei formati di insert_activity (5 campi, 4 formati: wpdb riciclava il
+         *    primo formato '%d' sull'ultimo campo e la data veniva valutata come
+         *    numero). Il momento reale non è recuperabile: conservare le righe
+         *    significherebbe mostrare date finte nel feed attività.
+         *  - publish_logs con post_id 'sim_%': pubblicazioni simulate generate dal
+         *    vecchio fallback del publisher (status 'published', id e URL finti che
+         *    non corrispondono ad alcuna chiamata API). Conservarle falserebbe i log
+         *    di pubblicazione e le statistiche analytics.
+         *
+         * Chiamata da install() (attivazione e ogni upgrade via maybe_upgrade):
+         * query idempotenti e best-effort, nessuna eccezione propagata.
+         *
+         * @return void
+         */
+        private static function cleanup_broken_rows() {
+                global $wpdb;
+                $t = self::tables();
+                if ( ! empty( $t['activity_logs'] ) ) {
+                        $wpdb->query( $wpdb->prepare( "DELETE FROM {$t['activity_logs']} WHERE created_at = %s", '0000-00-00 00:00:00' ) ); // phpcs:ignore WordPress.DB
+                }
+                if ( ! empty( $t['publish_logs'] ) ) {
+                        // Nella LIKE l'underscore è escapato: deve restare letterale
+                        // (non jolly), così si coprono SOLO i prefissi sim_ generati
+                        // dal vecchio fallback simulato, mai id reali delle API social.
+                        $wpdb->query( "DELETE FROM {$t['publish_logs']} WHERE post_id LIKE 'sim\\_%'" ); // phpcs:ignore WordPress.DB
                 }
         }
 
@@ -508,7 +557,15 @@ class Nexus_DB {
                         }
                 }
                 if ( isset( $allowed['last_run'] ) && null === $allowed['last_run'] ) {
-                        $formats[ count( $allowed ) - 1 ] = 'NULL';
+                        // v1.1.6: il formato va sulla POSIZIONE di last_run. Prima il
+                        // 'NULL' finiva sull'ultimo campo (updated_at, che ha un valore
+                        // reale): updated_at veniva scritto NULL e wpdb::prepare segnalava
+                        // placeholder/argomenti disallineati. last_run=null viene comunque
+                        // scritto NULL da wpdb (il valore null non è mai quotato).
+                        $nxa_last_run_pos = array_search( 'last_run', array_keys( $allowed ), true );
+                        if ( false !== $nxa_last_run_pos ) {
+                                $formats[ $nxa_last_run_pos ] = 'NULL';
+                        }
                 }
                 return $wpdb->update( self::tables()['agents'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
         }
@@ -1009,6 +1066,9 @@ class Nexus_DB {
 
         public static function insert_activity( $agent_id, $action, $detail = '', $status = 'info' ) {
                 global $wpdb;
+                // v1.1.6: quinto formato '%s' per created_at. Prima manava (4 formati
+                // per 5 campi): wpdb ricicla il primo formato quando finiscono, quindi
+                // created_at riceveva '%d' e la data diventava '0000-00-00 00:00:00'.
                 return $wpdb->insert(
                         self::tables()['activity_logs'],
                         array(
@@ -1018,7 +1078,7 @@ class Nexus_DB {
                                 'status'     => sanitize_key( $status ),
                                 'created_at' => current_time( 'mysql' ),
                         ),
-                        array( '%d', '%s', '%s', '%s' )
+                        array( '%d', '%s', '%s', '%s', '%s' )
                 );
         }
 

@@ -208,10 +208,11 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
         <p class="nxa-page-subtitle"><?php echo esc_html__( 'La redazione AI in un colpo d\'occhio: articoli pubblicati, agenti al lavoro e consumo AI del mese.', 'nexus-news-ai' ); ?></p>
 
         <div class="nxa-toolbar">
-                <button type="button" class="nxa-btn nxa-btn-primary nxa-run-pipeline"><?php echo esc_html__( 'Esegui pipeline completa', 'nexus-news-ai' ); ?></button>
                 <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
                      (sezione AVVII MIRATI): window.confirm con il numero di agenti già
-                     caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1). -->
+                     caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).
+                     v1.1.6: il vecchio bottone "Esegui pipeline completa" è stato RIMOSSO
+                     (duplicava la stessa azione su due bottoni distinti). -->
                 <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia testata', 'nexus-news-ai' ); ?></button>
                 <button type="button" class="nxa-btn nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
                 <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>

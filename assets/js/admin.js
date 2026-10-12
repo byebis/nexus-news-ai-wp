@@ -656,6 +656,14 @@
          * ================================================================== */
 
         function setBtnLoading( btn, loading, label ) {
+                // v1.1.6: accetta anche una LISTA di bottoni (le pagine impostazioni
+                // hanno la barra Salva in cima E in fondo): applica lo stato a tutti.
+                if ( btn && typeof btn.length === 'number' && ! btn.nodeType ) {
+                        for ( var i = 0; i < btn.length; i++ ) {
+                                setBtnLoading( btn[ i ], loading, label );
+                        }
+                        return;
+                }
                 if ( ! btn ) {
                         return;
                 }
@@ -2280,7 +2288,7 @@
                 if ( num( id ) <= 0 ) {
                         return;
                 }
-                if ( String( chiefStatus || '' ) !== '' && ! window.confirm( 'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' ) ) {
+                if ( String( chiefStatus || '' ) !== '' && ! window.confirm( nxaT( 'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' ) ) ) {
                         return;
                 }
                 setBtnLoading( btn, true, 'Verifico…' );
@@ -2660,14 +2668,20 @@
                 }
                 form.addEventListener( 'submit', function ( ev ) {
                         ev.preventDefault();
-                        var submit = qs( 'button[type="submit"]', form ) || qs( 'input[type="submit"]', form ) || qs( 'button', form );
-                        setBtnLoading( submit, true, 'Salvataggio…' );
+                        // v1.1.6: le pagine impostazioni hanno il bottone SALVA in cima
+                        // OLTRE quello in fondo → stato di caricamento su TUTTI i submit
+                        // della form (qualunque sia quello cliccato).
+                        var submits = qsa( 'button[type="submit"], input[type="submit"]', form );
+                        if ( ! submits.length ) {
+                                submits = qsa( 'button', form );
+                        }
+                        setBtnLoading( submits, true, 'Salvataggio…' );
                         api( 'settings', { method: 'PUT', body: collectSettings( form ) } ).then( function () {
                                 toast( 'Impostazioni salvate.', 'success', 'Impostazioni' );
                         } ).catch( function ( err ) {
                                 apiErrorToast( err, 'Salvataggio non riuscito' );
                         } ).then( function () {
-                                setBtnLoading( submit, false );
+                                setBtnLoading( submits, false );
                         } );
                 } );
 
@@ -3503,7 +3517,7 @@
                 var id = num( btn.getAttribute( 'data-id' ) );
                 var term = redazioniTermById( id );
                 var label = term ? String( pick( term, 'name' ) || '' ) : 'ID ' + id;
-                var ok = window.confirm( 'Eliminare la redazione “' + label + '”?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' );
+                var ok = window.confirm( nxaT( 'Eliminare la redazione “' ) + label + nxaT( '”?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' ) );
                 if ( ! ok ) {
                         return;
                 }
@@ -4035,8 +4049,8 @@
                         if ( btn.getAttribute( 'data-run-testata' ) !== null ) {
                                 testataAgentCount().then( function ( count ) {
                                         var message = count > 0
-                                                ? 'Avviare l’intera testata? Verranno avviati ' + fmt( count ) + ' agenti.'
-                                                : 'Avviare l’intera testata? Verranno avviati tutti gli agenti.';
+                                                ? nxaT( 'Avviare l’intera testata? Verranno avviati ' ) + fmt( count ) + nxaT( ' agenti.' )
+                                                : nxaT( 'Avviare l’intera testata? Verranno avviati tutti gli agenti.' );
                                         if ( ! window.confirm( message ) ) {
                                                 return;
                                         }
@@ -4171,22 +4185,56 @@
                 }
                 var d = unwrap( data ) || {};
                 var agents = Array.isArray( d.agents ) ? d.agents : [];
-                var runningCount = 0;
+                var testata = ( d.testata && typeof d.testata === 'object' ) ? d.testata : null;
+                var running = [];
+                var idleCount = 0;
+                var pausedCount = 0;
+                var errorCount = 0;
                 agents.forEach( function ( a ) {
                         if ( a && a.running ) {
-                                runningCount++;
+                                running.push( a );
+                                return;
+                        }
+                        var status = String( pick( a, 'status' ) || '' );
+                        if ( status === 'error' ) {
+                                errorCount++;
+                        } else if ( status === 'paused' ) {
+                                pausedCount++;
+                        } else {
+                                idleCount++;
                         }
                 } );
-                var testata = ( d.testata && typeof d.testata === 'object' ) ? d.testata : null;
+                var runningCount = running.length;
                 if ( ! agents.length && testata && pick( testata, 'running' ) !== undefined ) {
                         runningCount = num( pick( testata, 'running' ) );
                 }
                 var html = '<p class="nxa-live-updated">In redazione ora: ' + fmt( runningCount ) +
                         ( runningCount === 1 ? ' agente al lavoro' : ' agenti al lavoro' ) +
                         ' · aggiornato alle ' + esc( liveClock( pick( d, 'updated_at', 'updatedAt' ) ) ) + '</p>';
-                html += agents.length
-                        ? agents.map( liveAgentRowHtml ).join( '' )
-                        : emptyState( '🤖', 'Nessun agente configurato', 'Crea gli agenti dalla pagina Agenti per vedere la redazione al lavoro.' );
+                // v1.1.6 ("dashboard doppia"): in dettaglio SOLO gli agenti al
+                // lavoro; gli altri compattati in una riga di conteggio, così la
+                // strip non replica la lista completa già presente in "Stato agenti".
+                if ( running.length ) {
+                        html += running.map( liveAgentRowHtml ).join( '' );
+                }
+                var parts = [];
+                if ( idleCount ) {
+                        parts.push( fmt( idleCount ) + ' in attesa' );
+                }
+                if ( pausedCount ) {
+                        parts.push( fmt( pausedCount ) + ' in pausa' );
+                }
+                if ( errorCount ) {
+                        parts.push( fmt( errorCount ) + ' in errore' );
+                }
+                if ( parts.length ) {
+                        html += '<p class="nxa-live-last">Altri agenti: ' + esc( parts.join( ' · ' ) ) + '.</p>';
+                }
+                if ( ! agents.length ) {
+                        html += emptyState( '🤖', 'Nessun agente configurato', 'Crea gli agenti dalla pagina Agenti per vedere la redazione al lavoro.' );
+                } else if ( ! running.length && ! parts.length ) {
+                        html += '<p class="nxa-live-last">Nessun agente al lavoro.</p>';
+                }
                 strip.hidden = false;
                 strip.innerHTML = html;
         }
@@ -4339,7 +4387,31 @@
                 }
         };
 
+        var booted = false;
+
+        /**
+         * Traduzione difensiva per stringhe fuori dal DOM (window.confirm,
+         * window.alert): usa window.NexusI18nTranslate quando i18n.js è attivo
+         * (v1.1.6), altrimenti ritorna il testo originale. I frammenti tradotti
+         * devono esistere come chiavi ESATTE nel dizionario.
+         */
+        function nxaT( text ) {
+                if ( typeof window.NexusI18nTranslate === 'function' ) {
+                        var translated = window.NexusI18nTranslate( text );
+                        if ( translated ) {
+                                return translated;
+                        }
+                }
+                return text;
+        }
+
         function boot() {
+                // v1.1.6 ("dashboard doppia"): il boot può girare UNA sola volta
+                // per pagina (dominio di esecuzione singolo, nessun doppio loader).
+                if ( booted ) {
+                        return;
+                }
+                booted = true;
                 injectFallbackCss();
                 ensureToastStack();
 

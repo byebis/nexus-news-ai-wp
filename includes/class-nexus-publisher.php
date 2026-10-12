@@ -44,10 +44,13 @@
  * 'error', 'note' ). Ogni esito reale riuscito/fallito registra un'attività
  * Nexus (best-effort).
  *
- * Canali social → SIMULAZIONE ONESTA (fallback, filosofia dell'originale):
+ * Canali senza integrazione → ERRORE ONESTO (v1.1.6, regola ZERO MOCK):
  * facebook, instagram, ogni platform non mappato e i 4 canali reali quando la
- * relativa classe NON esiste (installazione parziale/vecchia) generano un
- * post_id e un URL fittizi marcati come simulati invece di fingere chiamate reali.
+ * relativa classe NON esiste (installazione parziale/vecchia) producono un log
+ * con status 'error', post_id e post_url VUOTI e il messaggio esplicativo
+ * "Canale social non configurato: nessuna integrazione disponibile per
+ * {platform}.". Nessun id/URL generato, nessuna pubblicazione simulata:
+ * ciò che non è stato pubblicato non può mai comparire come pubblicato.
  *
  * CONTRATTO PUBBLICO (invariato):
  * Nexus_Publisher::publish( $article ) → array di log:
@@ -57,10 +60,13 @@
  *
  * @package Nexus_News_AI
  * @since   1.0.1 Canale 'blog' con post WordPress reali (CPT nexus_article).
- * @since   1.0.2 Canali social reali (Telegram, Discord, X, LinkedIn) con fallback simulato.
+ * @since   1.0.2 Canali social reali (Telegram, Discord, X, LinkedIn).
  * @since   1.0.3 Blocco "Fonti verificate" (nexus-citations) dal fact-check nel post WP reale.
  * @since   1.1.2 Auto-traduzione post-publish come post nativi: eventi WP 'nexus_ml_autotranslate'
  *               sfalsati di un minuto per lingua, handler run_autotranslate() e init().
+ * @since   1.1.6 Regola ZERO MOCK: il canale senza integrazione non è più una
+ *                pubblicazione simulata ma un log di errore onesto (status
+ *                'error', post_id/post_url vuoti, nessun id/URL generato).
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -86,9 +92,12 @@ class Nexus_Publisher {
          * Pubblica un articolo su tutte le piattaforme configurate.
          *
          * Canali social reali (v1.0.2): telegram, discord, x (alias twitter) e
-         * linkedin vengono delegati alle classi social dedicate se presenti;
-         * altrimenti — come facebook, instagram e ogni platform non mappato —
-         * resta la simulazione onesta. Un log per platform in entrambi i casi.
+         * linkedin vengono delegati alle classi social dedicate se presenti.
+         * v1.1.6 (ZERO MOCK): facebook, instagram, ogni platform non mappato e
+         * i canali reali senza classe disponibile producono un log di ERRORE
+         * onesto (status 'error', post_id/post_url vuoti, messaggio esplicativo
+         * nel campo error): nessuna simulazione, nessun successo finto.
+         * Un log per platform in tutti i casi.
          *
          * @param object|array $article Articolo Nexus (riga di nexus_articles).
          * @return array Log di pubblicazione (uno o più per piattaforma).
@@ -114,7 +123,8 @@ class Nexus_Publisher {
                 $enable_wp_posts = ! empty( $settings['enable_wp_posts'] ) ? absint( $settings['enable_wp_posts'] ) : 0;
 
                 // Mappa platform → classe social reale (v1.0.2, CONTRATTO-v1.0.2.md).
-                // 'twitter' è alias storico di 'x'; facebook/instagram restano simulati.
+                // 'twitter' è alias storico di 'x'; i canali senza classe (o non
+                // mappati) finiscono nel ramo di errore onesto più sotto.
                 $social_map = array(
                         'telegram' => 'Nexus_Social_Telegram',
                         'discord'  => 'Nexus_Social_Discord',
@@ -151,18 +161,31 @@ class Nexus_Publisher {
                                 continue;
                         }
 
-                        // Fallback simulazione: platform non mappato (facebook, instagram, ...)
-                        // oppure classe social assente (installazione parziale). Pubblicazione
-                        // simulata, dichiarata come tale (nessuna API configurata).
-                        $sim_id = 'sim_' . wp_generate_password( 8, false );
-                        $logs[] = array(
+                        // Nessuna integrazione disponibile (v1.1.6, regola ZERO MOCK):
+                        // platform non mappato (facebook, instagram, ...) oppure classe
+                        // social assente (installazione parziale). Log di ERRORE onesto:
+                        // mai un successo finto, NESSUN id/URL generato. Lo status 'error'
+                        // è quello renderizzato onestamente dai consumatori attuali
+                        // (badge "Errore" rosso in admin.js, STATUS_META['error']; il
+                        // messaggio compare nel campo error del log di pubblicazione).
+                        $nxa_error = sprintf( 'Canale social non configurato: nessuna integrazione disponibile per %s.', $platform );
+                        $logs[]    = array(
                                 'platform' => $platform,
-                                'status'   => 'published',
-                                'post_id'  => $sim_id,
-                                'post_url' => 'https://social.example/' . $platform . '/' . $sim_id,
-                                'error'    => '',
-                                'note'     => 'Pubblicazione simulata (demo): nessuna API social configurata.',
+                                'status'   => 'error',
+                                'post_id'  => '',
+                                'post_url' => '',
+                                'error'    => $nxa_error,
+                                'note'     => $nxa_error,
                         );
+
+                        // Attività onesta nel feed (best-effort, stessa disciplina di
+                        // publish_social_real per gli esiti falliti: mai bloccante).
+                        if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                try {
+                                        Nexus_DB::insert_activity( 0, 'social', $nxa_error, 'error' );
+                                } catch ( \Throwable $e ) { // Skip silenzioso: errore non bloccante.
+                                }
+                        }
                 }
 
                 return $logs;

@@ -154,32 +154,39 @@ defined( 'ABSPATH' ) || exit;
   /* Stile locale della vista Coda Lavori — v1.0.6 "UI chiara & curata".
      SOLO classi prefisso .nxa-jb- (contratto CONTRATTO-v1.0.6.md §2 T-04):
      nessun colore fisso, tutto via token del design system §1 (tema chiaro
-     default; il tema scuro ridefinisce i token su body.nexus-theme-dark). */
+     default; il tema scuro ridefinisce i token su body.nexus-theme-dark).
+     v1.1.6 — pass "respira" sulle superfici top-level (contratto §5 T-04):
+     stat-card e wrapper tabella perdono la pila bordo+ombra+raggio e si
+     separano con whitespace e hairline; spaziatura su var(--nxa-space-1..8).
+     Il bordo di stato a sinistra delle card resta (semantica), badge e toast
+     restano layer propri. Nessun selettore rimosso. */
   .nxa-jb-note {
     max-width: 780px;
-    margin: 8px 0 16px;
+    margin: var(--nxa-space-2) 0 var(--nxa-space-4);
     color: var(--nxa-muted);
   }
   .nxa-jb-cards {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    margin: 0 0 16px;
+    gap: var(--nxa-space-4);
+    margin: 0 0 var(--nxa-space-4);
   }
+  /* v1.1.6 "respira": card piatta — numero su fondo trasparente con il bordo
+   * di stato ridotto a filo di sinistra (semantica invariata); in hover solo
+   * un fondo tenue, niente traslazioni o ombre. */
   .nxa-jb-card {
     flex: 1 1 170px;
     min-width: 160px;
-    padding: 12px 14px;
-    background: var(--nxa-surface);
-    border: 1px solid var(--nxa-border);
-    border-left-width: 4px;
-    border-radius: var(--nxa-radius-sm);
-    box-shadow: var(--nxa-shadow);
-    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+    padding: var(--nxa-space-3) var(--nxa-space-4);
+    background: transparent;
+    border: 0;
+    border-left: 2px solid var(--nxa-hairline);
+    border-radius: 0;
+    box-shadow: none;
+    transition: background-color 0.15s ease, border-color 0.2s ease;
   }
   .nxa-jb-card:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--nxa-shadow-lg);
+    background: var(--nxa-row-hover-bg);
   }
   .nxa-jb-card-value {
     display: block;
@@ -233,7 +240,7 @@ defined( 'ABSPATH' ) || exit;
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    margin: 0 0 16px;
+    margin: 0 0 var(--nxa-space-4);
   }
   .nxa-jb-auto-label {
     display: inline-flex;
@@ -248,13 +255,16 @@ defined( 'ABSPATH' ) || exit;
     outline-offset: 2px;
   }
 
+  /* v1.1.6 "respira": il wrapper resta il contenimento scroll orizzontale
+   * delle tabelle su mobile, ma come pelle e' piatto — fondo superficie senza
+   * bordo, raggio o ombra. */
   .nxa-jb-table-wrap {
     overflow-x: auto;
-    margin: 0 0 16px;
+    margin: 0 0 var(--nxa-space-4);
     background: var(--nxa-surface);
-    border: 1px solid var(--nxa-border);
-    border-radius: var(--nxa-radius-sm);
-    box-shadow: var(--nxa-shadow);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
   .nxa-jb-table {
     border: 0;
@@ -267,6 +277,12 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-jb-table td {
     color: var(--nxa-text-body);
+  }
+  /* v1.1.6: sul wrapper ormai piatto le righe si separano con la hairline del
+     tema (al posto del grigio di default di widefat). */
+  .nxa-jb-table th,
+  .nxa-jb-table td {
+    border-color: var(--nxa-hairline);
   }
   .nxa-jb-table tbody tr:nth-child(odd) {
     background: var(--nxa-surface-2);
@@ -360,7 +376,7 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-jb-empty td,
   .nxa-jb-message td {
-    padding: 24px 10px;
+    padding: var(--nxa-space-5) 10px;
     text-align: center;
     color: var(--nxa-muted);
   }

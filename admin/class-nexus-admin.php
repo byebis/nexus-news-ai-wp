@@ -12,16 +12,27 @@
  *
  * MAPPA MENU → VISTA:
  *   Nexus News (top-level, slug nexus-news)
- *     ├── Dashboard          slug nexus-news      → admin/views/dashboard.php
- *     ├── Agenti             slug nexus-agents    → admin/views/agents.php
- *     ├── Redazioni          slug nexus-redazioni → admin/views/redazioni.php
- *     ├── Coda Approvazioni  slug nexus-queue     → admin/views/queue.php
- *     ├── Coda Lavori        slug nexus-jobs      → admin/views/jobs.php
- *     ├── Attività           slug nexus-activity  → admin/views/activity.php
- *     ├── Nexus Wire         slug nexus-wire      → admin/views/wire.php
- *     ├── Analytics          slug nexus-analytics → admin/views/analytics.php
- *     ├── Strumenti          slug nexus-tools     → admin/views/tools.php
- *     └── Impostazioni       slug nexus-settings  → admin/views/settings.php
+ *     ├── Dashboard               slug nexus-news                  → admin/views/dashboard.php
+ *     ├── Agenti                  slug nexus-agents                → admin/views/agents.php
+ *     ├── Redazioni               slug nexus-redazioni             → admin/views/redazioni.php
+ *     ├── Coda Approvazioni       slug nexus-queue                 → admin/views/queue.php
+ *     ├── Coda Lavori             slug nexus-jobs                  → admin/views/jobs.php
+ *     ├── Attività                slug nexus-activity              → admin/views/activity.php
+ *     ├── Nexus Wire              slug nexus-wire                  → admin/views/wire.php
+ *     ├── Analytics               slug nexus-analytics             → admin/views/analytics.php
+ *     ├── Strumenti               slug nexus-tools                 → admin/views/tools.php
+ *     ├── Impostazioni contenuti  slug nexus-settings-contenuti    → admin/views/settings-contenuti.php
+ *     ├── Impostazioni AI         slug nexus-settings-ai           → admin/views/settings-ai.php
+ *     ├── Impostazioni pubblicazione  slug nexus-settings-pubblicazione → admin/views/settings-pubblicazione.php
+ *     └── Impostazioni sistema    slug nexus-settings-sistema      → admin/views/settings-sistema.php
+ *
+ * BC v1.1.6: lo slug storico nexus-settings resta registrato e mappato sulla
+ * vista settings-contenuti (URL e link esterni con page=nexus-settings
+ * continuano a funzionare) ma la voce di menu viene rimossa subito dopo la
+ * registrazione (remove_submenu_page): al suo posto le 4 voci Impostazioni.
+ * Le 4 pagine condividono data-page="settings" e la form
+ * #nxa-settings-form: PUT /settings è parziale con whitelist, quindi ogni
+ * pagina invia solo le proprie chiavi.
  *
  * @package Nexus_News_AI
  */
@@ -94,7 +105,14 @@ class Nexus_Admin {
                         'nexus-wire'      => 'wire',
                         'nexus-analytics' => 'analytics',
                         'nexus-tools'     => 'tools',
-                        'nexus-settings'  => 'settings',
+                        // v1.1.6: le Impostazioni diventano 4 pagine (una per gruppo).
+                        'nexus-settings-contenuti'     => 'settings-contenuti',
+                        'nexus-settings-ai'            => 'settings-ai',
+                        'nexus-settings-pubblicazione' => 'settings-pubblicazione',
+                        'nexus-settings-sistema'       => 'settings-sistema',
+                        // BC v1.1.6: lo slug storico mappa sulla prima pagina
+                        // Impostazioni (URL e link esterni page=nexus-settings).
+                        'nexus-settings'               => 'settings-contenuti',
                 );
         }
 
@@ -124,7 +142,16 @@ class Nexus_Admin {
                         'nexus-wire'      => __( 'Nexus Wire', 'nexus-news-ai' ),
                         'nexus-analytics' => __( 'Analytics', 'nexus-news-ai' ),
                         'nexus-tools'     => __( 'Strumenti', 'nexus-news-ai' ),
-                        'nexus-settings'  => __( 'Impostazioni', 'nexus-news-ai' ),
+                        // v1.1.6: le Impostazioni diventano 4 sottomenu (una pagina per
+                        // gruppo, così il salvataggio non richiede di scorrere un'unica
+                        // pagina lunga; PUT /settings è parziale con whitelist).
+                        'nexus-settings-contenuti'     => __( 'Impostazioni contenuti', 'nexus-news-ai' ),
+                        'nexus-settings-ai'            => __( 'Impostazioni AI', 'nexus-news-ai' ),
+                        'nexus-settings-pubblicazione' => __( 'Impostazioni pubblicazione', 'nexus-news-ai' ),
+                        'nexus-settings-sistema'       => __( 'Impostazioni sistema', 'nexus-news-ai' ),
+                        // BC v1.1.6: lo slug storico resta registrato (URL vecchi
+                        // funzionanti) ma la voce è rimossa subito sotto.
+                        'nexus-settings'               => __( 'Impostazioni', 'nexus-news-ai' ),
                 );
 
                 foreach ( $submenus as $slug => $title ) {
@@ -137,6 +164,11 @@ class Nexus_Admin {
                                 array( __CLASS__, 'render_current_page' )
                         );
                 }
+
+                // BC v1.1.6: la voce "Impostazioni" non appare più nel menu (al suo
+                // posto le 4 voci Impostazioni); lo slug resta raggiungibile via
+                // URL page=nexus-settings e mappa sulla pagina contenuti.
+                remove_submenu_page( 'nexus-news', 'nexus-settings' );
         }
 
         /**
@@ -167,7 +199,9 @@ class Nexus_Admin {
          *
          * Hook attesi:
          *   toplevel_page_nexus-news
-         *   nexus-news_page_nexus-agents|nexus-queue|nexus-activity|nexus-wire|nexus-settings
+         *   nexus-news_page_nexus-agents|nexus-queue|nexus-activity|nexus-wire
+         *   nexus-news_page_nexus-settings-* (contenuti|ai|pubblicazione|sistema)
+         *   nexus-news_page_nexus-settings (BC v1.1.6, slug storico)
          *
          * @param string $hook Suffix della pagina admin corrente.
          * @return void

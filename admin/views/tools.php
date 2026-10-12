@@ -384,24 +384,33 @@ $queue_rows = array(
   /* Vista Strumenti v1.0.6 — stile locale self-contained su classi prefisso
      .nxa-tools-. SOLO token del tema (CONTRATTO-v1.0.6.md §1): il tema chiaro è
      il default e lo scuro opzionale (body.nexus-theme-dark) eredita il flip delle
-     variabili; nessun colore esadecimale fisso. Indentazione CSS: 2 spazi. */
+     variabili; nessun colore esadecimale fisso. Indentazione CSS: 2 spazi.
+     v1.1.6 — pass "respira" sulle superfici top-level (contratto §5 T-04): le
+     sezioni perdono la pila bordo+ombra+raggio e diventano superfici piatte
+     (solo fondo superficie, piu' padding); separazione tra sezioni a
+     whitespace; spaziatura su var(--nxa-space-1..8). I box di stato semantici
+     (badge/warn/result/ai-result) restano layer propri. Nessun selettore
+     rimosso. */
   .nxa-tools-sub {
     max-width: 780px;
-    margin: 8px 0 20px;
+    margin: var(--nxa-space-2) 0 var(--nxa-space-5);
     color: var(--nxa-muted);
   }
 
+  /* v1.1.6 "respira": sezione piatta — solo il fondo superficie separa il
+     blocco dal resto della pagina; niente bordo, raggio o ombra, piu' aria
+     nel padding. */
   .nxa-tools-section {
     background: var(--nxa-surface);
-    border: 1px solid var(--nxa-border);
-    border-radius: var(--nxa-radius);
-    padding: 20px 24px;
-    margin: 0 0 16px;
-    box-shadow: var(--nxa-shadow);
+    border: 0;
+    border-radius: 0;
+    padding: var(--nxa-space-5) var(--nxa-space-6);
+    margin: 0 0 var(--nxa-space-5);
+    box-shadow: none;
   }
 
   .nxa-tools-section-title {
-    margin: 0 0 12px;
+    margin: 0 0 var(--nxa-space-3);
     font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.01em;
@@ -409,7 +418,7 @@ $queue_rows = array(
   }
 
   .nxa-tools-group-title {
-    margin: 20px 0 8px;
+    margin: var(--nxa-space-5) 0 var(--nxa-space-2);
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
@@ -426,7 +435,7 @@ $queue_rows = array(
      dentro la card di sezione la lista non raddoppia il contenitore (niente
      bordo, raggio o sfondo annidati); separano le righe le loro hairline. */
   .nxa-tools-defs {
-    margin: 0 0 8px;
+    margin: 0 0 var(--nxa-space-2);
   }
 
   .nxa-tools-def {
@@ -474,7 +483,7 @@ $queue_rows = array(
     margin: 0;
     width: 100%;
     border: 0;
-    background: var(--nxa-surface);
+    background: transparent;
   }
 
   .nxa-tools-table th,
@@ -533,7 +542,7 @@ $queue_rows = array(
 
   .nxa-tools-warn {
     display: inline-block;
-    margin: 0 0 12px;
+    margin: 0 0 var(--nxa-space-3);
     padding: 8px 12px;
     background: var(--nxa-warn-bg);
     border: 1px solid var(--nxa-warn-line);
@@ -548,7 +557,7 @@ $queue_rows = array(
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    margin: 0 0 12px;
+    margin: 0 0 var(--nxa-space-3);
   }
 
   .nxa-tools-key-label {
@@ -748,7 +757,7 @@ $queue_rows = array(
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin: 8px 0 0;
+    margin: var(--nxa-space-2) 0 0;
     padding: 0;
     list-style: none;
   }
@@ -815,7 +824,7 @@ $queue_rows = array(
 
   @media (max-width: 782px) {
     .nxa-tools-section {
-      padding: 16px;
+      padding: var(--nxa-space-4);
     }
 
     .nxa-tools-def {

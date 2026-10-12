@@ -863,7 +863,9 @@ class Nexus_Public_API {
                         'agent_name'      => $name,
                         'image_url'       => (string) $a->image_url,
                         'url'             => $url,
-                        'published_at'    => (string) $a->published_at,
+                        // v1.1.6: data zero MySQL ('0000-00-00 ...') non lascia mai l'API
+                        // pubblica: stringa vuota (stessa difesa di Nexus_Rest::date_or_empty).
+                        'published_at'    => ( 0 === strpos( trim( (string) $a->published_at ), '0000-00-00' ) ) ? '' : (string) $a->published_at,
                         'read_time'       => (int) $a->read_time,
                         'views'           => (int) $a->views,
                         'quality_score'   => (float) $a->quality_score,

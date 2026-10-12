@@ -141,7 +141,14 @@ defined( 'ABSPATH' ) || exit;
    * admin/css/nexus-admin.css (:root = light, body.nexus-theme-dark = dark);
    * i fallback rgba() sono i valori light del contratto v1.0.6 e mantengono la
    * vista leggibile anche senza il foglio condiviso. Regole multilinea e zero
-   * colori esadecimali: il checker statico tratta # come commento PHP. */
+   * colori esadecimali: il checker statico tratta # come commento PHP.
+   * v1.1.6 — pass "respira" sulle superfici top-level (contratto §5 T-04):
+   * stat-card e pannelli perdono la pila bordo+ombra+raggio; le stat-card
+   * diventano numeri aperti con hairline di sinistra (come le .nxa-stat-card
+   * del foglio condiviso), i pannelli restano un fondo superficie senza
+   * contorni; separazioni a whitespace e hairline, spaziatura su
+   * var(--nxa-space-1..8). I box di stato semantici (errore) restano layer
+   * propri. Nessun selettore rimosso. */
   .nxa-an h1 {
     margin: 0 0 6px;
     font-size: 1.55rem;
@@ -152,7 +159,7 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-an-sub {
     max-width: 820px;
-    margin: 0 0 8px;
+    margin: 0 0 var(--nxa-space-2, 8px);
     color: var(--nxa-muted, rgba(92, 107, 132, 1));
   }
   .nxa-an-period {
@@ -160,7 +167,7 @@ defined( 'ABSPATH' ) || exit;
     align-items: center;
     flex-wrap: wrap;
     gap: 10px;
-    margin: 16px 0;
+    margin: var(--nxa-space-4, 16px) 0;
   }
   .nxa-an-period label {
     font-size: 11px;
@@ -182,7 +189,7 @@ defined( 'ABSPATH' ) || exit;
     outline-offset: 2px;
   }
   .nxa-an h2 {
-    margin: 28px 0 12px;
+    margin: var(--nxa-space-7, 48px) 0 var(--nxa-space-3, 12px);
     font-size: 1.05rem;
     font-weight: 700;
     line-height: 1.3;
@@ -200,28 +207,31 @@ defined( 'ABSPATH' ) || exit;
   .nxa-an-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
-    margin: 16px 0;
+    gap: var(--nxa-space-4, 16px);
+    margin: var(--nxa-space-4, 16px) 0;
   }
+  /* v1.1.6 "respira": come le stat-card del foglio condiviso — numero grande
+   * su fondo trasparente, hairline verticale a sinistra che si accende in
+   * hover; niente riquadro, ombra o barra d'accento a testa. */
   .nxa-an-card {
     position: relative;
     overflow: hidden;
     min-width: 0;
-    padding: 16px;
-    background: var(--nxa-surface, rgba(255, 255, 255, 1));
-    border: 1px solid var(--nxa-border, rgba(226, 232, 242, 1));
-    border-radius: var(--nxa-radius, 14px);
-    box-shadow: var(--nxa-shadow, 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.07));
+    padding: var(--nxa-space-1, 4px) 0 var(--nxa-space-1, 4px) var(--nxa-space-4, 16px);
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--nxa-hairline, rgba(15, 23, 42, 0.08));
+    border-radius: 0;
+    box-shadow: none;
     box-sizing: border-box;
+    transition: border-color 0.2s ease;
+  }
+  .nxa-an-card:hover {
+    border-left-color: var(--nxa-accent-line, rgba(124, 58, 237, 0.45));
   }
   .nxa-an-card::before {
     content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--nxa-accent-grad, linear-gradient(135deg, rgba(124, 58, 237, 1) 0%, rgba(6, 182, 212, 1) 100%));
+    display: none;
   }
   .nxa-an-value {
     display: block;
@@ -241,8 +251,8 @@ defined( 'ABSPATH' ) || exit;
     list-style: none;
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin: 0 0 12px;
+    gap: var(--nxa-space-4, 16px);
+    margin: 0 0 var(--nxa-space-3, 12px);
     padding: 0;
     font-size: 13px;
     color: var(--nxa-text-body, rgba(51, 65, 92, 1));
@@ -264,17 +274,19 @@ defined( 'ABSPATH' ) || exit;
   .nxa-an-dot-published {
     background: var(--nxa-accent-2, rgba(6, 182, 212, 1));
   }
+  /* v1.1.6 "respira": pannello piatto — solo il fondo superficie separa i
+   * dati dal resto della pagina; niente bordo, raggio o ombra. */
   .nxa-an-panel {
-    margin: 0 0 16px;
+    margin: 0 0 var(--nxa-space-5, 24px);
     overflow: hidden;
     background: var(--nxa-surface, rgba(255, 255, 255, 1));
-    border: 1px solid var(--nxa-border, rgba(226, 232, 242, 1));
-    border-radius: var(--nxa-radius, 14px);
-    box-shadow: var(--nxa-shadow, 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.07));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
     box-sizing: border-box;
   }
   .nxa-an-chart-panel {
-    padding: 16px 16px 0;
+    padding: var(--nxa-space-5, 24px) var(--nxa-space-5, 24px) 0;
     overflow: visible;
   }
   .nxa-an-panel .widefat {
@@ -368,8 +380,8 @@ defined( 'ABSPATH' ) || exit;
     transform: translateX(-50%) translateY(0);
   }
   .nxa-an-error {
-    margin: 12px 0;
-    padding: 12px 16px;
+    margin: var(--nxa-space-3, 12px) 0;
+    padding: var(--nxa-space-3, 12px) var(--nxa-space-4, 16px);
     border: 1px solid var(--nxa-err-line, rgba(220, 38, 38, 0.35));
     border-radius: var(--nxa-radius-sm, 10px);
     background: var(--nxa-err-bg, rgba(239, 68, 68, 0.10));
@@ -384,7 +396,7 @@ defined( 'ABSPATH' ) || exit;
   }
   .nxa-an-chart .nxa-an-empty {
     margin: auto;
-    padding: 24px;
+    padding: var(--nxa-space-5, 24px);
     text-align: center;
   }
   .nxa-an-muted {

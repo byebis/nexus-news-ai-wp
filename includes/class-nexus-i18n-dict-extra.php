@@ -11,8 +11,13 @@
  *
  * Caricamento: il file viene incluso automaticamente da Nexus_I18n::dictionary()
  * (se il file esiste viene caricato con require_once e mergiato; le voci EXTRA
- * hanno la precedenza sul dizionario base). Il file NON registra filtri e non
- * definisce altro: SOLO la funzione qui sotto + questo docblock.
+ * hanno la precedenza sul dizionario base) e da Nexus_I18n::enqueue(), che passa
+ * i pattern a i18n.js come NexusI18n.patterns. Il file NON registra filtri e non
+ * definisce altro: SOLO le due funzioni qui sotto + questo docblock.
+ *
+ * v1.1.6 (T-01, contratto §2): completamento dell'audit esauriente (viste,
+ * admin.js, caps/cpt) + terza mappa nexus_i18n_extra_patterns() per i messaggi
+ * di log con parti variabili (regex → template EN con $1/$2).
  *
  * Regole rispettate:
  * - la chiave è la stringa ESATTA presente nel codice (stessa punteggiatura,
@@ -516,5 +521,1152 @@ function nexus_i18n_extra_dict() {
             'WebSub (PubSubHubbub)' => 'WebSub (PubSubHubbub)',
             'X (Twitter)' => 'X (Twitter)',
 
+            /* ---- v1.1.6 (T-01): completamento audit esauriente — viste (incluse
+             * settings-* di T-02), assets/js/admin.js, class-nexus-caps.php,
+             * class-nexus-cpt.php. Sezione ordinata alfabeticamente. ---- */
+            ' (nessuna — redazione madre)' => ' (none — parent desk)',
+            ' (tutte — nessuna restrizione)' => ' (all — no restriction)',
+            '▶ Avvia' => '▶ Run',
+            '▶ Avvia redazione' => '▶ Run desk',
+            '⛔ Capo redattore: rifiutato' => '⛔ Editor-in-chief: rejected',
+            '✏ Capo redattore: modificato' => '✏ Editor-in-chief: edited',
+            '🎖 Capo redattore: visto' => '🎖 Editor-in-chief: approved',
+            '🎖 Revisione capo redattore' => '🎖 Editor-in-chief review',
+            '🔄 Revisione capo redattore' => '🔄 Editor-in-chief review',
+            'Agente autore:' => 'Author agent:',
+            'Agente capo redattore (0 = automatico)' => 'Editor-in-chief agent (0 = automatic)',
+            'Agente non disponibile.' => 'Agent not available.',
+            'Agenti assegnati' => 'Assigned agents',
+            'Aggiungi nuovo' => 'Add new',
+            'Aggiungi nuovo articolo Nexus' => 'Add new Nexus article',
+            'Al publish di un articolo, per ogni lingua attiva viene creato il post tradotto collegato (traduzioni AI attive richieste).' => 'When an article is published, a linked translated post is created for each active language (AI translations must be enabled).',
+            'Apri la lista Articoli.' => 'Open the Articles list.',
+            'Archivio ↗' => 'Archive ↗',
+            'Archivio articoli Nexus' => 'Nexus articles archive',
+            'Articoli Nexus' => 'Nexus articles',
+            'Articolo Nexus' => 'Nexus article',
+            'Articolo Nexus di origine:' => 'Source Nexus article:',
+            'Articolo aggiornato.' => 'Article updated.',
+            'Articolo programmato.' => 'Article scheduled.',
+            'Articolo pubblicato in privato.' => 'Article published privately.',
+            'Articolo riportato a bozza.' => 'Article reverted to draft.',
+            'Associazioni gestite da Polylang.' => 'Associations managed by Polylang.',
+            'Associazioni gestite da WPML.' => 'Associations managed by WPML.',
+            'Associazioni lingua gestite da Polylang.' => 'Language associations managed by Polylang.',
+            'Associazioni lingua gestite da WPML.' => 'Language associations managed by WPML.',
+            'Attiva gli strumenti di ricerca per gli agenti' => 'Enable search tools for the agents',
+            'Attiva il capo redattore AI' => 'Enable the AI editor-in-chief',
+            'Attributi dell’articolo' => 'Article attributes',
+            'Avvia' => 'Run',
+            'Avvia testata' => 'Run masthead',
+            'Avvio' => 'Start',
+            'Avvio redazione…' => 'Starting desk…',
+            'Avvio…' => 'Starting…',
+            'Capo redattore' => 'Editor-in-chief',
+            'Capo redattore AI' => 'AI editor-in-chief',
+            'Caratteri massimi per pagina (500-20000)' => 'Max characters per page (500-20000)',
+            'Caricamento redazioni…' => 'Loading desks…',
+            'Caricato in questo articolo' => 'Uploaded to this article',
+            'Cerca articoli Nexus' => 'Search Nexus articles',
+            'Chiave API del provider di ricerca' => 'Search provider API key',
+            'Chiave del servizio di ricerca scelto (Tavily, Serper o Brave). Salvata nel database del sito, mai mostrata in chiaro.' => 'API key of the selected search service (Tavily, Serper or Brave). Stored in the site database, never shown in plain text.',
+            'Chiamate' => 'Calls',
+            'Collegamento interno Nexus.' => 'Internal Nexus linking.',
+            'Collegamento interno Nexus: nessun plugin di lingua attivo (compatibile con Polylang e WPML se li installerai).' => 'Internal Nexus linking: no language plugin active (compatible with Polylang and WPML if you install them).',
+            'Consenti lettura pagine web' => 'Allow web page reading',
+            'Costo' => 'Cost',
+            'Crea la prima redazione con il form accanto: potrai annidarvi sub-redazioni e assegnare gli agenti (es. Sport con Calcio, Basket e F1).' => 'Create the first desk with the form next to it: you can nest sub-desks in it and assign agents (e.g. Sport with Calcio, Basket and F1).',
+            'Crea la prima redazione dalla pagina Redazioni.' => 'Create the first desk from the Desks page.',
+            'Crea gli agenti dalla pagina Agenti per vedere la redazione al lavoro.' => 'Create the agents from the Agents page to see the newsroom at work.',
+            'Crea redazione' => 'Create desk',
+            'Deselezionato = human-in-the-loop: l\'articolo resta in bozza con il badge del capo redattore e l\'approvazione resta a te.' => 'Unchecked = human-in-the-loop: the article stays in draft with the editor-in-chief badge and approval stays with you.',
+            'Driver di lingua' => 'Language driver',
+            'Elenco non disponibile: il modulo multilingua non risulta caricato.' => 'List not available: the multilanguage module does not appear to be loaded.',
+            'Elimina' => 'Delete',
+            'Eliminazione non riuscita' => 'Deletion failed',
+            'Elimino…' => 'Deleting…',
+            'Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted).' => 'OpenAI-compatible endpoint used by the Custom provider (e.g. internal proxy or self-hosted model).',
+            'Es. Redazione Sport, Redazione Calcio.' => 'E.g. Sport desk, Calcio desk.',
+            'Fatto' => 'Done',
+            'Filtra la lista articoli' => 'Filter the articles list',
+            'Fonti della redazione' => 'Desk sources',
+            'Generale' => 'General',
+            'Giri di strumenti per risposta (0-6)' => 'Tool rounds per response (0-6)',
+            'Giri massimi di revisione (1-5)' => 'Max review rounds (1-5)',
+            'Gli agenti possono aprire le pagine trovate dalla ricerca (o indicate nei prompt) per leggerne il testo completo.' => 'The agents can open the pages found by the search (or given in the prompts) to read their full text.',
+            'I post tradotti restano contenuti nativi di WordPress: sopravvivono al plugin. Le associazioni lingua con Polylang o WPML si gestiscono dalle loro interfacce.' => 'Translated posts remain native WordPress content: they survive the plugin. Language associations with Polylang or WPML are managed from their own interfaces.',
+            'ID dell\'agente con ruolo capo redattore da usare sempre. 0 = automatico: viene scelto il primo capo redattore attivo.' => 'ID of the agent with the editor-in-chief role to always use. 0 = automatic: the first active editor-in-chief is picked.',
+            'Il giornalista AI scrive l\'articolo e il capo redattore AI lo legge: lo approva, lo modifica, richiede una revisione o lo rifiuta. Con gli strumenti di ricerca attivi il capo verifica anche le fonti online. L\'umano resta sempre sovrano: può approvare o rifiutare dalla coda come oggi.' => 'The AI journalist writes the article and the AI editor-in-chief reads it: approves it, edits it, requests a revision or rejects it. With search tools enabled the editor-in-chief also verifies the online sources. The human always stays sovereign: you can approve or reject from the queue as today.',
+            'Il modulo multilingua non risulta caricato: stato non verificabile.' => 'The multilanguage module does not appear to be loaded: status cannot be verified.',
+            'Immagine in evidenza' => 'Featured image',
+            'Impossibile caricare le redazioni' => 'Unable to load the desks',
+            'Imposta immagine in evidenza' => 'Set featured image',
+            'Impostazioni AI' => 'AI settings',
+            'Impostazioni contenuti' => 'Content settings',
+            'Impostazioni pubblicazione' => 'Publishing settings',
+            'Impostazioni sistema' => 'System settings',
+            'In attesa di avvio' => 'Waiting to start',
+            'Inserisci il nome della redazione.' => 'Enter the desk name.',
+            'Inserisci nell’articolo' => 'Insert into article',
+            'Intera testata' => 'Entire masthead',
+            'JavaScript è disattivato: la gestione delle redazioni richiede JavaScript (form e albero sono riempiti via REST).' => 'JavaScript is disabled: desk management requires JavaScript (the form and the tree are filled via REST).',
+            'L\'utente edita solo gli articoli della redazione scelta e delle sue sub-redazioni (esempio: Redazione Sport include Calcio, Basket e F1). Solo un amministratore puo\' modificare questo campo.' => 'The user edits only the articles of the selected desk and its sub-desks (example: Sport desk includes Calcio, Basket and F1). Only an administrator can change this field.',
+            'La redazione collettiva impiega 1-3 minuti: non chiudere la pagina.' => 'The collaborative newsroom takes 1-3 minutes: do not close the page.',
+            'Lascia la prima voce per una redazione di primo livello; scegli una redazione madre per annidare una sub-redazione (es. Calcio dentro Sport).' => 'Leave the first option for a top-level desk; choose a parent desk to nest a sub-desk (e.g. Calcio inside Sport).',
+            'Lettura pagine web' => 'Web page reading',
+            'Lingue del sito' => 'Site languages',
+            'Lista articoli' => 'Articles list',
+            'Log di pubblicazione' => 'Publishing log',
+            'Modifica articolo Nexus' => 'Edit Nexus article',
+            'Multilingua' => 'Multilanguage',
+            'Multilingua — post tradotti nativi' => 'Multilanguage — native translated posts',
+            'Navigazione lista articoli' => 'Articles list navigation',
+            'Nessun agente configurato.' => 'No agents configured.',
+            'Nessun articolo Nexus nel cestino.' => 'No Nexus articles found in trash.',
+            'Nessun articolo Nexus trovato.' => 'No Nexus articles found.',
+            'Nessun collegamento (post non generato da Nexus).' => 'No link (post not generated by Nexus).',
+            'Nessun post tradotto ancora.' => 'No translated posts yet.',
+            'Nessuna lingua attiva rilevata.' => 'No active language detected.',
+            'Nessuna redazione' => 'No desks',
+            'Nessuno' => 'None',
+            'Nome redazione' => 'Desk name',
+            'Nota' => 'Note',
+            'Nota del capo redattore' => 'Editor-in-chief note',
+            'Numero massimo di risultati restituiti da ogni ricerca web (predefinito 5).' => 'Maximum number of results returned by each web search (default 5).',
+            'Nuovo articolo Nexus' => 'New Nexus article',
+            'Ogni agente può scegliere provider e modello nella pagina Agenti; senza chiave qui il provider non è selezionabile. Il provider globale (sopra) resta il fallback.' => 'Each agent can choose provider and model on the Agents page; without a key here the provider cannot be selected. The global provider (above) remains the fallback.',
+            'Organizza la testata in redazioni gerarchiche: una redazione madre può contenere sub-redazioni (es. Sport → Calcio, Basket, F1) e ogni redazione ha i suoi agenti assegnati. Ogni redazione ha anche un archivio pubblico con il tema attivo.' => 'Organize the masthead into hierarchical desks: a parent desk can contain sub-desks (e.g. Sport → Calcio, Basket, F1) and every desk has its own assigned agents. Each desk also has a public archive with the active theme.',
+            'Permalink Nexus:' => 'Nexus permalink:',
+            'Più agenti' => 'Multiple agents',
+            'Polylang è attivo: le associazioni tra lingue usano Polylang.' => 'Polylang is active: language associations use Polylang.',
+            'Post WP ↗' => 'WP post ↗',
+            'Provider AI per agente' => 'Per-agent AI provider',
+            'Provider di ricerca web' => 'Web search provider',
+            'Pubblica come post' => 'Publish as post',
+            'Pubblica automaticamente le traduzioni come post' => 'Publish translations as posts automatically',
+            'Pubblica l’articolo per attivare le traduzioni come post.' => 'Publish the article to enable translations as posts.',
+            'Pubblicazione automatica dopo approvazione del capo redattore' => 'Automatic publishing after editor-in-chief approval',
+            'Quante volte il capo può richiedere una revisione al giornalista AI prima di lasciare l\'articolo all\'umano (predefinito 2).' => 'How many times the editor-in-chief can request a revision from the AI journalist before leaving the article to the human (default 2).',
+            'Quante volte l\'AI può usare uno strumento in fila prima della risposta finale. 0 = loop disattivato (predefinito 3).' => 'How many times the AI can use a tool in a row before the final answer. 0 = loop disabled (default 3).',
+            'Redazione aggiornata.' => 'Desk updated.',
+            'Redazione assegnata' => 'Assigned desk',
+            'Redazione creata.' => 'Desk created.',
+            'Redazione eliminata.' => 'Desk deleted.',
+            'Redazione madre' => 'Parent desk',
+            'Redazione non trovata: ricarica la pagina.' => 'Desk not found: reload the page.',
+            'Redazione salvata ma fonti non salvate.' => 'Desk saved but sources not saved.',
+            'Redazioni' => 'Desks',
+            'Redazioni:' => 'Desks:',
+            'Ricerca web, lettura pagine, scoperta feed RSS e client MCP: gli agenti li usano per raccogliere fonti durante la raccolta e il capo redattore per verificare le notizie.' => 'Web search, page reading, RSS feed discovery and MCP client: the agents use them to collect sources during collection and the editor-in-chief to verify the news.',
+            'Rimuovi immagine in evidenza' => 'Remove featured image',
+            'Risultati per ricerca (1-10)' => 'Results per search (1-10)',
+            'Rigoroso, sintetico e difensore della qualità editoriale' => 'Rigorous, concise and a defender of editorial quality',
+            'Salva le impostazioni e riprova.' => 'Save the settings and try again.',
+            'Seleziona redazione…' => 'Select desk…',
+            'Segna gli agenti che lavorano in questa redazione: la lista delle caselle è riempita da admin.js.' => 'Check the agents working in this desk: the checkbox list is filled by admin.js.',
+            'Server MCP (uno per riga)' => 'MCP servers (one per line)',
+            'Servizio usato per cercare notizie online. Nessuno disattiva la ricerca web (lettura pagine e client MCP restano disponibili).' => 'Service used to search news online. None turns the web search off (page reading and MCP client remain available).',
+            'Singolo agente' => 'Single agent',
+            'Slug (opzionale)' => 'Slug (optional)',
+            'Stato delle traduzioni non disponibile.' => 'Translations status not available.',
+            'Strumenti di ricerca' => 'Search tools',
+            'Strumenti di ricerca per gli agenti' => 'Search tools for the agents',
+            'Tempo massimo per ogni richiesta di ricerca o lettura di pagina (predefinito 15 secondi).' => 'Max time for each search or page reading request (default 15 seconds).',
+            'Testata in corso…' => 'Masthead running…',
+            'Testo massimo estratto da ogni pagina web letta da un agente (predefinito 6000).' => 'Max text extracted from each web page read by an agent (default 6000).',
+            'Timeout richieste (secondi, 5-30)' => 'Request timeout (seconds, 5-30)',
+            'Token' => 'Tokens',
+            'Traduzioni come post' => 'Translations as posts',
+            'Tutti gli articoli Nexus' => 'All Nexus articles',
+            'URL base del provider Personalizzato' => 'Custom provider base URL',
+            'Un server per riga nel formato nome|URL|tokenOpzionale (le righe che iniziano con # sono commenti). Solo server MCP compatibili con il trasporto Streamable HTTP (JSON-RPC 2.0 su HTTP): il token, se presente, viene inviato come Authorization: Bearer.' => 'One server per line in the name|URL|optionalToken format (lines starting with # are comments). Only MCP servers compatible with the Streamable HTTP transport (JSON-RPC 2.0 over HTTP): the token, if present, is sent as Authorization: Bearer.',
+            'Una riga per fonte: rss|URL per un feed RSS diretto, site|URL per un sito di cui scoprire il feed automaticamente. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare.' => 'One line per source: rss|URL for a direct RSS feed, site|URL for a site whose feed is discovered automatically. Sources are optional: the desk journalists will use them for collection and the editor-in-chief for verification.',
+            'Usa come immagine in evidenza' => 'Use as featured image',
+            'Vedi' => 'View',
+            'Vedi bozza WordPress' => 'View WordPress draft',
+            'Vedi in WordPress' => 'View in WordPress',
+            'Visualizza articoli' => 'View articles',
+            'Visualizza articolo Nexus' => 'View Nexus article',
+            'WPML è attivo: le associazioni tra lingue usano WPML.' => 'WPML is active: language associations use WPML.',
+            'Avviare l\'intera testata? Verranno avviati tutti gli agenti.' => 'Run the entire masthead? All the agents will be started.',
+            'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' => 'This article has already been reviewed by the editor-in-chief. Run a new review?',
+            'Distribuzione social' => 'Social distribution',
+            'errore di rete' => 'network error',
+            'predefinita' => 'default',
+            'salva prima la chiave' => 'save the key first',
+            'sorgente' => 'source',
+            'vedi post ↗' => 'view post ↗',
+            'vuoto = modello globale' => 'empty = global model',
+            'Avviare la pipeline editoriale completa?
+
+Gli agenti raccoglieranno le notizie, le valuteranno, le riscriveranno e pubblicheranno gli articoli secondo le impostazioni correnti.' => 'Run the full editorial pipeline?
+
+The agents will collect the news, evaluate it, rewrite it and publish the articles according to the current settings.',
+
+            /* ---- v1.1.6 (T-01): messaggi esatti senza variabili (REST, pipeline) ---- */
+            'Impostazioni aggiornate via API.' => 'Settings updated via API.',
+            'Nessun candidato valido prodotto dall\'analisi evergreen.' => 'No valid candidate produced by the evergreen analysis.',
+            'Avvio non riuscito' => 'Start failed',
+            'Traduzione non riuscita' => 'Translation failed',
+            'Pubblicazione traduzione non riuscita' => 'Translation publishing failed',
+            'modelli disponibili dal provider' => 'models available from the provider',
+
+            /* ---- v1.1.6 (T-01b): live strip compatta (admin.js) e frammenti compositi ---- */
+            'Altri agenti: ' => 'More agents: ',
+            'Nessun agente al lavoro.' => 'No agents at work.',
+            'In redazione ora: ' => 'In the newsroom now: ',
+            'stato non disponibile' => 'status not available',
+            ' in attesa' => ' pending',
+            ' in pausa' => ' paused',
+            ' in errore' => ' error',
+            ' agenti' => ' agents',
+            ' agenti.' => ' agents.',
+            ' agenti al lavoro' => ' agents at work',
+            ' articoli' => ' articles',
+            ' articolo' => ' article',
+            ' errori' => ' errors',
+            ' errore' => ' error',
+            ' fonti' => ' sources',
+            ' raccolti' => ' collected',
+            ' raccolto' => ' collected',
+            ' pubblicati' => ' published',
+            ' nuovi articoli' => ' new articles',
+            ' (qualità ' => ' (quality ',
+            ' · Valutati ' => ' · Evaluated ',
+            ' · Valutate: ' => ' · Evaluated: ',
+            ' · Riscritti ' => ' · Rewritten ',
+            ' · Riscritte: ' => ' · Rewritten: ',
+            ' · Pubblicati ' => ' · Published ',
+            ' · Pubblicate: ' => ' · Published: ',
+            ' · aggiornato alle ' => ' · updated at ',
+            ' · Agenti aggiornati: ' => ' · Agents updated: ',
+            ' · Agenti creati: ' => ' · Agents created: ',
+            ' · Errori: ' => ' · Errors: ',
+            'Raccolta completata: ' => 'Collection completed: ',
+            'Raccolte: ' => 'Collected: ',
+            'Errore ' => 'Error ',
+            ' Salva le impostazioni e riprova.' => ' Save the settings and try again.',
+            'Chiave API AI non configurata: salva prima la chiave nelle Impostazioni.' => 'AI API key not configured: save the key in the settings first.',
+            'Raccolti' => 'Collected',
+            'Valutati' => 'Evaluated',
+            'Riscritti' => 'Rewritten',
+            ' agenti al lavoro' => ' agents at work',
+            ' agente al lavoro' => ' agent at work',
+            ' min fa' => ' min ago',
+            ' ore fa' => ' hours ago',
+            ' giorni fa' => ' days ago',
+            ' fallito' => ' failed',
+            ' falliti' => ' failed',
+            ' riuscito' => ' succeeded',
+            ' riusciti' => ' succeeded',
+            ' pubblicato' => ' published',
+            ' pubblicati' => ' published',
+
+            /* ---- v1.1.6 (T-01b): frammenti dei confirm di admin.js (via window.NexusI18nTranslate) ----
+             * NB: la chiave della seconda parte del confirm di eliminazione redazione
+             * contiene DUE newline reali (stringa PHP su più righe), esattamente come
+             * la stringa JS '”?\n\nLe sub-redazioni…' di admin.js. */
+            'Avviare l’intera testata? Verranno avviati ' => 'Run the entire masthead? ',
+            'Avviare l’intera testata? Verranno avviati tutti gli agenti.' => 'Run the entire masthead? All agents will be started.',
+            'Eliminare la redazione “' => 'Delete desk "',
+            '”?
+
+Le sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' => '"?
+
+Child desks will be reassigned to the parent desk. Articles are not deleted.',
+
+            /* ---- v1.1.6 (T-01b): frammenti degli <script> inline delle viste (strtr lato PHP) ---- */
+            ' annullato' => ' cancelled',
+            ' creati, ' => ' created, ',
+            ' lavori' => ' jobs',
+            ' rimesso in coda' => ' requeued',
+            'Annullare il lavoro #' => 'Cancel job #',
+            'Lavoro #' => 'Job #',
+            'Redazione #' => 'Desk #',
+            'Eliminati ' => 'Deleted ',
+            'Errore HTTP ' => 'HTTP error ',
+            'Impostazioni aggiornate: ' => 'Settings updated: ',
+            'Impossibile caricare la coda: ' => 'Unable to load the queue: ',
+            'Batch eseguito: ' => 'Batch run: ',
+            ' falliti' => ' failed',
+            'Test provider AI non riuscito: ' => 'AI provider test failed: ',
+            'Import non riuscito: ' => 'Import failed: ',
+            'Esportazione non riuscita: ' => 'Export failed: ',
+            'Generazione chiave non riuscita: ' => 'Key generation failed: ',
+
+            /* ---- v1.1.6 (T-01b): frammenti compositi riepilogo redazioni / traduzioni (admin.js) ---- */
+            'agenti assegnati' => 'agents assigned',
+            'agenti: ' => 'agents: ',
+            'articoli coperti' => 'articles covered',
+            'qualità ' => 'quality ',
+            '” è in coda di approvazione' => '" is in the approval queue',
+            'Traduzione completata (' => 'Translation completed (',
+            'Traduzione pubblicata come post (' => 'Translation published as a post (',
+            'Traduzione già pubblicata come post (' => 'Translation already published as a post (',
+            'Salvataggio redazione non riuscito' => 'Desk save failed',
+            'Verifico…' => 'Checking…',
+            '🎖 Revisione capo redattore' => '🎖 Editor-in-chief review',
+
+            /* ---- v1.1.6 (T-01b): viste PHP (dashboard, redazioni, caps, cpt) ---- */
+            '%s articolo' => '%s article',
+            '%s articoli' => '%s articles',
+            'Agente #%d' => 'Agent #%d',
+            'Agenti assegnati: %s' => 'Assigned agents: %s',
+            '(tutte — nessuna restrizione)' => '(all — no restrictions)',
+            '(nessuna — redazione madre)' => '(none — parent desk)',
+            'Articolo pubblicato.' => 'Article published.',
+            'Vuoto = slug generato dal nome.' => 'Empty = slug generated from the name.',
+
+            /* ---- v1.1.6 (T-01b): UI residua di admin.js (card agenti, redazioni, traduzioni) ---- */
+            'Nessun agente da avviare in questo ambito.' => 'No agents to start in this scope.',
+            'Provider globale (impostazioni)' => 'Global provider (settings)',
+            'Revisione capo redattore completata.' => 'Editor-in-chief review completed.',
+            'Revisione capo redattore non riuscita' => 'Editor-in-chief review failed',
+            'Mostra o nascondi le sub-redazioni' => 'Show or hide the sub-desks',
+            'Punteggio fact-check AI' => 'AI fact-check score',
+            'Punteggio qualità' => 'Quality score',
+            '▶ Avvia redazione' => '▶ Run desk',
+            '▶ Avvia' => '▶ Run',
+            'Nessuna traduzione pubblicata come post.' => 'No translation published as a post.',
+            'Agente AI su ricerca, spazio, ambiente e scoperte scientifiche.' => 'AI agent for research, space, environment and scientific discoveries.',
+            'Analitico e orientato all’impatto pratico' => 'Analytical and focused on practical impact',
+            'Legge gli articoli dei giornalisti e li approva, modifica, manda in revisione o rifiuta.' => 'Reads the journalists’ articles and approves, edits, sends them for review or rejects them.',
+
         );
+}
+
+/**
+ * Pattern i18n EXTRA (v1.1.6) — messaggi con parti variabili IT => EN.
+ *
+ * CONTRATTO v1.1.6 §2 T-01 (punto 2): seconda mappa del motore Nexus_I18n
+ * per i messaggi di log dell'activity feed e per le frasi composite di
+ * admin.js/viste che il match ESATTO non cattura (es. "Riscrittura
+ * articolo #10 fallita: risposta AI non interpretabile.").
+ *
+ * Formato: lista di coppie array( 're' => regex PCRE-like (senza
+ * delimitatori, consumata da new RegExp in i18n.js), 'tpl' => template
+ * EN con segnaposto $1/$2 ). Applicati in i18n.js con String.replace
+ * SOLO se il match esatto fallisce; l'ORDINE conta: dal messaggio più
+ * specifico al frammento più generico (i18n.js ri-applica i pattern a
+ * catena, max 4 giri, solo finché il testo cambia — anti-loop).
+ *
+ * I pattern REALI sono stati estratti con grep dai punti di insert_activity
+ * di includes/ (pipeline, rest, chief, queue, publisher, native, cron,
+ * translate, newsletter, ping, image) e dai punti di composizione di
+ * admin.js (toast riepilogo, live strip, redazioni, migrazione, jobs).
+ *
+ * Filtro: 'nexus_i18n_patterns' (stessa firma dell'array).
+ *
+ * @return array<int,array{re:string,tpl:string}>
+ */
+function nexus_i18n_extra_patterns() {
+    return array(
+        /* ---- v1.1.6 (T-01b): frasi intere e frammenti compositi, PRIMA dei
+         * frammenti generici (l'ordine conta: i pattern sono applicati in
+         * sequenza a ogni giro e i frammenti generici come "N parole"
+         * diverterebbero le frasi intere se venissero prima). ---- */
+        array(
+            're'  => 'Articolo #(\d+) riscritto \(([\d.,]+) parole, ([\d.,]+) min di lettura\) e messo in coda di approvazione\.',
+            'tpl' => 'Article #$1 rewritten ($2 words, $3 min read) and queued for approval.',
+        ),
+        array(
+            're'  => 'Chiave API AI non configurata: salva prima la chiave nelle Impostazioni\.',
+            'tpl' => 'AI API key not configured: save the key in the settings first.',
+        ),
+        array(
+            're'  => 'Salva le impostazioni e riprova\.',
+            'tpl' => 'Save the settings and try again.',
+        ),
+        array(
+            're'  => 'Redazione al lavoro',
+            'tpl' => 'Newsroom at work',
+        ),
+        array(
+            're'  => 'errore di rete',
+            'tpl' => 'network error',
+        ),
+        array(
+            're'  => 'Altri agenti: ',
+            'tpl' => 'More agents: ',
+        ),
+        array(
+            're'  => ' in attesa',
+            'tpl' => ' pending',
+        ),
+        array(
+            're'  => ' in pausa',
+            'tpl' => ' paused',
+        ),
+        array(
+            're'  => ' in errore',
+            'tpl' => ' error',
+        ),
+        array(
+            're'  => 'agenti: ',
+            'tpl' => 'agents: ',
+        ),
+        array(
+            're'  => 'Batch eseguito: ([\d.,]+) processati, ([\d.,]+) falliti',
+            'tpl' => 'Batch run: $1 processed, $2 failed',
+        ),
+        array(
+            're'  => 'Eliminati ([\d.,]+) lavori',
+            'tpl' => 'Deleted $1 jobs',
+        ),
+        array(
+            're'  => 'Annullare il lavoro #(\d+)\?',
+            'tpl' => 'Cancel job #$1?',
+        ),
+        array(
+            're'  => 'Lavoro #(\d+) rimesso in coda',
+            'tpl' => 'Job #$1 requeued',
+        ),
+        array(
+            're'  => 'Lavoro #(\d+) annullato',
+            'tpl' => 'Job #$1 cancelled',
+        ),
+        array(
+            're'  => 'Errore HTTP (\d+)',
+            'tpl' => 'HTTP error $1',
+        ),
+        array(
+            're'  => 'Errore (\d+)',
+            'tpl' => 'Error $1',
+        ),
+        array(
+            're'  => 'Import non riuscito: ',
+            'tpl' => 'Import failed: ',
+        ),
+        array(
+            're'  => 'Impostazioni aggiornate: ([\d.,]+) · Agenti aggiornati: ([\d.,]+) · Agenti creati: ([\d.,]+)',
+            'tpl' => 'Settings updated: $1 · Agents updated: $2 · Agents created: $3',
+        ),
+        array(
+            're'  => '· Errori: ',
+            'tpl' => '· Errors: ',
+        ),
+        array(
+            're'  => '([\d.,]+) gen — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 jan — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) feb — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 feb — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) mar — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 mar — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) apr — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 apr — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) mag — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 may — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) giu — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 jun — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) lug — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 jul — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) ago — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 aug — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) set — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 sep — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) ott — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 oct — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) nov — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 nov — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) dic — ([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 dec — $2 created, $3 published',
+        ),
+        array(
+            're'  => '([\d.,]+) creati, ([\d.,]+) pubblicati',
+            'tpl' => '$1 created, $2 published',
+        ),
+        array(
+            're'  => 'Agenti assegnati: ([\d.,]+)',
+            'tpl' => 'Assigned agents: $1',
+        ),
+        array(
+            're'  => '([\d.,]+) articoli convertiti',
+            'tpl' => '$1 articles converted',
+        ),
+        array(
+            're'  => '([\d.,]+) articoli coperti',
+            'tpl' => '$1 articles covered',
+        ),
+        array(
+            're'  => '([\d.,]+) articolo coperto',
+            'tpl' => '$1 article covered',
+        ),
+        array(
+            're'  => '([\d.,]+) articoli\b(?! convertiti| coperti)',
+            'tpl' => '$1 articles',
+        ),
+        array(
+            're'  => '([\d.,]+) articolo\b',
+            'tpl' => '$1 article',
+        ),
+        array(
+            're'  => '([\d.,]+) agenti al lavoro',
+            'tpl' => '$1 agents at work',
+        ),
+        array(
+            're'  => '1 agente al lavoro',
+            'tpl' => '1 agent at work',
+        ),
+        array(
+            're'  => '([\d.,]+) agenti assegnati',
+            'tpl' => '$1 agents assigned',
+        ),
+        array(
+            're'  => '([\d.,]+) agente assegnato',
+            'tpl' => '$1 agent assigned',
+        ),
+        array(
+            're'  => '([\d.,]+) modelli disponibili dal provider',
+            'tpl' => '$1 models available from the provider',
+        ),
+        array(
+            're'  => '([\d.,]+) min fa',
+            'tpl' => '$1 min ago',
+        ),
+        array(
+            're'  => '([\d.,]+) ore fa',
+            'tpl' => '$1 hours ago',
+        ),
+        array(
+            're'  => '([\d.,]+) giorni fa',
+            'tpl' => '$1 days ago',
+        ),
+        array(
+            're'  => 'Agente #(\d+)',
+            'tpl' => 'Agent #$1',
+        ),
+        array(
+            're'  => 'Redazione #(\d+)',
+            'tpl' => 'Desk #$1',
+        ),
+        array(
+            're'  => '([\d.,]+) redazioni\b',
+            'tpl' => '$1 desks',
+        ),
+        array(
+            're'  => '([\d.,]+) redazione\b',
+            'tpl' => '$1 desk',
+        ),
+        array(
+            're'  => '([\d.,]+) fonti',
+            'tpl' => '$1 sources',
+        ),
+        array(
+            're'  => 'qualità ([\d.,]+)%',
+            'tpl' => 'quality $1%',
+        ),
+        array(
+            're'  => '([\d.,]+) parole',
+            'tpl' => '$1 words',
+        ),
+        array(
+            're'  => '([\d.,]+) min di lettura',
+            'tpl' => '$1 min read',
+        ),
+        array(
+            're'  => '([\d.,]+) destinatari',
+            'tpl' => '$1 recipients',
+        ),
+        array(
+            're'  => 'Raccolto (\d+) candidato \(analisi evergreen: RSS non disponibile\)\.',
+            'tpl' => 'Collected $1 candidate (evergreen analysis: RSS not available).',
+        ),
+        array(
+            're'  => 'Raccolti ([\d.,]+) nuovi candidati da (.+?)\.',
+            'tpl' => 'Collected $1 new candidates from $2.',
+        ),
+        array(
+            're'  => 'Raccolta completata: ([\d.,]+) nuovi articoli( da ([\d.,]+) agenti)?\.',
+            'tpl' => 'Collection completed: $1 new articles$2.',
+        ),
+        array(
+            're'  => ' da ([\d.,]+) agenti\b(?! in)',
+            'tpl' => ' from $1 agents',
+        ),
+        array(
+            're'  => 'Nessun candidato con punteggio sufficiente \(>= 50\) da (.+?)\.',
+            'tpl' => 'No candidate with a sufficient score (>= 50) from $1.',
+        ),
+        array(
+            're'  => 'Raccolta evergreen fallita: ',
+            'tpl' => 'Evergreen collection failed: ',
+        ),
+        array(
+            're'  => 'Raccolta fallita da (.+?): ',
+            'tpl' => 'Collection failed from $1: ',
+        ),
+        array(
+            're'  => 'Duplicato scartato: ',
+            'tpl' => 'Duplicate discarded: ',
+        ),
+        array(
+            're'  => 'Valutazione articolo #(\d+) fallita: ',
+            'tpl' => 'Evaluation of article #$1 failed: ',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) "(.*?)" valutato: punteggio ([\d.,]+)/100\.',
+            'tpl' => 'Article #$1 "$2" evaluated: score $3/100.',
+        ),
+        array(
+            're'  => 'punteggio ([\d.,]+)/100',
+            'tpl' => 'score $1/100',
+        ),
+        array(
+            're'  => 'approvato dal revisore\.',
+            'tpl' => 'approved by the reviewer.',
+        ),
+        array(
+            're'  => 'rifiutato dal revisore\.',
+            'tpl' => 'rejected by the reviewer.',
+        ),
+        array(
+            're'  => 'Riscrittura articolo #(\d+) fallita nel giro di revisione: ',
+            'tpl' => 'Rewriting of article #$1 failed during the review round: ',
+        ),
+        array(
+            're'  => 'Riscrittura articolo #(\d+) fallita: ',
+            'tpl' => 'Rewriting of article #$1 failed: ',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) riscritto \(([\d.,]+) parole, ([\d.,]+) min di lettura\) e messo in coda di approvazione\.',
+            'tpl' => 'Article #$1 rewritten ($2 words, $3 min read) and queued for approval.',
+        ),
+        array(
+            're'  => 'messo in coda di approvazione',
+            'tpl' => 'queued for approval',
+        ),
+        array(
+            're'  => 'Fact-check articolo #(\d+) non eseguito: ',
+            'tpl' => 'Fact-check of article #$1 not run: ',
+        ),
+        array(
+            're'  => 'Fact-check articolo #(\d+): risposta non interpretabile, verifica saltata\.',
+            'tpl' => 'Fact-check of article #$1: response could not be parsed, check skipped.',
+        ),
+        array(
+            're'  => 'Fact-check ([\d.,]+)/100 sotto soglia ([\d.,]+): articolo #(\d+) in bozza\. Problemi: ',
+            'tpl' => 'Fact-check $1/100 below threshold $2: article #$3 back to draft. Issues: ',
+        ),
+        array(
+            're'  => 'Fact-check articolo #(\d+) superato: ([\d.,]+)/100 \(soglia ([\d.,]+)\)\.',
+            'tpl' => 'Fact-check of article #$1 passed: $2/100 (threshold $3).',
+        ),
+        array(
+            're'  => 'Fact-check: ([\d.,]+)/100',
+            'tpl' => 'Fact-check: $1/100',
+        ),
+        array(
+            're'  => 'motore AI non disponibile',
+            'tpl' => 'AI engine not available',
+        ),
+        array(
+            're'  => 'risposta AI non interpretabile',
+            'tpl' => 'AI response could not be parsed',
+        ),
+        array(
+            're'  => 'risposta non interpretabile',
+            'tpl' => 'response could not be parsed',
+        ),
+        array(
+            're'  => 'Capo redattore: revisione articolo #(\d+) rimandata: budget mensile esaurito\.',
+            'tpl' => 'Editor-in-chief: review of article #$1 postponed: monthly budget exhausted.',
+        ),
+        array(
+            're'  => 'Capo redattore: nessun capo disponibile per l\'articolo #(\d+) \(sezione (.+?)\)\.',
+            'tpl' => 'Editor-in-chief: no chief available for article #$1 (section $2).',
+        ),
+        array(
+            're'  => 'Capo redattore: revisione articolo #(\d+) fallita: ',
+            'tpl' => 'Editor-in-chief: review of article #$1 failed: ',
+        ),
+        array(
+            're'  => 'Capo redattore: revisione articolo #(\d+) con risposta non interpretabile\.',
+            'tpl' => 'Editor-in-chief: review of article #$1 returned an unparsable response.',
+        ),
+        array(
+            're'  => 'Capo redattore: verdetto non riconosciuto \(\"(.*?)\"\) sull\'articolo #(\d+): trattato come richiesta di revisione\.',
+            'tpl' => 'Editor-in-chief: unrecognized verdict ("$1") on article #$2: treated as a revision request.',
+        ),
+        array(
+            're'  => 'Capo redattore ha modificato l\'articolo #(\d+) \(versione originale nel log\)\. Titolo precedente: \"(.*?)\"\. Nota: ',
+            'tpl' => 'Editor-in-chief edited article #$1 (original version in the log). Previous title: "$2". Note: ',
+        ),
+        array(
+            're'  => 'Capo redattore: salvataggio esito su articolo #(\d+) fallito: ',
+            'tpl' => 'Editor-in-chief: failed to save the outcome for article #$1: ',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) approvato nella versione modificata\.',
+            'tpl' => 'Editor-in-chief: article #$1 approved in the edited version.',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) approvato\.',
+            'tpl' => 'Editor-in-chief: article #$1 approved.',
+        ),
+        array(
+            're'  => 'Pubblicato dal capo redattore AI: articolo #(\d+) \(gia\' pubblicato in precedenza\)\.',
+            'tpl' => 'Published by the AI editor-in-chief: article #$1 (already published before).',
+        ),
+        array(
+            're'  => 'Pubblicato dal capo redattore AI: articolo #(\d+)\.',
+            'tpl' => 'Published by the AI editor-in-chief: article #$1.',
+        ),
+        array(
+            're'  => 'Pubblicazione automatica dell\'articolo #(\d+) fallita dopo approvazione del capo: ',
+            'tpl' => 'Automatic publication of article #$1 failed after editor-in-chief approval: ',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) in stato approved \(modulo di pubblicazione non disponibile\)\.',
+            'tpl' => 'Editor-in-chief: article #$1 in approved state (publishing module not available).',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) visto e modificato\.',
+            'tpl' => 'Editor-in-chief: article #$1 reviewed and edited.',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) visto\.',
+            'tpl' => 'Editor-in-chief: article #$1 reviewed.',
+        ),
+        array(
+            're'  => 'In attesa di approvazione umana\.',
+            'tpl' => 'Awaiting human approval.',
+        ),
+        array(
+            're'  => 'Capo redattore: impossibile salvare il giro di revisione sull\'articolo #(\d+): ',
+            'tpl' => 'Editor-in-chief: unable to save the review round for article #$1: ',
+        ),
+        array(
+            're'  => 'Capo redattore: modulo riscrittura non disponibile, articolo #(\d+) resta in revisione con la nota del capo\.',
+            'tpl' => 'Editor-in-chief: rewriting module not available, article #$1 stays in review with the editor\'s note.',
+        ),
+        array(
+            're'  => 'Capo redattore: giri di revisione esauriti sull\'articolo #(\d+): richiesta intervento umano\.',
+            'tpl' => 'Editor-in-chief: review rounds exhausted for article #$1: human intervention requested.',
+        ),
+        array(
+            're'  => 'Rifiuto automatico articolo #(\d+) fallito: ',
+            'tpl' => 'Automatic rejection of article #$1 failed: ',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) rifiutato: resta in coda per la decisione umana\.',
+            'tpl' => 'Editor-in-chief: article #$1 rejected: it stays in the queue for the human decision.',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) rifiutato\.',
+            'tpl' => 'Editor-in-chief: article #$1 rejected.',
+        ),
+        array(
+            're'  => 'Capo redattore: lavoro di revisione senza article_id valido\.',
+            'tpl' => 'Editor-in-chief: review job without a valid article_id.',
+        ),
+        array(
+            're'  => 'Capo redattore: articolo #(\d+) in revisione \(giro ([\d.,]+)/([\d.,]+)\)\. Nota al giornalista: ',
+            'tpl' => 'Editor-in-chief: article #$1 in review (round $2/$3). Note to the journalist: ',
+        ),
+        array(
+            're'  => 'Capo redattore: query articoli in attesa fallita \(verifica l\'aggiornamento dello schema\)\.',
+            'tpl' => 'Editor-in-chief: query for pending articles failed (check the schema update).',
+        ),
+        array(
+            're'  => 'Capo redattore: ',
+            'tpl' => 'Editor-in-chief: ',
+        ),
+        array(
+            're'  => 'nessuna nota',
+            'tpl' => 'no note',
+        ),
+        array(
+            're'  => 'Pubblicazione articolo #(\d+) fallita: nessuna piattaforma configurata\.',
+            'tpl' => 'Publishing of article #$1 failed: no platform configured.',
+        ),
+        array(
+            're'  => 'Pubblicazione articolo #(\d+) fallita su tutte le piattaforme\.',
+            'tpl' => 'Publishing of article #$1 failed on all platforms.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) "(.*?)" pubblicato su: (.*?)\.',
+            'tpl' => 'Article #$1 "$2" published on: $3.',
+        ),
+        array(
+            're'  => 'Pubblicato su: (.*?)\.',
+            'tpl' => 'Published on: $1.',
+        ),
+        array(
+            're'  => 'Pubblicazione fallita su tutte le piattaforme\.',
+            'tpl' => 'Publishing failed on all platforms.',
+        ),
+        array(
+            're'  => 'Pubblicazione completata\.',
+            'tpl' => 'Publishing completed.',
+        ),
+        array(
+            're'  => 'Pubblicazione fallita senza dettagli\.',
+            'tpl' => 'Publishing failed without details.',
+        ),
+        array(
+            're'  => 'Canale social non configurato: nessuna integrazione disponibile per (.*?)\.',
+            'tpl' => 'Social channel not configured: no integration available for $1.',
+        ),
+        array(
+            're'  => 'Canale ([A-Za-z0-9_]+): ',
+            'tpl' => 'Channel $1: ',
+        ),
+        array(
+            're'  => 'Post WP #(\d+) per articolo Nexus #(\d+)',
+            'tpl' => 'WP post #$1 for Nexus article #$2',
+        ),
+        array(
+            're'  => 'Articolo Nexus #(\d+)',
+            'tpl' => 'Nexus article #$1',
+        ),
+        array(
+            're'  => 'Programmate ([\d.,]+) traduzioni automatiche per articolo #(\d+) \(post WP #(\d+)\)\.',
+            'tpl' => 'Scheduled $1 automatic translations for article #$2 (WP post #$3).',
+        ),
+        array(
+            're'  => 'Post #(\d+) aggiornato in lingua ([a-z]+) per articolo #(\d+) \(già tradotto\)\.',
+            'tpl' => 'Post #$1 updated in language $2 for article #$3 (already translated).',
+        ),
+        array(
+            're'  => 'Post #(\d+) pubblicato in lingua ([a-z]+) per articolo #(\d+)\.',
+            'tpl' => 'Post #$1 published in language $2 for article #$3.',
+        ),
+        array(
+            're'  => 'Traduzione ([a-z]{2}) articolo #(\d+): ',
+            'tpl' => 'Translation $1 of article #$2: ',
+        ),
+        array(
+            're'  => 'Traduzione ([a-z]{2}) articolo #(\d+)',
+            'tpl' => 'Translation $1 of article #$2',
+        ),
+        array(
+            're'  => 'Traduzione completata \((.*?)\)\.',
+            'tpl' => 'Translation completed ($1).',
+        ),
+        array(
+            're'  => 'Traduzione già pubblicata come post \((.*?)\)\.',
+            'tpl' => 'Translation already published as a post ($1).',
+        ),
+        array(
+            're'  => 'Traduzione pubblicata come post \((.*?)\)\.',
+            'tpl' => 'Translation published as a post ($1).',
+        ),
+        array(
+            're'  => 'Stato agente aggiornato a "(.*?)" via API\.',
+            'tpl' => 'Agent status updated to "$1" via API.',
+        ),
+        array(
+            're'  => 'Modello AI aggiornato: ',
+            'tpl' => 'AI model updated: ',
+        ),
+        array(
+            're'  => 'Agente "(.*?)" creato via editor\.',
+            'tpl' => 'Agent "$1" created via the editor.',
+        ),
+        array(
+            're'  => 'Agente "(.*?)" aggiornato via editor \((.*?)\)\.',
+            'tpl' => 'Agent "$1" updated via the editor ($2).',
+        ),
+        array(
+            're'  => 'Agente clonato da "(.*?)" \(id (\d+)\) come "(.*?)"\.',
+            'tpl' => 'Agent cloned from "$1" (id $2) as "$3".',
+        ),
+        array(
+            're'  => 'Sync nativo agente fallito: ',
+            'tpl' => 'Native agent sync failed: ',
+        ),
+        array(
+            're'  => 'Coda: ([\d.,]+) eseguiti, ([\d.,]+) falliti nel batch',
+            'tpl' => 'Queue: $1 processed, $2 failed in the batch',
+        ),
+        array(
+            're'  => 'Impossibile caricare la coda: ',
+            'tpl' => 'Unable to load the queue: ',
+        ),
+        array(
+            're'  => 'Budget mensile esaurito: la fase ([a-z_]+) prosegue comunque \(budget_action=warn\)\.',
+            'tpl' => 'Monthly budget exhausted: the $1 phase continues anyway (budget_action=warn).',
+        ),
+        array(
+            're'  => 'Fase ([a-z_]+) saltata: budget mensile esaurito\.',
+            'tpl' => 'The $1 phase was skipped: monthly budget exhausted.',
+        ),
+        array(
+            're'  => 'Budget mensile: ',
+            'tpl' => 'Monthly budget: ',
+        ),
+        array(
+            're'  => 'Nexus Wire avviato sul tema "(.*?)" con (\d+) agenti in redazione\.',
+            'tpl' => 'Nexus Wire started on the topic "$1" with $2 agents in the newsroom.',
+        ),
+        array(
+            're'  => 'Nexus Wire "(.*?)" fallito: ',
+            'tpl' => 'Nexus Wire "$1" failed: ',
+        ),
+        array(
+            're'  => 'Nexus Wire completato sul tema "(.*?)": articolo #(\d+) in coda di approvazione \(redazione: (.*?)\)\.',
+            'tpl' => 'Nexus Wire completed on the topic "$1": article #$2 in the approval queue (desk: $3).',
+        ),
+        array(
+            're'  => 'salvataggio articolo non riuscito',
+            'tpl' => 'article save failed',
+        ),
+        array(
+            're'  => '“(.+?)” è in coda di approvazione \(qualità ([\d.,]+)\)',
+            'tpl' => '"$1" is in the approval queue (quality $2)',
+        ),
+        array(
+            're'  => 'Avviare l’intera testata\? Verranno avviati ([\d.,]+) agenti\.',
+            'tpl' => 'Run the entire masthead? $1 agents will be started.',
+        ),
+        array(
+            're'  => 'Avvio completato: ',
+            'tpl' => 'Run completed: ',
+        ),
+        array(
+            're'  => 'Esito avvio — ',
+            'tpl' => 'Run outcome — ',
+        ),
+        array(
+            're'  => '([\d.,]+) riusciti',
+            'tpl' => '$1 succeeded',
+        ),
+        array(
+            're'  => '([\d.,]+) riuscito\b',
+            'tpl' => '$1 succeeded',
+        ),
+        array(
+            're'  => '([\d.,]+) falliti',
+            'tpl' => '$1 failed',
+        ),
+        array(
+            're'  => '([\d.,]+) fallito\b',
+            'tpl' => '$1 failed',
+        ),
+        array(
+            're'  => '([\d.,]+) raccolti',
+            'tpl' => '$1 collected',
+        ),
+        array(
+            're'  => '([\d.,]+) raccolto\b',
+            'tpl' => '$1 collected',
+        ),
+        array(
+            're'  => '([\d.,]+) pubblicati\b',
+            'tpl' => '$1 published',
+        ),
+        array(
+            're'  => '([\d.,]+) pubblicato\b(?! su)',
+            'tpl' => '$1 published',
+        ),
+        array(
+            're'  => '([\d.,]+) errori',
+            'tpl' => '$1 errors',
+        ),
+        array(
+            're'  => '([\d.,]+) errore\b',
+            'tpl' => '$1 error',
+        ),
+        array(
+            're'  => '([\d.,]+) agenti\b',
+            'tpl' => '$1 agents',
+        ),
+        array(
+            're'  => '([\d.,]+) agente\b',
+            'tpl' => '$1 agent',
+        ),
+        array(
+            're'  => 'Raccolti ([\d.,]+) · Valutati ([\d.,]+) · Riscritti ([\d.,]+) · Pubblicati ([\d.,]+)',
+            'tpl' => 'Collected $1 · Evaluated $2 · Rewritten $3 · Published $4',
+        ),
+        array(
+            're'  => 'Raccolte: ([\d.,]+) · Valutate: ([\d.,]+) · Riscritte: ([\d.,]+) · Pubblicate: ([\d.,]+)',
+            'tpl' => 'Collected: $1 · Evaluated: $2 · Rewritten: $3 · Published: $4',
+        ),
+        array(
+            're'  => 'In redazione ora: stato non disponibile \((.*?)\)',
+            'tpl' => 'In the newsroom now: status not available ($1)',
+        ),
+        array(
+            're'  => 'In redazione ora: ',
+            'tpl' => 'In the newsroom now: ',
+        ),
+        array(
+            're'  => '· aggiornato alle ([\d.,:]+)',
+            'tpl' => '· updated at $1',
+        ),
+        array(
+            're'  => 'Ultima azione: ',
+            'tpl' => 'Last action: ',
+        ),
+        array(
+            're'  => 'Ultimo run: ',
+            'tpl' => 'Last run: ',
+        ),
+        array(
+            're'  => 'Eliminare la redazione “(.*?)”\?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre\. Gli articoli non vengono cancellati\.',
+            'tpl' => 'Delete desk "$1"?\n\nChild desks will be reassigned to the parent desk. Articles are not deleted.',
+        ),
+        array(
+            're'  => 'Articolo non valido: featured image non elaborabile\.',
+            'tpl' => 'Invalid article: featured image cannot be processed.',
+        ),
+        array(
+            're'  => 'Titolo dell\'articolo assente: featured image non generabile\.',
+            'tpl' => 'Article title missing: featured image cannot be generated.',
+        ),
+        array(
+            're'  => 'ID post WordPress mancante: featured image non impostabile\.',
+            'tpl' => 'WordPress post ID missing: featured image cannot be set.',
+        ),
+        array(
+            're'  => 'Impossibile salvare la featured image per il post #(\d+) \(upload o attachment falliti\)\.',
+            'tpl' => 'Unable to save the featured image for post #$1 (upload or attachment failed).',
+        ),
+        array(
+            're'  => 'set_post_thumbnail fallito per il post #(\d+)\.',
+            'tpl' => 'set_post_thumbnail failed for post #$1.',
+        ),
+        array(
+            're'  => 'Featured image impostata sul post #(\d+) \(origine: (.*?)\)\.',
+            'tpl' => 'Featured image set on post #$1 (source: $2).',
+        ),
+        array(
+            're'  => 'Errore imprevisto nella gestione della featured image: ',
+            'tpl' => 'Unexpected error while handling the featured image: ',
+        ),
+        array(
+            're'  => 'IndexNow errore fatale: ',
+            'tpl' => 'IndexNow fatal error: ',
+        ),
+        array(
+            're'  => 'IndexNow errore: ',
+            'tpl' => 'IndexNow error: ',
+        ),
+        array(
+            're'  => 'IndexNow salvataggio chiave fallito',
+            'tpl' => 'IndexNow key save failed',
+        ),
+        array(
+            're'  => 'IndexNow host del sito non disponibile',
+            'tpl' => 'IndexNow site host not available',
+        ),
+        array(
+            're'  => 'WebSub errore fatale: ',
+            'tpl' => 'WebSub fatal error: ',
+        ),
+        array(
+            're'  => 'WebSub errore: ',
+            'tpl' => 'WebSub error: ',
+        ),
+        array(
+            're'  => 'Digest inviato a ([\d.,]+) destinatari',
+            'tpl' => 'Digest sent to $1 recipients',
+        ),
+        array(
+            're'  => 'Invio digest fallito: ',
+            'tpl' => 'Digest sending failed: ',
+        ),
+        array(
+            're'  => 'Migrazione completata: ',
+            'tpl' => 'Migration completed: ',
+        ),
+        array(
+            're'  => 'Migrazione interrotta: ',
+            'tpl' => 'Migration interrupted: ',
+        ),
+        array(
+            're'  => 'Errore capo redattore nel tick del cron: ',
+            'tpl' => 'Editor-in-chief error in the cron tick: ',
+        ),
+        array(
+            're'  => 'Errore pipeline automatica per (.*?): ',
+            'tpl' => 'Automatic pipeline error for $1: ',
+        ),
+        array(
+            're'  => 'Errore durante il caricamento del pannello: ',
+            'tpl' => 'Error while loading the panel: ',
+        ),
+        // v1.1.6 (integrazione): compositi runtime di admin.js — riepiloghi
+        // dell'avvio, fallback "Agente #N", modello assegnato, stats redazioni.
+        // Ordine: varianti con "falliti"/singolari (piu' specifiche) prima.
+        array(
+            're'  => 'Avvio completato: 1 agente · (\d+) riuscit[oi] · (\d+) fallit[oi]',
+            'tpl' => 'Run complete: 1 agent · $1 succeeded · $2 failed',
+        ),
+        array(
+            're'  => 'Avvio completato: (\d+) agenti · (\d+) riuscit[oi] · (\d+) fallit[oi]',
+            'tpl' => 'Run complete: $1 agents · $2 succeeded · $3 failed',
+        ),
+        array(
+            're'  => 'Avvio completato: 1 agente · (\d+) riuscit[oi]',
+            'tpl' => 'Run complete: 1 agent · $1 succeeded',
+        ),
+        array(
+            're'  => 'Avvio completato: (\d+) agenti · (\d+) riuscit[oi]',
+            'tpl' => 'Run complete: $1 agents · $2 succeeded',
+        ),
+        array(
+            're'  => 'Avvio completato: 1 agente · (\d+) raccolt[oi] · (\d+) pubblicat[oi] · (\d+) error[ei]',
+            'tpl' => 'Run complete: 1 agent · $1 collected · $2 published · $3 errors',
+        ),
+        array(
+            're'  => 'Avvio completato: (\d+) agenti · (\d+) raccolt[oi] · (\d+) pubblicat[oi] · (\d+) error[ei]',
+            'tpl' => 'Run complete: $1 agents · $2 collected · $3 published · $4 errors',
+        ),
+        array(
+            're'  => 'Agente #(\d+)',
+            'tpl' => 'Agent #$1',
+        ),
+        array(
+            're'  => 'Modello "(.+?)" assegnato all\'agente\.',
+            'tpl' => 'Model "$1" assigned to the agent.',
+        ),
+        array(
+            're'  => '(\d+) agente assegnato',
+            'tpl' => '$1 assigned agent',
+        ),
+        array(
+            're'  => '(\d+) agenti assegnati',
+            'tpl' => '$1 assigned agents',
+        ),
+        array(
+            're'  => '(\d+) articolo coperto',
+            'tpl' => '$1 covered article',
+        ),
+        array(
+            're'  => '(\d+) articoli coperti',
+            'tpl' => '$1 covered articles',
+        ),
+        array(
+            're'  => '(\d+) redazioni',
+            'tpl' => '$1 desks',
+        ),
+        array(
+            're'  => '(\d+) redazione\b',
+            'tpl' => '$1 desk',
+        ),
+    );
 }

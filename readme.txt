@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.5
+Stable tag: 1.1.6
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -98,6 +98,15 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.6 =
+* ZERO MOCK (richiesta esplicita): eliminata la pubblicazione social simulata — un canale non configurato ora produce un errore onesto ("Canale social non configurato") senza più ID/URL finti ("sim_xxx", social.example) né status "published" finto; Facebook e Instagram escono dalla lista piattaforme (non hanno integrazione reale: Telegram, Discord, X, LinkedIn e Blog restano i canali veri); sweep completo del codice con report hit-by-hit nel changelog del repo.
+* Timestamp veri nell'attività: fix del bug che scriveva "0000-00-00 00:00:00" in tutti i log (formato wpdb incompleto nell'insert) + pulizia one-time delle righe senza data vera + le API non emettono mai più date zero (stringa vuota: la UI mostra "—", non uno zero finto); fixato anche un bug latente sull'update agenti che poteva azzerare updated_at.
+* Interfaccia IT/EN COMPLETA al 100%: dizionari integrati (775 voci + 186 pattern) con audit automatico a zero residui sulle stringhe renderizzate; i messaggi di log con parti variabili vengono tradotti a pattern (es. "Riscrittura articolo #10 fallita" → "Rewrite of article #10 failed"); tradotti anche placeholder, aria-label, valori dei bottoni e i messaggi dei dialoghi di conferma; self-test su 61 messaggi di log reali 61/61.
+* Impostazioni divise in 4 SOTTOMENU WordPress veri (dopo Strumenti): Impostazioni contenuti / Impostazioni AI / Impostazioni pubblicazione / Impostazioni sistema — ogni pagina ha il proprio form e il bottone SALVA ANCHE IN CIMA (niente più scroll infinito per salvare); i vecchi link a page=nexus-settings continuano a funzionare.
+* "Pubblicazione social" e "Distribuzione sociale" UNIFICATE in un'unica sezione Social (erano quasi la stessa cosa), con tutti i campi mantenuti identici.
+* Fix "dashboard doppia": rimosso il bottone duplicato che faceva la stessa identica azione dell'Avvia testata ("Esegui pipeline completa"), guardia anti-doppio-boot in JS e pannello live compatto (in dettaglio solo gli agenti al lavoro, gli altri in una riga di conteggio).
+* Design "respira" esteso anche alle pagine autocontenute (Analytics, Lavori, Strumenti): superfici piatte con hairline e token di spaziatura, via i box dentro box residui.
 
 = 1.1.5 =
 * UI che respira: pass design completo dell'admin — meno riquadri annidati (il contenitore "scatola" resta uno per pagina, il resto si separa con whitespace e hairline), scala di spaziatura a token (4-64px), tipografia più comoda (corpo 15px, titoli più arieggonti), accordion impostazioni come righe testuali pulite senza box attorno, tabelle con più respiro e mobile con gutter unico (addio doppio padding visibile su telefono); tema scuro aggiornato con gli stessi principi.

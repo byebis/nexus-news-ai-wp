@@ -67,6 +67,11 @@
  * ai_provider ('' = provider globale), role ('giornalista' default),
  * chief_scope ('' | global | category | term) e chief_term_id (int).
  *
+ * SHAPE DATE (v1.1.6, regola ZERO MOCK): nessun serializzatore emette la data
+ * zero MySQL ('0000-00-00 00:00:00') o stringhe vuote come date: date_or_empty()
+ * le converte in '' (la UI mostrerà vuoto/—, mai una data finta). Le date valide
+ * passano intatte: nessun cambio di shape per i consumatori.
+ *
  * @package Nexus_News_AI
  */
 
@@ -2170,7 +2175,8 @@ class Nexus_Rest {
          * Ultima azione per agente da nexus_activity_logs con UNA sola query
          * raggruppata (MAX(id) per agent_id): array agent_id => {action,
          * detail, status, created_at}. created_at convertito in RFC3339
-         * (ISO8601, fuso del sito) per il diff lato client.
+         * (ISO8601, fuso del sito) per il diff lato client; le date zero
+         * (v1.1.6) diventano stringa vuota, mai RFC3339 di una data finta.
          *
          * @param array $agent_ids Agent ID da considerare.
          * @return array
@@ -2211,7 +2217,7 @@ class Nexus_Rest {
                                 $detail = substr( $detail, 0, 200 );
                         }
 
-                        $created = (string) ( isset( $row->created_at ) ? $row->created_at : '' );
+                        $created = self::date_or_empty( isset( $row->created_at ) ? $row->created_at : '' );
                         if ( '' !== $created && function_exists( 'mysql_to_rfc3339' ) ) {
                                 $created = mysql_to_rfc3339( $created );
                         }
@@ -3092,9 +3098,9 @@ class Nexus_Rest {
                         'role'        => (string) ( $agent->role ?? 'giornalista' ),
                         'chief_scope' => (string) ( $agent->chief_scope ?? '' ),
                         'chief_term_id' => absint( $agent->chief_term_id ?? 0 ),
-                        'last_run'    => (string) ( $agent->last_run ?? '' ),
-                        'created_at'  => (string) $agent->created_at,
-                        'updated_at'  => (string) $agent->updated_at,
+                        'last_run'    => self::date_or_empty( $agent->last_run ?? '' ),
+                        'created_at'  => self::date_or_empty( $agent->created_at ?? '' ),
+                        'updated_at'  => self::date_or_empty( $agent->updated_at ?? '' ),
                 );
         }
 
@@ -3133,6 +3139,10 @@ class Nexus_Rest {
          * chief_rounds: SEMPRE presenti, stringa vuota o 0 quando il capo
          * redattore non ha ancora revisionato l'articolo (o la colonna non
          * esiste ancora: letture difensive con ?? come stile del file).
+         *
+         * Dalla v1.1.6 le date (created_at, updated_at, published_at,
+         * chief_reviewed_at) vuote o zero MySQL sono emesse come stringa
+         * vuota (date_or_empty): mai una data finta nelle risposte.
          *
          * @param object $a             Riga articolo.
          * @param bool   $with_content  Includere il contenuto completo (default true).
@@ -3195,7 +3205,7 @@ class Nexus_Rest {
                         'wp_preview_url' => $wp_preview_url,
                         'chief_status' => (string) ( $a->chief_status ?? '' ),
                         'chief_note' => (string) ( $a->chief_note ?? '' ),
-                        'chief_reviewed_at' => (string) ( $a->chief_reviewed_at ?? '' ),
+                        'chief_reviewed_at' => self::date_or_empty( $a->chief_reviewed_at ?? '' ),
                         'chief_agent' => $chief_agent_id,
                         'chief_agent_name' => $chief_agent ? (string) $chief_agent->name : '',
                         'chief_rounds' => (int) ( $a->chief_rounds ?? 0 ),
@@ -3207,9 +3217,9 @@ class Nexus_Rest {
                         'views'         => (int) $a->views,
                         'reactions'     => is_array( $reactions ) ? $reactions : array(),
                         'excerpt'       => $excerpt,
-                        'published_at'  => (string) ( $a->published_at ?? '' ),
-                        'created_at'    => (string) ( $a->created_at ?? '' ),
-                        'updated_at'    => (string) ( $a->updated_at ?? '' ),
+                        'published_at'  => self::date_or_empty( $a->published_at ?? '' ),
+                        'created_at'    => self::date_or_empty( $a->created_at ?? '' ),
+                        'updated_at'    => self::date_or_empty( $a->updated_at ?? '' ),
                 );
 
                 if ( $with_content ) {
@@ -3232,6 +3242,9 @@ class Nexus_Rest {
         /**
          * Serializza un publish log per la risposta JSON.
          *
+         * v1.1.6: published_at/created_at vuote o zero MySQL → stringa vuota
+         * (date_or_empty), mai una data finta.
+         *
          * @param object $log Riga publish log.
          * @return array
          */
@@ -3244,13 +3257,16 @@ class Nexus_Rest {
                         'post_id'      => (string) ( $log->post_id ?? '' ),
                         'post_url'     => esc_url_raw( (string) ( $log->post_url ?? '' ) ),
                         'error'        => (string) ( $log->error ?? '' ),
-                        'published_at' => (string) ( $log->published_at ?? '' ),
-                        'created_at'   => (string) ( $log->created_at ?? '' ),
+                        'published_at' => self::date_or_empty( $log->published_at ?? '' ),
+                        'created_at'   => self::date_or_empty( $log->created_at ?? '' ),
                 );
         }
 
         /**
          * Serializza un log attività per la risposta JSON.
+         *
+         * v1.1.6: created_at vuota o zero MySQL → stringa vuota (date_or_empty):
+         * il feed attività non mostra mai '0000-00-00 00:00:00'.
          *
          * @param object $row Riga activity log.
          * @return array
@@ -3264,7 +3280,7 @@ class Nexus_Rest {
                         'action'     => (string) $row->action,
                         'detail'     => (string) ( $row->detail ?? '' ),
                         'status'     => (string) $row->status,
-                        'created_at' => (string) ( $row->created_at ?? '' ),
+                        'created_at' => self::date_or_empty( $row->created_at ?? '' ),
                 );
         }
 
@@ -3285,10 +3301,30 @@ class Nexus_Rest {
         }
 
         /**
+         * Data onesta per le risposte JSON (v1.1.6, regola ZERO MOCK).
+         *
+         * Le date zero MySQL ('0000-00-00 00:00:00' e ogni variante che inizia
+         * con '0000-00-00') e le stringhe vuote diventano '': la UI mostrerà
+         * vuoto/—, mai una data finta. Le date valide passano intatte (nessuna
+         * riformattazione: lo shape storico delle risposte resta invariato).
+         *
+         * @param string|null $value Data letta dal DB (o assente).
+         * @return string
+         */
+        private static function date_or_empty( $value ) {
+                $value = trim( (string) $value );
+                if ( '' === $value || 0 === strpos( $value, '0000-00-00' ) ) {
+                        return '';
+                }
+                return $value;
+        }
+
+        /**
          * Serializza un lavoro della coda per la risposta JSON (v1.0.4).
          *
          * args è decodificato dal JSON (array, fallback array vuoto);
-         * date e last_error null diventano stringa vuota.
+         * date e last_error null diventano stringa vuota. v1.1.6: anche le
+         * date zero MySQL diventano stringa vuota (date_or_empty).
          *
          * @param object $job Riga job.
          * @return array
@@ -3308,12 +3344,12 @@ class Nexus_Rest {
                         'priority'     => (int) $job->priority,
                         'attempts'     => (int) $job->attempts,
                         'max_attempts' => (int) $job->max_attempts,
-                        'scheduled_at' => (string) ( $job->scheduled_at ?? '' ),
-                        'started_at'   => (string) ( $job->started_at ?? '' ),
-                        'completed_at' => (string) ( $job->completed_at ?? '' ),
+                        'scheduled_at' => self::date_or_empty( $job->scheduled_at ?? '' ),
+                        'started_at'   => self::date_or_empty( $job->started_at ?? '' ),
+                        'completed_at' => self::date_or_empty( $job->completed_at ?? '' ),
                         'last_error'   => (string) ( $job->last_error ?? '' ),
-                        'created_at'   => (string) ( $job->created_at ?? '' ),
-                        'updated_at'   => (string) ( $job->updated_at ?? '' ),
+                        'created_at'   => self::date_or_empty( $job->created_at ?? '' ),
+                        'updated_at'   => self::date_or_empty( $job->updated_at ?? '' ),
                 );
         }
 
