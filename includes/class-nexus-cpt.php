@@ -12,6 +12,21 @@
  *  - singolo articolo:  /nexus/{slug}/          (rewrite slug 'nexus')
  *  - archivio pubblico: /nexus/                 (has_archive 'nexus')
  *
+ * v1.1.3 — MENU AUTO-HIDE (contenuto legacy):
+ * Dalla 1.1.0 i contenuti NUOVI vivono nei post nativi 'post' (Nexus_Publisher
+ * + Nexus_Native) e il CPT ospita solo articoli LEGACY creati prima della
+ * 1.1.0. Quando non restano articoli legacy (legacy_count() === 0, tipicamente
+ * dopo la migrazione 1-click Strumenti → "Migrazione contenuti nativi") il CPT
+ * viene registrato con 'show_in_menu' => false: la voce "Nexus News AI"
+ * sparisce dal menu admin ma il post type RESTA REGISTRATO, quindi permalink
+ * legacy /?nexus_article={id} e archivio pubblico /nexus/ continuano a
+ * funzionare. Il conteggio e' cachato nel transient "nexus_cpt_legacy_count"
+ * (TTL 300 secondi) e invalidato su hook core save_post /
+ * transition_post_status / deleted_post: la migrazione cambia post_type via
+ * wp_update_post e NON lancia do_action custom (vedi il docblock di
+ * invalidate_legacy_count()). Filtro 'nexus_cpt_force_menu' per forzare il
+ * menu sempre visibile o sempre nascosto (vedi register_cpt()).
+ *
  * WIRING (nota per l'integratore — NON implementare in questo file):
  *  - in nexus-news-ai.php aggiungere:
  *      require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cpt.php';
@@ -44,10 +59,95 @@ class Nexus_Cpt {
                 add_action( 'init', array( __CLASS__, 'register_meta' ) );
                 add_action( 'add_meta_boxes', array( __CLASS__, 'add_meta_box' ) );
                 add_filter( 'template_include', array( __CLASS__, 'maybe_use_single_template' ), 99 );
+
+                // v1.1.3: invalidazione della cache del conteggio legacy su
+                // hook core (vedi invalidate_legacy_count() per il perche',
+                // inclusa la copertura della migrazione senza do_action custom).
+                add_action( 'save_post', array( __CLASS__, 'invalidate_legacy_count' ) );
+                add_action( 'transition_post_status', array( __CLASS__, 'invalidate_legacy_count' ) );
+                add_action( 'deleted_post', array( __CLASS__, 'invalidate_legacy_count' ) );
+        }
+
+        /**
+         * Conteggio degli articoli LEGACY nel CPT "nexus_article".
+         *
+         * Stesso criterio di Nexus_Native::cpt_remaining() (esclusi cestino e
+         * auto-draft), ma con query protetta da $wpdb->prepare e risultato
+         * cachato nel transient "nexus_cpt_legacy_count" con TTL di 300
+         * secondi: register_cpt() gira ad ogni richiesta e non deve
+         * interrogare il DB a ogni load.
+         *
+         * @return int Numero di articoli legacy (0 = nessun legacy residuo).
+         */
+        public static function legacy_count() {
+                $cached = get_transient( 'nexus_cpt_legacy_count' );
+                if ( false !== $cached ) {
+                        return (int) $cached;
+                }
+
+                global $wpdb;
+
+                $count = (int) $wpdb->get_var(
+                        $wpdb->prepare(
+                                "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ( %s, %s )",
+                                'nexus_article',
+                                'trash',
+                                'auto-draft'
+                        )
+                );
+
+                set_transient( 'nexus_cpt_legacy_count', $count, 300 );
+
+                return $count;
+        }
+
+        /**
+         * Callback degli hook core: invalida il transient del conteggio legacy.
+         *
+         * PERCHE' QUESTI HOOK COPRONO ANCHE LA MIGRAZIONE:
+         * la migrazione 1-click (Strumenti → "Migrazione contenuti nativi",
+         * Nexus_Native::migrate_run) cambia post_type da 'nexus_article' a
+         * 'post' tramite wp_update_post() e al termine NON lancia alcun
+         * do_action custom: l'unico segnale affidabile sono gli hook core.
+         *  - 'save_post': scatta per OGNI post type dentro wp_insert_post(),
+         *    quindi anche per il post riscritto dalla migrazione (che al
+         *    salvataggio e' gia' di tipo 'post'): agganciare l'hook generico
+         *    e' l'unico modo per intercettare la conversione CPT → 'post'
+         *    senza modificare Nexus_Native.
+         *  - 'transition_post_status': copre i cambi di stato (bozza,
+         *    pubblicazione, cestino) che alterano il conteggio anche quando
+         *    non passa da un nuovo salvataggio esplicito del CPT.
+         *  - 'deleted_post': copre l'eliminazione definitiva, incluso lo
+         *    svuotamento del cestino.
+         *
+         * @return void
+         */
+        public static function invalidate_legacy_count() {
+                delete_transient( 'nexus_cpt_legacy_count' );
         }
 
         /**
          * Registra il post type "nexus_article".
+         *
+         * v1.1.3 MENU AUTO-HIDE: se non restano articoli legacy
+         * (legacy_count() === 0) gli args ricevono 'show_in_menu' => false:
+         * la voce "Nexus News AI" sparisce dal menu admin, ma il post type
+         * RESTA REGISTRATO quindi permalink legacy /?nexus_article={id} e
+         * archivio pubblico /nexus/ continuano a funzionare. Con almeno un
+         * articolo legacy il menu resta visibile come nelle versioni
+         * precedenti.
+         *
+         * Filtro 'nexus_cpt_force_menu' (applicato PRIMA del confronto, ha
+         * priorita' sul conteggio automatico):
+         *  - true  → menu sempre visibile;
+         *  - false → menu sempre nascosto;
+         *  - null (default) → comportamento automatico da legacy_count().
+         *
+         * Esempio d'uso (functions.php del tema o mu-plugin):
+         *
+         *     add_filter( 'nexus_cpt_force_menu', function () {
+         *         return true; // Menu sempre visibile, anche senza legacy.
+         *     } );
          *
          * @return void
          */
@@ -94,6 +194,19 @@ class Nexus_Cpt {
                         'show_in_rest'        => true,
                         'menu_icon'           => 'dashicons-megaphone',
                 );
+
+                // v1.1.3: menu auto-hide. Il filtro viene applicato PRIMA del
+                // confronto: un valore non-null ha sempre la priorita'.
+                $force_menu = apply_filters( 'nexus_cpt_force_menu', null );
+
+                if ( null !== $force_menu ) {
+                        // true = menu sempre visibile, false = sempre nascosto.
+                        $args['show_in_menu'] = (bool) $force_menu;
+                } elseif ( self::legacy_count() === 0 ) {
+                        // Nessun articolo legacy: solo la voce di menu sparisce,
+                        // permalink e archivio restano funzionanti.
+                        $args['show_in_menu'] = false;
+                }
 
                 register_post_type( 'nexus_article', $args );
         }

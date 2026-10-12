@@ -1459,12 +1459,12 @@ body.nxa-lock-scroll {
   inset: 0;
   z-index: 100000;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   width: 100%;
   max-width: none;
   max-height: none;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 16px;
   background: var(--nxa-overlay);
   border: 0;
@@ -1476,8 +1476,8 @@ body.nxa-lock-scroll {
 }
 
 /* Guardia: l'attributo hidden vince sempre sulla display:flex dell'overlay
- * (le regole autore prevalgono su quella UA; il fallback inline di admin.js
- * ha il refuso ".nxa-modalidden]" e non copre). */
+ * (le regole autore prevalgono su quella UA) e doppia copertura col
+ * fallback inline di admin.js. v1.1.3: overlay scrollabile su mobile. */
 .nxa-modal[role="dialog"][hidden] {
   display: none;
 }
@@ -1485,6 +1485,7 @@ body.nxa-lock-scroll {
 /* Superficie del pannello editor: scrolla lei, l'overlay resta fermo. */
 .nxa-modal-panel {
   position: relative;
+  margin: auto;
   width: min(92vw, 640px);
   max-width: 100%;
   max-height: 85vh;

@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.2
+Stable tag: 1.1.3
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -99,6 +99,13 @@ Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua 
 
 == Changelog ==
 
+= 1.1.3 =
+* Dettaglio articolo: overlay scrollabile e pannelli centrati senza tagli anche con il foglio stile admin reale
+* Menu CPT auto-hide: quando non restano più articoli legacy nel CPT nexus_article (conteggio esclusi cestino/auto-draft, cachato nel transient nexus_cpt_legacy_count per 5 minuti e invalidato sugli hook core save_post/transition_post_status/deleted_post) la voce "Nexus News AI" sparisce automaticamente dal menu admin; il post type resta registrato e i permalink legacy /?nexus_article= e l'archivio /nexus/ continuano a funzionare; filtro nexus_cpt_force_menu per tenere il menu sempre visibile o sempre nascosto.
+* Fix overflow del dettaglio articolo su mobile: modal allineato in alto (align-items:flex-start) con scorrimento proprio e padding ridotto, altezza in dvh con fallback vh (testa sticky intatta), overflow-wrap:anywhere nel body e nuova media query 600px più compatta: niente più contenuto tagliato sopra/sotto o oltre il bordo destro (Chrome Android).
+* Bottone "Vedi bozza WordPress" in coda di approvazione e nel modal di dettaglio (accanto al badge «Post WP»): apre l'anteprima o l'editor del post WP collegato (post pubblicato = "Vedi in WordPress" sul permalink pubblico); gli articoli legacy senza post WP non mostrano il bottone.
+* Shape REST estesa e retrocompatibile: serialize_article (unica shape di tutti gli endpoint articoli) espone sempre anche wp_post_status, wp_edit_url (valorizzato solo se l'utente corrente può modificare il post) e wp_preview_url (solo per i post non pubblicati), stringa vuota quando il dato non è disponibile. Nessuna migrazione di schema e nessun setting nuovo.
+
 = 1.1.2 =
 * Traduzioni come post WordPress collegati: Nexus_Translate::translate_to_post pubblica la traduzione AI di un articolo come post nativo (titolo, contenuto e riassunto tradotti, stato del sorgente, autore bot, categoria e tag nativi, immagine in evidenza ereditata) collegato al gruppo di traduzione della lingua; upsert sempre — se il post della lingua esiste già viene aggiornato (already=true), mai duplicato; storico e costi restano su wp_nexus_translations e wp_nexus_usage_logs.
 * Tre driver automatici (classe Nexus_Multilang, mai fatale): Polylang attivo = associazioni via API ufficiali pll_*; WPML attivo = filtri wpml_*; nessun plugin di lingua = collegamento interno Nexus via post meta _nexus_lang (lingua), _nexus_trid (gruppo), _nexus_source_post_id (sorgente). Zero tabelle nuove.
@@ -175,6 +182,9 @@ Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua 
 * Modalità semi-autonoma e completamente autonoma.
 
 == Upgrade Notice ==
+
+= 1.1.3 =
+Admin più pulito e fix mobile: il menu "Nexus News AI" sparisce automaticamente quando non restano più articoli legacy nel vecchio CPT — è il comportamento atteso, non un errore: i contenuti nuovi vivono nei post nativi e i permalink legacy restano validi. Vuoi ripulire subito? Usa la migrazione 1-click in Strumenti → «Migrazione contenuti nativi» (oppure il filtro nexus_cpt_force_menu se vuoi tenere il menu sempre visibile). In più: il dettaglio articolo non taglia più il contenuto su smartphone e in coda e dettaglio trovi il bottone «Vedi bozza WordPress» per aprire anteprima o editor del post collegato. Nessuna migrazione di schema, nessun setting nuovo.
 
 = 1.1.2 =
 «Multilingua nativo»: le traduzioni AI diventano post WordPress veri e collegati tra loro (permalink, revisioni e SEO propri per ogni lingua) con driver automatico Polylang, WPML o collegamento interno Nexus via post meta. Niente migrazione di schema: le traduzioni sono post nativi + post meta, l'aggiornamento è tutto WordPress e nessun contenuto viene toccato (la tabella storico wp_nexus_translations resta come storico/costi e i post tradotti sopravvivono alla disinstallazione, come tutti i contenuti nativi). Nuovo shortcode [nexus_lang_switcher], attributo lang per gli shortcode e API pubblica, hreflang e og:locale automatici. Se vuoi che le traduzioni si pubblichino da sole dopo ogni articolo, attiva «Pubblica automaticamente le traduzioni come post» in Impostazioni → Intelligenza artificiale → Multilingua.

@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.2-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.3-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`). Dalla 1.1.1 la testata si organizza in **redazioni gerarchiche**: una tassonomia WordPress nativa (`nexus_redazione`) con redazioni madri, sub-redazioni annidate e agenti assegnati ai rami (es. Redazione Sport → Calcio, Basket e F1), pagina admin dedicata **Redazioni**, archivi pubblici `/redazione/{slug}/` col subtree incluso, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione` e **capabilities per ramo** per gli editori — tutto WP nativo, zero tabelle nuove. Dalla 1.1.2 la redazione parla tutte le lingue con il **multilingua nativo**: le traduzioni AI diventano **post WordPress veri e collegati** tra loro (permalink, revisioni e SEO propri) con driver automatico **Polylang / WPML / collegamento interno Nexus** (post meta, zero tabelle nuove), switcher lingua in frontend, `hreflang` e `og:locale` automatici, pubblicazione automatica delle traduzioni dopo il publish e compatibilità totale con Polylang e WPML tramite le loro API ufficiali.
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`). Dalla 1.1.1 la testata si organizza in **redazioni gerarchiche**: una tassonomia WordPress nativa (`nexus_redazione`) con redazioni madri, sub-redazioni annidate e agenti assegnati ai rami (es. Redazione Sport → Calcio, Basket e F1), pagina admin dedicata **Redazioni**, archivi pubblici `/redazione/{slug}/` col subtree incluso, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione` e **capabilities per ramo** per gli editori — tutto WP nativo, zero tabelle nuove. Dalla 1.1.2 la redazione parla tutte le lingue con il **multilingua nativo**: le traduzioni AI diventano **post WordPress veri e collegati** tra loro (permalink, revisioni e SEO propri) con driver automatico **Polylang / WPML / collegamento interno Nexus** (post meta, zero tabelle nuove), switcher lingua in frontend, `hreflang` e `og:locale` automatici, pubblicazione automatica delle traduzioni dopo il publish e compatibilità totale con Polylang e WPML tramite le loro API ufficiali. Dalla 1.1.3 l'admin si pulisce e il dettaglio si legge davvero su mobile: il menu **«Nexus News AI»** del CPT legacy sparisce da solo quando non restano più articoli legacy (permalink legacy e archivio preservati, filtro per forzarlo), il modal di dettaglio non taglia più il contenuto su smartphone e coda e dettaglio guadagnano il bottone **«Vedi bozza WordPress»** verso il post nativo collegato.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -33,10 +33,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 16. [Tutto nativo (v1.1.0)](#v110--tutto-nativo)
 17. [Redazioni gerarchiche (v1.1.1)](#v111--redazioni-gerarchiche)
 18. [Multilingua nativo (v1.1.2)](#v112--multilingua-nativo)
-19. [Installazione](#installazione)
-20. [FAQ tecniche](#faq-tecniche)
-21. [Licenza e crediti](#licenza-e-crediti)
-22. [Changelog](#changelog)
+19. [Pulizia menu legacy e bozza WP (v1.1.3)](#v113--pulizia-menu-legacy-e-bozza-wp)
+20. [Installazione](#installazione)
+21. [FAQ tecniche](#faq-tecniche)
+22. [Licenza e crediti](#licenza-e-crediti)
+23. [Changelog](#changelog)
 
 ---
 
@@ -119,7 +120,7 @@ nexus-news-ai/
 │   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair, tracking uso AI (token/costo stimato) e budget mensile, fact-check, estimate_cost (v1.0.3)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
 │   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress (post NATIVI dalla v1.1.0, CPT nexus_article nelle versioni precedenti) + fallback legacy + social reali/simulati, log in publish_logs, assegnazione termini redazione dell'agente (v1.1.1), auto-translate post-publish con eventi WP-Cron sfalsati (v1.1.2)
-│   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus» (dalla v1.1.0 resta per i permalink legacy)
+│   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus» (dalla v1.1.0 resta per i permalink legacy); menu admin auto-hide quando non restano articoli legacy (legacy_count + transient 5 minuti, filtro nexus_cpt_force_menu — v1.1.3)
 │   ├── class-nexus-native.php     # v1.1.0 — Nexus_Native: utenti bot degli agenti (ruolo nexus_ai_journalist), categorie native (term_id), tag deterministici, migrazione 1-click CPT → post nativi (dalla v1.1.1 assegna anche i termini redazione dell'agente), letture dual-mode
 │   ├── class-nexus-redazioni.php  # v1.1.1 — Nexus_Redazioni: tassonomia gerarchica nexus_redazione (parent/child come le categorie), term meta _nexus_agents, albero/agenti/contatori per ramo, filtro articoli in lista admin
 │   ├── class-nexus-caps.php       # v1.1.1 — Nexus_Caps: campo profilo «Redazione assegnata» e restrizioni per ramo (map_meta_cap + parse_query, guardie manage_options)
@@ -143,7 +144,7 @@ nexus-news-ai/
 │   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS, parametro redazione (v1.1.1), parametro lang e campo lingua negli item (v1.1.2)
 │   ├── class-nexus-multisite.php       # v1.0.5 — Multisite: installazione tabelle sui nuovi siti (wp_initialize_site), status(), install_all()
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
-│   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
+│   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args; serialize_article espone sempre anche wp_post_status, wp_edit_url e wp_preview_url (v1.1.3)
 │   └── index.php                  # Guardia "Silence is golden"
 │
 ├── admin/                         # Back-end WordPress
@@ -169,7 +170,7 @@ nexus-news-ai/
 │   └── index.php
 │
 ├── assets/                        # Asset condivisi admin
-│   ├── js/                        # admin.js (interfaccia admin: riga «Pubblica come post» e chips delle traduzioni per lingua nell'articolo — v1.1.2) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) + i18n.js (v1.0.5: traduzione IT→EN dei contenuti dinamici admin) — vanilla JS, consuma le REST route nexus/v1
+│   ├── js/                        # admin.js (interfaccia admin: riga «Pubblica come post» e chips delle traduzioni per lingua nell'articolo — v1.1.2; modal dettaglio mobile-safe e link «Vedi bozza WordPress» — v1.1.3) + blocks.js (v1.0.4: registrazione blocchi Gutenberg nell'editor) + i18n.js (v1.0.5: traduzione IT→EN dei contenuti dinamici admin) — vanilla JS, consuma le REST route nexus/v1
 │   └── index.php
 │
 ├── templates/                     # Template front-end per i post WordPress reali (v1.0.1)
@@ -901,6 +902,34 @@ Le traduzioni sono **contenuti nativi WordPress** (post `post` con i loro meta):
 
 ---
 
+## v1.1.3 — Pulizia menu legacy e bozza WP
+
+Dalla 1.1.3 l'admin si pulisce e la lettura su mobile migliora: la voce di menu **«Nexus News AI»** (quella del CPT `nexus_article`) sparisce da sola quando non restano più articoli legacy da gestire, il modal di dettaglio articolo non taglia più il contenuto su smartphone e coda di approvazione e dettaglio guadagnano il link **«Vedi bozza WordPress»** per aprire il post nativo collegato. Nessuna migrazione di schema e nessun setting nuovo: l'aggiornamento è tutto WordPress.
+
+### Il menu «Nexus News AI» sparisce da solo quando non restano articoli legacy
+
+- Dalla 1.1.0 i contenuti nuovi pubblicano come **post nativi** (`post`) e il CPT `nexus_article` ospita solo gli **articoli legacy** creati prima della 1.1.0. Dalla 1.1.3, quando il conteggio degli articoli legacy arriva a **0** — tipicamente dopo la migrazione 1-click in **Strumenti → «Migrazione contenuti nativi»** — il CPT viene registrato con `show_in_menu => false`: la voce **«Nexus News AI» sparisce dal menu admin** e l'admin resta pulito.
+- Il conteggio (`Nexus_Cpt::legacy_count()`) conta i post del CPT **esclusi cestino e auto-draft** con una query protetta (`$wpdb->prepare`) e vive nel **transient `nexus_cpt_legacy_count` con TTL di 5 minuti** (300 secondi): la registrazione del CPT gira ad ogni richiesta e non deve interrogare il database a ogni load. Il transient è invalidato sugli **hook core `save_post`, `transition_post_status` e `deleted_post`** — la migrazione cambia `post_type` via `wp_update_post` e NON lancia `do_action` custom, quindi gli hook core sono l'unico segnale affidabile: appena converti, elimini o cesti un articolo legacy il conteggio si aggiorna (cache invalidata o scaduta) e al load successivo il menu si allinea.
+- **Il CPT resta registrato**: sparire dal menu tocca solo l'admin — i **permalink legacy** `/?nexus_article={id}` e l'**archivio pubblico** `/nexus/` continuano a funzionare esattamente come prima.
+- **Filtro `nexus_cpt_force_menu`**: applicato prima del confronto con il conteggio e con priorità su di esso. `add_filter( 'nexus_cpt_force_menu', '__return_true' )` tiene il menu **sempre visibile** anche senza legacy, `__return_false` lo nasconde **sempre**; senza filtro (default `null`) vale il comportamento automatico da `legacy_count()`.
+
+### Il dettaglio articolo non taglia più il contenuto su mobile
+
+Il bug (screenshot su Chrome Android): con un contenuto più alto del viewport il modal centrato verticalmente (`align-items:center` + `max-height:85vh`) tagliava sopra e sotto e, su mobile, l'altezza `vh` che ignora le barre dinamiche del browser rendeva il fondo del contenuto irraggiungibile; le righe lunghe (URL, titoli lunghi) venivano tagliate a destra. Il blocco CSS iniettato da admin.js ora:
+
+- **`.nxa-modal`**: `align-items:flex-start` (il box parte dall'alto e il centro flessibile non taglia più nulla) con `overflow-y:auto` e `-webkit-overflow-scrolling:touch` per lo scorrimento fluido; padding ridotto a 16px con 32px in fondo.
+- **`.nxa-modal__box`**: `max-height` con **doppia dichiarazione** — prima `calc(100vh - 32px)` (fallback per i browser senza supporto) poi `calc(100dvh - 32px)`, che vince dove supportato: con le **unità `dvh`** l'altezza tiene conto delle barre dinamiche di mobile e il fondo del contenuto è raggiungibile; `overflow:auto` resta sulla box, quindi la **testa sticky** continua a funzionare (il contenitore di scroll non cambia).
+- **`.nxa-modal__body`**: `overflow-wrap:anywhere` + `word-break:break-word` — URL e righe lunghissime vanno a capo invece di uscire dal bordo destro.
+- **Nuova `@media (max-width:600px)`**: padding 8px (20px in fondo), box `max-height:calc(100vh - 16px)` con fallback `dvh` e border-radius 10px, body 14px, testa 12px 14px e titolo a 15px: su smartphone il dettaglio respira e si legge tutto.
+
+### Il bottone «Vedi bozza WordPress» in coda e nel dettaglio
+
+- Accanto al badge «Post WP» — in **coda di approvazione** e nella riga di chip del **modal di dettaglio** — compare ora il link **«Vedi bozza WordPress»** (helper `wpViewLink`): apre il post WordPress nativo collegato all'articolo nel contesto giusto, in una nuova scheda (`target="_blank" rel="noopener noreferrer"`, classe `.nxa-wp-view`).
+- **Comportamento**: post **pubblicato** (`wp_post_status` = `publish`) → «Vedi in WordPress» sul permalink pubblico; post **in bozza o pending** → «Vedi bozza WordPress» sull'URL di **anteprima** (`wp_preview_url`) o, se assente, sull'**editor** (`wp_edit_url`); come ultima spiaggia il permalink o l'editor se esistono. Se non c'è alcun link utile — o l'articolo è **legacy senza post WP** (`wp_post_id` assente o 0) — il bottone non compare.
+- **Shape REST estesa, retrocompatibile**: `Nexus_Rest::serialize_article()` — l'unica shape di tutti gli endpoint che restituiscono articoli (admin e pubblico) — include **sempre** anche i tre nuovi campi **`wp_post_status`** (stato del post WP via `get_post_status`, stringa vuota se il post non esiste), **`wp_edit_url`** (link editor `post.php?post={id}&action=edit`, valorizzato solo se l'utente corrente può modificare il post) e **`wp_preview_url`** (link anteprima `get_preview_post_link` con fallback `?p={id}&preview=true`, solo per i post **non pubblicati**: per i pubblicati c'è già `post_permalink`). Chi consuma oggi i campi `wp_post_id` e `post_permalink` non deve cambiare nulla: i campi nuovi si aggiungono, non sostituiscono.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -953,6 +982,15 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.1.3 — Pulizia menu legacy e bozza WP
+- Overlay del modal dettaglio ora scrollabile e allineato in alto anche con il foglio stile admin reale (regola role=dialog) e pannelli con margini automatici: nessun fondo irraggiungibile su mobile
+
+- **Menu CPT auto-hide**: quando non restano più articoli legacy nel CPT `nexus_article` (conteggio esclusi cestino/auto-draft in transient 5 minuti, invalidato sugli hook core `save_post`/`transition_post_status`/`deleted_post`) la voce «Nexus News AI» sparisce dal menu admin; il post type resta registrato e i permalink legacy `/?nexus_article={id}` e l'archivio `/nexus/` continuano a funzionare; filtro `nexus_cpt_force_menu` per tenere il menu sempre visibile o sempre nascosto.
+- **Fix overflow del dettaglio su mobile**: modal allineato in alto (`align-items:flex-start`) con scorrimento proprio e padding ridotto, `max-height` in `dvh` con fallback `vh` sulla box (testa sticky intatta), `overflow-wrap:anywhere` + `word-break:break-word` nel body e nuova media query 600px compatta: niente più contenuto tagliato sopra/sotto o oltre il bordo destro (Chrome Android).
+- **Bottone «Vedi bozza WordPress»** in coda di approvazione e nel modal di dettaglio (helper `wpViewLink` accanto al badge «Post WP»): post pubblicato → «Vedi in WordPress» sul permalink, bozza/pending → «Vedi bozza WordPress» sull'anteprima o sull'editor; gli articoli legacy senza post WP non mostrano il bottone.
+- **Shape REST estesa, retrocompatibile**: `serialize_article` (unica shape di tutti gli endpoint articoli) espone sempre anche `wp_post_status`, `wp_edit_url` (valorizzato solo se l'utente corrente può modificare il post) e `wp_preview_url` (solo per i post non pubblicati, `get_preview_post_link` con fallback `?p={id}&preview=true`), stringa vuota quando il dato non è disponibile.
+- **Nessuna migrazione di schema e nessun setting nuovo**: conteggio legacy + transient + filtro nel CPT, CSS/JS dell'admin e tre campi REST in più; l'aggiornamento è tutto WordPress.
 
 ### 1.1.2 — Multilingua nativo
 

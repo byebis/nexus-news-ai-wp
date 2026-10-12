@@ -49,6 +49,11 @@
  *   GET    /nexus/v1/public/wire/runs              solo run completati, senza dati interni
  *   GET    /nexus/v1/health
  *
+ * SHAPE ARTICOLI (serialize_article): ogni endpoint che restituisce articoli
+ * (admin e public) usa la stessa shape: oltre a wp_post_id e post_permalink
+ * (v1.0.1) dalla v1.1.3 include sempre anche wp_post_status, wp_edit_url e
+ * wp_preview_url (stringa vuota quando il dato non è disponibile).
+ *
  * @package Nexus_News_AI
  */
 
@@ -2355,6 +2360,11 @@ class Nexus_Rest {
          * source_url, excerpt (wp_trim_words 30 parole su summary o content),
          * wp_post_id e post_permalink (v1.0.1, post WordPress reale).
          *
+         * Dalla v1.1.3 include anche wp_post_status, wp_edit_url e
+         * wp_preview_url: campi SEMPRE presenti, stringa vuota quando il post
+         * WP manca, l'utente non può modificarlo o il permalink pubblico è
+         * già sufficiente.
+         *
          * @param object $a             Riga articolo.
          * @param bool   $with_content  Includere il contenuto completo (default true).
          * @return array
@@ -2367,6 +2377,31 @@ class Nexus_Rest {
                 $excerpt = wp_trim_words( wp_strip_all_tags( $base ), 30, '…' );
 
                 $reactions = json_decode( (string) ( $a->reactions ?? '' ), true );
+
+                // v1.1.3: dati del post WP collegato (status, link modifica, link anteprima bozza).
+                $wp_post_id = (int) ( $a->wp_post_id ?? 0 );
+                $wp_post    = ( $wp_post_id > 0 && function_exists( 'get_post' ) ) ? get_post( $wp_post_id ) : null;
+                $wp_status  = ( $wp_post instanceof WP_Post && function_exists( 'get_post_status' ) ) ? (string) get_post_status( $wp_post ) : '';
+
+                // Link modifica: valorizzato solo se l'utente corrente può modificare il post.
+                $wp_edit_url = '';
+                if ( $wp_post instanceof WP_Post && function_exists( 'admin_url' ) && current_user_can( 'edit_post', $wp_post_id ) ) {
+                        $wp_edit_url = esc_url_raw( admin_url( 'post.php?post=' . $wp_post_id . '&action=edit' ) );
+                }
+
+                // Link anteprima: solo per post non pubblicati (per i pubblicati c'è già post_permalink).
+                $wp_preview_url = '';
+                if ( $wp_post instanceof WP_Post && 'publish' !== $wp_status ) {
+                        if ( function_exists( 'get_preview_post_link' ) ) {
+                                $preview = get_preview_post_link( $wp_post );
+                                if ( is_string( $preview ) && '' !== $preview ) {
+                                        $wp_preview_url = esc_url_raw( $preview );
+                                }
+                        }
+                        if ( '' === $wp_preview_url ) {
+                                $wp_preview_url = esc_url_raw( home_url( '?p=' . $wp_post_id . '&preview=true' ) );
+                        }
+                }
 
                 $out = array(
                         'id'            => (int) $a->id,
@@ -2382,6 +2417,9 @@ class Nexus_Rest {
                         'image_url'     => esc_url_raw( (string) ( $a->image_url ?? '' ) ),
                         'wp_post_id'    => (int) ( $a->wp_post_id ?? 0 ),
                         'post_permalink' => self::wp_post_permalink( (int) ( $a->wp_post_id ?? 0 ) ),
+                        'wp_post_status' => $wp_status,
+                        'wp_edit_url'   => $wp_edit_url,
+                        'wp_preview_url' => $wp_preview_url,
                         'factcheck_score' => (float) ( $a->factcheck_score ?? 0 ),
                         'citations'     => (string) ( $a->citations ?? '' ),
                         'status'        => (string) $a->status,

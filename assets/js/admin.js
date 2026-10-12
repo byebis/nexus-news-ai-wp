@@ -22,6 +22,8 @@
  *    "di soccorso" minimale, inserito come PRIMO nodo del <head> così che
  *    lo stylesheet reale prevalga sempre a parità di specificità.
  *
+ * v1.1.3: modal dettaglio mobile-safe (flex-start, dvh, overflow-wrap) e link "Vedi bozza WordPress" (wpViewLink).
+ *
  * @package Nexus_News_AI
  */
 
@@ -263,6 +265,42 @@
                 return '<a class="nxa-badge nxa-badge--primary" href="' + esc( href ) + '" target="_blank" rel="noopener noreferrer" title="Post WordPress #' + wpId + '">Post WP ↗</a>';
         }
 
+        /**
+         * Link "Vedi bozza WordPress" (v1.1.3): accanto al badge Post WP
+         * apre il link più utile in base allo stato del post collegato.
+         * Lettura difensiva come wpPostBadge: i campi wp_post_status,
+         * wp_preview_url e wp_edit_url arrivano dalla REST con T-03, gli
+         * articoli legacy senza post WP (wp_post_id assente o 0) non
+         * mostrano nessun link, campi mancanti non crashano mai.
+         */
+        function wpViewLink( a ) {
+                var row = a || {};
+                var wpId = num( row.wp_post_id || row.wpPostId || 0 );
+                if ( wpId <= 0 ) {
+                        return '';
+                }
+                var status = String( row.wp_post_status || row.wpPostStatus || '' ).toLowerCase();
+                var permalink = String( row.post_permalink || row.permalink || '' );
+                var previewUrl = String( row.wp_preview_url || row.wpPreviewUrl || '' );
+                var editUrl = String( row.wp_edit_url || row.wpEditUrl || '' );
+                var href = '';
+                var label = '';
+                if ( status === 'publish' ) {
+                        label = 'Vedi in WordPress';
+                        href = permalink;
+                } else {
+                        label = 'Vedi bozza WordPress';
+                        href = previewUrl || editUrl;
+                        if ( ! href ) {
+                                href = permalink || editUrl;
+                        }
+                }
+                if ( ! href ) {
+                        return '';
+                }
+                return '<a class="nxa-wp-view" href="' + esc( href ) + '" target="_blank" rel="noopener noreferrer" title="Apri il post WordPress nativo">' + esc( label ) + '</a>';
+        }
+
         function actionMeta( action ) {
                 return ACTION_META[ String( action || '' ).toLowerCase() ] || ACTION_DEFAULT;
         }
@@ -369,7 +407,10 @@
 
         /* ==================================================================
          * 4. FALLBACK CSS MINIMALE (primo nodo del <head>: lo stylesheet
-         *    reale del plugin, caricato dopo, ha sempre la precedenza)
+         *    reale del plugin, caricato dopo, ha sempre la precedenza).
+         *    v1.1.3: modal dettaglio mobile-safe (align-items flex-start,
+         *    scroll sull'overlay, max-height dvh con fallback vh,
+         *    overflow-wrap nel body, media query 600px) e link .nxa-wp-view.
          * ================================================================== */
 
         var FALLBACK_CSS = [
@@ -407,14 +448,16 @@
                 '.nxa-act-agent{font-weight:600;font-size:13px;color:var(--nxa-text)}',
                 '.nxa-act-detail{font-size:12.5px;color:var(--nxa-muted);margin:3px 0 0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
                 '.nxa-act-time{font-size:11px;color:var(--nxa-muted);white-space:nowrap;margin-left:auto}',
-                '.nxa-modal{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,var(--nxa-overlay-alpha,.55));padding:24px}',
+                '.nxa-modal{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;background:rgba(15,23,42,var(--nxa-overlay-alpha,.55));padding:16px 16px 32px}',
                 '.nxa-modal[hidden]{display:none}',
-                '.nxa-modal__box{background:var(--nxa-surface);color:var(--nxa-text);max-width:760px;width:100%;max-height:85vh;overflow:auto;border-radius:14px;box-shadow:var(--nxa-shadow-lg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+                '.nxa-modal__box{margin:auto;background:var(--nxa-surface);color:var(--nxa-text);max-width:760px;width:100%;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto;border-radius:14px;box-shadow:var(--nxa-shadow-lg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
                 '.nxa-modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--nxa-border);position:sticky;top:0;background:var(--nxa-surface);z-index:1}',
                 '.nxa-modal__head h2{font-size:17px;margin:0}',
-                '.nxa-modal__body{padding:18px}',
+                '.nxa-modal__body{padding:18px;overflow-wrap:anywhere;word-break:break-word}',
                 '.nxa-modal__close{background:none;border:0;font-size:22px;line-height:1;cursor:pointer;color:var(--nxa-muted)}',
                 'body.nxa-modal-open{overflow:hidden}',
+                '@media (max-width:600px){.nxa-modal{padding:8px;padding-bottom:20px}.nxa-modal__box{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);border-radius:10px}.nxa-modal__body{padding:14px}.nxa-modal__head{padding:12px 14px}.nxa-modal__head h2{font-size:15px}}',
+                '.nxa-wp-view{margin-left:8px;font-size:12px;text-decoration:none;color:inherit}',
                 '.nxa-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}',
                 '.nxa-note-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}',
                 '.nxa-note-input{flex:1 1 220px;border:1px solid var(--nxa-input-line);border-radius:8px;padding:6px 10px;font-size:13px}',
@@ -611,7 +654,7 @@
                         var sourceName = pick( a, 'source_name', 'sourceName' ) || '';
                         var sourceUrl = pick( a, 'source_url', 'sourceUrl' ) || '';
                         var html = '' +
-                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + wpPostBadge( a ) + '</div>' +
+                                '<div style="margin-bottom:8px">' + categoryChip( pick( a, 'category' ) ) + ' ' + badge( pick( a, 'status' ) ) + ' ' + wpPostBadge( a ) + ' ' + wpViewLink( a ) + '</div>' +
                                 '<h3 style="margin:0 0 4px;font-size:20px;line-height:1.3">' + esc( pick( a, 'title' ) ) + '</h3>' +
                                 ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 10px;color:var(--nxa-muted);font-size:14px">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                                 '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 14px">' +
@@ -1802,6 +1845,7 @@
                                 badge( status ) +
                                 scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                 wpPostBadge( a ) +
+                                wpViewLink( a ) +
                                 '<span style="font-size:12px;color:var(--nxa-muted)">✍️ ' + esc( articleAgentName( a ) ) + '</span>' +
                                 '<span style="font-size:11px;color:var(--nxa-muted);margin-left:auto">' + esc( timeAgoIt( pick( a, 'created_at', 'createdAt' ) ) ) + '</span>' +
                         '</div>' +
