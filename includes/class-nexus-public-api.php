@@ -18,8 +18,15 @@
  *   GET /wp-json/nexus-public/v1/articles
  *       Lista articoli con status SEMPRE 'published' (mai bozze/rifiutati).
  *       Args: page (int, default 1), per_page (int, default 12, max 50),
- *             category (string, opzionale, filtro esatto).
- *       Risposta: {"items": [articolo], "total": int, "page": int, "pages": int}
+ *             category (string, opzionale, filtro esatto),
+ *             redazione (string, opzionale, v1.1.1: slug o nome; filtra il
+ *             ramo COMPLETO della redazione — le sub-redazioni sono incluse,
+ *             semantica nativa include_children delle tassonomie gerarchiche.
+ *             Sanitizzato con sanitize_title).
+ *       Risposta: {"items": [articolo], "total": int, "page": int, "pages": int,
+ *         "redazione": null oppure {"id": int, "name": string, "slug": string}}.
+ *       Redazione richiesta ma inesistente (o classe fondamenta assente):
+ *       items vuoto, total 0 e "redazione" a null — nessun contenuto inventato.
  *       Articolo serializzato: id, title, subtitle, summary, content,
  *         category, agent_name, image_url, url, published_at, read_time,
  *         views, quality_score, factcheck_score.
@@ -64,6 +71,9 @@
  *
  *   # Lista con filtri (pagina 2, 24 per pagina, categoria Economia)
  *   curl "https://tuosito.it/wp-json/nexus-public/v1/articles?page=2&per_page=24&category=Economia&api_key=LA_TUA_CHIAVE"
+ *
+ *   # Lista di una redazione con subtree (slug "sport", sub-redazioni incluse)
+ *   curl "https://tuosito.it/wp-json/nexus-public/v1/articles?redazione=sport&api_key=LA_TUA_CHIAVE"
  *
  *   # Singolo articolo
  *   curl -H "X-Api-Key: LA_TUA_CHIAVE" https://tuosito.it/wp-json/nexus-public/v1/articles/42
@@ -136,6 +146,12 @@ class Nexus_Public_API {
                                                         'required'          => false,
                                                         'default'           => '',
                                                         'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'redazione'         => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_title',
                                                 ),
                                         ),
                                 ),
@@ -282,7 +298,14 @@ class Nexus_Public_API {
          * ======================================================================= */
 
         /**
-         * GET /articles — lista articoli pubblicati con paginazione e filtro categoria.
+         * GET /articles — lista articoli pubblicati con paginazione e filtri
+         * categoria e (v1.1.1) redazione a subtree.
+         *
+         * Con redazione valida il listing passa dai post WordPress del ramo
+         * (WP_Query nativa con tax_query include_children) collegati alle righe
+         * articoli tramite la colonna wp_post_id. Con redazione inesistente la
+         * risposta e' una lista vuota con "redazione" a null: nessun contenuto
+         * inventato. Senza il parametro la query e' identica a prima.
          *
          * @param WP_REST_Request $request Richiesta corrente.
          * @return WP_REST_Response
@@ -293,29 +316,61 @@ class Nexus_Public_API {
                 $per_page = min( 50, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
                 $cat      = (string) $request->get_param( 'category' );
 
-                // Gli articoli esposti sono SEMPRE e SOLO quelli pubblicati.
-                $items = Nexus_DB::articles(
-                        array(
-                                'status'   => 'published',
-                                'category' => $cat,
-                                'page'     => $page,
-                                'per_page' => $per_page,
-                        )
-                );
+                /* v1.1.1: filtro redazione (sanitize_title), semantica subtree. */
+                $red_param = sanitize_title( (string) $request->get_param( 'redazione' ) );
+                $red_term  = ( '' !== $red_param ) ? self::redazione_term( $red_param ) : null;
 
-                $total = (int) Nexus_DB::count_articles(
-                        array(
-                                'status'   => 'published',
-                                'category' => $cat,
-                        )
-                );
+                /* Redazione richiesta ma inesistente: lista vuota e metadato onesto. */
+                if ( '' !== $red_param && ! $red_term instanceof WP_Term ) {
+                        return rest_ensure_response(
+                                array(
+                                        'items'     => array(),
+                                        'total'     => 0,
+                                        'page'      => $page,
+                                        'pages'     => 0,
+                                        'redazione' => null,
+                                )
+                        );
+                }
+
+                if ( $red_term instanceof WP_Term ) {
+                        /* Ramo completo della redazione (sub-redazioni incluse). */
+                        $post_ids = self::redazione_branch_post_ids( $red_term );
+                        $rows     = self::redazione_articles( $post_ids, $per_page, ( $page - 1 ) * $per_page );
+                        $items    = array_map( array( __CLASS__, 'serialize_public_article' ), $rows );
+                        $total    = self::redazione_count_articles( $post_ids );
+                        $red_meta = array(
+                                'id'   => (int) $red_term->term_id,
+                                'name' => (string) $red_term->name,
+                                'slug' => (string) $red_term->slug,
+                        );
+                } else {
+                        // Gli articoli esposti sono SEMPRE e SOLO quelli pubblicati.
+                        $items = array_map( array( __CLASS__, 'serialize_public_article' ), (array) Nexus_DB::articles(
+                                array(
+                                        'status'   => 'published',
+                                        'category' => $cat,
+                                        'page'     => $page,
+                                        'per_page' => $per_page,
+                                )
+                        ) );
+
+                        $total = (int) Nexus_DB::count_articles(
+                                array(
+                                        'status'   => 'published',
+                                        'category' => $cat,
+                                )
+                        );
+                        $red_meta = null;
+                }
 
                 return rest_ensure_response(
                         array(
-                                'items' => array_map( array( __CLASS__, 'serialize_public_article' ), (array) $items ),
-                                'total' => $total,
-                                'page'  => $page,
-                                'pages' => (int) ceil( $total / $per_page ),
+                                'items'     => $items,
+                                'total'     => $total,
+                                'page'      => $page,
+                                'pages'     => (int) ceil( $total / $per_page ),
+                                'redazione' => $red_meta,
                         )
                 );
         }
@@ -384,6 +439,173 @@ class Nexus_Public_API {
                                 'views'          => (int) ( $stats['views'] ?? 0 ),
                         )
                 );
+        }
+
+        /* =========================================================================
+         * FILTRO REDAZIONE (v1.1.1)
+         * ======================================================================= */
+
+        /**
+         * Risolve il termine redazione da slug o nome (v1.1.1).
+         *
+         * Il parametro arriva gia' sanificato con sanitize_title (args della
+         * rotta) e viene risanificato qui per difesa. Ordine di ricerca: slug,
+         * poi nome (il collation del DB e' case-insensitive, quindi "sport"
+         * matcha anche il nome "Sport"). Guard su classe fondamenta e
+         * tassonomia: assenti, si restituisce null (degradazione senza fatal).
+         *
+         * @param string $value Slug o nome della redazione.
+         * @return WP_Term|null
+         */
+        private static function redazione_term( $value ) {
+                $value = sanitize_title( (string) $value );
+                if ( '' === $value || ! class_exists( 'Nexus_Redazioni' ) || ! taxonomy_exists( Nexus_Redazioni::TAX ) ) {
+                        return null;
+                }
+
+                $term = get_term_by( 'slug', $value, Nexus_Redazioni::TAX );
+                if ( ! $term instanceof WP_Term ) {
+                        $term = get_term_by( 'name', $value, Nexus_Redazioni::TAX );
+                }
+
+                return ( $term instanceof WP_Term ) ? $term : null;
+        }
+
+        /**
+         * Clausola tax_query nativa del ramo redazione (v1.1.1).
+         *
+         * include_children => true: la redazione madre copre anche le
+         * sub-redazioni, identico alla semantica delle categorie gerarchiche
+         * di WordPress. Clausola singola, pronta per essere APPENDATA a un
+         * eventuale tax_query preesistente con relation AND.
+         *
+         * @param int $term_id Term ID della redazione.
+         * @return array Clausola pronta per WP_Query.
+         */
+        private static function redazione_tax_clause( $term_id ) {
+                return array(
+                        'taxonomy'         => Nexus_Redazioni::TAX,
+                        'field'            => 'term_id',
+                        'terms'            => absint( $term_id ),
+                        'include_children' => true,
+                );
+        }
+
+        /**
+         * Post ID del ramo redazione: termine e tutti i discendenti (v1.1.1).
+         *
+         * WP_Query nativa con la clausola tax_query include_children sui tipi
+         * di post dual-mode del plugin (nativo 'post' piu' CPT legacy
+         * nexus_article, via Nexus_Native::query_post_types() con guard).
+         * Speculare all'helper omonimo di Nexus_Shortcodes: i due file sono
+         * scope separati del contratto, quindi la logica e' duplicata di proposito.
+         *
+         * @param WP_Term $term Termine redazione.
+         * @return array Post ID (int).
+         */
+        private static function redazione_branch_post_ids( $term ) {
+                $term_id = ( $term instanceof WP_Term ) ? absint( $term->term_id ) : 0;
+                if ( $term_id < 1 || ! class_exists( 'Nexus_Redazioni' ) ) {
+                        return array();
+                }
+
+                $post_types = array( 'post', 'nexus_article' );
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ) {
+                        $post_types = Nexus_Native::query_post_types();
+                }
+
+                /*
+                 * Merge attento: la clausola redazione si APPENDA a eventuali
+                 * clausole gia' presenti (qui la query nasce da zero, quindi e'
+                 * l'unica) e con piu' di una clausola l'operatore resta AND.
+                 */
+                $tax_query = array();
+                $tax_query[] = self::redazione_tax_clause( $term_id );
+                if ( count( $tax_query ) > 1 ) {
+                        $tax_query['relation'] = 'AND';
+                }
+
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => $post_types,
+                                'post_status'            => 'publish',
+                                'fields'                 => 'ids',
+                                'posts_per_page'         => -1,
+                                'no_found_rows'          => true,
+                                'update_post_term_cache' => false,
+                                'update_post_meta_cache' => false,
+                                'tax_query'              => $tax_query,
+                        )
+                );
+
+                return array_values( array_map( 'absint', (array) $query->posts ) );
+        }
+
+        /**
+         * Righe articoli Nexus collegate ai post del ramo redazione (v1.1.1).
+         *
+         * Le righe della tabella articoli Nexus puntano al post WordPress
+         * (nativo o CPT legacy) tramite la colonna wp_post_id: il filtro per
+         * ramo e' quindi un IN sui Post ID del subtree. Query preparata con
+         * wpdb prepare (LIMIT e OFFSET come placeholder), ID assolutizzati e
+         * tabella letta da Nexus_DB::tables(): nessuna tabella nuova.
+         *
+         * @param array $post_ids Post ID del ramo.
+         * @param int   $limit    Numero massimo di righe (1-50, gia' clampato).
+         * @param int   $offset   Offset di paginazione.
+         * @return array Righe articolo (stesso shape di Nexus_DB::articles()).
+         */
+        private static function redazione_articles( $post_ids, $limit, $offset = 0 ) {
+                global $wpdb;
+
+                $post_ids = array_values( array_filter( array_map( 'absint', (array) $post_ids ) ) );
+                $limit    = max( 1, absint( $limit ) );
+                $offset   = max( 0, absint( $offset ) );
+                if ( empty( $post_ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return array();
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['articles'] ) ) {
+                        return array();
+                }
+
+                $table  = $tables['articles'];
+                $ids_in = implode( ',', $post_ids );
+                $sql    = "SELECT * FROM {$table}"
+                        . " WHERE status = 'published' AND wp_post_id IN ( {$ids_in} )"
+                        . " ORDER BY published_at DESC, id DESC"
+                        . " LIMIT %d OFFSET %d";
+
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql, $limit, $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID assolutizzati, LIMIT e OFFSET via prepare.
+                return is_array( $rows ) ? $rows : array();
+        }
+
+        /**
+         * Conta le righe articoli Nexus collegate ai post del ramo (v1.1.1).
+         *
+         * @param array $post_ids Post ID del ramo.
+         * @return int
+         */
+        private static function redazione_count_articles( $post_ids ) {
+                global $wpdb;
+
+                $post_ids = array_values( array_filter( array_map( 'absint', (array) $post_ids ) ) );
+                if ( empty( $post_ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return 0;
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['articles'] ) ) {
+                        return 0;
+                }
+
+                $table  = $tables['articles'];
+                $ids_in = implode( ',', $post_ids );
+                $sql    = "SELECT COUNT(*) FROM {$table}"
+                        . " WHERE status = 'published' AND wp_post_id IN ( {$ids_in} )";
+
+                return (int) $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID assolutizzati, nessun placeholder.
         }
 
         /* =========================================================================

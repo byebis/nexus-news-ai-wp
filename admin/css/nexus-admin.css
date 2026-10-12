@@ -39,6 +39,7 @@
  *  17. Stampa
  *  18. Fix overflow mobile + wrapper tabelle (v1.0.7)
  *  19. Migrazione contenuti nativi (v1.1.0)
+ *  20. Redazioni (v1.1.1)
  */
 
 /* -------------------------------------------------------------------------
@@ -313,8 +314,10 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   color: var(--nxa-heading);
 }
 
-/* Sottotitolo di pagina (v1.0.6): frase introduttiva sotto l'h1. */
-.wrap.nexus-admin .nxa-page-subtitle {
+/* Sottotitolo di pagina (v1.0.6): frase introduttiva sotto l'h1.
+   v1.1.1: esteso alla root .wrap.nexus-page della vista Redazioni. */
+.wrap.nexus-admin .nxa-page-subtitle,
+.wrap.nexus-page .nxa-page-subtitle {
   margin: 0 0 10px;
   color: var(--nxa-muted);
   font-size: 0.95rem;
@@ -2096,4 +2099,357 @@ body.nxa-lock-scroll {
   border-radius: 50%;
   background: var(--nxa-ok-text, currentColor);
   vertical-align: middle;
+}
+
+/* -------------------------------------------------------------------------
+ * 20. Redazioni (v1.1.1) — pagina "Redazioni" (markup T-01 redazioni.php,
+ *     logica T-03 admin.js) e colonna "Redazioni" nella pagina Agenti.
+ *     Solo token var(--nxa-...): il tema dark eredita dagli override su
+ *     body.nexus-theme-dark senza regole dedicate (meccanismo gia' usato
+ *     dalle sezioni 18 e 19). L'indentazione dell'albero NON usa stili
+ *     inline: T-03 genera le classi di profondita' e qui sono definiti i
+ *     4 livelli del contratto (circa 24px per livello).
+ * ---------------------------------------------------------------------- */
+
+/* Griglia pagina: colonna form (320px) + colonna albero fluida. Mobile
+ * first: una colonna sola sotto il fold admin, due da 782px in su. La
+ * colonna fluida usa minmax(0, 1fr) e entrambe hanno min-width: 0, cosi'
+ * l'albero non puo' spingere la pagina in orizzontale (fix overflow
+ * 1.0.7). Il gap segue la scala di spaziatura del foglio (12 a 16px). */
+.nxa-red-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin: 12px 0 18px;
+}
+
+@media (min-width: 782px) {
+  .nxa-red-grid {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+
+.nxa-red-formcol,
+.nxa-red-treecol {
+  min-width: 0;
+}
+
+/* Barrette statistiche: chip con numero forte + label muted, stesso
+ * impianto delle stat esistenti (sezione 7) in versione compatta. Ogni
+ * figlio diretto renderizzato da T-03 diventa una chip; il numero e'
+ * il testo in evidenza dentro la chip. */
+.nxa-red-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin: 12px 0 2px;
+}
+
+.nxa-red-stats:empty {
+  margin: 0;
+}
+
+.nxa-red-stats > * {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--nxa-muted);
+}
+
+.nxa-red-stats strong,
+.nxa-red-stats b {
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--nxa-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Card del form: bordo, radius e padding del design system (famiglia
+ * delle card agenti). I campi dentro restano quelli standard di WP: qui
+ * si da' solo ritmo verticale e il tetto di larghezza per non traboccare
+ * dalla colonna stretta (il width 25em di WP su .regular-text e' il
+ * rischio classico: vale qui la retroguardia del fix 1.0.7). */
+.nxa-red-formcol {
+  padding: 18px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+}
+
+#nxa-red-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* I paragrafi dei campi (p.nxa-red-field nel markup T-01) perdono il
+ * margine WP: il ritmo verticale lo da' solo il gap del form. */
+#nxa-red-form > p {
+  margin: 0;
+}
+
+.nxa-red-formcol label,
+.nxa-red-field-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--nxa-text);
+}
+
+.nxa-red-formcol input[type="text"],
+.nxa-red-formcol select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Scelta agenti nel form: lista compatta di label (checkbox WP nativa +
+ * avatar + nome) che va a capo senza espandere la colonna. Superficie
+ * leggermente rientrata per staccarla dagli altri campi. */
+#nxa-red-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-border-soft);
+  border-radius: var(--nxa-radius-sm);
+}
+
+#nxa-red-agents label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--nxa-text-body);
+  overflow-wrap: anywhere;
+}
+
+#nxa-red-agents input[type="checkbox"] {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* Stato vuoto dell'albero: box tratteggiato muted con CTA. Il display e'
+ * guardato da :not() su classe hidden WP e attributo hidden perche' la
+ * regola display non deve mai vincere sui due meccanismi che nascondono
+ * il box (la regola generica su attributo hidden della sezione 4 copre
+ * solo la root .wrap.nexus-admin, questa pagina usa una root diversa). */
+#nxa-red-empty:not(.hidden):not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 20px;
+  margin: 2px 0 12px;
+  text-align: center;
+  background: var(--nxa-surface);
+  border: 1px dashed var(--nxa-border);
+  border-radius: var(--nxa-radius);
+  color: var(--nxa-muted);
+}
+
+#nxa-red-empty strong {
+  color: var(--nxa-text);
+}
+
+/* Guardia di chiusura: il markup T-01 porta anche la classe condivisa
+ * nxa-empty che imposta display flex e, venendo dopo i fogli del core,
+ * batterebbe la classe hidden di WP (stessa specificita', foglio plugin
+ * caricato dopo): senza questa regola il box resterebbe sempre visibile.
+ * La specificita' dell'id vince su entrambi i meccanismi di nascondi-
+ * mento (classe WP e attributo hidden). */
+#nxa-red-empty.hidden,
+#nxa-red-empty[hidden] {
+  display: none;
+}
+
+/* Righe dell'albero: blocchi flessibili separati da un filetto sotto,
+ * wrap garantito per le righe lunghe su mobile. Indentazione per livello
+ * via classi generate da T-03 (nessuno stile inline): la regola padding
+ * della riga resta la base, le classi di profondita' la raffinano. */
+.nxa-red-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--nxa-border-soft);
+  transition: background-color 0.15s ease;
+}
+
+.nxa-red-row:hover {
+  background: var(--nxa-row-hover-bg);
+}
+
+.nxa-red-depth-0 { padding-left: 4px; }
+.nxa-red-depth-1 { padding-left: 28px; }
+.nxa-red-depth-2 { padding-left: 52px; }
+.nxa-red-depth-3 { padding-left: 76px; }
+
+/* Toggle espandi e collassa: presente solo sulle righe con figli (lo
+ * genera T-03). Piastrina neutra con freccia: ruota di 90 gradi quando
+ * il ramo e' aperto (aria-expanded true). */
+.nxa-red-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.nxa-red-toggle:hover {
+  border-color: var(--nxa-btn-line-hover);
+  color: var(--nxa-text);
+}
+
+.nxa-red-toggle[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+/* Nome redazione: peso medio, ellipsis con min-width 0 (la colonna si
+ * comprime e non spinge mai chips e azioni fuori riga su mobile). */
+.nxa-red-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--nxa-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chips degli agenti assegnati: badge tondi con avatar emoji + nome,
+ * stesso impianto delle chip del Wire (sezione 12). Nowrap voluto: il
+ * nome viene troncato dal contenitore invece di rompere la riga. */
+.nxa-red-agents-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nxa-red-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 9px;
+  border: 1px solid var(--nxa-border);
+  border-radius: 999px;
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.nxa-red-count {
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Azioni riga come link-button minimi: niente piastra, tinta link del
+ * design system; la cancellazione va in tinta errore esistente. */
+.nxa-red-edit,
+.nxa-red-del,
+.nxa-red-view {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--nxa-link);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.nxa-red-edit:hover,
+.nxa-red-view:hover {
+  color: var(--nxa-link-hover);
+  text-decoration: underline;
+}
+
+.nxa-red-del {
+  color: var(--nxa-err-text);
+}
+
+.nxa-red-del:hover {
+  color: var(--nxa-err-text-strong);
+  text-decoration: underline;
+}
+
+/* Focus visibile per i controlli renderizzati dal plugin: la sezione 16
+ * copre la root .wrap.nexus-admin, questa pagina usa una root diversa. */
+.nxa-red-toggle:focus-visible,
+.nxa-red-edit:focus-visible,
+.nxa-red-del:focus-visible,
+.nxa-red-view:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+/* Colonna "Redazioni" nella pagina Agenti (markup T-01 agents.php,
+ * riempita da T-03): chips riusate; quando l'agente non ha redazioni il
+ * trattino eredita il muted del contenitore. Il display del contenitore
+ * non viene forzato perche' il markup puo' essere una cella WP; le chip
+ * direttamente figlie prendono un margine, dentro il wrapper chips lo
+ * spaziamento e' gia' del wrapper. */
+.nxa-agent-redazioni {
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--nxa-muted);
+}
+
+.nxa-agent-redazioni > .nxa-red-chip {
+  margin: 2px 6px 2px 0;
+}
+
+/* Movimenti ridotti: solo le transizioni, lo stato del toggle resta
+ * leggibile (freccia ruotata anche senza animazione). */
+@media (prefers-reduced-motion: reduce) {
+  .nxa-red-toggle,
+  .nxa-red-row,
+  .nxa-red-edit,
+  .nxa-red-del,
+  .nxa-red-view {
+    transition: none;
+  }
 }

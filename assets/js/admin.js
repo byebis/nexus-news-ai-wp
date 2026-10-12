@@ -1090,6 +1090,10 @@
                         // l'agente ha un utente WP collegato (wp_user_id arriva con le
                         // route v1.1.0; response vecchie non lo hanno: riga omessa).
                         ( num( pick( agent, 'wp_user_id' ) ) > 0 ? '<p class="nxa-agent-wp-author">Autore WP attivo</p>' : '' ) +
+                        // v1.1.1: segnaposto "Redazioni" (colonna T-01 in agents.php):
+                        // refreshAgentRedazioniCells riempie la cella con i chip
+                        // delle redazioni in cui l'agente compare, "—" se nessuna.
+                        '<div class="nxa-agent-redazioni" data-agent-id="' + esc( pick( agent, 'id' ) ) + '"></div>' +
                         // Modello AI dedicato (v1.0.3): vuoto = modello globale da settings.
                         '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
                                 '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
@@ -1117,6 +1121,9 @@
                         grid.innerHTML = agents.length
                                 ? '<div class="nxa-agents-grid">' + agents.map( agentCardHtml ).join( '' ) + '</div>'
                                 : emptyState( '🤖', 'Nessun agente configurato', 'Attiva il plugin per creare i 7 agenti predefiniti.' );
+                        // v1.1.1: il render ricrea le card, quindi ripristina la
+                        // colonna "Redazioni" dalla cache pagina (nessuna fetch).
+                        refreshAgentRedazioniCells();
                 } ).catch( function ( err ) {
                         grid.innerHTML = emptyState( '⚠️', 'Impossibile caricare gli agenti', err.message || '' );
                         window.console.warn( '[Nexus] agenti:', err );
@@ -2228,6 +2235,594 @@
         }
 
         /* ==================================================================
+         * 13-ter. REDAZIONI GERARCHICHE (v1.1.1)
+         * ================================================================== */
+
+        /**
+         * v1.1.1: pagina "Redazioni" (markup T-01, REST T-02). Albero nativo
+         * della tassonomia nexus_redazione: righe .nxa-red-row con classe di
+         * profondità .nxa-red-depth-0 fino a -3, toggle espandi e compridi,
+         * chip agenti, contatore articoli del ramo e azioni modifica,
+         * elimina, archivio pubblico. La stessa risposta GET /redazioni
+         * alimenta la colonna "Redazioni" della pagina Agenti (una sola
+         * fetch per pagina, cache in redazioniCache come pattern getAgents).
+         *
+         * Forma attesa del payload (T-02): { redazioni: [ { id, name, slug,
+         * parent, agents: [ { id, name, avatar } ], count, count_subtree } ] }.
+         * Lettura difensiva con pick e getList: campi mancanti non crashano.
+         */
+        var redazioniCache = { list: null };
+        var redCollapsed = {};
+        var redazioniBound = false;
+
+        /** v1.1.1: GET /redazioni con cache pagina (force = ricarica dalla REST). */
+        function getRedazioni( force ) {
+                if ( redazioniCache.list && ! force ) {
+                        return Promise.resolve( redazioniCache.list );
+                }
+                return api( 'redazioni' ).then( function ( payload ) {
+                        redazioniCache.list = getList( payload, [ 'redazioni', 'items', 'list' ] );
+                        return redazioniCache.list;
+                } );
+        }
+
+        /** v1.1.1: confronto per nome, usato per ordinare le fratellanze. */
+        function redazioniNameCompare( a, b ) {
+                return String( pick( a, 'name' ) || '' ).localeCompare( String( pick( b, 'name' ) || '' ) );
+        }
+
+        /**
+         * v1.1.1: indice dell'albero redazioni. Ritorna byId, children (mappa
+         * da parent a id dei figli), order (lista piatta in ordine albero:
+         * madri prima, nome dentro ogni livello), depths (0 fino a 3, clamp
+         * per il CSS che copre 4 livelli) e roots (radici reali: parent 0 o
+         * padre assente — servono alle statistiche "articoli coperti").
+         * Protezione anti-ciclo: un termine è visitato una sola volta.
+         */
+        function redazioniIndex( terms ) {
+                var byId = {};
+                var children = {};
+                var i;
+                for ( i = 0; i < terms.length; i++ ) {
+                        var tId = num( pick( terms[ i ], 'id' ) );
+                        byId[ tId ] = terms[ i ];
+                        var tParent = num( pick( terms[ i ], 'parent' ) );
+                        if ( ! children[ tParent ] ) {
+                                children[ tParent ] = [];
+                        }
+                        children[ tParent ].push( tId );
+                }
+                Object.keys( children ).forEach( function ( key ) {
+                        children[ key ].sort( function ( a, b ) {
+                                return redazioniNameCompare( byId[ a ], byId[ b ] );
+                        } );
+                } );
+
+                var roots = ( children[ '0' ] || [] ).slice();
+                for ( i = 0; i < terms.length; i++ ) {
+                        var oId = num( pick( terms[ i ], 'id' ) );
+                        var oParent = num( pick( terms[ i ], 'parent' ) );
+                        if ( oParent > 0 && ! byId[ oParent ] && roots.indexOf( oId ) === -1 ) {
+                                roots.push( oId ); // orfano: padre cancellato, esposto come radice
+                        }
+                }
+                roots.sort( function ( a, b ) {
+                        return redazioniNameCompare( byId[ a ], byId[ b ] );
+                } );
+
+                var order = [];
+                var depths = {};
+                var visited = {};
+                var walk = function ( id, depth ) {
+                        if ( visited[ id ] ) {
+                                return;
+                        }
+                        visited[ id ] = true;
+                        order.push( id );
+                        depths[ id ] = Math.min( depth, 3 );
+                        ( children[ id ] || [] ).forEach( function ( childId ) {
+                                walk( childId, depth + 1 );
+                        } );
+                };
+                roots.forEach( function ( id ) {
+                        walk( id, 0 );
+                } );
+                // Cicli patologici (parent tra termini esistenti ma non raggiunti
+                // dalla discesa): esposti come radici invece che persi.
+                for ( i = 0; i < terms.length; i++ ) {
+                        var rId = num( pick( terms[ i ], 'id' ) );
+                        if ( ! visited[ rId ] ) {
+                                walk( rId, 0 );
+                        }
+                }
+                return { byId: byId, children: children, order: order, depths: depths, roots: roots };
+        }
+
+        /** v1.1.1: termine redazione per id, dalla cache pagina. */
+        function redazioniTermById( termId ) {
+                var list = redazioniCache.list || [];
+                for ( var i = 0; i < list.length; i++ ) {
+                        if ( num( pick( list[ i ], 'id' ) ) === num( termId ) ) {
+                                return list[ i ];
+                        }
+                }
+                return null;
+        }
+
+        /** v1.1.1: chip agente per l'albero (avatar emoji + nome). */
+        function redAgentChip( agent ) {
+                return '<span class="nxa-red-chip">' +
+                        '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' +
+                        esc( pick( agent, 'name' ) || 'Agente' ) +
+                        '</span>';
+        }
+
+        /** v1.1.1: chip redazione per la colonna nella pagina Agenti (solo nome). */
+        function redTermChip( term ) {
+                return '<span class="nxa-red-chip">' + esc( pick( term, 'name' ) || 'Redazione' ) + '</span>';
+        }
+
+        /** v1.1.1: riga dell'albero .nxa-red-row (data-id, data-depth, data-slug). */
+        function redazioneRowHtml( term, index ) {
+                var id = num( pick( term, 'id' ) );
+                var depth = index.depths[ id ] || 0;
+                var slug = String( pick( term, 'slug' ) || '' );
+                var hasChildren = ( index.children[ id ] || [] ).length > 0;
+                var agents = Array.isArray( term.agents ) ? term.agents : [];
+                var chips = agents.length
+                        ? '<span class="nxa-red-agents-chips">' + agents.map( redAgentChip ).join( '' ) + '</span>'
+                        : '';
+                var count = num( pick( term, 'count_subtree', 'count' ) );
+                var countLabel = fmt( count ) + ( count === 1 ? ' articolo' : ' articoli' );
+                var toggle = hasChildren
+                        ? '<button type="button" class="nxa-red-toggle" data-id="' + id + '" aria-expanded="true" aria-label="Mostra o nascondi le sub-redazioni">▾</button>'
+                        : '';
+                var actions =
+                        '<button type="button" class="button-link nxa-red-edit" data-id="' + id + '">Modifica</button>' +
+                        '<button type="button" class="button-link nxa-red-del" data-id="' + id + '">Elimina</button>' +
+                        ( slug ? '<button type="button" class="button-link nxa-red-view" data-slug="' + esc( slug ) + '">Archivio ↗</button>' : '' );
+                return '<div class="nxa-red-row nxa-red-depth-' + depth + '" data-id="' + id + '" data-depth="' + depth + '" data-slug="' + esc( slug ) + '">' +
+                        toggle +
+                        '<span class="nxa-red-name">' + esc( pick( term, 'name' ) || '(senza nome)' ) + '</span>' +
+                        chips +
+                        '<span class="nxa-red-count">' + esc( countLabel ) + '</span>' +
+                        '<span class="nxa-red-actions">' + actions + '</span>' +
+                '</div>';
+        }
+
+        /**
+         * v1.1.1: visibilità delle righe dopo un toggle. Una riga è nascosta
+         * se un antenato è collassato (flag in redCollapsed, id e boolean).
+         * Display inline: nessuna regola CSS può sovrascriverlo.
+         */
+        function applyRedazioniVisibility() {
+                var tree = qs( '#nxa-red-tree' );
+                if ( ! tree ) {
+                        return;
+                }
+                var chain = []; // chain[d] = un antenato a profondità d o inferiore è collassato
+                qsa( '.nxa-red-row', tree ).forEach( function ( row ) {
+                        var depth = num( row.getAttribute( 'data-depth' ) );
+                        var hidden = depth > 0 && chain[ depth - 1 ] === true;
+                        row.style.display = hidden ? 'none' : '';
+                        var id = num( row.getAttribute( 'data-id' ) );
+                        chain.length = depth;
+                        chain[ depth ] = hidden || !! redCollapsed[ id ];
+                } );
+        }
+
+        /** v1.1.1: render dell'albero in #nxa-red-tree (reset dello stato espanso). */
+        function renderRedazioniTree( terms ) {
+                var tree = qs( '#nxa-red-tree' );
+                if ( ! tree ) {
+                        return;
+                }
+                redCollapsed = {};
+                if ( ! terms.length ) {
+                        tree.innerHTML = '';
+                        return;
+                }
+                var index = redazioniIndex( terms );
+                tree.innerHTML = index.order.map( function ( id ) {
+                        return redazioneRowHtml( index.byId[ id ], index );
+                } ).join( '' );
+                applyRedazioniVisibility();
+        }
+
+        /**
+         * v1.1.1: statistiche in #nxa-red-stats — "N redazioni · N agenti
+         * assegnati · N articoli coperti". Agenti assegnati = agenti distinti
+         * presenti nei termini; articoli coperti = somma di count_subtree
+         * delle sole radici (le redazioni madri).
+         */
+        function renderRedazioniStats( terms ) {
+                var box = qs( '#nxa-red-stats' );
+                if ( ! box ) {
+                        return;
+                }
+                var seenAgents = {};
+                var totalAgents = 0;
+                terms.forEach( function ( term ) {
+                        var agents = Array.isArray( term.agents ) ? term.agents : [];
+                        agents.forEach( function ( agent ) {
+                                var id = num( pick( agent, 'id' ) );
+                                if ( id > 0 && ! seenAgents[ id ] ) {
+                                        seenAgents[ id ] = true;
+                                        totalAgents++;
+                                }
+                        } );
+                } );
+                var index = redazioniIndex( terms );
+                var covered = 0;
+                index.roots.forEach( function ( id ) {
+                        covered += num( pick( index.byId[ id ], 'count_subtree' ) );
+                } );
+                box.textContent = fmt( terms.length ) + ' ' + ( terms.length === 1 ? 'redazione' : 'redazioni' ) + ' · ' +
+                        fmt( totalAgents ) + ' ' + ( totalAgents === 1 ? 'agente assegnato' : 'agenti assegnati' ) + ' · ' +
+                        fmt( covered ) + ' ' + ( covered === 1 ? 'articolo coperto' : 'articoli coperti' );
+        }
+
+        /** v1.1.1: stato vuoto #nxa-red-empty (classe hidden) quando 0 termini. */
+        function toggleRedazioniEmpty( terms ) {
+                var empty = qs( '#nxa-red-empty' );
+                if ( ! empty ) {
+                        return;
+                }
+                if ( terms.length > 0 ) {
+                        empty.classList.add( 'hidden' );
+                } else {
+                        empty.classList.remove( 'hidden' );
+                }
+        }
+
+        /**
+         * v1.1.1: riempie #nxa-red-parent (voce "(nessuna — redazione madre)"
+         * con value 0, poi opzioni indentate con trattini per profondità) e
+         * #nxa-red-agents (checkbox .nxa-red-agent con value pari all'id
+         * agente, label avatar e nome, checked se assegnato al termine in
+         * edit). In edit esclude dal select madre il termine stesso e tutti
+         * i suoi discendenti (un ramo non può diventare figlio di se stesso).
+         */
+        function fillRedazioneFormOptions( terms, agents, editTerm ) {
+                var form = qs( '#nxa-red-form' );
+                if ( ! form ) {
+                        return;
+                }
+                var index = redazioniIndex( terms );
+                var editId = editTerm ? num( pick( editTerm, 'id' ) ) : 0;
+                var excluded = {};
+                if ( editId > 0 ) {
+                        var stack = [ editId ];
+                        while ( stack.length ) {
+                                var cur = stack.pop();
+                                if ( excluded[ cur ] ) {
+                                        continue;
+                                }
+                                excluded[ cur ] = true;
+                                ( index.children[ cur ] || [] ).forEach( function ( childId ) {
+                                        stack.push( childId );
+                                } );
+                        }
+                }
+                var select = qs( '#nxa-red-parent', form );
+                if ( select ) {
+                        var html = '<option value="0">' + esc( '(nessuna — redazione madre)' ) + '</option>';
+                        index.order.forEach( function ( id ) {
+                                if ( excluded[ id ] ) {
+                                        return;
+                                }
+                                var depth = index.depths[ id ] || 0;
+                                var pad = depth > 0 ? new Array( depth + 1 ).join( '— ' ) : '';
+                                html += '<option value="' + id + '">' + esc( pad + String( pick( index.byId[ id ], 'name' ) || '' ) ) + '</option>';
+                        } );
+                        select.innerHTML = html;
+                        var wantParent = editTerm ? num( pick( editTerm, 'parent' ) ) : 0;
+                        select.value = String( wantParent );
+                        if ( select.value !== String( wantParent ) ) {
+                                select.value = '0'; // opzione assente o esclusa: torna la radice
+                        }
+                }
+                var box = qs( '#nxa-red-agents', form );
+                if ( box ) {
+                        var assigned = {};
+                        if ( editTerm && Array.isArray( editTerm.agents ) ) {
+                                editTerm.agents.forEach( function ( agent ) {
+                                        var aid = num( pick( agent, 'id' ) );
+                                        if ( aid > 0 ) {
+                                                assigned[ aid ] = true;
+                                        }
+                                } );
+                        }
+                        box.innerHTML = agents.length
+                                ? agents.map( function ( agent ) {
+                                        var aid = num( pick( agent, 'id' ) );
+                                        return '<label class="nxa-red-agent-item">' +
+                                                '<input type="checkbox" class="nxa-red-agent" value="' + aid + '"' + ( assigned[ aid ] ? ' checked="checked"' : '' ) + ' /> ' +
+                                                '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' +
+                                                esc( pick( agent, 'name' ) || 'Agente' ) +
+                                        '</label>';
+                                } ).join( '' )
+                                : '<p class="nxa-red-agents-empty">Nessun agente configurato.</p>';
+                }
+        }
+
+        /** v1.1.1: reset del form alla modalità crea (id 0, campi vuoti, cancel nascosto). */
+        function resetRedazioneForm() {
+                var form = qs( '#nxa-red-form' );
+                if ( ! form ) {
+                        return;
+                }
+                var idField = qs( '#nxa-red-id', form );
+                if ( idField ) {
+                        idField.value = '0';
+                }
+                var nameField = qs( '#nxa-red-name', form );
+                if ( nameField ) {
+                        nameField.value = '';
+                }
+                var slugField = qs( '#nxa-red-slug', form );
+                if ( slugField ) {
+                        slugField.value = '';
+                }
+                var select = qs( '#nxa-red-parent', form );
+                if ( select ) {
+                        select.value = '0';
+                }
+                qsa( 'input.nxa-red-agent', form ).forEach( function ( box ) {
+                        box.checked = false;
+                } );
+                var cancel = qs( '#nxa-red-cancel' );
+                if ( cancel ) {
+                        cancel.classList.add( 'hidden' );
+                }
+        }
+
+        /**
+         * v1.1.1: modalità edit — precompila il form dal termine (id, nome,
+         * slug, madre, agenti assegnati), mostra #nxa-red-cancel che in
+         * modalità crea resta nascosto e riporta la vista in cima.
+         */
+        function openRedazioneEditor( term ) {
+                var form = qs( '#nxa-red-form' );
+                if ( ! form ) {
+                        return;
+                }
+                var idField = qs( '#nxa-red-id', form );
+                var nameField = qs( '#nxa-red-name', form );
+                var slugField = qs( '#nxa-red-slug', form );
+                if ( ! idField || ! nameField || ! slugField ) {
+                        return;
+                }
+                fillRedazioneFormOptions( redazioniCache.list || [], agentsCache.list || [], term );
+                idField.value = String( num( pick( term, 'id' ) ) || 0 );
+                nameField.value = String( pick( term, 'name' ) || '' );
+                slugField.value = String( pick( term, 'slug' ) || '' );
+                var cancel = qs( '#nxa-red-cancel' );
+                if ( cancel ) {
+                        cancel.classList.remove( 'hidden' );
+                }
+                window.scrollTo( 0, 0 );
+                nameField.focus();
+        }
+
+        /** v1.1.1: archivio pubblico della redazione in una nuova scheda. */
+        function openRedazioneArchive( slug ) {
+                var clean = String( slug || '' ).trim();
+                var base = String( D.siteUrl || '' ).replace( /\/+$/, '' );
+                if ( ! clean || ! base ) {
+                        return;
+                }
+                window.open( base + '/redazione/' + encodeURIComponent( clean ) + '/', '_blank' );
+        }
+
+        /** v1.1.1: conferma nativa in italiano, poi DELETE /redazioni/{id}. */
+        function confirmDeleteRedazione( btn ) {
+                var id = num( btn.getAttribute( 'data-id' ) );
+                var term = redazioniTermById( id );
+                var label = term ? String( pick( term, 'name' ) || '' ) : 'ID ' + id;
+                var ok = window.confirm( 'Eliminare la redazione “' + label + '”?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' );
+                if ( ! ok ) {
+                        return;
+                }
+                setBtnLoading( btn, true, 'Elimino…' );
+                api( 'redazioni/' + id, { method: 'DELETE' } ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        toast( String( pick( data, 'message' ) || 'Redazione eliminata.' ), 'success', 'Redazioni' );
+                        var idField = qs( '#nxa-red-id' );
+                        if ( idField && num( idField.value ) === id ) {
+                                resetRedazioneForm(); // era in edit il termine eliminato
+                        }
+                        return loadRedazioniPage();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Eliminazione non riuscita' );
+                        setBtnLoading( btn, false );
+                } );
+        }
+
+        /** v1.1.1: submit del form — id 0 crea, id maggiore aggiorna (POST). */
+        function onRedazioneFormSubmit( ev ) {
+                ev.preventDefault();
+                var form = ev.target;
+                var idField = qs( '#nxa-red-id', form );
+                var editId = num( idField ? idField.value : 0 );
+                var readField = function ( selector ) {
+                        var field = qs( selector, form );
+                        return field ? String( field.value || '' ).trim() : '';
+                };
+                var name = readField( '#nxa-red-name' );
+                if ( ! name ) {
+                        toast( 'Inserisci il nome della redazione.', 'error', 'Redazioni' );
+                        return;
+                }
+                var select = qs( '#nxa-red-parent', form );
+                var body = {
+                        name: name,
+                        parent: select ? num( select.value ) : 0,
+                        agent_ids: qsa( 'input.nxa-red-agent:checked', form ).map( function ( box ) {
+                                return num( box.value );
+                        } ).filter( Boolean )
+                };
+                var slug = readField( '#nxa-red-slug' );
+                if ( slug ) {
+                        body.slug = slug; // inviato solo se compilato
+                }
+                var saveBtn = qs( '#nxa-red-save', form );
+                setBtnLoading( saveBtn, true, 'Salvo…' );
+                var request = editId > 0
+                        ? api( 'redazioni/' + editId, { method: 'POST', body: body } )
+                        : api( 'redazioni', { method: 'POST', body: body } );
+                request.then( function () {
+                        toast( editId > 0 ? 'Redazione aggiornata.' : 'Redazione creata.', 'success', 'Redazioni' );
+                        resetRedazioneForm();
+                        return loadRedazioniPage();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Salvataggio redazione non riuscito' );
+                } ).then( function () {
+                        setBtnLoading( saveBtn, false );
+                } );
+        }
+
+        /**
+         * v1.1.1: binding della pagina Redazioni, eseguito UNA sola volta
+         * (guardia redazioniBound): il loader viene richiamato dopo ogni
+         * operazione riuscita e i listener delegati su nodi statici (albero,
+         * form) sopravvivono al re-render dell'innerHTML.
+         */
+        function bindRedazioniPage() {
+                var tree = qs( '#nxa-red-tree' );
+                if ( tree ) {
+                        tree.addEventListener( 'click', function ( ev ) {
+                                var target = ev.target;
+                                var toggleBtn = target.closest ? target.closest( '.nxa-red-toggle' ) : null;
+                                if ( toggleBtn && toggleBtn.tagName === 'BUTTON' ) {
+                                        var toggleId = num( toggleBtn.getAttribute( 'data-id' ) );
+                                        var collapsed = ! redCollapsed[ toggleId ];
+                                        redCollapsed[ toggleId ] = collapsed;
+                                        toggleBtn.setAttribute( 'aria-expanded', collapsed ? 'false' : 'true' );
+                                        toggleBtn.textContent = collapsed ? '▸' : '▾';
+                                        applyRedazioniVisibility();
+                                        return;
+                                }
+                                var editBtn = target.closest ? target.closest( '.nxa-red-edit' ) : null;
+                                if ( editBtn ) {
+                                        var editId = num( editBtn.getAttribute( 'data-id' ) );
+                                        var term = redazioniTermById( editId );
+                                        if ( term ) {
+                                                openRedazioneEditor( term );
+                                        } else {
+                                                toast( 'Redazione non trovata: ricarica la pagina.', 'error', 'Redazioni' );
+                                        }
+                                        return;
+                                }
+                                var delBtn = target.closest ? target.closest( '.nxa-red-del' ) : null;
+                                if ( delBtn ) {
+                                        confirmDeleteRedazione( delBtn );
+                                        return;
+                                }
+                                var viewBtn = target.closest ? target.closest( '.nxa-red-view' ) : null;
+                                if ( viewBtn ) {
+                                        openRedazioneArchive( viewBtn.getAttribute( 'data-slug' ) );
+                                }
+                        } );
+                }
+                var form = qs( '#nxa-red-form' );
+                if ( form ) {
+                        form.addEventListener( 'submit', onRedazioneFormSubmit );
+                        var cancelBtn = qs( '#nxa-red-cancel' );
+                        if ( cancelBtn ) {
+                                cancelBtn.addEventListener( 'click', function () {
+                                        resetRedazioneForm();
+                                        fillRedazioneFormOptions( redazioniCache.list || [], agentsCache.list || [], null );
+                                } );
+                        }
+                }
+        }
+
+        /**
+         * v1.1.1: loader della pagina Redazioni (voce "redazioni" in LOADERS).
+         * Fetch in parallelo di GET /redazioni e GET /agents, poi statistiche,
+         * albero, stato vuoto e opzioni del form. Markup T-01 non presente
+         * (altre pagine admin) → exit silenzioso come da pattern del file.
+         */
+        function loadRedazioniPage() {
+                var tree = qs( '#nxa-red-tree' );
+                var form = qs( '#nxa-red-form' );
+                if ( ! tree && ! form ) {
+                        return Promise.resolve();
+                }
+                if ( ! redazioniBound ) {
+                        redazioniBound = true;
+                        bindRedazioniPage();
+                }
+                if ( tree ) {
+                        showSkeleton( tree, 3 );
+                }
+                return Promise.all( [ getRedazioni( true ), getAgents( true ) ] ).then( function ( results ) {
+                        var terms = Array.isArray( results[ 0 ] ) ? results[ 0 ] : [];
+                        var agents = Array.isArray( results[ 1 ] ) ? results[ 1 ] : [];
+                        renderRedazioniStats( terms );
+                        renderRedazioniTree( terms );
+                        toggleRedazioniEmpty( terms );
+                        var editTerm = null;
+                        var idField = qs( '#nxa-red-id' );
+                        var editId = idField ? num( idField.value ) : 0;
+                        if ( editId > 0 ) {
+                                editTerm = redazioniTermById( editId );
+                                if ( ! editTerm ) {
+                                        resetRedazioneForm(); // il termine è stato eliminato altrove
+                                }
+                        }
+                        fillRedazioneFormOptions( terms, agents, editTerm );
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Impossibile caricare le redazioni' );
+                        if ( tree ) {
+                                tree.innerHTML = emptyState( '⚠️', 'Impossibile caricare le redazioni', err.message || '' );
+                        }
+                } );
+        }
+
+        /**
+         * v1.1.1: chip delle redazioni di un agente per la colonna "Redazioni"
+         * in agents.php (markup T-01). Cerca i termini il cui array agents
+         * contiene l'agente; se non compare in nessuno resta il testo "—".
+         */
+        function agentRedazioniChipsHtml( terms, agentId ) {
+                var chips = [];
+                terms.forEach( function ( term ) {
+                        var agents = Array.isArray( term.agents ) ? term.agents : [];
+                        for ( var i = 0; i < agents.length; i++ ) {
+                                if ( num( pick( agents[ i ], 'id' ) ) === agentId ) {
+                                        chips.push( redTermChip( term ) );
+                                        break;
+                                }
+                        }
+                } );
+                if ( ! chips.length ) {
+                        return '—';
+                }
+                return '<span class="nxa-red-agents-chips">' + chips.join( '' ) + '</span>';
+        }
+
+        /**
+         * v1.1.1: riempie tutte le celle .nxa-agent-redazioni con data-agent-id
+         * presenti nel documento (marcatura PHP T-01 e card generate da
+         * agentCardHtml). Usa SOLO la cache pagina: la fetch parte una volta
+         * sola nel loader "agents". Cache mai popolata (fetch non riuscita o
+         * non ancora partita) → exit senza toccare il markup, mai "—" di
+         * comodo che fingerebbe dati.
+         */
+        function refreshAgentRedazioniCells() {
+                if ( redazioniCache.list === null ) {
+                        return;
+                }
+                var terms = redazioniCache.list;
+                qsa( '.nxa-agent-redazioni[data-agent-id]' ).forEach( function ( cell ) {
+                        var agentId = num( cell.getAttribute( 'data-agent-id' ) );
+                        cell.innerHTML = agentRedazioniChipsHtml( terms, agentId );
+                } );
+        }
+
+        /* ==================================================================
          * 14. ROUTER + BOOT
          * ================================================================== */
 
@@ -2235,7 +2830,16 @@
                 dashboard: loadDashboard,
                 agents: function () {
                         bindAgents();
-                        return loadAgents( false );
+                        // v1.1.1: una sola fetch GET /redazioni per pagina; dopo il
+                        // render agenti riempie le celle .nxa-agent-redazioni (T-01)
+                        // con i chip delle redazioni di ciascun agente.
+                        return loadAgents( false ).then( function () {
+                                return getRedazioni().then( function () {
+                                        refreshAgentRedazioniCells();
+                                } ).catch( function ( err ) {
+                                        window.console.warn( '[Nexus] redazioni (colonna agenti):', err );
+                                } );
+                        } );
                 },
                 queue: function () {
                         bindQueue();
@@ -2247,6 +2851,11 @@
                         // v1.1.0: migrazione contenuti nativi (card Strumenti, T-01);
                         // bottone #nxa-native-run assente → exit silenzioso.
                         bindNativeMigration();
+                },
+                redazioni: function () {
+                        // v1.1.1: pagina "Redazioni" (markup T-01, REST T-02) —
+                        // albero gerarchico + form; markup assente → exit silenzioso.
+                        return loadRedazioniPage();
                 },
                 wire: function () {
                         bindWire();

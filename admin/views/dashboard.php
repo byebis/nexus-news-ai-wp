@@ -56,6 +56,18 @@
  * migrare, via Nexus_Native::cpt_remaining() con guard class_exists e
  * method_exists. Nessun JavaScript nuovo.
  *
+ * v1.1.1 — Contratto "Redazioni gerarchiche" (T-07): nella griglia statistiche
+ * e' presente una stat-card server-side aggiuntiva "Redazioni". Nessun id nuovo
+ * consumato da admin.js: il JS scrive solo sui nodi con id nxa-stat-* elencati
+ * qui sopra, quindi i valori di questa card non vengono sovrascritti. Tutti i
+ * numeri arrivano da chiamate PHP dirette agli helper di Nexus_Redazioni
+ * (nessuna rotta REST nuova): N redazioni totali, N agenti assegnati distinti
+ * su tutti i termini, top 3 redazioni per articoli nel subtree (i termini con
+ * zero articoli sono esclusi) con chip degli agenti del ramo (max 4, poi il
+ * segno piu' e il numero residuo). Con zero redazioni la card mostra un
+ * invito con link alla pagina Redazioni. Guard class_exists: senza la classe
+ * fondamenta la card non viene stampata (degradazione senza fatal).
+ *
  * @package Nexus_News_AI
  */
 
@@ -82,6 +94,53 @@ if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
 }
 if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'cpt_remaining' ) ) {
         $nexus_native_remaining = (int) Nexus_Native::cpt_remaining();
+}
+
+/*
+ * v1.1.1 (T-07) — Card "Redazioni": numeri e top 3 letti in PHP diretto dagli
+ * helper di Nexus_Redazioni (contratto §1: nessuna rotta REST nuova). La mappa
+ * agenti serve per nomi ed emoji delle chip (stesso fallback della card uso AI:
+ * senza riga l'agente viene indicato con il suo ID).
+ */
+$nexus_red_terms     = array();
+$nexus_red_agents    = 0;
+$nexus_red_top       = array();
+$nexus_red_agent_map = array();
+if ( class_exists( 'Nexus_Redazioni' ) ) {
+        $nexus_red_terms = Nexus_Redazioni::all_terms();
+
+        /* Agenti assegnati distinti su tutti i termini (assegnazione diretta). */
+        $nexus_red_all_ids = array();
+        foreach ( $nexus_red_terms as $nexus_red_term ) {
+                $nexus_red_all_ids = array_merge( $nexus_red_all_ids, Nexus_Redazioni::agent_ids_for_term( (int) $nexus_red_term->term_id ) );
+        }
+        $nexus_red_agents = count( array_unique( array_map( 'absint', $nexus_red_all_ids ) ) );
+
+        /* Top 3 per articoli nel subtree: i termini senza articoli sono esclusi. */
+        $nexus_red_ranked = array();
+        foreach ( $nexus_red_terms as $nexus_red_term ) {
+                $nexus_red_count = (int) Nexus_Redazioni::count_subtree( (int) $nexus_red_term->term_id );
+                if ( $nexus_red_count > 0 ) {
+                        $nexus_red_ranked[] = array(
+                                'term'  => $nexus_red_term,
+                                'count' => $nexus_red_count,
+                        );
+                }
+        }
+        usort( $nexus_red_ranked, static function ( $a, $b ) {
+                if ( $a['count'] === $b['count'] ) {
+                        return strcmp( (string) $a['term']->name, (string) $b['term']->name );
+                }
+                return ( $b['count'] <=> $a['count'] );
+        } );
+        $nexus_red_top = array_slice( $nexus_red_ranked, 0, 3 );
+
+        /* Mappa agenti per nomi ed emoji delle chip. */
+        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
+                foreach ( (array) Nexus_DB::agents() as $nexus_red_agent_row ) {
+                        $nexus_red_agent_map[ (int) $nexus_red_agent_row->id ] = $nexus_red_agent_row;
+                }
+        }
 }
 ?>
 <div class="wrap nexus-admin" data-page="dashboard">
@@ -133,6 +192,48 @@ if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'cpt_remai
                                 <span class="nxa-stat-label"><?php echo esc_html( $nexus_native_remaining ); ?> <?php echo esc_html__( 'da migrare', 'nexus-news-ai' ); ?></span>
                         <?php endif; ?>
                 </div>
+                <?php if ( class_exists( 'Nexus_Redazioni' ) ) : ?>
+                <div class="nxa-stat-card">
+                        <span class="nxa-stat-value"><?php echo esc_html( number_format_i18n( count( $nexus_red_terms ) ) ); ?></span>
+                        <span class="nxa-stat-label"><?php echo esc_html__( 'Redazioni', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-stat-label"><?php echo esc_html( sprintf(
+                                /* translators: %s: numero di agenti assegnati alle redazioni. */
+                                __( 'Agenti assegnati: %s', 'nexus-news-ai' ),
+                                number_format_i18n( $nexus_red_agents )
+                        ) ); ?></span>
+                        <?php if ( 0 === count( $nexus_red_terms ) ) : ?>
+                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-redazioni' ) ); ?>"><?php echo esc_html__( 'Crea la prima redazione dalla pagina Redazioni.', 'nexus-news-ai' ); ?></a></span>
+                        <?php endif; ?>
+                        <?php foreach ( $nexus_red_top as $nexus_red_item ) : ?>
+                                <?php
+                                $nexus_red_t      = $nexus_red_item['term'];
+                                $nexus_red_ids    = Nexus_Redazioni::agents_for_term( (int) $nexus_red_t->term_id );
+                                $nexus_red_extra  = max( 0, count( $nexus_red_ids ) - 4 );
+                                ?>
+                                <div class="nxa-red-top-item">
+                                        <span class="nxa-red-top-name"><?php echo esc_html( (string) $nexus_red_t->name ); ?></span>
+                                        <span class="nxa-red-top-count"><?php echo esc_html( sprintf(
+                                                /* translators: %s: numero di articoli nel ramo della redazione. */
+                                                _n( '%s articolo', '%s articoli', $nexus_red_item['count'], 'nexus-news-ai' ),
+                                                number_format_i18n( $nexus_red_item['count'] )
+                                        ) ); ?></span>
+                                        <span class="nxa-red-agents-chips">
+                                                <?php foreach ( array_slice( $nexus_red_ids, 0, 4 ) as $nexus_red_agent_id ) : ?>
+                                                        <?php
+                                                        $nexus_red_agent  = isset( $nexus_red_agent_map[ $nexus_red_agent_id ] ) ? $nexus_red_agent_map[ $nexus_red_agent_id ] : null;
+                                                        $nexus_red_avatar = ( $nexus_red_agent && ! empty( $nexus_red_agent->avatar ) ) ? (string) $nexus_red_agent->avatar : '🤖';
+                                                        $nexus_red_aname  = ( $nexus_red_agent && ! empty( $nexus_red_agent->name ) ) ? (string) $nexus_red_agent->name : sprintf( __( 'Agente #%d', 'nexus-news-ai' ), $nexus_red_agent_id );
+                                                        ?>
+                                                        <span class="nxa-red-chip"><?php echo esc_html( $nexus_red_avatar . ' ' . $nexus_red_aname ); ?></span>
+                                                <?php endforeach; ?>
+                                                <?php if ( $nexus_red_extra > 0 ) : ?>
+                                                        <span class="nxa-red-chip">+<?php echo esc_html( number_format_i18n( $nexus_red_extra ) ); ?></span>
+                                                <?php endif; ?>
+                                        </span>
+                                </div>
+                        <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
         </div>
 
         <div class="nxa-section nxa-section-usage">

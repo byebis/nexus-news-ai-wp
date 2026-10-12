@@ -4,8 +4,22 @@
  *
  * Shortcode disponibili:
  *   [nexus_magazine]                    — hero + barra categorie + griglia + modal root
- *   [nexus_articles category="" limit="9" layout="grid|list"]
+ *   [nexus_magazine redazione="sport"]  — variante filtrata sul ramo COMPLETO della
+ *                                         redazione (v1.1.1: sub-redazioni incluse,
+ *                                         semantica nativa include_children)
+ *   [nexus_articles category="" limit="9" layout="grid|list" redazione=""]
  *   [nexus_wire limit="10"]             — Redazione Collettiva (ultime esecuzioni)
+ *
+ * NOTA v1.1.1 — attributo redazione (slug o nome, anche parziale: basta lo slug
+ * della redazione madre): risolve il termine con get_term_by slug e poi nome
+ * sulla tassonomia Nexus_Redazioni::TAX e filtra il listing sul ramo completo
+ * (redazione="sport" include anche Calcio, Basket e F1). Se la redazione non
+ * esiste l'output e' un messaggio onesto nel markup, senza contenuto inventato.
+ * Con il filtro attivo la barra categorie e il bottone "Carica altri" NON vengono
+ * stampati: la paginazione e il filtro categoria client-side passano dalla REST
+ * nexus-v1 public-articles che non accetta il parametro redazione, quindi
+ * verrebbero mostrati articoli fuori dal ramo (niente percorsi disonesti).
+ * Senza l'attributo il comportamento e' identico a prima (zero regressioni).
  *
  * =====================================================================================
  * NOTA-INTEGRAZIONE (per public/js/nexus-public.js e public/css/nexus-public.css)
@@ -159,16 +173,43 @@ final class Nexus_Shortcodes {
         /**
          * Render del magazine completo: hero, barra categorie, griglia, load-more, modal root.
          *
-         * @param array|string $atts Attributi shortcode. Supportati: per_page (default 12).
+         * Da v1.1.1 supporta l'attributo redazione (slug o nome): filtra la
+         * griglia sul ramo completo della redazione (sub-redazioni incluse,
+         * semantica nativa include_children della tassonomia gerarchica).
+         * Esempio: [nexus_magazine redazione="sport"] mostra gli articoli di
+         * Sport e di tutte le sue sub-redazioni. Se la redazione non esiste
+         * l'output e' un messaggio onesto, senza contenuto inventato; con il
+         * filtro attivo barra categorie e load-more restano fuori (vedi nota
+         * v1.1.1 in testa al file).
+         *
+         * @param array|string $atts Attributi shortcode. Supportati: per_page (default 12), redazione (default '').
          * @return string
          */
         public static function render_magazine( $atts = array() ) {
                 $atts = shortcode_atts(
-                        array( 'per_page' => 12 ),
+                        array(
+                                'per_page'  => 12,
+                                'redazione' => '',
+                        ),
                         (array) $atts,
                         'nexus_magazine'
                 );
                 $per_page = min( 24, max( 1, absint( $atts['per_page'] ) ) );
+
+                /* v1.1.1: filtro redazione (slug o nome), semantica subtree. */
+                $redazione      = sanitize_text_field( (string) $atts['redazione'] );
+                $redazione_term = ( '' !== $redazione ) ? self::redazione_term( $redazione ) : null;
+
+                /* Redazione richiesta ma inesistente: output onesto, nessun contenuto inventato. */
+                if ( '' !== $redazione && ! $redazione_term instanceof WP_Term ) {
+                        return '<div class="nxa-magazine" data-nxa="magazine"><p class="nxa-empty">'
+                                . esc_html( sprintf(
+                                        /* translators: %s: redazione richiesta. */
+                                        __( 'Redazione non trovata: %s', 'nexus-news-ai' ),
+                                        $redazione
+                                ) )
+                                . '</p></div>';
+                }
 
                 self::enqueue_assets();
 
@@ -183,15 +224,22 @@ final class Nexus_Shortcodes {
                 }
                 $n_agents = count( $active_agents );
 
-                $published_count = Nexus_DB::count_articles( array( 'status' => 'published' ) );
-                $articles        = Nexus_DB::articles(
-                        array(
-                                'status'   => 'published',
-                                'per_page' => $per_page,
-                                'orderby'  => 'published_at',
-                                'order'    => 'desc',
-                        )
-                );
+                if ( $redazione_term instanceof WP_Term ) {
+                        /* Ramo completo della redazione (sub-redazioni incluse). */
+                        $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
+                        $published_count = self::redazione_count_articles( $branch_post_ids );
+                        $articles        = self::redazione_articles( $branch_post_ids, $per_page );
+                } else {
+                        $published_count = Nexus_DB::count_articles( array( 'status' => 'published' ) );
+                        $articles        = Nexus_DB::articles(
+                                array(
+                                        'status'   => 'published',
+                                        'per_page' => $per_page,
+                                        'orderby'  => 'published_at',
+                                        'order'    => 'desc',
+                                )
+                        );
+                }
 
                 $out  = '';
                 $out .= '<div class="nxa-magazine" data-nxa="magazine">';
@@ -213,19 +261,24 @@ final class Nexus_Shortcodes {
                 $out .= '</section>';
 
                 /* ---------- Barra categorie ---------- */
-                $out .= '<nav class="nxa-category-bar" aria-label="' . esc_attr__( 'Filtra articoli per categoria', 'nexus-news-ai' ) . '">';
-                $out .= '<button type="button" class="nxa-cat-btn is-active" data-category="">' . esc_html__( 'Tutte', 'nexus-news-ai' ) . '</button>';
-                foreach ( $active_agents as $agent ) {
-                        $cat = (string) $agent->category;
-                        if ( '' === $cat ) {
-                                continue;
+                /* Con filtro redazione la barra resta fuori: il refetch client-side
+                 * per categoria passa dalla REST pubblica senza parametro redazione
+                 * e sostituirebbe le card del ramo con articoli fuori dal ramo. */
+                if ( ! $redazione_term instanceof WP_Term ) {
+                        $out .= '<nav class="nxa-category-bar" aria-label="' . esc_attr__( 'Filtra articoli per categoria', 'nexus-news-ai' ) . '">';
+                        $out .= '<button type="button" class="nxa-cat-btn is-active" data-category="">' . esc_html__( 'Tutte', 'nexus-news-ai' ) . '</button>';
+                        foreach ( $active_agents as $agent ) {
+                                $cat = (string) $agent->category;
+                                if ( '' === $cat ) {
+                                        continue;
+                                }
+                                $out .= '<button type="button" class="nxa-cat-btn" data-category="' . esc_attr( $cat ) . '">';
+                                $out .= '<span class="nxa-cat-dot" style="background-color:' . self::color_attr( Nexus_Utils::category_color( $cat ) ) . '"></span>';
+                                $out .= esc_html( $cat );
+                                $out .= '</button>';
                         }
-                        $out .= '<button type="button" class="nxa-cat-btn" data-category="' . esc_attr( $cat ) . '">';
-                        $out .= '<span class="nxa-cat-dot" style="background-color:' . self::color_attr( Nexus_Utils::category_color( $cat ) ) . '"></span>';
-                        $out .= esc_html( $cat );
-                        $out .= '</button>';
+                        $out .= '</nav>';
                 }
-                $out .= '</nav>';
 
                 /* ---------- Griglia articoli ---------- */
                 $out .= '<div class="nxa-grid" id="nxa-magazine-grid">';
@@ -239,7 +292,10 @@ final class Nexus_Shortcodes {
                 $out .= '</div>';
 
                 /* ---------- Carica altri ---------- */
-                if ( $published_count > $per_page ) {
+                /* Con filtro redazione il bottone resta fuori: la paginazione JS
+                 * chiama la REST pubblica che non accetta il parametro redazione,
+                 * quindi caricherebbe articoli fuori dal ramo. */
+                if ( ! $redazione_term instanceof WP_Term && $published_count > $per_page ) {
                         $out .= '<div class="nxa-load-more-wrap">';
                         $out .= '<button type="button" class="nxa-btn-load-more" data-nxa="load-more" data-page="2" data-per-page="' . esc_attr( $per_page ) . '">' . esc_html__( 'Carica altri articoli', 'nexus-news-ai' ) . '</button>';
                         $out .= '</div>';
@@ -471,17 +527,27 @@ final class Nexus_Shortcodes {
         /* ========================= [nexus_articles] ========================= */
 
         /**
-         * Griglia o lista semplice di card su articoli pubblicati (filtro categoria).
+         * Griglia o lista semplice di card su articoli pubblicati.
          *
-         * @param array|string $atts Attributi: category (default ''), limit (default 9, max 24), layout (grid|list).
+         * Attributi: category (default ''), limit (default 9, max 24),
+         * layout (grid|list) e, da v1.1.1, redazione (default '', slug o nome):
+         * filtra sul ramo completo della redazione, sub-redazioni incluse
+         * (semantica nativa include_children). Esempio:
+         * [nexus_articles redazione="sport" limit="6"] mostra gli articoli di
+         * Sport e di Calcio, Basket, F1. Se la redazione non esiste l'output
+         * e' un messaggio onesto, senza contenuto inventato. Senza l'attributo
+         * redazione il comportamento e' identico a prima (zero regressioni).
+         *
+         * @param array|string $atts Attributi.
          * @return string
          */
         public static function render_articles( $atts = array() ) {
                 $atts = shortcode_atts(
                         array(
-                                'category' => '',
-                                'limit'    => 9,
-                                'layout'   => 'grid',
+                                'category'  => '',
+                                'limit'     => 9,
+                                'layout'    => 'grid',
+                                'redazione' => '',
                         ),
                         (array) $atts,
                         'nexus_articles'
@@ -491,18 +557,39 @@ final class Nexus_Shortcodes {
                 $category = sanitize_text_field( (string) $atts['category'] );
                 $layout   = ( 'list' === strtolower( (string) $atts['layout'] ) ) ? 'list' : 'grid';
 
+                /* v1.1.1: filtro redazione (slug o nome), semantica subtree. */
+                $redazione      = sanitize_text_field( (string) $atts['redazione'] );
+                $redazione_term = ( '' !== $redazione ) ? self::redazione_term( $redazione ) : null;
+
+                /* Redazione richiesta ma inesistente: output onesto, nessun contenuto inventato. */
+                if ( '' !== $redazione && ! $redazione_term instanceof WP_Term ) {
+                        return '<div class="nxa-articles" data-nxa="articles"><p class="nxa-empty">'
+                                . esc_html( sprintf(
+                                        /* translators: %s: redazione richiesta. */
+                                        __( 'Redazione non trovata: %s', 'nexus-news-ai' ),
+                                        $redazione
+                                ) )
+                                . '</p></div>';
+                }
+
                 self::enqueue_assets();
 
-                $args = array(
-                        'status'   => 'published',
-                        'per_page' => $limit,
-                        'orderby'  => 'published_at',
-                        'order'    => 'desc',
-                );
-                if ( '' !== $category ) {
-                        $args['category'] = $category;
+                if ( $redazione_term instanceof WP_Term ) {
+                        /* Ramo completo della redazione (sub-redazioni incluse). */
+                        $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
+                        $articles        = self::redazione_articles( $branch_post_ids, $limit );
+                } else {
+                        $args = array(
+                                'status'   => 'published',
+                                'per_page' => $limit,
+                                'orderby'  => 'published_at',
+                                'order'    => 'desc',
+                        );
+                        if ( '' !== $category ) {
+                                $args['category'] = $category;
+                        }
+                        $articles = Nexus_DB::articles( $args );
                 }
-                $articles = Nexus_DB::articles( $args );
 
                 $wrapper_class = ( 'list' === $layout ) ? 'nxa-grid nxa-grid--list' : 'nxa-grid';
 
@@ -680,5 +767,173 @@ final class Nexus_Shortcodes {
                         return '#' . strtolower( $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2] );
                 }
                 return self::FALLBACK_COLOR;
+        }
+
+        /* ========================= Redazioni (v1.1.1) ========================= */
+
+        /**
+         * Risolve il termine redazione da slug o nome (v1.1.1).
+         *
+         * Ordine di ricerca: slug (sanitize_title del valore) e poi nome esatto
+         * cosi' come digitato (il collation del DB e' case-insensitive, quindi
+         * "Sport" matcha anche il nome "Redazione Sport" solo se identico).
+         * Guard: la classe fondamenta e la tassonomia devono esistere,
+         * altrimenti null (degradazione senza fatal, contratto §0.7).
+         *
+         * @param string $value Slug o nome della redazione.
+         * @return WP_Term|null
+         */
+        private static function redazione_term( $value ) {
+                $value = trim( sanitize_text_field( (string) $value ) );
+                if ( '' === $value || ! class_exists( 'Nexus_Redazioni' ) || ! taxonomy_exists( Nexus_Redazioni::TAX ) ) {
+                        return null;
+                }
+
+                $term = get_term_by( 'slug', sanitize_title( $value ), Nexus_Redazioni::TAX );
+                if ( ! $term instanceof WP_Term ) {
+                        $term = get_term_by( 'name', $value, Nexus_Redazioni::TAX );
+                }
+
+                return ( $term instanceof WP_Term ) ? $term : null;
+        }
+
+        /**
+         * Clausola tax_query nativa del ramo redazione (v1.1.1).
+         *
+         * include_children => true: la redazione madre copre anche le
+         * sub-redazioni (Sport include Calcio, Basket e F1), identico alla
+         * semantica delle categorie gerarchiche di WordPress. La clausola e'
+         * restituita singola cosi' puo' essere APPENDATA a un eventuale
+         * tax_query preesistente con relation AND, senza sovrascriverlo.
+         *
+         * @param int $term_id Term ID della redazione.
+         * @return array Clausola pronta per WP_Query.
+         */
+        private static function redazione_tax_clause( $term_id ) {
+                return array(
+                        'taxonomy'         => Nexus_Redazioni::TAX,
+                        'field'            => 'term_id',
+                        'terms'            => absint( $term_id ),
+                        'include_children' => true,
+                );
+        }
+
+        /**
+         * Post ID del ramo redazione: termine e tutti i discendenti (v1.1.1).
+         *
+         * WP_Query nativa con la clausola tax_query include_children; i tipi di
+         * post sono quelli dual-mode del plugin (nativo 'post' piu' il CPT
+         * legacy nexus_article) via Nexus_Native::query_post_types() con guard
+         * class_exists. Solo post pubblicati, cache di term e meta disattivate:
+         * servono solo gli ID per collegare le righe articoli della tabella
+         * Nexus (colonna wp_post_id) ai post WordPress del ramo.
+         *
+         * @param WP_Term $term Termine redazione.
+         * @return array Post ID (int).
+         */
+        private static function redazione_branch_post_ids( $term ) {
+                $term_id = ( $term instanceof WP_Term ) ? absint( $term->term_id ) : 0;
+                if ( $term_id < 1 || ! class_exists( 'Nexus_Redazioni' ) ) {
+                        return array();
+                }
+
+                $post_types = array( 'post', 'nexus_article' );
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ) {
+                        $post_types = Nexus_Native::query_post_types();
+                }
+
+                /*
+                 * Merge attento: la clausola redazione si APPENDA a eventuali
+                 * clausole gia' presenti (qui la query nasce da zero, quindi e'
+                 * l'unica) e con piu' di una clausola l'operatore resta AND:
+                 * mai una sovrascrittura dell'operatore esistente.
+                 */
+                $tax_query = array();
+                $tax_query[] = self::redazione_tax_clause( $term_id );
+                if ( count( $tax_query ) > 1 ) {
+                        $tax_query['relation'] = 'AND';
+                }
+
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => $post_types,
+                                'post_status'            => 'publish',
+                                'fields'                 => 'ids',
+                                'posts_per_page'         => -1,
+                                'no_found_rows'          => true,
+                                'update_post_term_cache' => false,
+                                'update_post_meta_cache' => false,
+                                'tax_query'              => $tax_query,
+                        )
+                );
+
+                return array_values( array_map( 'absint', (array) $query->posts ) );
+        }
+
+        /**
+         * Righe articoli Nexus collegate ai post del ramo redazione (v1.1.1).
+         *
+         * Le righe della tabella articoli Nexus puntano al post WordPress
+         * (nativo o CPT legacy) tramite la colonna wp_post_id: il filtro per
+         * ramo e' quindi un IN sui Post ID del subtree. Query preparata con
+         * wpdb prepare (LIMIT e OFFSET come placeholder), ID assolutizzati e
+         * tabella letta da Nexus_DB::tables(): nessuna tabella nuova.
+         *
+         * @param array $post_ids Post ID del ramo.
+         * @param int   $limit    Numero massimo di righe.
+         * @param int   $offset   Offset di paginazione.
+         * @return array Righe articolo (stesso shape di Nexus_DB::articles()).
+         */
+        private static function redazione_articles( $post_ids, $limit, $offset = 0 ) {
+                global $wpdb;
+
+                $post_ids = array_values( array_filter( array_map( 'absint', (array) $post_ids ) ) );
+                $limit    = max( 1, absint( $limit ) );
+                $offset   = max( 0, absint( $offset ) );
+                if ( empty( $post_ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return array();
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['articles'] ) ) {
+                        return array();
+                }
+
+                $table  = $tables['articles'];
+                $ids_in = implode( ',', $post_ids );
+                $sql    = "SELECT * FROM {$table}"
+                        . " WHERE status = 'published' AND wp_post_id IN ( {$ids_in} )"
+                        . " ORDER BY published_at DESC, id DESC"
+                        . " LIMIT %d OFFSET %d";
+
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql, $limit, $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID assolutizzati, LIMIT e OFFSET via prepare.
+                return is_array( $rows ) ? $rows : array();
+        }
+
+        /**
+         * Conta le righe articoli Nexus collegate ai post del ramo (v1.1.1).
+         *
+         * @param array $post_ids Post ID del ramo.
+         * @return int
+         */
+        private static function redazione_count_articles( $post_ids ) {
+                global $wpdb;
+
+                $post_ids = array_values( array_filter( array_map( 'absint', (array) $post_ids ) ) );
+                if ( empty( $post_ids ) || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return 0;
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['articles'] ) ) {
+                        return 0;
+                }
+
+                $table  = $tables['articles'];
+                $ids_in = implode( ',', $post_ids );
+                $sql    = "SELECT COUNT(*) FROM {$table}"
+                        . " WHERE status = 'published' AND wp_post_id IN ( {$ids_in} )";
+
+                return (int) $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- ID assolutizzati, nessun placeholder.
         }
 }

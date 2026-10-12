@@ -318,6 +318,17 @@ class Nexus_Publisher {
 
                 $post_id = absint( $result );
 
+                // Redazioni (v1.1.1): assegna al post i termini redazione dell'agente
+                // (tassonomia nativa nexus_redazione), best-effort silenzioso — la
+                // pubblicazione non deve mai fallire per la tassonomizzazione.
+                if ( class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'assign_post_terms' ) ) {
+                        $nxa_agent_id = isset( $article->agent_id ) ? absint( $article->agent_id ) : 0;
+                        try {
+                                Nexus_Redazioni::assign_post_terms( (int) $post_id, $nxa_agent_id );
+                        } catch ( \Throwable $e ) { // Ignora: errore non bloccante, come per immagine e SEO.
+                        }
+                }
+
                 // Categoria WP nativa (v1.1.0): prima il term dell'agente, fallback dal nome articolo.
                 if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_term_id' ) ) {
                         $category_id = absint( Nexus_Native::article_term_id( $article ) );

@@ -33,6 +33,10 @@
  *   POST   /nexus/v1/native/migrate                body {limit} opzionale, default 20, clamp 1-100, risposta shape migrate_status (v1.1.0)
  *   GET    /nexus/v1/native/migrate/status         stato migrazione (shape migrate_status) (v1.1.0)
  *   POST   /nexus/v1/native/migrate/reset          uso amministrativo: reset stato e ritorna status (v1.1.0)
+ *   GET    /nexus/v1/redazioni                     albero redazioni {redazioni: [{id, name, slug, parent, depth, agents, count, count_subtree}]} (v1.1.1)
+ *   POST   /nexus/v1/redazioni                     body {name, parent, agent_ids[]} crea, risposta {term_id, agents} (v1.1.1)
+ *   POST   /nexus/v1/redazioni/{id}                body {name, slug, parent, agent_ids} parziali, risposta {ok, term} (v1.1.1)
+ *   DELETE /nexus/v1/redazioni/{id}                risposta {ok, message}: WP riassegna le sub-redazioni alla madre (v1.1.1)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
  *   GET    /nexus/v1/public/articles               args: category, search, page, per_page (max 24)
@@ -808,6 +812,91 @@ class Nexus_Rest {
                                         'methods'             => WP_REST_Server::CREATABLE,
                                         'callback'            => array( __CLASS__, 'rest_native_migrate_reset' ),
                                         'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                /* ---------------- ADMIN: REDAZIONI (v1.1.1) ---------------- */
+
+                // v1.1.1: albero redazioni per la UI admin (lettura) + creazione redazione.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/redazioni',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_redazioni_list' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_redazioni_create' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'name'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'parent'            => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 0,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'agent_ids'         => array(
+                                                        'type'              => 'array',
+                                                        'required'          => false,
+                                                        'default'           => array(),
+                                                        'sanitize_callback' => array( __CLASS__, 'sanitize_redazione_agent_ids' ),
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.1: aggiornamento redazione (nome, slug, madre, agenti) ed eliminazione.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/redazioni/(?P<id>[0-9]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_redazioni_update' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'id'                => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'name'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'slug'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_title',
+                                                ),
+                                                'parent'            => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'agent_ids'         => array(
+                                                        'type'              => 'array',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => array( __CLASS__, 'sanitize_redazione_agent_ids' ),
+                                                ),
+                                        ),
+                                ),
+                                array(
+                                        'methods'             => WP_REST_Server::DELETABLE,
+                                        'callback'            => array( __CLASS__, 'rest_redazioni_delete' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
                                 ),
                         )
                 );
@@ -2688,5 +2777,406 @@ class Nexus_Rest {
                 Nexus_Native::migrate_reset();
                 $status = Nexus_Native::migrate_status();
                 return rest_ensure_response( is_array( $status ) ? $status : array() );
+        }
+
+        /* =========================================================================
+         * CALLBACK — ADMIN: REDAZIONI (v1.1.1)
+         * ======================================================================= */
+
+        /**
+         * Sanitize callback per gli agent ID delle redazioni: delega a
+         * Nexus_Redazioni::sanitize_agent_ids (helper di contratto); se il
+         * modulo non fosse disponibile normalizza in interi positivi senza fatal.
+         *
+         * @param mixed $value Valore grezzo (array o scalare).
+         * @return array
+         */
+        public static function sanitize_redazione_agent_ids( $value ) {
+                if ( class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'sanitize_agent_ids' ) ) {
+                        return Nexus_Redazioni::sanitize_agent_ids( $value );
+                }
+                $ids = is_array( $value ) ? $value : ( null === $value ? array() : array( $value ) );
+                $ids = array_map( 'absint', $ids );
+                $ids = array_filter( $ids, function ( $id ) {
+                        return $id > 0;
+                } );
+                return array_values( array_unique( $ids ) );
+        }
+
+        /**
+         * GET /redazioni — albero delle redazioni per la UI admin (v1.1.1).
+         *
+         * Lista piatta ordinata ad albero: ogni madre è subito seguita dal
+         * suo sottoalbero, tra sorelle vale l'ordine per nome di all_terms().
+         * Ogni riga porta depth per l'indentazione, gli agenti assegnati
+         * risolti {id, name, avatar} via Nexus_DB::agents(), il count nativo
+         * del termine e il count_subtree del ramo completo.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_redazioni_list( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Redazioni' ) || ! method_exists( 'Nexus_Redazioni', 'all_terms' ) ) {
+                        return self::err(
+                                'nexus_rest_redazioni_missing',
+                                __( 'Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $terms      = Nexus_Redazioni::all_terms();
+                $agents_map = self::redazioni_agents_map();
+                $out        = array();
+
+                foreach ( self::redazioni_tree_order( $terms ) as $row ) {
+                        $term = $row['term'];
+                        $tid  = (int) $term->term_id;
+                        $out[] = array(
+                                'id'            => $tid,
+                                'name'          => (string) $term->name,
+                                'slug'          => (string) $term->slug,
+                                'parent'        => absint( $term->parent ),
+                                'depth'         => (int) $row['depth'],
+                                'agents'        => self::redazioni_agents_details( Nexus_Redazioni::agent_ids_for_term( $tid ), $agents_map ),
+                                'count'         => (int) $term->count,
+                                'count_subtree' => (int) Nexus_Redazioni::count_subtree( $tid ),
+                        );
+                }
+
+                return rest_ensure_response( array( 'redazioni' => $out ) );
+        }
+
+        /**
+         * POST /redazioni — crea una redazione (v1.1.1).
+         *
+         * Body: {name, parent, agent_ids[]}. Delega a Nexus_Redazioni::create
+         * (wp_insert_term + assegnazione agenti) e propaga l'errore onesto di
+         * WordPress (termine duplicato, madre inesistente, tassonomia assente).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_redazioni_create( $request ) {
+                if ( ! class_exists( 'Nexus_Redazioni' ) || ! method_exists( 'Nexus_Redazioni', 'create' ) ) {
+                        return self::err(
+                                'nexus_rest_redazioni_missing',
+                                __( 'Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $name = sanitize_text_field( (string) $request->get_param( 'name' ) );
+                if ( '' === $name ) {
+                        return self::err( 'nexus_rest_redazione_name_required', __( 'Il nome della redazione è obbligatorio.', 'nexus-news-ai' ), 400 );
+                }
+
+                $parent    = absint( $request->get_param( 'parent' ) );
+                $agent_ids = Nexus_Redazioni::sanitize_agent_ids( $request->get_param( 'agent_ids' ) );
+
+                $created = Nexus_Redazioni::create( $name, $parent, $agent_ids );
+                if ( is_wp_error( $created ) ) {
+                        return new WP_Error(
+                                $created->get_error_code(),
+                                $created->get_error_message(),
+                                array( 'status' => 400 )
+                        );
+                }
+
+                $response = rest_ensure_response(
+                        array(
+                                'term_id' => (int) ( $created['term_id'] ?? 0 ),
+                                'agents'  => array_values( array_map( 'intval', (array) ( $created['agents'] ?? array() ) ) ),
+                        )
+                );
+                $response->set_status( 201 );
+                return $response;
+        }
+
+        /**
+         * POST /redazioni/{id} — aggiorna una redazione esistente (v1.1.1).
+         *
+         * Body parziale: {name?, slug?, parent?, agent_ids?}. Nome con
+         * sanitize_text_field, slug con sanitize_title solo se fornito,
+         * madre con absint e validazione anti-ciclo: non può essere se stessa
+         * né una propria sub-redazione (via descendant_ids). Se agent_ids è
+         * presente (anche vuoto) sostituisce l'assegnazione via assign_agents.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_redazioni_update( $request ) {
+                if ( ! class_exists( 'Nexus_Redazioni' ) || ! method_exists( 'Nexus_Redazioni', 'descendant_ids' ) ) {
+                        return self::err(
+                                'nexus_rest_redazioni_missing',
+                                __( 'Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $id   = absint( $request->get_param( 'id' ) );
+                $term = get_term( $id, Nexus_Redazioni::TAX );
+                if ( is_wp_error( $term ) || ! $term instanceof WP_Term ) {
+                        return self::err( 'nexus_rest_redazione_not_found', __( 'Redazione non trovata.', 'nexus-news-ai' ), 404 );
+                }
+
+                $args = array();
+
+                if ( null !== $request->get_param( 'name' ) ) {
+                        $name = sanitize_text_field( (string) $request->get_param( 'name' ) );
+                        if ( '' === $name ) {
+                                return self::err( 'nexus_rest_redazione_name_required', __( 'Il nome della redazione non può essere vuoto.', 'nexus-news-ai' ), 400 );
+                        }
+                        $args['name'] = $name;
+                }
+
+                if ( null !== $request->get_param( 'slug' ) ) {
+                        $slug = sanitize_title( (string) $request->get_param( 'slug' ) );
+                        if ( '' !== $slug ) {
+                                $args['slug'] = $slug;
+                        }
+                }
+
+                if ( null !== $request->get_param( 'parent' ) ) {
+                        $parent = absint( $request->get_param( 'parent' ) );
+                        if ( $parent > 0 ) {
+                                if ( $parent === $id ) {
+                                        return self::err( 'nexus_rest_redazione_parent_self', __( 'Una redazione non può essere madre di se stessa.', 'nexus-news-ai' ), 400 );
+                                }
+                                $parent_term = get_term( $parent, Nexus_Redazioni::TAX );
+                                if ( is_wp_error( $parent_term ) || ! $parent_term instanceof WP_Term ) {
+                                        return self::err( 'nexus_rest_redazione_parent_not_found', __( 'Redazione madre non trovata.', 'nexus-news-ai' ), 404 );
+                                }
+                                if ( in_array( $parent, Nexus_Redazioni::descendant_ids( $id ), true ) ) {
+                                        return self::err( 'nexus_rest_redazione_parent_cycle', __( 'La redazione madre scelta è una sub-redazione di questa: lo spostamento creerebbe un ciclo.', 'nexus-news-ai' ), 400 );
+                                }
+                                $args['parent'] = $parent;
+                        } else {
+                                $args['parent'] = 0;
+                        }
+                }
+
+                $agent_ids_param = $request->get_param( 'agent_ids' );
+                $has_agent_ids   = null !== $agent_ids_param;
+
+                if ( empty( $args ) && ! $has_agent_ids ) {
+                        return self::err( 'nexus_rest_redazione_no_fields', __( 'Nessun campo da aggiornare.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( ! empty( $args ) ) {
+                        $updated = wp_update_term( $id, Nexus_Redazioni::TAX, $args );
+                        if ( is_wp_error( $updated ) ) {
+                                return new WP_Error(
+                                        $updated->get_error_code(),
+                                        $updated->get_error_message(),
+                                        array( 'status' => 400 )
+                                );
+                        }
+                }
+
+                if ( $has_agent_ids ) {
+                        Nexus_Redazioni::assign_agents( $id, Nexus_Redazioni::sanitize_agent_ids( $agent_ids_param ) );
+                }
+
+                $fresh = get_term( $id, Nexus_Redazioni::TAX );
+                $view  = ( $fresh instanceof WP_Term ) ? $fresh : $term;
+
+                return rest_ensure_response(
+                        array(
+                                'ok'   => true,
+                                'term' => array(
+                                        'id'     => (int) $view->term_id,
+                                        'name'   => (string) $view->name,
+                                        'slug'   => (string) $view->slug,
+                                        'parent' => absint( $view->parent ),
+                                        'agents' => self::redazioni_agents_details( Nexus_Redazioni::agent_ids_for_term( $id ), self::redazioni_agents_map() ),
+                                ),
+                        )
+                );
+        }
+
+        /**
+         * DELETE /redazioni/{id} — elimina una redazione (v1.1.1).
+         *
+         * wp_delete_term nativo: WordPress riassegna da solo le sub-redazioni
+         * alla redazione madre precedente e gli articoli perdono SOLO questo
+         * termine (le altre assegnazioni restano). Messaggio onesto su cosa
+         * è successo davvero.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_redazioni_delete( $request ) {
+                if ( ! class_exists( 'Nexus_Redazioni' ) ) {
+                        return self::err(
+                                'nexus_rest_redazioni_missing',
+                                __( 'Il modulo redazioni non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $id   = absint( $request->get_param( 'id' ) );
+                $term = get_term( $id, Nexus_Redazioni::TAX );
+                if ( is_wp_error( $term ) || ! $term instanceof WP_Term ) {
+                        return self::err( 'nexus_rest_redazione_not_found', __( 'Redazione non trovata.', 'nexus-news-ai' ), 404 );
+                }
+
+                // Sub-redazioni dirette prima dell'eliminazione, per il messaggio onesto.
+                $children = get_terms(
+                        array(
+                                'taxonomy'   => Nexus_Redazioni::TAX,
+                                'parent'     => $id,
+                                'hide_empty' => false,
+                                'fields'     => 'ids',
+                        )
+                );
+                $children_count = ( is_wp_error( $children ) || ! is_array( $children ) ) ? 0 : count( $children );
+
+                $deleted = wp_delete_term( $id, Nexus_Redazioni::TAX );
+                if ( is_wp_error( $deleted ) ) {
+                        return new WP_Error(
+                                $deleted->get_error_code(),
+                                $deleted->get_error_message(),
+                                array( 'status' => 500 )
+                        );
+                }
+                if ( true !== $deleted ) {
+                        return self::err( 'nexus_rest_redazione_delete_failed', __( 'Eliminazione della redazione non riuscita.', 'nexus-news-ai' ), 500 );
+                }
+
+                if ( $children_count > 0 ) {
+                        $message = sprintf(
+                                /* translators: 1: nome redazione, 2: numero sub-redazioni. */
+                                __( 'Redazione "%1$s" eliminata. Le %2$d sub-redazioni sono state riassegnate da WordPress alla redazione madre precedente (o al primo livello se non esisteva); gli articoli hanno perso solo questo termine e mantengono le altre redazioni assegnate.', 'nexus-news-ai' ),
+                                $term->name,
+                                $children_count
+                        );
+                } else {
+                        $message = sprintf(
+                                /* translators: %s: nome redazione. */
+                                __( 'Redazione "%s" eliminata. Gli articoli hanno perso solo questo termine e mantengono le altre redazioni assegnate.', 'nexus-news-ai' ),
+                                $term->name
+                        );
+                }
+
+                return rest_ensure_response( array( 'ok' => true, 'message' => $message ) );
+        }
+
+        /**
+         * Mappa agent ID → dettagli minimi (id, nome, avatar) con una sola
+         * query via Nexus_DB::agents(). Se il DB non fosse risolvibile la
+         * mappa resta vuota e gli agenti vengono omessi: la lista resta valida.
+         *
+         * @return array
+         */
+        private static function redazioni_agents_map() {
+                $map = array();
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'agents' ) ) {
+                        return $map;
+                }
+                foreach ( Nexus_DB::agents() as $row ) {
+                        $aid         = (int) $row->id;
+                        $map[ $aid ] = array(
+                                'id'     => $aid,
+                                'name'   => (string) $row->name,
+                                'avatar' => (string) $row->avatar,
+                        );
+                }
+                return $map;
+        }
+
+        /**
+         * Dettagli degli agenti assegnati (solo ID realmente esistenti).
+         *
+         * @param array $agent_ids  Agent ID assegnati al termine.
+         * @param array $agents_map Mappa di redazioni_agents_map().
+         * @return array Array {id, name, avatar}.
+         */
+        private static function redazioni_agents_details( $agent_ids, $agents_map ) {
+                $out = array();
+                foreach ( (array) $agent_ids as $agent_id ) {
+                        $agent_id = (int) $agent_id;
+                        if ( isset( $agents_map[ $agent_id ] ) ) {
+                                $out[] = $agents_map[ $agent_id ];
+                        }
+                }
+                return $out;
+        }
+
+        /**
+         * Ordina i termini come albero per la risposta della lista.
+         *
+         * Ordine DFS dalla radice: ogni madre è subito seguita dal suo
+         * sottoalbero, tra sorelle vale l'ordine per nome di all_terms().
+         * La profondità è calcolata risalendo la catena delle madri, con
+         * guardia anti-ciclo su dati pregressi anomali; i termini orfani
+         * (madre inesistente) vanno in coda nell'ordine naturale.
+         *
+         * @param array $terms WP_Term[] da Nexus_Redazioni::all_terms().
+         * @return array Array di coppie {term: WP_Term, depth: int}.
+         */
+        private static function redazioni_tree_order( $terms ) {
+                $by_id = array();
+                foreach ( $terms as $term ) {
+                        $by_id[ (int) $term->term_id ] = $term;
+                }
+
+                $depth_of = array();
+                foreach ( $by_id as $tid => $term ) {
+                        $depth  = 0;
+                        $cursor = absint( $term->parent );
+                        $guard  = array();
+                        while ( $cursor > 0 && isset( $by_id[ $cursor ] ) && ! isset( $guard[ $cursor ] ) ) {
+                                $guard[ $cursor ] = true;
+                                $depth++;
+                                $cursor = absint( $by_id[ $cursor ]->parent );
+                        }
+                        $depth_of[ $tid ] = $depth;
+                }
+
+                $children = array();
+                foreach ( $terms as $term ) {
+                        $parent = absint( $term->parent );
+                        if ( ! isset( $children[ $parent ] ) ) {
+                                $children[ $parent ] = array();
+                        }
+                        $children[ $parent ][] = (int) $term->term_id;
+                }
+
+                $ordered = array();
+                $stack   = array( 0 );
+                $seen    = array();
+                while ( ! empty( $stack ) ) {
+                        $current = array_pop( $stack );
+                        if ( $current > 0 && isset( $by_id[ $current ] ) && ! isset( $seen[ $current ] ) ) {
+                                $seen[ $current ] = true;
+                                $ordered[]        = array(
+                                        'term'  => $by_id[ $current ],
+                                        'depth' => isset( $depth_of[ $current ] ) ? (int) $depth_of[ $current ] : 0,
+                                );
+                        }
+                        if ( empty( $children[ $current ] ) ) {
+                                continue;
+                        }
+                        // Pop consuma dall'ultimo: push inverso per mantenere l'ordine per nome.
+                        foreach ( array_reverse( $children[ $current ] ) as $kid ) {
+                                if ( ! isset( $seen[ $kid ] ) ) {
+                                        $stack[] = $kid;
+                                }
+                        }
+                }
+
+                foreach ( $terms as $term ) {
+                        $tid = (int) $term->term_id;
+                        if ( ! isset( $seen[ $tid ] ) ) {
+                                $ordered[] = array(
+                                        'term'  => $term,
+                                        'depth' => isset( $depth_of[ $tid ] ) ? (int) $depth_of[ $tid ] : 0,
+                                );
+                        }
+                }
+
+                return $ordered;
         }
 }

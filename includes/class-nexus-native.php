@@ -22,6 +22,8 @@
  *     cosi' vecchi CPT e nuovi post nativi convivono senza buchi.
  *  5. TAG NATIVI — derivazione deterministica (nessuna chiamata AI) di 3-5 tag
  *     dal titolo/estratto, per popolare wp_tags come farebbe un redattore.
+ *  6. REDAZIONI (v1.1.1) — durante la migrazione ogni post riceve i termini
+ *     redazione del suo agente (tassonomia nativa nexus_redazione).
  *
  * CONVENZIONI:
  *  - nessun fatal: ogni helpers regge l'assenza delle classi/ funzioni WP;
@@ -473,6 +475,14 @@ class Nexus_Native {
                         if ( is_wp_error( $result ) ) {
                                 $state['errors'][] = sprintf( 'Post #%d: %s', $post_id, sanitize_text_field( $result->get_error_message() ) );
                                 continue; // Riprovera' nel prossimo batch.
+                        }
+
+                        // Redazioni (v1.1.1): il post migrato riceve i termini redazione del
+                        // suo agente (tassonomia nativa nexus_redazione), best-effort silenzioso.
+                        if ( $article && ! empty( $article->agent_id )
+                                && class_exists( 'Nexus_Redazioni' )
+                                && method_exists( 'Nexus_Redazioni', 'assign_post_terms' ) ) {
+                                Nexus_Redazioni::assign_post_terms( $post_id, absint( $article->agent_id ) );
                         }
 
                         $state['done']++;

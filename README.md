@@ -3,11 +3,11 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.0-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.1-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
-**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`).
+**Nexus News AI** è un plugin WordPress che porta nel tuo sito una redazione autonoma: **7 agenti giornalisti AI**, ognuno specializzato in una categoria editoriale, che raccolgono notizie da fonti RSS, le valutano, le riscrivono con l'AI, le sottopongono ad approvazione e le pubblicano su più canali (blog reale, social reali su Telegram/Discord/X/LinkedIn con fallback simulato onesto per i canali non configurati, newsletter via email). Include admin panel completo, magazine frontend con reazioni, **Nexus Wire** (redazione collettiva multi-agente), ping di indicizzazione automatici, cron automatico, REST API e — dalla 1.0.3 — la **redazione intelligente**: modello AI per-agente con modello economico per lo screening, tracking dell'uso AI (token e costo stimato in USD) con budget mensile, fact-check automatico con citazioni, anti-duplicato via hash del titolo e traduzioni AI multi-lingua. Dalla 1.0.4 aggiunge **Scala & Pro**: coda lavori stile Action Scheduler con retry automatico, comando WP-CLI `wp nexus`, blocchi Gutenberg nativi e una pagina Analytics per misurare l'intera redazione. Dalla 1.0.5 la redazione si governa e si apre: pagina **Strumenti** (informazioni di sistema, esporta/importa configurazione JSON), **API pubblica** `nexus-public/v1` con chiave `X-Api-Key` e rate limit, supporto **multisite** con installazione automatica delle tabelle e interfaccia admin **bilingue** italiano/inglese (sperimentale). Dalla 1.0.6 tutta la UI è **chiara e curata**: pannello admin chiaro di default (il tema scuro resta opzionale da Impostazioni → Interfaccia) e frontend pubblico stilizzato dal foglio light editoriale `nexus-public.css`, con empty state e dettagli curati. Dalla 1.0.7 la redazione si comanda al dettaglio (**Impostazioni & Agenti Pro**): Impostazioni riorganizzate in **4 gruppi** con sezioni ad accordion, **modelli AI caricati dal provider** con suggerimenti nei campi, **editor agenti completo** (creare, modificare, clonare), **diagnostica AI** nella pagina Strumenti e fix overflow mobile del pannello. Dalla 1.1.0 la redazione è **tutto nativo**: i contenuti nuovi pubblicano come **post WordPress nativi** (post type `post`), gli agenti firmano i post come **utenti bot** con ruolo `nexus_ai_journalist` (byline e pagina autore reali del tema), le categorie sono **categorie reali** della testata con **tag automatici deterministici**, una **migrazione 1-click** in Strumenti converte i vecchi articoli del CPT e la pubblicazione può passare per lo stato **«In attesa di revisione»** (`pending`). Dalla 1.1.1 la testata si organizza in **redazioni gerarchiche**: una tassonomia WordPress nativa (`nexus_redazione`) con redazioni madri, sub-redazioni annidate e agenti assegnati ai rami (es. Redazione Sport → Calcio, Basket e F1), pagina admin dedicata **Redazioni**, archivi pubblici `/redazione/{slug}/` col subtree incluso, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione` e **capabilities per ramo** per gli editori — tutto WP nativo, zero tabelle nuove.
 
 Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js originale **Nexus News AI**.
 
@@ -31,10 +31,11 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 14. [UI chiara & curata (v1.0.6)](#v106--ui-chiara--curata)
 15. [Impostazioni & Agenti Pro (v1.0.7)](#v107--impostazioni--agenti-pro)
 16. [Tutto nativo (v1.1.0)](#v110--tutto-nativo)
-17. [Installazione](#installazione)
-18. [FAQ tecniche](#faq-tecniche)
-19. [Licenza e crediti](#licenza-e-crediti)
-20. [Changelog](#changelog)
+17. [Redazioni gerarchiche (v1.1.1)](#v111--redazioni-gerarchiche)
+18. [Installazione](#installazione)
+19. [FAQ tecniche](#faq-tecniche)
+20. [Licenza e crediti](#licenza-e-crediti)
+21. [Changelog](#changelog)
 
 ---
 
@@ -72,6 +73,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **UI chiara & curata** (v1.0.6): pannello admin con **tema chiaro di default** e tema scuro opzionale (`admin_theme` in Impostazioni → Interfaccia); frontend pubblico stilizzato dal foglio **light editoriale** `public/css/nexus-public.css` (caricato solo dove shortcode/blocchi Nexus renderizzano): card articoli con griglia responsive 1/2/3 colonne, form iscrizione curato, tipografia di lettura sulla pagina articolo, empty state e dettagli curati.
 - **Impostazioni & Agenti Pro** (v1.0.7): Impostazioni riorganizzate in **4 gruppi** (Pipeline editoriale, Intelligenza artificiale, Pubblicazione & distribuzione, Sito & sistema) con sezioni ad accordion e stato aperto/chiuso ricordato nel browser; **modelli AI auto-load** dal provider (endpoint compatibile OpenAI `{base_url}/models`) con lista suggerita nei campi modello (anche nell'editor agenti) e cache 12 ore; **editor agenti completo** (creare nuovi agenti, modificare tutti i campi, clonare — il clone nasce in pausa con categoria resa univoca); **diagnostica AI** in Strumenti (la chiave non viene mai mostrata) e **fix overflow mobile** (griglia agenti fluida, tabelle scrollabili, toolbar a capo, input full-width).
 - **Tutto nativo** (v1.1.0): gli articoli nuovi pubblicano come **post nativi** (`post`, in home/archivio/feed del tema) invece che sul CPT `nexus_article`; ogni agente diventa un **utente bot** con ruolo `nexus_ai_journalist` (sola capability `read`, niente wp-admin) e firma i post con **byline e pagina autore reali**; la categoria dell'agente è una **categoria WP reale** (mappata su `wp_terms`) e gli articoli ricevono **tag automatici deterministici** (3-5 tag da titolo e riassunto, nessuna chiamata AI); **migrazione 1-click** in Strumenti con barra di progresso batched per convertire i vecchi articoli CPT; nuovo stato `pending` («In attesa di revisione») per `post_status`; nuove rotte REST admin `GET /wp/categories`, `POST /native/migrate`, `GET /native/migrate/status`, `POST /native/migrate/reset`. Le tabelle Nexus restano per l'operativo (coda, costi, log, iscritti).
+- **Redazioni gerarchiche** (v1.1.1): ogni testata può avere più **redazioni** contemporanee con **sub-redazioni annidate** come le categorie WP (es. Redazione Sport → Calcio, Basket, F1) e gli **agenti assegnati ai termini** (term meta `_nexus_agents`); tassonomia nativa `nexus_redazione` con archivi pubblici `/redazione/{slug}/` che includono il subtree, pagina admin **Redazioni** con albero gerarchico, colonna e filtro nativi nella lista Articoli, shortcode e API pubblica con attributo `redazione`, **capabilities per ramo** (profilo utente con guardie: solo `manage_options` assegna la redazione, l'editore scoped vede solo il suo ramo), migrazione che assegna le redazioni dal suo agente, REST nativa `wp/v2/redazioni` + 4 rotte admin. Zero tabelle nuove.
 - **Zero dipendenze da compilare**: nessun build step, nessun framework, solo PHP + JS/CSS vanilla.
 - **i18n**: text domain `nexus-news-ai`, file `.pot` in `languages/`.
 - **Disinstallazione pulita**: `uninstall.php` rimuove tabelle (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs`, `wp_nexus_translations`), opzioni, transients, eventi cron (`nexus_weekly_digest`, `nexus_ping_article`) e i post WordPress reali `nexus_article` con i loro meta `_nexus_*`.
@@ -114,9 +116,11 @@ nexus-news-ai/
 │   ├── class-nexus-rss.php        # Raccolta RSS: fetch feed, parse, cache transients nexus_rss_*
 │   ├── class-nexus-ai-engine.php  # Client AI OpenRouter-compatible: chat/completions, prompt editoriali IT, JSON repair, tracking uso AI (token/costo stimato) e budget mensile, fact-check, estimate_cost (v1.0.3)
 │   ├── class-nexus-pipeline.php   # Le 5 fasi editoriali: collect → evaluate → rewrite → approve → publish
-│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress (post NATIVI dalla v1.1.0, CPT nexus_article nelle versioni precedenti) + fallback legacy + social reali/simulati, log in publish_logs
+│   ├── class-nexus-publisher.php  # Pubblicazione: post WordPress (post NATIVI dalla v1.1.0, CPT nexus_article nelle versioni precedenti) + fallback legacy + social reali/simulati, log in publish_logs, assegnazione termini redazione dell'agente (v1.1.1)
 │   ├── class-nexus-cpt.php        # v1.0.1 — CPT nexus_article: registrazione post type, tassonomie native (categorie/tag), rewrite /nexus/, template single, meta box «Nexus» (dalla v1.1.0 resta per i permalink legacy)
-│   ├── class-nexus-native.php     # v1.1.0 — Nexus_Native: utenti bot degli agenti (ruolo nexus_ai_journalist), categorie native (term_id), tag deterministici, migrazione 1-click CPT → post nativi, letture dual-mode
+│   ├── class-nexus-native.php     # v1.1.0 — Nexus_Native: utenti bot degli agenti (ruolo nexus_ai_journalist), categorie native (term_id), tag deterministici, migrazione 1-click CPT → post nativi (dalla v1.1.1 assegna anche i termini redazione dell'agente), letture dual-mode
+│   ├── class-nexus-redazioni.php  # v1.1.1 — Nexus_Redazioni: tassonomia gerarchica nexus_redazione (parent/child come le categorie), term meta _nexus_agents, albero/agenti/contatori per ramo, filtro articoli in lista admin
+│   ├── class-nexus-caps.php       # v1.1.1 — Nexus_Caps: campo profilo «Redazione assegnata» e restrizioni per ramo (map_meta_cap + parse_query, guardie manage_options)
 │   ├── class-nexus-image.php      # v1.0.1 — Immagini in evidenza: generazione AI con fallback, sideload in media library, set_post_thumbnail
 │   ├── class-nexus-seo.php        # v1.0.1 — SEO: meta AI, Open Graph, JSON-LD NewsArticle, compatibilità Yoast/RankMath, title tag
 │   ├── class-nexus-social-telegram.php # v1.0.2 — Telegram: Bot API sendMessage/sendPhoto con credenziali dai settings
@@ -133,7 +137,7 @@ nexus-news-ai/
 │   ├── class-nexus-i18n.php            # v1.0.5 — Admin bilingue IT/EN: Nexus_I18n (current_lang, translate_html sulle viste, enqueue di i18n.js)
 │   ├── class-nexus-i18n-dict.php       # v1.0.5 — Dizionario i18n base: nexus_i18n_default_dict() con le voci IT=>EN dell'admin
 │   ├── class-nexus-i18n-dict-extra.php # v1.0.5 — Dizionario i18n esteso: nexus_i18n_extra_dict() con voci aggiuntive (caricato da Nexus_I18n)
-│   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS
+│   ├── class-nexus-public-api.php      # v1.0.5 — API pubblica nexus-public/v1: articoli/agenti/stats con X-Api-Key, rate limit 120/min e CORS, parametro redazione (v1.1.1)
 │   ├── class-nexus-multisite.php       # v1.0.5 — Multisite: installazione tabelle sui nuovi siti (wp_initialize_site), status(), install_all()
 │   ├── class-nexus-cron.php       # WP-Cron: scheduling nexus_cron_tick, esecuzione fasi automatiche
 │   ├── class-nexus-rest.php       # REST API nexus/v1: route, permessi, schema args
@@ -143,8 +147,9 @@ nexus-news-ai/
 │   ├── class-nexus-admin.php      # Menu admin, enqueue assets, handler, gateway alle viste
 │   ├── css/                       # nexus-admin.css: stili delle pagine admin (tema chiaro di default, dark opzionale — v1.0.6)
 │   ├── views/                     # Template HTML delle pagine admin
-│   │   ├── dashboard.php          # Dashboard statistiche (con contatori «Contenuti nativi» — v1.1.0)
-│   │   ├── agents.php             # Gestione agenti
+│   │   ├── dashboard.php          # Dashboard statistiche (contatori «Contenuti nativi» — v1.1.0; card «Redazioni» — v1.1.1)
+│   │   ├── agents.php             # Gestione agenti (+ colonna «Redazioni» con chip agenti assegnati — v1.1.1)
+│   │   ├── redazioni.php          # v1.1.1 — Redazioni: form redazione madre/sub (nome, slug, madre, agenti) + albero gerarchico con contatori e archivio nativo
 │   │   ├── queue.php              # Coda di approvazione
 │   │   ├── jobs.php               # v1.0.4 — Coda Lavori: stat, filtri stato, riprova/annulla, «Processa ora», pulizia, auto-refresh 15s
 │   │   ├── activity.php           # Feed attività
@@ -155,7 +160,7 @@ nexus-news-ai/
 │   └── index.php
 │
 ├── public/                        # Front-end magazine
-│   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue
+│   ├── class-nexus-shortcodes.php # [nexus_magazine], [nexus_articles], [nexus_wire] + render + enqueue, attributo redazione (v1.1.1)
 │   ├── css/                       # nexus-public.css: stili light editoriali del frontend (token --nxp-*, classi nxa-*/nexus-* — v1.0.6)
 │   ├── js/                        # nexus-public.js: interazioni (modal, reazioni, categorie) via REST + nonce wp_rest
 │   └── index.php
@@ -303,6 +308,10 @@ Namespace REST: **`/wp-json/nexus/v1/`** (registrate in `class-nexus-rest.php`).
 | POST | `/native/migrate` | Migrazione contenuti nativi (v1.1.0): converte fino a `limit` post CPT `nexus_article` in post nativi — body `{ "limit": 20 }` (1-100, default 20) → stato completo `{ remaining, done, total, agents, finished, errors }` |
 | GET | `/native/migrate/status` | Stato corrente della migrazione (v1.1.0): stesso shape, senza eseguire batch |
 | POST | `/native/migrate/reset` | Ripristina lo stato della migrazione (v1.1.0, uso amministrativo) e ritorna lo stato corrente |
+| GET | `/redazioni` | Redazioni gerarchiche (v1.1.1): lista piatta ordinata ad albero (madri prima, per nome dentro ogni livello) → `{ "redazioni": [ { "id", "name", "slug", "parent", "depth", "agents": [ { "id", "name", "avatar" } ], "count", "count_subtree" } ] }`, dove `count` è il numero di articoli direttamente assegnati al termine e `count_subtree` gli articoli del ramo completo |
+| POST | `/redazioni` | Crea una redazione (v1.1.1): body `{ "name", "parent", "agent_ids": [] }` (`parent` = term ID della madre, `0` = redazione di primo livello) → `{ "term_id", "agents" }` o errore onesto |
+| POST | `/redazioni/{id}` | Aggiorna una redazione (v1.1.1): body parziale `{ "name"?, "slug"?, "parent"?, "agent_ids"? }` (solo i campi presenti; `parent` non può essere se stesso né un proprio discendente) → `{ "ok": true, "term": { "id", "name", "slug", "parent", "agents" } }` |
+| DELETE | `/redazioni/{id}` | Elimina una redazione (v1.1.1): `wp_delete_term` e WordPress riparenta da solo le sub-redazioni alla madre → `{ "ok": true, "message": "…" }` |
 
 ### Route pubbliche
 
@@ -724,6 +733,83 @@ Le nuove rotte REST admin sono documentate nella tabella [Route admin](#route-ad
 
 ---
 
+## v1.1.1 — Redazioni gerarchiche
+
+Dalla v1.1.1 la testata si organizza in **redazioni gerarchiche** come una redazione vera: ogni testata può avere più redazioni contemporanee e ogni redazione può avere sub-redazioni annidate, con gli **agenti assegnati a ogni ramo**. La risposta architetturale è tutta WordPress nativo: una **tassonomia gerarchica** `nexus_redazione` (parent/child esattamente come le categorie) + term meta `_nexus_agents` con gli agent ID assegnati a ogni termine. **Zero tabelle nuove**: usiamo `wp_terms`, `wp_term_taxonomy`, i meta dei termini, gli archivi pubblici, la REST nativa e la colonna automatica della lista Articoli di WordPress.
+
+### Il modello: testata → redazione → sub-redazioni → agenti
+
+- La **testata** (il sito WordPress) definisce l'albero: redazioni madri, sub-redazioni a qualunque profondità e agenti assegnati dove servono — la madre può avere agenti propri e ogni sub-redazione i suoi.
+- Esempio di Anton (richiesta di prodotto per la 1.1.1):
+
+  ```
+  Redazione Sport            (redazione madre)
+    ├── Redazione Calcio     (3 agenti assegnati)
+    ├── Redazione Basket     (2 agenti)
+    └── Redazione F1         (1 agente)
+  ```
+
+- **Ereditarietà in lettura, non in scrittura**: ogni assegnazione di agente sta sul termine dove la mette l'editore; per il ramo completo si usa `Nexus_Redazioni::agents_for_term()`, che somma termine + discendenti (Sport = Calcio + Basket + F1 uniti).
+
+### Tassonomia WordPress nativa: archivi `/redazione/{slug}/`
+
+- La tassonomia `nexus_redazione` è **gerarchica, pubblica e REST-native**: esposta su `wp/v2/redazioni` (term meta `_nexus_agents` incluso, con schema) e creata automaticamente all'attivazione/aggiornamento del plugin — nessuna migrazione di schema.
+- Gli archivi pubblici **`/redazione/{slug}/`** sono quelli del tema attivo (rewrite nativo, `with_front` disattivato, slug gerarchico): l'archivio di una redazione madre mostra **anche gli articoli delle sub-redazioni** (`include_children`, identico al comportamento delle categorie) — l'archivio di Sport contiene anche Calcio, Basket e F1.
+- Le redazioni si vedono e si gestiscono anche dal menu **Redazioni** di WordPress e dall'editor a blocchi (quick edit incluso), come le categorie.
+
+### Assegnazione agenti ai termini (term meta)
+
+- Ogni termine redazione porta il term meta **`_nexus_agents`**: un array di agent ID (type `array`, `show_in_rest` con schema, sanitizzazione dedicata che accetta solo interi positivi unici).
+- Quando un agente **pubblica**, il post viene tassonomizzato **automaticamente ai termini del suo agente** (`Nexus_Redazioni::assign_post_terms()`): se l'agente è assegnato a Calcio (figlia di Sport), l'articolo finisce in Calcio ed è coperto anche da Sport per archivi e gerarchia.
+- Gli helper della classe `Nexus_Redazioni` (`all_terms`, `agents_for_term`, `descendant_ids`, `count_subtree`, `assign_agents`, `create`, …) sono l'API del modulo: chi vuole estendere non tocca il database.
+
+### Colonne e filtri nativi nella lista Articoli di WordPress
+
+- **Colonna automatica «Redazioni»** (`show_admin_column`) nella lista Articoli e nella lista legacy del CPT `nexus_article`: a colpo d'occhio si vede a quale redazione appartiene ogni articolo.
+- **Dropdown nativo «Tutte le redazioni»** sopra la lista (filtro gerarchico indentato con i trattini, come le categorie): selezionando una redazione si filtrano gli articoli del **ramo completo** (subtree incluso).
+- L'assegnazione si corregge a mano dall'editor a blocchi o dalla quick edit: è la tassonomia standard di WordPress.
+
+### Shortcode e API pubblica con attributo `redazione`
+
+- **`[nexus_articles redazione="sport"]`** e **`[nexus_magazine redazione="sport"]`**: il valore accetta slug o nome della redazione (risolto prima per slug, poi per nome) e filtra la lista sul **ramo completo** della redazione — semantica nativa `include_children`: `redazione="sport"` include Calcio, Basket e F1. Se la redazione non esiste, messaggio onesto nel markup («Redazione non trovata: …», nessun contenuto inventato).
+- **Nota di coerenza sul magazine**: con il filtro `redazione` attivo `[nexus_magazine]` non stampa la barra categorie né il bottone «Carica altri» — il refetch client-side passa dalla REST pubblica senza quel parametro e mostrerebbe articoli fuori dal ramo; senza l'attributo il comportamento resta identico a prima.
+- **API pubblica** `nexus-public/v1`: `GET /articles` accetta il parametro **`redazione`** (slug o nome, sanitizzato con `sanitize_title`) con la stessa semantica di subtree; con redazione valida la risposta porta il metadato `"redazione": { "id", "name", "slug" }`, con redazione inesistente la lista è vuota e `"redazione"` è `null`.
+
+### Capabilities per ramo: editori scoped alla loro redazione
+
+- Nel **profilo utente** compare il campo **«Redazione assegnata»** (select indentata per profondità, voce «(tutte — nessuna restrizione)»): la user meta `nexus_redazione_id` lega l'utente a un ramo.
+- **Guardie**: il campo è visibile e salvabile **solo da chi ha `manage_options`** (con nonce dedicato) — un editore non può togliersi da solo la restrizione; gli amministratori non vengono mai limitati; le altre capability non vengono toccate.
+- Un utente con redazione assegnata **edita ed elimina solo gli articoli del suo ramo**: il filtro `map_meta_cap` nega `edit_post`/`delete_post` per i post (nativi o CPT legacy) i cui termini redazione non intersecano il subtree dell'utente, e la lista Articoli viene forzata allo stesso subtree. Esempio: l'editore sportivo assegnato a Redazione Sport edita solo gli articoli di Sport, Calcio, Basket e F1 — gli articoli fuori dal suo ramo non li vede.
+- L'albero delle redazioni si governa dalla pagina admin **Redazioni** (e dalle 4 rotte REST admin, permission `manage_options`):
+
+  | Voce del menu `Nexus News` | Vista | Novità v1.1.1 |
+  |---|---|---|
+  | Dashboard | `dashboard.php` | con nuova card «Redazioni» (v1.1.1) |
+  | Agenti | `agents.php` | con nuova colonna «Redazioni» (chip degli agenti assegnati, v1.1.1) |
+  | **Redazioni** (v1.1.1) | `redazioni.php` | **nuova voce**, tra Agenti e Coda Approvazioni |
+  | Coda Approvazioni | `queue.php` | |
+  | Coda Lavori | `jobs.php` | |
+  | Attività | `activity.php` | |
+  | Nexus Wire | `wire.php` | |
+  | Analytics | `analytics.php` | |
+  | Strumenti | `tools.php` | |
+  | Impostazioni | `settings.php` | |
+
+  La pagina mostra le stat aggregate (numero di redazioni, agenti assegnati, articoli coperti), il form di creazione/modifica (nome, slug opzionale, redazione madre, checkbox degli agenti con avatar) e l'**albero gerarchico** con contatori di articoli per termine, chips degli agenti assegnati e apertura dell'archivio nativo `/redazione/{slug}/` in una nuova scheda; l'eliminazione riparenta le sub-redazioni alla madre (comportamento nativo `wp_delete_term`).
+
+### Migrazione: ogni articolo eredita la redazione del suo agente
+
+- La **migrazione 1-click** in Strumenti (v1.1.0) fa ora anche questo: convertendo ogni post CPT in post nativo, se l'articolo di origine ha un `agent_id` vengono assegnati al post **i termini redazione dell'agente** (assegnazione best-effort: un errore di tassonomizzazione non fa mai fallire la pubblicazione né la migrazione).
+- Anche la **pipeline normale** assegna le redazioni alla pubblicazione, per post nativi e CPT legacy: le redazioni si popolano da sole man mano che gli agenti lavorano, senza configurazione extra.
+
+### Multisite: la testata è il sito
+
+- Come dalla v1.0.5, su **multisite** ogni sito della rete ha le sue redazioni: le tassonomie WP sono **per-sito**, quindi testata = sito e ogni testata costruisce il proprio albero (madri, sub-redazioni, agenti e permessi per ramo) indipendentemente dagli altri.
+
+Le 4 rotte REST admin sono documentate nella tabella [Route admin](#route-admin-manage_options); la tassonomia è esposta anche nella REST nativa di WordPress su `wp/v2/redazioni`.
+
+---
+
 ## Installazione
 
 1. Copia la cartella `nexus-news-ai` in `wp-content/plugins/`.
@@ -776,6 +862,16 @@ Porting WordPress dell'app Next.js originale *Nexus News AI* di byebis: stesso s
 ---
 
 ## Changelog
+
+### 1.1.1 — «Redazioni gerarchiche»
+
+- **Tassonomia nativa `nexus_redazione`**: redazioni gerarchiche parent/child esattamente come le categorie (Redazione Sport → Calcio, Basket, F1), archivi pubblici `/redazione/{slug}/` col tema attivo con subtree incluso (`include_children`), REST nativa `wp/v2/redazioni` con term meta esposto e colonna automatica nella lista Articoli; zero tabelle nuove, nessuna migrazione di schema.
+- **Agenti assegnati ai termini**: term meta `_nexus_agents` (array di agent ID); alla pubblicazione il post riceve automaticamente i termini redazione del suo agente — in pipeline (post nativi e CPT legacy) e durante la migrazione 1-click.
+- **Pagina admin «Redazioni»**: nuova voce nel menu tra Agenti e Coda Approvazioni, con stat aggregate, form madre/sub-redazioni (nome, slug, madre, checkbox agenti), albero gerarchico con chips agenti, contatori per ramo e apertura dell'archivio nativo.
+- **4 nuove rotte REST admin**: `GET /redazioni` (lista ad albero con agenti, count e count_subtree), `POST /redazioni` (creazione), `POST /redazioni/{id}` (aggiornamento, con validazione parent contro cicli), `DELETE /redazioni/{id}` (eliminazione con riparenting nativo delle sub-redazioni); tutte con permission `manage_options`.
+- **Colonne e filtri nativi in Articoli**: colonna automatica «Redazioni» e dropdown gerarchico «Tutte le redazioni» con filtro per ramo completo (post nativi e CPT `nexus_article` legacy), correggibile da editor a blocchi e quick edit.
+- **Shortcode e API pubblica con attributo `redazione`**: `[nexus_articles redazione="sport"]` e `[nexus_magazine redazione="…"]` (slug o nome, subtree incluso) e parametro `redazione` sugli endpoint di listing di `nexus-public/v1`.
+- **Capabilities per ramo**: campo profilo «Redazione assegnata» (user meta `nexus_redazione_id`) visibile e salvabile solo da `manage_options`; un editore scoped edita solo gli articoli del suo ramo (`map_meta_cap` + filtro lista Articoli); su multisite ogni sito (testata) ha le sue redazioni.
 
 ### 1.1.0 — «Tutto nativo»
 

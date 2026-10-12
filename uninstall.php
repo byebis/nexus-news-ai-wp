@@ -36,6 +36,13 @@
  * v1.1.0 sono articoli a tutti gli effetti del sito (autore bot, categorie
  * native) — disinstallare il plugin non deve cancellare la testata.
  *
+ * Dalla v1.1.1 "Redazioni gerarchiche": rimuove lo user meta
+ * nexus_redazione_id (assegnazione utente→redazione). I TERMINI della
+ * tassonomia nexus_redazione (redazioni e sub-redazioni) e il loro term
+ * meta _nexus_agents NON vengono cancellati: sono struttura WP nativa,
+ * come categorie e tag — sopravvivono al plugin esattamente come i post.
+ * Reinstallare il plugin ritrova le redazioni al loro posto.
+ *
  * @package Nexus_News_AI
  */
 
@@ -191,6 +198,20 @@ function nexus_uninstall_drop_tables_direct() {
         }
 }
 
+/**
+ * Rimuove lo user meta nexus_redazione_id (v1.1.1).
+ *
+ * L'assegnazione utente→redazione (restrict per ramo) è legata al plugin:
+ * disinstallando, ogni utente torna a pieni permessi secondo il proprio
+ * ruolo WP. I termini redazione restano (struttura nativa, vedi header).
+ *
+ * @return void
+ */
+function nexus_uninstall_delete_user_meta() {
+        global $wpdb;
+        $wpdb->delete( $wpdb->usermeta, array( 'meta_key' => 'nexus_redazione_id' ), array( '%s' ) );
+}
+
 /* ---------------- 0) Post WordPress reali (CPT nexus_article, v1.0.1) ---------------- */
 
 nexus_uninstall_delete_wp_posts();
@@ -198,6 +219,10 @@ nexus_uninstall_delete_wp_posts();
 /* ---------------- 0b) Utenti bot agenti + ruolo + cache modelli (v1.1.0) ---------------- */
 
 nexus_uninstall_delete_bot_users();
+
+/* ---------------- 0c) User meta redazione utente (v1.1.1) ---------------- */
+
+nexus_uninstall_delete_user_meta();
 
 /* ---------------- 1) Eventi cron (newsletter + ping, v1.0.2) ---------------- */
 

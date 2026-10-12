@@ -14,6 +14,7 @@
  *   Nexus News (top-level, slug nexus-news)
  *     ├── Dashboard          slug nexus-news      → admin/views/dashboard.php
  *     ├── Agenti             slug nexus-agents    → admin/views/agents.php
+ *     ├── Redazioni          slug nexus-redazioni → admin/views/redazioni.php
  *     ├── Coda Approvazioni  slug nexus-queue     → admin/views/queue.php
  *     ├── Coda Lavori        slug nexus-jobs      → admin/views/jobs.php
  *     ├── Attività           slug nexus-activity  → admin/views/activity.php
@@ -86,6 +87,7 @@ class Nexus_Admin {
                 return array(
                         'nexus-news'      => 'dashboard',
                         'nexus-agents'    => 'agents',
+                        'nexus-redazioni' => 'redazioni',
                         'nexus-queue'     => 'queue',
                         'nexus-jobs'      => 'jobs',
                         'nexus-activity'  => 'activity',
@@ -115,6 +117,7 @@ class Nexus_Admin {
                 $submenus = array(
                         'nexus-news'      => __( 'Dashboard', 'nexus-news-ai' ),
                         'nexus-agents'    => __( 'Agenti', 'nexus-news-ai' ),
+                        'nexus-redazioni' => __( 'Redazioni', 'nexus-news-ai' ),
                         'nexus-queue'     => __( 'Coda Approvazioni', 'nexus-news-ai' ),
                         'nexus-jobs'      => __( 'Coda Lavori', 'nexus-news-ai' ),
                         'nexus-activity'  => __( 'Attività', 'nexus-news-ai' ),

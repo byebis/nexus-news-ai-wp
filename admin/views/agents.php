@@ -88,6 +88,23 @@
  * .nxa-agent-wp-author) sono generati da admin.js (T-03) dentro
  * #nxa-agents-grid e NON sono nel markup di questa vista.
  *
+ * =====================================================================
+ * v1.1.1 — GANCIO REDAZIONI (CONTRATTO-v1.1.1.md §2 T-01)
+ * =====================================================================
+ *
+ * Ogni riga agente espone il gancio della colonna "Redazioni": un
+ * elemento con class nxa-agent-redazioni e data-agent-id che admin.js
+ * (T-03) riempie con le chips delle redazioni dell'agente (dalla risposta
+ * GET nexus/v1/redazioni), oppure col testo "—" se l'agente non è
+ * assegnato a nessuna redazione.
+ *
+ * Questa vista NON ha una tabella con thead (la griglia live è a card
+ * generate da admin.js): il gancio statico sta nella card del fallback
+ * noscript, subito dopo il badge di categoria; per le card generate da
+ * JS admin.js aggiunge lo stesso elemento (stessa classe e stesso data
+ * attributo) nel template delle righe nuove, come previsto dal
+ * contratto. Il placeholder statico è "—" escaped.
+ *
  * @package Nexus_News_AI
  */
 
@@ -188,6 +205,8 @@ $nxa_agent_status_labels = array(
                                                 <?php endif; ?>
                                                 <div class="nxa-agent-meta">
                                                         <span class="nxa-badge nxa-agent-cat"><?php echo esc_html( $nxa_agent->category ); ?></span>
+                                                        <span class="nxa-agent-redazioni-label"><?php esc_html_e( 'Redazioni:', 'nexus-news-ai' ); ?></span>
+                                                        <span class="nxa-agent-redazioni" data-agent-id="<?php echo esc_attr( $nxa_agent->id ); ?>"><?php echo esc_html( '—' ); ?></span>
                                                         <span class="nxa-badge nxa-agent-status is-<?php echo esc_attr( $nxa_status ); ?>">
                                                                 <?php
                                                                 echo esc_html(
