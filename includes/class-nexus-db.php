@@ -587,48 +587,29 @@ class Nexus_DB {
         }
 
         /**
-         * Seed dei 7 agenti giornalisti (solo se tabella vuota).
+         * Seed automatico degli agenti — NO-OP dalla v1.1.11 (BC conservata).
          *
-         * @return int numero agenti inseriti
+         * Fino alla 1.1.10.x questo metodo inseriva i 7 agenti giornalisti
+         * predefiniti SOLO se la tabella era vuota (chiamato da install()).
+         * Dalla v1.1.11 il proprietario ha richiesto di partire da ZERO agenti:
+         * una installazione nuova nasce con la redazione vuota e la scelta
+         * passa dal wizard di onboarding con preset one-click
+         * (admin/views/onboarding-wizard.php + sezione v1.1.11 di admin.js),
+         * oppure dalla barra "Creazione rapida" e dal modal editor.
+         *
+         * Compatibilità:
+         *  - il metodo resta (stessa firma, stesso tipo di ritorno) perché
+         *    install() e codice terzo possono continuare a chiamarlo;
+         *  - ritorna sempre 0 (zero agenti inseriti), così ogni contatore
+         *    sul valore di ritorno resta coerente;
+         *  - le installazioni esistenti NON vengono toccate: il vecchio seed
+         *    girava solo su tabella vuota, quindi gli agenti già creati
+         *    restano esattamente dove sono.
+         *
+         * @return int numero agenti inseriti (sempre 0).
          */
         public static function seed_agents() {
-                global $wpdb;
-                $table = self::tables()['agents'];
-                if ( (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ) > 0 ) {
-                        return 0;
-                }
-                $now  = current_time( 'mysql' );
-                $aquo = "\u{2019}"; // apostrofo tipografico
-                $seed = array(
-                        array( 'TechBot',      '🤖', 'Tecnologia', 'Analitico e orientato all' . $aquo . 'impatto pratico', 'Agente AI specializzato in tecnologia, AI, gadget e innovazione.', 'active', 'Analitico e orientato all' . $aquo . 'impatto pratico per lettori tech-savvy' ),
-                        array( 'PolicyWatch',  '🏛️', 'Politica',   'Equilibrato con contesto geopolitico',           'Agente AI che copre politica italiana ed estera con contesto storico.', 'active', 'Equilibrato e oggettivo con contesto storico e geopolitico' ),
-                        array( 'MarketPulse',  '📈', 'Economia',   'Rigoroso ma accessibile',                        'Agente AI su mercati, imprese e finanza personale.', 'active', 'Rigoroso ma accessibile con dati concreti e implicazioni per investitori' ),
-                        array( 'SciExplorer',  '🔬', 'Scienza',    'Divulgativo ma preciso',                         'Agente AI su ricerca, spazio, ambiente e scoperte scientifiche.', 'active', 'Divulgativo ma preciso, con spiegazioni chiare per un pubblico colto' ),
-                        array( 'SportArena',   '⚽', 'Sport',      'Emozionante e narrativo',                        'Agente AI su calcio, sport nazionali e internazionali.', 'active', 'Emozionante e narrativo con statistiche e analisi tattiche' ),
-                        array( 'CultureHub',   '🎭', 'Cultura',    'Elegante e riflessivo',                          'Agente AI su cinema, libri, musica e eventi culturali.', 'active', 'Elegante e riflessivo con riferimenti storici e artistici' ),
-                        array( 'HealthDesk',   '🩺', 'Salute',     'Rassicurante e basato su evidenze',              'Agente AI su salute, benessere e medicina basata su evidenze.', 'active', 'Rassicurante e basato su evidenze scientifiche con consigli pratici' ),
-                );
-                $n = 0;
-                foreach ( $seed as $row ) {
-                        $ins = $wpdb->insert(
-                                $table,
-                                array(
-                                        'name'        => $row[0],
-                                        'avatar'      => $row[1],
-                                        'category'    => $row[2],
-                                        'description' => $row[4],
-                                        'status'      => $row[5],
-                                        'personality' => $row[6],
-                                        'created_at'  => $now,
-                                        'updated_at'  => $now,
-                                ),
-                                array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
-                        );
-                        if ( $ins ) {
-                                $n++;
-                        }
-                }
-                return $n;
+                return 0;
         }
 
         /* ============ AGENTS ============ */

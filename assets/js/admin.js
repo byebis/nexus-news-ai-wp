@@ -28,6 +28,7 @@
  * v1.1.10 (F2b/WP11): sub-sezione "Provider personalizzati" in Impostazioni AI — CRUD REST /ai/custom-providers (chiave MAI in chiaro: solo has_key), preset 1-click Together/Fireworks/Perplexity/Cerebras/LM Studio/vLLM, delete con conferma INLINE in riga; i bottoni Test delle righe riusano il wizard WP10 (.nxa-prov-test → POST /ai/test/cust_{id}).
  * v1.1.10 (WP4/C1): modal agente — sezione "Strumenti personali (opzionali)": provider ricerca per-agente (#nxa-agent-search-provider, '' = globale, senza "none"), chiave search_key (password: inviata ma non persistente in questa wave, la scarta la whitelist REST — patch wave 4) e server MCP personali (#nxa-agent-mcp-servers, cascata con i globali: vince l'agente). Prefill al load con fallback vuoto client-side (serialize_agent non espone ancora i campi: wave 4); serializzazione search_provider/search_key/mcp_servers_text nei POST/PUT /agents.
  * v1.1.11 (R5): guardia fetch catalogo modelli — toggle models_fetch_enabled serializzato 0/1 (blocco providerFlags), flag onesti del server (fetch_disabled/stale) propagati dal resolve di fetchProviderModels, wrapper in coda al file che trasforma "fetch disattivato + nessuna cache" in un errore onesto (messaggio rosso nel picker e toast sul "Carica modelli") e status con suffissi "(fetch disattivato)" / "(cache scaduta…)".
+ * v1.1.11 (R3): wizard di onboarding "Crea la tua redazione" (modal #nxa-onboarding, partial admin/views/onboarding-wizard.php incluso da agents.php): con 0 agenti la pagina Agenti apre il wizard al primo render (una volta per vista) e l'empty state porta il bottone "Apri il wizard"; pacchetti preset one-click (1/3/5 agenti o 7+capo) eseguiti come sequenza di POST /agents con progresso e riepilogo onesto, opzione capo redattore e PUT /settings {global_rss_sources} (stringa una URL per riga — contratto branch R1); la dashboard porta la card CTA con hash #nxa-onboarding.
  *
  * @package Nexus_News_AI
  */
@@ -1583,10 +1584,15 @@
                 return getAgents( force ).then( function ( agents ) {
                         grid.innerHTML = agents.length
                                 ? '<div class="nxa-agents-grid">' + agents.map( agentCardHtml ).join( '' ) + '</div>'
-                                : emptyState( '🤖', 'Nessun agente configurato', 'Attiva il plugin per creare i 7 agenti predefiniti.' );
+                                // v1.1.11 (R3): con 0 agenti niente più "7 agenti predefiniti":
+                                // empty state nuovo + bottone che apre il wizard onboarding.
+                                : nxaOnboardingEmptyHtml();
                         // v1.1.1: il render ricrea le card, quindi ripristina la
                         // colonna "Redazioni" dalla cache pagina (nessuna fetch).
                         refreshAgentRedazioniCells();
+                        // v1.1.11 (R3): al primo render con la redazione vuota il wizard
+                        // si apre da solo (una sola volta per vista — vedi nxaOnboardingAutoOpen).
+                        nxaOnboardingAutoOpen( agents.length );
                 } ).catch( function ( err ) {
                         grid.innerHTML = emptyState( '⚠️', 'Impossibile caricare gli agenti', err.message || '' );
                         window.console.warn( '[Nexus] agenti:', err );
@@ -2071,9 +2077,11 @@
          * v1.1.4: preset della barra "Creazione rapida" in agents.php (T-06):
          * data-preset → riga di prefill per openAgentEditor (nessun id: resta
          * "Nuovo agente" e l'invio è il normale POST /agents). Categorie,
-         * descrizioni e personalità allineate al seed dei 7 agenti; solo il
+         * descrizioni e personalità sono le stesse un tempo usate dal seed
+         * automatico, RIMOSSO in v1.1.11 (R3: zero agenti default) e da allora
+         * uniche sorgenti di questi testi insieme al wizard onboarding; solo il
          * capo porta role/chief_scope. Emoji solo da quelle già presenti nel
-         * progetto (seed agenti in class-nexus-db.php, icone attività qui).
+         * progetto.
          */
         var AGENT_PRESETS = {
                 tech: {
@@ -5950,5 +5958,457 @@
                 document.addEventListener( 'DOMContentLoaded', boot );
         } else {
                 boot();
+        }
+
+        /* ==================================================================
+         * 15. WIZARD DI ONBOARDING — v1.1.11 (R3) — Onboarding wizard
+         * ==================================================================
+         *
+         * Dalla v1.1.11 il plugin si attiva con ZERO agenti (Nexus_DB::seed_agents()
+         * è un no-op BC): questo wizard accoglie la redazione vuota con pacchetti
+         * preset one-click, riprendendo ESATTAMENTE le stesse righe di AGENT_PRESETS
+         * della barra "Creazione rapida" (v1.1.4). Tutto personalizzabile dopo:
+         * ogni agente creato qui resta modificabile dal modal editor.
+         *
+         * Markup: admin/views/onboarding-wizard.php (partial incluso da agents.php,
+         * contratto nel suo docblock). Dashboard: SOLO card CTA con link
+         * admin.php?page=nexus-agents#nxa-onboarding (nessun wizard lì).
+         *
+         * Trigger di apertura:
+         *  - primo render della pagina Agenti con 0 agenti (nxaOnboardingAutoOpen,
+         *    chiamato da loadAgents: UNA sola volta per vista, così la chiusura
+         *    manuale o l'eliminazione dell'ultimo agente non riaprono il modal);
+         *  - hash #nxa-onboarding (card CTA della dashboard / link diretti);
+         *  - click su .nxa-onboarding-open (empty state della griglia, delega
+         *    document UNICA registrata qui sotto).
+         *
+         * Esecuzione (step 2 → 3 → 4): sequenza di POST /agents con i campi del
+         * preset (il REST non espone un campo "preset": qui si replica il contratto
+         * della barra creazione rapida — copia della riga AGENT_PRESETS + status
+         * "active", il server sanifica con la sua whitelist). Progresso onesto
+         * ("Creo agente X di N…"), una riga di log per agente, riepilogo finale
+         * con i messaggi d'errore REALI (es. categoria già in uso). In coda:
+         * opzionale PUT /settings con la chiave `global_rss_sources` (STRINGA,
+         * una URL per riga — contratto con la branch fonti R1; se il campo non è
+         * ancora in whitelist lato REST l'errore viene mostrato nel riepilogo
+         * senza bloccare il resto). Poi loadAgents(true) per ricaricare la griglia.
+         *
+         * i18n: le stringhe fisse hanno le chiavi ESATTE nei dizionari; le frasi
+         * con numeri passano dai pattern (class-nexus-i18n-dict-extra.php).
+         * ================================================================== */
+
+        var onboardingAutoShown = false;
+        var onboardingRunning   = false;
+
+        /**
+         * v1.1.11: empty state del grid agenti con 0 agenti — testo aggiornato
+         * (niente "7 agenti predefiniti") + bottone che apre il wizard.
+         */
+        function nxaOnboardingEmptyHtml() {
+                return '<div class="nxa-empty nxa-onboarding-empty">' +
+                        '<div class="nxa-empty__icon" aria-hidden="true">🤖</div>' +
+                        '<p class="nxa-empty__title">' + esc( 'Nessun agente: crea il tuo primo giornalista con un preset o apri il wizard.' ) + '</p>' +
+                        '<p><button type="button" class="nxa-btn nxa-btn-primary nxa-onboarding-open">' + esc( 'Apri il wizard' ) + '</button></p>' +
+                        '</div>';
+        }
+
+        function nxaOnboardingModal() {
+                return qs( '#nxa-onboarding' );
+        }
+
+        /** Apre il wizard (reset al passo 1; durante un run mostra il progresso live). */
+        function nxaOnboardingOpen() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                if ( onboardingRunning ) {
+                        nxaOnboardingShowStep( 3 );
+                } else {
+                        nxaOnboardingReset();
+                }
+                modal.hidden = false;
+                document.body.style.overflow = 'hidden';
+        }
+
+        function nxaOnboardingClose() {
+                var modal = nxaOnboardingModal();
+                if ( modal ) {
+                        modal.hidden = true;
+                }
+                document.body.style.overflow = '';
+        }
+
+        /** Ripristina il wizard ai valori iniziali del partial PHP e torna al passo 1. */
+        function nxaOnboardingReset() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                var first = qs( 'input[name="nxa-obs-preset"]', modal );
+                if ( first ) {
+                        first.checked = true;
+                }
+                nxaOnboardingSyncCards();
+                var chief = qs( '#nxa-obs-chief', modal );
+                if ( chief ) {
+                        chief.checked = false;
+                }
+                var rss = qs( '#nxa-obs-rss', modal );
+                if ( rss ) {
+                        rss.checked = true;
+                }
+                var fill = qs( '#nxa-obs-progressbar-fill', modal );
+                if ( fill ) {
+                        fill.style.width = '0%';
+                }
+                var log = qs( '#nxa-obs-log', modal );
+                if ( log ) {
+                        log.innerHTML = '';
+                }
+                var summary = qs( '#nxa-obs-summary', modal );
+                if ( summary ) {
+                        summary.innerHTML = '';
+                }
+                var progress = qs( '#nxa-obs-progress', modal );
+                if ( progress ) {
+                        progress.textContent = 'Creo gli agenti…';
+                }
+                nxaOnboardingShowStep( 1 );
+        }
+
+        /** Visibilità passi e bottoni per lo step richiesto (1..4). */
+        function nxaOnboardingShowStep( step ) {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                var steps = [ 1, 2, 3, 4 ];
+                for ( var i = 0; i < steps.length; i++ ) {
+                        var pane = qs( '[data-nxa-obs-step="' + steps[ i ] + '"]', modal );
+                        if ( pane ) {
+                                pane.hidden = ( steps[ i ] !== step );
+                        }
+                }
+                var isChoice = step === 1 || step === 2;
+                var btnContinue = qs( '#nxa-obs-continue', modal );
+                var btnBack     = qs( '#nxa-obs-back', modal );
+                var btnRun      = qs( '#nxa-obs-run', modal );
+                var btnDone     = qs( '#nxa-obs-done', modal );
+                var btnCancel   = qs( '#nxa-obs-cancel', modal );
+                if ( btnContinue ) {
+                        btnContinue.hidden = ! isChoice;
+                }
+                if ( btnBack ) {
+                        btnBack.hidden = step !== 2;
+                }
+                if ( btnRun ) {
+                        btnRun.hidden = step !== 2;
+                }
+                if ( btnDone ) {
+                        btnDone.hidden = step !== 4;
+                }
+                if ( btnCancel ) {
+                        btnCancel.hidden = ! isChoice;
+                }
+        }
+
+        /** Evidenzia la radio card scelta (classe is-selected, gestita dal JS). */
+        function nxaOnboardingSyncCards() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                var cards = qsa( '.nxa-obs-card', modal );
+                for ( var i = 0; i < cards.length; i++ ) {
+                        var input = qs( 'input[name="nxa-obs-preset"]', cards[ i ] );
+                        if ( input ) {
+                                if ( input.checked ) {
+                                        cards[ i ].classList.add( 'is-selected' );
+                                } else {
+                                        cards[ i ].classList.remove( 'is-selected' );
+                                }
+                        }
+                }
+        }
+
+        /**
+         * Scelta del passo 1: legge la radio attiva e i suoi data-attribute
+         * (data-presets = chiavi preset separate da virgola, data-include-chief).
+         * Le chiavi sono quelle di AGENT_PRESETS (stessa grammatica della barra
+         * creazione rapida); chiavi sconosciute scartate in silenzio.
+         */
+        function nxaOnboardingChoice() {
+                var modal  = nxaOnboardingModal();
+                var checked = modal ? qs( 'input[name="nxa-obs-preset"]:checked', modal ) : null;
+                if ( ! checked ) {
+                        return null;
+                }
+                var keys    = String( checked.getAttribute( 'data-presets' ) || '' ).split( ',' );
+                var presets = [];
+                for ( var i = 0; i < keys.length; i++ ) {
+                        var key = keys[ i ].replace( /^\s+|\s+$/g, '' );
+                        if ( key && AGENT_PRESETS[ key ] ) {
+                                presets.push( key );
+                        }
+                }
+                return {
+                        manual:        checked.value === 'manual',
+                        presets:       presets,
+                        chiefIncluded: checked.getAttribute( 'data-include-chief' ) === '1'
+                };
+        }
+
+        /**
+         * Auto-open dal primo render del grid agenti (loadAgents): apre il wizard
+         * SOLO se il primo render ha 0 agenti; in ogni caso la decisione vale per
+         * tutta la vista (nessuna riapertura su ricariche successive — es. dopo
+         * l'eliminazione di un agente o al termine del wizard stesso).
+         */
+        function nxaOnboardingAutoOpen( agentsCount ) {
+                var shouldOpen = num( agentsCount ) === 0 && ! onboardingAutoShown && ! onboardingRunning;
+                onboardingAutoShown = true;
+                if ( ! shouldOpen ) {
+                        return;
+                }
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                nxaOnboardingOpen();
+        }
+
+        /**
+         * Esecuzione del wizard: sequenza di POST /agents (una promessa per
+         * agente, errori NON bloccanti raccolti per il riepilogo) + eventuale
+         * PUT /settings { global_rss_sources } (contratto branch R1: stringa
+         * una URL per riga). Al termine: riepilogo onesto, loadAgents(true),
+         * passo 4.
+         */
+        function nxaOnboardingRun() {
+                var modal  = nxaOnboardingModal();
+                var choice = nxaOnboardingChoice();
+                if ( ! modal || ! choice || onboardingRunning ) {
+                        return;
+                }
+                if ( choice.manual ) {
+                        // "Preferisco crearli a mano": chiude il wizard e basta.
+                        nxaOnboardingClose();
+                        return;
+                }
+                var keys = choice.presets.slice();
+                var chiefBox = qs( '#nxa-obs-chief', modal );
+                if ( ! choice.chiefIncluded && chiefBox && chiefBox.checked ) {
+                        keys.push( 'capo' );
+                }
+                if ( ! keys.length ) {
+                        nxaOnboardingClose();
+                        return;
+                }
+
+                var rssBox  = qs( '#nxa-obs-rss', modal );
+                var rssText = qs( '#nxa-obs-rss-textarea', modal );
+                var rssValue = rssText ? String( rssText.value || '' ).replace( /^\s+|\s+$/g, '' ) : '';
+                var wantRss = !!( rssBox && rssBox.checked && rssValue );
+
+                onboardingRunning = true;
+                nxaOnboardingShowStep( 3 );
+
+                var progressEl = qs( '#nxa-obs-progress', modal );
+                var fillEl     = qs( '#nxa-obs-progressbar-fill', modal );
+                var logEl      = qs( '#nxa-obs-log', modal );
+                var total      = keys.length;
+                var created    = 0;
+                var errors     = [];
+
+                var runOne = function ( i ) {
+                        if ( i >= total ) {
+                                return Promise.resolve();
+                        }
+                        var key    = keys[ i ];
+                        var preset = AGENT_PRESETS[ key ] || {};
+                        var label  = preset.name ? String( preset.name ) : key;
+                        if ( progressEl ) {
+                                progressEl.textContent = 'Creo agente ' + ( i + 1 ) + ' di ' + total + '…';
+                        }
+                        if ( fillEl ) {
+                                fillEl.style.width = Math.round( ( i / total ) * 100 ) + '%';
+                        }
+                        var fields = {};
+                        for ( var prop in preset ) {
+                                if ( Object.prototype.hasOwnProperty.call( preset, prop ) ) {
+                                        fields[ prop ] = preset[ prop ];
+                                }
+                        }
+                        fields.status = 'active';
+                        return api( 'agents', { method: 'POST', body: fields } ).then( function () {
+                                created++;
+                                if ( logEl ) {
+                                        logEl.innerHTML += '<li class="is-ok">✓ ' + esc( label ) + '</li>';
+                                }
+                        } ).catch( function ( err ) {
+                                var message = ( err && err.message ) ? err.message : 'Errore sconosciuto';
+                                errors.push( { name: label, message: message } );
+                                if ( logEl ) {
+                                        logEl.innerHTML += '<li class="is-err">✕ ' + esc( label ) + ' — ' + esc( message ) + '</li>';
+                                }
+                        } ).then( function () {
+                                return runOne( i + 1 );
+                        } );
+                };
+
+                runOne( 0 ).then( function () {
+                        if ( fillEl ) {
+                                fillEl.style.width = '100%';
+                        }
+                        if ( ! wantRss ) {
+                                return 'skip';
+                        }
+                        if ( progressEl ) {
+                                progressEl.textContent = 'Salvo le fonti RSS…';
+                        }
+                        // Contratto branch R1: global_rss_sources è una STRINGA,
+                        // una URL per riga. Se la chiave non è (ancora) in whitelist
+                        // lato REST l'errore reale finisce nel riepilogo: mai in silenzio.
+                        return api( 'settings', { method: 'PUT', body: { global_rss_sources: rssValue } } )
+                                .then( function () { return 'ok'; } )
+                                .catch( function ( err ) {
+                                        return 'err:' + ( ( err && err.message ) ? err.message : '' );
+                                } );
+                } ).then( function ( rssResult ) {
+                        onboardingRunning = false;
+                        if ( progressEl ) {
+                                progressEl.textContent = 'Creazione completata.';
+                        }
+                        var summary = qs( '#nxa-obs-summary', modal );
+                        if ( summary ) {
+                                var html = '<p class="nxa-obs-summary-head">' + esc( errors.length ? 'Creazione completata con errori.' : 'Creazione completata.' ) + '</p>';
+                                html += '<p class="nxa-obs-summary-row">Agenti creati: ' + created + ' · Errori: ' + errors.length + '</p>';
+                                if ( errors.length ) {
+                                        html += '<ul class="nxa-obs-summary-errors">';
+                                        for ( var i = 0; i < errors.length; i++ ) {
+                                                html += '<li>✕ ' + esc( errors[ i ].name ) + ' — ' + esc( errors[ i ].message ) + '</li>';
+                                        }
+                                        html += '</ul>';
+                                }
+                                if ( wantRss && rssResult === 'ok' ) {
+                                        html += '<p class="nxa-obs-summary-row is-ok">✓ Fonti RSS salvate nelle impostazioni.</p>';
+                                } else if ( wantRss ) {
+                                        html += '<p class="nxa-obs-summary-row is-err">✕ Fonti RSS non salvate: ' + esc( String( rssResult || '' ).replace( /^err:/, '' ) ) + '</p>';
+                                }
+                                summary.innerHTML = html;
+                        }
+                        // Griglia dati pagina ricaricata dietro il wizard (stesso
+                        // pattern delle altre creazioni: loadAgents(true)).
+                        loadAgents( true );
+                        nxaOnboardingShowStep( 4 );
+                        var toastMsg = created > 0
+                                ? ( 'Wizard completato: ' + created + ( created === 1 ? ' agente creato.' : ' agenti creati.' ) )
+                                : 'Nessun agente creato: controlla gli errori nel riepilogo.';
+                        toast( toastMsg, created > 0 ? 'success' : 'error', 'Crea la tua redazione' );
+                } );
+        }
+
+        /** Binding del wizard: una sola volta per pagina (guard sul markup). */
+        function nxaOnboardingBind() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal || modal.getAttribute( 'data-nxa-obs-bound' ) === '1' ) {
+                        return;
+                }
+                modal.setAttribute( 'data-nxa-obs-bound', '1' );
+
+                // Selezione radio card → evidenzia la card scelta.
+                modal.addEventListener( 'change', function ( ev ) {
+                        if ( ev.target && ev.target.name === 'nxa-obs-preset' ) {
+                                nxaOnboardingSyncCards();
+                        }
+                } );
+
+                // Chiusure: X, Annulla (solo nei passi 1-2), "Vedi la redazione", ESC.
+                var closeBtn = qs( '[data-nxa-onboarding-close]', modal );
+                if ( closeBtn ) {
+                        closeBtn.addEventListener( 'click', nxaOnboardingClose );
+                }
+                var cancelBtn = qs( '#nxa-obs-cancel', modal );
+                if ( cancelBtn ) {
+                        cancelBtn.addEventListener( 'click', nxaOnboardingClose );
+                }
+                var doneBtn = qs( '#nxa-obs-done', modal );
+                if ( doneBtn ) {
+                        doneBtn.addEventListener( 'click', nxaOnboardingClose );
+                }
+                document.addEventListener( 'keydown', function ( ev ) {
+                        if ( ev.key === 'Escape' && ! modal.hidden ) {
+                                nxaOnboardingClose();
+                        }
+                } );
+
+                // Passo 1 → 2: "a mano" chiude e basta; il capo redattore è
+                // proponibile SOLO se non è già incluso nel pacchetto scelto.
+                var continueBtn = qs( '#nxa-obs-continue', modal );
+                if ( continueBtn ) {
+                        continueBtn.addEventListener( 'click', function () {
+                                var choice = nxaOnboardingChoice();
+                                if ( ! choice ) {
+                                        return;
+                                }
+                                if ( choice.manual ) {
+                                        nxaOnboardingClose();
+                                        return;
+                                }
+                                var chiefRow = qs( '#nxa-obs-chief-row', modal );
+                                if ( chiefRow ) {
+                                        chiefRow.hidden = choice.chiefIncluded;
+                                }
+                                var chiefBox = qs( '#nxa-obs-chief', modal );
+                                if ( chiefBox && choice.chiefIncluded ) {
+                                        chiefBox.checked = false;
+                                }
+                                nxaOnboardingShowStep( 2 );
+                        } );
+                }
+                var backBtn = qs( '#nxa-obs-back', modal );
+                if ( backBtn ) {
+                        backBtn.addEventListener( 'click', function () {
+                                nxaOnboardingShowStep( 1 );
+                        } );
+                }
+                var runBtn = qs( '#nxa-obs-run', modal );
+                if ( runBtn ) {
+                        runBtn.addEventListener( 'click', nxaOnboardingRun );
+                }
+
+                // Bottone "Apri il wizard" (empty state + altri eventuali): delega
+                // document UNICA, funziona anche con il grid renderizzato di nuovo.
+                document.addEventListener( 'click', function ( ev ) {
+                        var opener = ( ev.target && ev.target.closest ) ? ev.target.closest( '.nxa-onboarding-open' ) : null;
+                        if ( opener ) {
+                                ev.preventDefault();
+                                nxaOnboardingOpen();
+                        }
+                } );
+        }
+
+        /**
+         * Boot locale del wizard (stesso dual-path del pannello live): markup
+         * assente → exit silenzioso; hash #nxa-onboarding → apertura immediata
+         * (il pannello è markup statico, non serve attendere il primo GET /agents).
+         */
+        function nxaOnboardingInit() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                nxaOnboardingBind();
+                var isAgentsPage = qs( '.wrap.nexus-admin[data-page="agents"]' );
+                if ( isAgentsPage && window.location && window.location.hash === '#nxa-onboarding' ) {
+                        nxaOnboardingOpen();
+                }
+        }
+
+        if ( document.readyState === 'loading' ) {
+                document.addEventListener( 'DOMContentLoaded', nxaOnboardingInit );
+        } else {
+                nxaOnboardingInit();
         }
 }() );
