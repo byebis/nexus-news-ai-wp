@@ -29,7 +29,9 @@
  *   GET    /nexus/v1/jobs, /nexus/v1/jobs/stats; POST /nexus/v1/jobs/process, /nexus/v1/jobs/cleanup, /nexus/v1/jobs/{id}/retry, /nexus/v1/jobs/{id}/cancel (v1.0.4)
  *   GET    /nexus/v1/analytics                     args: days (7..90) (v1.0.4)
  *   GET    /nexus/v1/export, POST /nexus/v1/import (config: impostazioni + agenti) (v1.0.5)
- *   POST   /nexus/v1/tools/api-key (v1.0.5) — ATTENZIONE: /export include segreti (chiavi API/token)
+ *   POST   /nexus/v1/tools/api-key (v1.0.5; v1.1.9: salva l'hash SHA-256 della chiave,
+ *          la risposta porta il valore in chiaro UNA SOLA VOLTA in 'api_key_plain').
+ *          NOTA v1.1.9: /export NON include più segreti (mascherati da D2/WP2).
  *   GET    /nexus/v1/wp/categories                 categorie WP native {categories: [{id, name, slug, count}]} per nome (v1.1.0)
  *   POST   /nexus/v1/native/migrate                body {limit} opzionale, default 20, clamp 1-100, risposta shape migrate_status (v1.1.0)
  *   GET    /nexus/v1/native/migrate/status         stato migrazione (shape migrate_status) (v1.1.0)
@@ -71,6 +73,26 @@
  * zero MySQL ('0000-00-00 00:00:00') o stringhe vuote come date: date_or_empty()
  * le converte in '' (la UI mostrerà vuoto/—, mai una data finta). Le date valide
  * passano intatte: nessun cambio di shape per i consumatori.
+ *
+ * HARDENING v1.1.9 (WP2):
+ * - Le rotte PUBBLICHE degli articoli usano serialize_public_article(): mai il
+ *   contenuto interno del capo redattore (chief_status/note/agent_name/rounds);
+ *   citations resta (fonti verificate, contenuto pubblico).
+ * - view/reaction: permission callback che verifica il nonce wp_rest QUANDO
+ *   l'header X-WP-Nonce è presente, rate limit transient per IP+articolo
+ *   (1 vista/60s, max 10 reazioni/min) e whitelist emoji (allineata a
+ *   Nexus_Utils::reaction_emojis).
+ * - GET /settings, PUT /settings (risposta), GET /export: SEGRETI mascherati
+ *   ('' + 'x_<chiave>_set'); PUT e import salvano i segreti SOLO se valorizzati.
+ * - API Pubblica (D6): public_api_key NON è più salvata in chiaro — se il valore
+ *   fornito (PUT /settings o keygen) è non vuoto e non è già hex-64 viene salvato
+ *   hash('sha256', valore) (MIGRAZIONE SOFT: le chiavi legacy in chiaro restano
+ *   valide finché non vengono risalvate; l'upgrade-on-use è in Nexus_Public_API).
+ *   Il keygen restituisce il valore in chiaro UNA SOLA VOLTA ('api_key_plain').
+ * - Mutazioni pubbliche view/reaction: le risposte 403/429 portano l'header CORS
+ *   già usato dall'API pubblica (Access-Control-Allow-Origin: *, stesso ACAO delle
+ *   risposte 200 di nexus-public/v1) e il 429 porta Retry-After con i secondi
+ *   REALI rimasti della finestra del rate limiter.
  *
  * @package Nexus_News_AI
  */
@@ -600,7 +622,9 @@ class Nexus_Rest {
                                 array(
                                         'methods'             => WP_REST_Server::CREATABLE,
                                         'callback'            => array( __CLASS__, 'rest_public_reaction' ),
-                                        'permission_callback' => '__return_true',
+                                        // v1.1.9: permission callback che verifica il nonce wp_rest
+                                        // QUANDO l'header X-WP-Nonce è presente + rate limit nel callback.
+                                        'permission_callback' => array( __CLASS__, 'perm_public_mutation' ),
                                         'args'                => $id_arg + array(
                                                 'emoji'             => array(
                                                         'type'              => 'string',
@@ -619,7 +643,8 @@ class Nexus_Rest {
                                 array(
                                         'methods'             => WP_REST_Server::CREATABLE,
                                         'callback'            => array( __CLASS__, 'rest_public_view' ),
-                                        'permission_callback' => '__return_true',
+                                        // v1.1.9: idem reaction (nonce se presente + rate limit nel callback).
+                                        'permission_callback' => array( __CLASS__, 'perm_public_mutation' ),
                                         'args'                => $id_arg,
                                 ),
                         )
@@ -1138,6 +1163,116 @@ class Nexus_Rest {
                         );
                 }
                 return true;
+        }
+
+        /**
+         * Permesso per le mutazioni pubbliche (view/reaction, v1.1.9).
+         *
+         * Le rotte restano utilizzabili dai visitatori anonimi del magazine, ma se la
+         * richiesta porta l'header X-WP-Nonce quest'ultimo DEVE essere un nonce
+         * 'wp_rest' valido (403 altrimenti): un client che si dichiara REST-aware
+         * non può aggirare la protezione CSRF/riuso inviando nonce fasulli.
+         *
+         * v1.1.9 (D6): il 403 porta l'header CORS già usato dall'API pubblica
+         * (Access-Control-Allow-Origin: *, stesso ACAO delle risposte 200 di
+         * nexus-public/v1) così un client JS cross-origin legge il messaggio
+         * d'errore invece di un fallimento CORS opaco.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return true|WP_Error
+         */
+        public static function perm_public_mutation( $request ) {
+                $nonce = ( $request instanceof WP_REST_Request ) ? (string) $request->get_header( 'X-WP-Nonce' ) : '';
+                if ( '' !== $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+                        // v1.1.9 (D6): CORS anche sull'errore, vedi docblock.
+                        self::public_cors_headers();
+                        return new WP_Error(
+                                'nexus_rest_bad_nonce',
+                                __( 'Nonce non valido: ricarica la pagina e riprova.', 'nexus-news-ai' ),
+                                array( 'status' => 403 )
+                        );
+                }
+                return true;
+        }
+
+        /* =========================================================================
+         * HARDENING PUBBLICO (v1.1.9): rate limit + whitelist emoji
+         * ======================================================================= */
+
+        /**
+         * Rate limit a finestra fissa per chiave (IP + contesto), su transient:
+         * il numero della finestra è incluso nella chiave, quindi il limite si
+         * resetta automaticamente a ogni finestra.
+         *
+         * v1.1.9 (D6): quando il limite è raggiunto invia (effetto collaterale
+         * documentato) gli header della risposta d'errore: CORS pubblico (come
+         * perm_public_mutation) e Retry-After con i secondi REALI rimasti alla
+         * fine della finestra corrente (calcolati dal window_id, non un fisso 60).
+         * Il 429 vero e proprio è costruito dal chiamante (rest_public_reaction);
+         * sulla rotta view l'esito resta 200 con 'rate_limit' => true (decisione
+         * D2): l'header Retry-After è comunque onesto e indicativo per il client.
+         *
+         * @param string $bucket Contesto (es. 'view', 'reaction').
+         * @param int    $max    Massimo numero di eventi nella finestra.
+         * @param int    $window Secondi della finestra.
+         * @return bool True se l'evento è ammesso.
+         */
+        private static function rate_limit_hit( $bucket, $max, $window ) {
+                $ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+
+                $window_id = (int) floor( time() / max( 1, (int) $window ) );
+                $key       = 'nexus_rl_' . md5( $bucket . '|' . $ip . '|' . $window_id );
+                $count     = (int) get_transient( $key );
+
+                if ( $count >= max( 1, (int) $max ) ) {
+                        // v1.1.9 (D6): secondi REALI rimasti della finestra corrente.
+                        $window    = max( 1, (int) $window );
+                        $remaining = ( ( $window_id + 1 ) * $window ) - time();
+                        @header( 'Retry-After: ' . max( 1, min( $window, (int) $remaining ) ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                        self::public_cors_headers();
+                        return false;
+                }
+
+                // TTL finestra + 60s di grazia: il contatore sopravvive anche a fine finestra.
+                set_transient( $key, $count + 1, max( 1, (int) $window ) + 60 );
+                return true;
+        }
+
+        /**
+         * Header CORS delle risposte D'ERRORE delle rotte pubbliche (v1.1.9, D6).
+         *
+         * Stesso ACAO già usato dall'API pubblica (Nexus_Public_API::auth):
+         * 'Access-Control-Allow-Origin: *'. Queste rotte sono mutazioni senza
+         * credenziali (nessun cookie letto dalla risposta, nonce opzionale), quindi
+         * il wildcard non allarga la superficie d'attacco; serve perché i client JS
+         * cross-origin possano LEGGERE 403/429 invece di fermarsi al fallimento CORS.
+         *
+         * @return void
+         */
+        private static function public_cors_headers() {
+                @header( 'Access-Control-Allow-Origin: *' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+        }
+
+        /**
+         * Whitelist canonica delle emoji di reazione (v1.1.9).
+         *
+         * ALLINEATA al codice esistente (Nexus_Utils::reaction_emojis() e il config
+         * iniettato in class-nexus-shortcodes.php): ❤️ 👏 🔥 😮 😂 🤔. Fallback
+         * hardcoded identico se la classe non è caricata. NIENTE emoji nuove.
+         *
+         * @return array
+         */
+        private static function reaction_whitelist() {
+                $fallback = array( '❤️', '👏', '🔥', '😮', '😂', '🤔' );
+
+                if ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'reaction_emojis' ) ) {
+                        $list = Nexus_Utils::reaction_emojis();
+                        if ( is_array( $list ) && ! empty( $list ) ) {
+                                return $list;
+                        }
+                }
+
+                return $fallback;
         }
 
         /* =========================================================================
@@ -1982,12 +2117,17 @@ class Nexus_Rest {
         /**
          * GET /settings — impostazioni complete.
          *
+         * v1.1.9: i SEGRETI (ai_api_key, prov_key_*, tools_search_key, chiavi social,
+         * public_api_key, mcp_servers_text) NON vengono più restituiti: il valore è
+         * '' e viene aggiunta per ciascuno la chiave informativa 'x_<chiave>_set'
+         * (true/false) così la UI sa se il segreto è configurato senza leggerlo.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response
          */
         public static function rest_settings_get( $request ) {
                 unset( $request );
-                return rest_ensure_response( Nexus_DB::get_settings() );
+                return rest_ensure_response( self::mask_secret_settings( Nexus_DB::get_settings() ) );
         }
 
         /**
@@ -2013,10 +2153,22 @@ class Nexus_Rest {
                         return self::err( 'nexus_rest_no_valid_fields', __( 'Nessuna chiave riconosciuta tra i campi inviati.', 'nexus-news-ai' ), 400 );
                 }
 
+                // v1.1.9: i segreti sono salvati SOLO se valorizzati — una stringa vuota
+                // non può cancellare un segreto esistente (mitigazione per client che
+                // reinviano i campi vuoti; per revocare un segreto si rigenera/rimpiazza).
+                foreach ( self::secret_settings_keys() as $secret_key ) {
+                        if ( isset( $payload[ $secret_key ] ) && '' === trim( (string) $payload[ $secret_key ] ) ) {
+                                unset( $payload[ $secret_key ] );
+                        }
+                }
+
                 $updated = Nexus_DB::update_settings( $payload );
                 Nexus_DB::insert_activity( 0, 'settings_update', __( 'Impostazioni aggiornate via API.', 'nexus-news-ai' ), 'info' );
 
-                return rest_ensure_response( $updated );
+                // v1.1.9: la risposta del PUT ripete le settings complete (update_settings
+                // le ritorna intere): mascherate anche qui, il segreto non deve comparire
+                // in NESSUNA risposta REST.
+                return rest_ensure_response( self::mask_secret_settings( is_array( $updated ) ? $updated : array() ) );
         }
 
         /* =========================================================================
@@ -2441,7 +2593,9 @@ class Nexus_Rest {
                         return $article;
                 }
 
-                return rest_ensure_response( self::serialize_article( $article, true ) );
+                // v1.1.9: anche il singolo articolo pubblico usa il serializzatore
+                // pubblico (senza campi interni del capo redattore).
+                return rest_ensure_response( self::serialize_public_article( $article, true ) );
         }
 
         /**
@@ -2460,6 +2614,17 @@ class Nexus_Rest {
                 $emoji = trim( (string) $request->get_param( 'emoji' ) );
                 if ( '' === $emoji ) {
                         return self::err( 'nexus_rest_missing_emoji', __( 'Il campo "emoji" è obbligatorio.', 'nexus-news-ai' ), 400 );
+                }
+
+                // v1.1.9: whitelist emoji (allineata a Nexus_Utils::reaction_emojis):
+                // niente reazioni arbitrarie che sporcano il JSON delle reactions.
+                if ( ! in_array( $emoji, self::reaction_whitelist(), true ) ) {
+                        return self::err( 'nexus_rest_invalid_emoji', __( 'Emoji non ammessa: scegli una delle reazioni disponibili.', 'nexus-news-ai' ), 400 );
+                }
+
+                // v1.1.9: rate limit 10 reazioni/min per IP+articolo (anti flood).
+                if ( ! self::rate_limit_hit( 'reaction|' . $id, 10, 60 ) ) {
+                        return self::err( 'nexus_rest_rate_limited', __( 'Troppe reazioni: riprova tra poco.', 'nexus-news-ai' ), 429 );
                 }
 
                 $counts = Nexus_DB::add_reaction( $id, $emoji );
@@ -2485,6 +2650,18 @@ class Nexus_Rest {
                 $article = self::get_published_article_or_404( $id );
                 if ( is_wp_error( $article ) ) {
                         return $article;
+                }
+
+                // v1.1.9: rate limit 1 vista/60s per IP+articolo (anti-gonfiaggio contatore).
+                if ( ! self::rate_limit_hit( 'view|' . $id, 1, 60 ) ) {
+                        $fresh = Nexus_DB::get_article( $id );
+
+                        return rest_ensure_response(
+                                array(
+                                        'views'      => $fresh ? (int) $fresh->views : (int) $article->views,
+                                        'rate_limit' => true,
+                                )
+                        );
                 }
 
                 Nexus_DB::bump_view( $id );
@@ -2975,6 +3152,10 @@ class Nexus_Rest {
                         'enable_public_api'    => 'absint',
                         'enable_autotranslate_posts' => 'absint',
                         'mcp_servers_text'     => 'sanitize_textarea_field',
+                        // Chiave API pubblica (v1.1.9, D6): scrivibile anche via PUT come gli
+                        // altri segreti; il valore viene normalizzato DOPO la mappa (vedi
+                        // normalize_public_api_key): non vuoto e non hex-64 → hash SHA-256.
+                        'public_api_key'       => 'sanitize_text_field',
                 );
 
                 $out = array();
@@ -3128,7 +3309,120 @@ class Nexus_Rest {
                         $out['queue_max_attempts'] = min( 10, max( 1, absint( $out['queue_max_attempts'] ) ) );
                 }
 
+                // Chiave API pubblica (v1.1.9, D6): se fornita non vuota e NON già hex-64
+                // viene salvata come hash('sha256', valore) (esadecimale minuscolo). Un valore
+                // hex-64 fornito dall'admin è considerato GIÀ un hash (chiave passthrough).
+                // Nota: qui nel payload non si può distinguere il caso "vuoto" gestito a
+                // monte da rest_settings_update (i segreti vuoti non cancellano).
+                if ( isset( $out['public_api_key'] ) ) {
+                        $out['public_api_key'] = self::normalize_public_api_key( $out['public_api_key'] );
+                }
+
                 return $out;
+        }
+
+        /* =========================================================================
+         * SEGRETI: MASCHERATURA (v1.1.9)
+         * ======================================================================= */
+
+        /**
+         * Chiavi settings considerate SEGRETI (mai in risposta REST, mai nell'export).
+         *
+         * Comprende: chiave AI globale, chiavi per-provider (prov_key_*), chiave di
+         * ricerca, le 7 credenziali social, la chiave dell'API pubblica e il testo
+         * di configurazione dei server MCP (contiene URL e token opzionali).
+         *
+         * @return array
+         */
+        private static function secret_settings_keys() {
+                return array(
+                        'ai_api_key',
+                        'prov_key_openrouter',
+                        'prov_key_openai',
+                        'prov_key_anthropic',
+                        'prov_key_google',
+                        'prov_key_groq',
+                        'prov_key_deepseek',
+                        'prov_key_mistral',
+                        'prov_key_xai',
+                        'prov_key_custom',
+                        'tools_search_key',
+                        'telegram_bot_token',
+                        'discord_webhook_url',
+                        'x_api_key',
+                        'x_api_secret',
+                        'x_access_token',
+                        'x_access_secret',
+                        'linkedin_access_token',
+                        'public_api_key',
+                        'mcp_servers_text',
+                );
+        }
+
+        /**
+         * Maschera i segreti di un array settings per le risposte REST.
+         *
+         * Per ciascuna chiave segreta: valore '' + chiave informativa
+         * 'x_<chiave>_set' => true/false (presenza, non valore). Non modifica
+         * l'array ricevuto (restituisce una copia).
+         *
+         * v1.1.9 (D6): public_api_key è memorizzata come hash SHA-256 (hex-64)
+         * oppure, finché non migrata, come chiave legacy in chiaro. In ENTRAMBI
+         * i casi il valore è non vuoto, quindi 'x_public_api_key_set' resta true:
+         * la mascheratura NON va duplicata né adattata (coerenza già garantita).
+         *
+         * @param array $settings Settings (es. Nexus_DB::get_settings()).
+         * @return array
+         */
+        private static function mask_secret_settings( $settings ) {
+                $out = is_array( $settings ) ? $settings : array();
+
+                foreach ( self::secret_settings_keys() as $secret_key ) {
+                        $is_set = isset( $out[ $secret_key ] ) && '' !== trim( (string) $out[ $secret_key ] );
+
+                        $out[ $secret_key ] = '';
+
+                        // Chiave informativa: la UI sa che il segreto esiste senza leggerlo.
+                        $out[ 'x_' . $secret_key . '_set' ] = $is_set;
+                }
+
+                return $out;
+        }
+
+        /**
+         * Normalizza il valore della chiave API pubblica al formato v1.1.9 (D6).
+         *
+         * Contratto di memorizzazione:
+         *  - stringa vuota            → '' (nessuna chiave; nei PUT i segreti vuoti
+         *                              vengono comunque scartati a monte);
+         *  - già hex-64 (qualsiasi caso, normalizzato minuscolo) → passthrough:
+         *                              l'admin ha fornito direttamente un hash SHA-256;
+         *  - qualunque altro valore NON vuoto → hash('sha256', valore), esadecimale
+         *                              minuscolo (64 caratteri).
+         *
+         * MIGRAZIONE SOFT: le chiavi legacy salvate in chiaro dalle versioni
+         * precedenti restano valide (Nexus_Public_API::auth() le confronta in
+         * chiaro e le ri-salva hashate alla prima occasione, upgrade-on-use);
+         * una chiave legacy cessa di esistere in chiaro solo quando viene
+         * risalvata (qui, dal keygen o dall'upgrade-on-use).
+         *
+         * @param string $value Valore fornito (già sanificato sanitize_text_field).
+         * @return string Valore da memorizzare nelle settings.
+         */
+        private static function normalize_public_api_key( $value ) {
+                $value = trim( (string) $value );
+
+                if ( '' === $value ) {
+                        return '';
+                }
+
+                // Già un hash SHA-256 (hex-64): canonicalizzato minuscolo e salvato così.
+                if ( preg_match( '/^[0-9a-f]{64}$/i', $value ) ) {
+                        return strtolower( $value );
+                }
+
+                // Chiave in chiaro: si salva SOLO l'hash, mai il valore.
+                return hash( 'sha256', $value );
         }
 
         /**
@@ -3293,13 +3587,28 @@ class Nexus_Rest {
         }
 
         /**
-         * Serializza un articolo per la lista pubblica: mai il contenuto completo.
+         * Serializza un articolo per le rotte PUBBLICHE (v1.1.9): mai il contenuto
+         * completo e MAI i campi interni del capo redattore (chief_status,
+         * chief_note, chief_agent_name, chief_rounds: note e verdetto di revisione
+         * sono materiale editoriale interno). citations RESTA: è contenuto pubblico
+         * (fonti verificate dell'articolo).
          *
-         * @param object $a Riga articolo.
+         * @param object $a            Riga articolo.
+         * @param bool   $with_content Includere il contenuto completo (default false, lista).
          * @return array
          */
-        private static function serialize_public_article( $a ) {
-                return self::serialize_article( $a, false );
+        private static function serialize_public_article( $a, $with_content = false ) {
+                $out = self::serialize_article( $a, $with_content );
+
+                // Campi interni del capo redattore: rimossi dalla superficie pubblica.
+                unset(
+                        $out['chief_status'],
+                        $out['chief_note'],
+                        $out['chief_agent_name'],
+                        $out['chief_rounds']
+                );
+
+                return $out;
         }
 
         /**
@@ -3423,8 +3732,10 @@ class Nexus_Rest {
         /**
          * GET /export — esporta impostazioni e agenti come JSON (v1.0.5).
          *
-         * ATTENZIONE: il file esportato contiene segreti (chiavi API e token):
-         * conservalo in modo sicuro. Non include articoli, iscritti o log.
+         * ATTENZIONE (v1.1.9): i SEGRETI non sono più inclusi nell'export (valore ''
+         * + chiave 'x_*_set' con la sola presenza): il file esportato può essere
+         * archiviato senza esporre chiavi API e token. Al re-import i segreti vuoti
+         * NON sovrascrivono quelli esistenti (guardia in rest_import).
          *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
@@ -3453,7 +3764,7 @@ class Nexus_Rest {
                                 'version'     => defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '',
                                 'exported_at' => current_time( 'mysql' ),
                                 'site_url'    => home_url( '/' ),
-                                'settings'    => Nexus_DB::get_settings(),
+                                'settings'    => self::mask_secret_settings( Nexus_DB::get_settings() ),
                                 'agents'      => $agents,
                         )
                 );
@@ -3498,6 +3809,28 @@ class Nexus_Rest {
                 if ( ! empty( $body['settings'] ) ) {
                         $keys     = array_keys( Nexus_DB::default_settings() );
                         $filtered = array_intersect_key( $body['settings'], array_flip( $keys ) );
+
+                        // v1.1.9: 1) scarta le chiavi informative 'x_*_set' (solo GET/export);
+                        // 2) i segreti VUOTI non sovrascrivono quelli esistenti: un export
+                        // mascherato re-importato non può azzerare le chiavi del sito.
+                        foreach ( array_keys( $filtered ) as $key ) {
+                                if ( is_string( $key ) && 0 === strpos( $key, 'x_' ) && '_set' === substr( $key, -4 ) ) {
+                                        unset( $filtered[ $key ] );
+                                }
+                        }
+                        foreach ( self::secret_settings_keys() as $secret_key ) {
+                                if ( isset( $filtered[ $secret_key ] ) && '' === trim( (string) $filtered[ $secret_key ] ) ) {
+                                        unset( $filtered[ $secret_key ] );
+                                }
+                        }
+
+                        // v1.1.9 (D6): la chiave API pubblica importata NON resta mai in
+                        // chiaro — stesso contratto di PUT/keygen. Le chiavi legacy in
+                        // chiaro importate da export vecchi vengono subito hashate; un
+                        // valore hex-64 è considerato già un hash (passthrough).
+                        if ( isset( $filtered['public_api_key'] ) ) {
+                                $filtered['public_api_key'] = self::normalize_public_api_key( $filtered['public_api_key'] );
+                        }
 
                         if ( $filtered ) {
                                 Nexus_DB::update_settings( $filtered );
@@ -3558,6 +3891,17 @@ class Nexus_Rest {
          *
          * La nuova chiave sostituisce la precedente, che diventa invalida.
          *
+         * v1.1.9 (D6): in settings viene salvato SOLO l'hash SHA-256 della chiave
+         * (hex-64, via normalize_public_api_key). Il valore IN CHIARO è restituito
+         * UNA SOLA VOLTA in questa risposta JSON:
+         *   - 'api_key_plain' — nome canonico (v1.1.9);
+         *   - 'api_key'       — alias storico, stessa stringa, per compatibilità
+         *                       con i client già esistenti (es. JS di tools.php);
+         *   - 'message'       — invito a copiarla subito: non sarà più mostrata
+         *                       né leggibile da alcun endpoint (il GET /settings
+         *                       è mascherato da D2 e il DB contiene solo l'hash).
+         * Se il client non salva la chiave mostrata, l'unica via è rigenerarla.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
@@ -3568,9 +3912,18 @@ class Nexus_Rest {
                 }
 
                 $key = bin2hex( random_bytes( 24 ) );
-                Nexus_DB::update_settings( array( 'public_api_key' => $key ) );
 
-                return rest_ensure_response( array( 'api_key' => $key ) );
+                // v1.1.9 (D6): in settings va solo l'hash — la chiave in chiaro vive
+                // esclusivamente in questa risposta una-tantum.
+                Nexus_DB::update_settings( array( 'public_api_key' => self::normalize_public_api_key( $key ) ) );
+
+                return rest_ensure_response(
+                        array(
+                                'api_key'       => $key,
+                                'api_key_plain' => $key,
+                                'message'       => __( 'Chiave generata: copiala subito, non verrà più mostrata (nel database è salvato solo il suo hash SHA-256).', 'nexus-news-ai' ),
+                        )
+                );
         }
 
         /* =========================================================================

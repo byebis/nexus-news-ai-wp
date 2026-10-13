@@ -17,8 +17,10 @@
  *
  * Comportamento:
  *  - enable_discord != 1 oppure webhook vuoto → 'skipped', note 'Discord non configurato'.
- *  - Webhook invalido (deve contenere 'discord.com/api/webhooks/' oppure
- *    'discordapp.com/api/webhooks/') → 'skipped', note 'Webhook Discord non valido'.
+ *  - Webhook invalido (host ESATTO discord.com oppure discordapp.com e path che
+ *    inizia con '/api/webhooks/', v1.1.9: validazione con parse_url, niente strpos
+ *    su substring che faceva passare host arbitrari tipo evil-discord.com) →
+ *    'skipped', note 'Webhook Discord non valido'.
  *  - Messaggio: titolo + 2 frasi REALI del summary esistente (wp_strip_all_tags,
  *    MAI riassunti inventati) + source_url. Se l'articolo ha image_url viene
  *    aggiunto un embed {title, url, description, thumbnail:{url}}.
@@ -176,13 +178,37 @@ class Nexus_Social_Discord {
         /**
          * Verifica che l'URL sia un webhook Discord (host ufficiali).
          *
+         * v1.1.9: parse_url con host ESATTO ('discord.com' o 'discordapp.com') e
+         * path che INIZIA con '/api/webhooks/': il vecchio strpos su substring
+         * faceva passare host arbitrari come 'https://evil.com/discord.com/api/webhooks/'.
+         *
          * @param string $url URL webhook normalizzato con esc_url_raw.
-         * @return bool True se il path contiene il marker dei webhook Discord.
+         * @return bool True se l'URL è un webhook Discord valido.
          */
         private static function is_valid_webhook( $url ) {
-                $url = (string) $url;
+                $url = trim( (string) $url );
+                if ( '' === $url ) {
+                        return false;
+                }
 
-                return false !== strpos( $url, 'discord.com/api/webhooks/' ) || false !== strpos( $url, 'discordapp.com/api/webhooks/' );
+                $parsed = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url );
+                if ( ! is_array( $parsed ) || empty( $parsed['host'] ) || empty( $parsed['path'] ) ) {
+                        return false;
+                }
+
+                // Host esatto (case-insensitive): niente substring, niente user/port/zone.
+                $host = strtolower( (string) $parsed['host'] );
+                if ( 'discord.com' !== $host && 'discordapp.com' !== $host ) {
+                        return false;
+                }
+
+                // Solo http/https e path che inizia col prefisso reale dei webhook.
+                $scheme = strtolower( (string) ( $parsed['scheme'] ?? '' ) );
+                if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+                        return false;
+                }
+
+                return 0 === strpos( (string) $parsed['path'], '/api/webhooks/' );
         }
 
         /**

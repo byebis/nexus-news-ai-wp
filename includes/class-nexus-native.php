@@ -24,6 +24,10 @@
  *     dal titolo/estratto, per popolare wp_tags come farebbe un redattore.
  *  6. REDAZIONI (v1.1.1) — durante la migrazione ogni post riceve i termini
  *     redazione del suo agente (tassonomia nativa nexus_redazione).
+ *  7. BOT LOCKOUT (v1.1.9, WP2) — gli utenti del ruolo "nexus_ai_journalist"
+ *     NON possono fare login (wp_authenticate_user → errore), NON possono
+ *     richiedere il reset della password e NON vedono la admin bar: sono
+ *     autori tecnici (byline), mai principanti interattivi.
  *
  * CONVENZIONI:
  *  - nessun fatal: ogni helpers regge l'assenza delle classi/ funzioni WP;
@@ -49,6 +53,77 @@ class Nexus_Native {
          */
         public static function init() {
                 add_action( 'init', array( __CLASS__, 'register_role' ) );
+
+                // BOT LOCKOUT (v1.1.9): gli utenti bot sono autori tecnici senza login.
+                // Stesso pattern degli altri hook della classe: azioni/filtri agganciati
+                // in init() verso metodi statici di questa classe.
+                add_filter( 'wp_authenticate_user', array( __CLASS__, 'block_bot_login' ), 10, 2 );
+                add_filter( 'allow_password_reset', array( __CLASS__, 'disable_password_reset' ), 10, 2 );
+                add_filter( 'show_admin_bar', array( __CLASS__, 'hide_admin_bar' ) );
+        }
+
+        /* ============ BOT LOCKOUT (v1.1.9) ============ */
+
+        /**
+         * Blocca il login degli utenti con ruolo nexus_ai_journalist.
+         *
+         * Le password dei bot sono casuali e non note, ma per difesa in profondità
+         * qualunque tentativo di accesso con quel ruolo viene rifiutato ONESTAMENTE
+         * ('accesso non consentito agli agenti AI'): il ruolo non ha capability
+         * privilegiate, ma non deve nemmeno poter aprire una sessione autenticata.
+         *
+         * @param WP_User|WP_Error $user Utente in autenticazione (o errore precedente).
+         * @param string           $password Password fornita (non usata, signature del filtro).
+         * @return WP_User|WP_Error
+         */
+        public static function block_bot_login( $user, $password = '' ) {
+                unset( $password );
+
+                if ( $user instanceof WP_User && in_array( self::ROLE, (array) $user->roles, true ) ) {
+                        return new WP_Error(
+                                'nexus_bot_login_blocked',
+                                __( 'Accesso non consentito agli agenti AI.', 'nexus-news-ai' )
+                        );
+                }
+                return $user;
+        }
+
+        /**
+         * Impedisce il reset della password agli utenti bot.
+         *
+         * Un reset riuscirebbe anche senza sapere la password attuale e trasformerebbe
+         * l'utente tecnico in un account interattivo: per quel ruolo sempre false.
+         *
+         * @param bool $allow   Valore del filtro.
+         * @param int  $user_id ID utente oggetto del reset.
+         * @return bool
+         */
+        public static function disable_password_reset( $allow, $user_id = 0 ) {
+                if ( ! $allow ) {
+                        return false;
+                }
+
+                $user = ( $user_id > 0 && function_exists( 'get_userdata' ) ) ? get_userdata( absint( $user_id ) ) : false;
+                if ( $user instanceof WP_User && in_array( self::ROLE, (array) $user->roles, true ) ) {
+                        return false;
+                }
+                return (bool) $allow;
+        }
+
+        /**
+         * Nasconde la admin bar agli utenti bot (front-end: nessuna UI da redattore).
+         *
+         * @param bool $show Valore corrente del filtro.
+         * @return bool
+         */
+        public static function hide_admin_bar( $show ) {
+                if ( function_exists( 'is_user_logged_in' ) && is_user_logged_in() ) {
+                        $user = function_exists( 'wp_get_current_user' ) ? wp_get_current_user() : null;
+                        if ( $user instanceof WP_User && in_array( self::ROLE, (array) $user->roles, true ) ) {
+                                return false;
+                        }
+                }
+                return (bool) $show;
         }
 
         /**

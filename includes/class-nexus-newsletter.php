@@ -20,6 +20,18 @@
  *   Nexus_DB (subscribers, get_subscriber*, insert_subscriber, update_subscriber,
  *   articles, get_settings, insert_activity) e Nexus_AI_Engine::chat.
  *
+ * Sicurezza (v1.1.9, WP2):
+ * - TOKEN HASHATI: in DB viaggia SOLO lo sha256 hex (64 char, colonna VARCHAR(64))
+ *   del token casuale; il link email usa il token in CHIARO (mai persistito).
+ *   get_subscriber_by_token è chiamata con l'hash (find_subscriber_by_token gestisce
+ *   il fallback in chiaro per i token legacy, con ri-hash alla prima occasione).
+ * - TTL conferma: i link ?nexus_confirm valgono SOLO per iscritti pending creati
+ *   da ≤ 7 giorni (confronto su created_at); scaduto → errore onesto + invito a
+ *   re-iscriversi. La rotazione del token avviene a ogni re-invio.
+ * - ANTI-ENUMERATION: la risposta della rotta /subscribe è uniforme per iscritto
+ *   nuovo / già iscritto (messaggio generico, niente indizi sull'esistenza dell'email).
+ * - wp_mail fallita nell'invio conferma → log attività onesto (status 'error').
+ *
  * @package Nexus_News_AI
  */
 
@@ -41,6 +53,12 @@ class Nexus_Newsletter {
          * Ritardo (secondi) prima della prima esecuzione del digest dopo la schedulazione.
          */
         const FIRST_RUN_DELAY = 3600;
+
+        /**
+         * TTL del link di conferma double opt-in (7 giorni, v1.1.9): valgono SOLO
+         * per iscritti 'pending' con created_at entro questa finestra.
+         */
+        const CONFIRM_TTL = 604800; // 7 * DAY_IN_SECONDS.
 
         /**
          * Contatore form renderizzati nella pagina (per id univoci dell'input email).
@@ -113,12 +131,15 @@ class Nexus_Newsletter {
          * Handler POST /nexus/v1/subscribe.
          *
          * Pipeline: nonce → email valida → rate limit 1 richiesta/60s per IP
-         * (transient 'nexus_sub_rate_' . md5(ip)) → insert_subscriber → email di
-         * conferma con link home_url('/?nexus_confirm={token}').
+         * (transient 'nexus_sub_rate_' . md5(ip)) → insert_subscriber → ROTAZIONE
+         * token (v1.1.9: nuovo token casuale, in DB solo lo sha256) → email di
+         * conferma con link home_url('/?nexus_confirm={token in chiaro}').
          *
-         * Se l'email è già registrata e confermata risponde con messaggio onesto
-         * 'Sei già iscritto' (nessuna nuova email). Se è registrata ma pending o
-         * unsubscribed, reinvia il link di conferma con il token esistente.
+         * ANTI-ENUMERATION (v1.1.9): la risposta è UNIFORME per iscritto nuovo,
+         * già iscritto confermato o pending: stesso messaggio generico, nessun
+         * indizio sull'esistenza dell'email. Se l'email è già confermata NON
+         * viene inviata alcuna email (nessun buzz ripetuto), il messaggio resta
+         * comunque quello generico.
          *
          * @param WP_REST_Request $request Richiesta REST.
          * @return WP_REST_Response|WP_Error
@@ -164,15 +185,7 @@ class Nexus_Newsletter {
                 set_transient( $rate_key, 1, 60 );
 
                 $existing = Nexus_DB::get_subscriber_by_email( $email );
-
-                if ( $existing && 'confirmed' === (string) $existing->status ) {
-                        return rest_ensure_response(
-                                array(
-                                        'ok'      => true,
-                                        'message' => __( 'Sei già iscritto alla nostra newsletter: nessuna azione necessaria.', 'nexus-news-ai' ),
-                                )
-                        );
-                }
+                $already  = ( $existing && 'confirmed' === (string) $existing->status );
 
                 $id = Nexus_DB::insert_subscriber( $email );
                 if ( $id <= 0 ) {
@@ -183,27 +196,28 @@ class Nexus_Newsletter {
                         );
                 }
 
-                /* Token: preferisci quello della riga appena letta, altrimenti quello pre-esistente. */
-                $token = '';
-                $row   = Nexus_DB::get_subscriber( $id );
-                if ( $row && ! empty( $row->token ) ) {
-                        $token = (string) $row->token;
-                } elseif ( $existing && ! empty( $existing->token ) ) {
-                        $token = (string) $existing->token;
+                /* v1.1.9: token hashato nel DB. insert_subscriber genera ancora un token
+                 * in chiaro (db.php non toccato): lo ruota SUBITO qui — nuovo token
+                 * casuale, in DB solo lo sha256, il chiaro vive solo nel link email. */
+                $mail_sent = true;
+                if ( ! $already ) {
+                        $clear_token = self::new_token();
+                        $saved       = Nexus_DB::update_subscriber( (int) $id, array( 'token' => self::token_hash( $clear_token ) ) );
+                        if ( $saved ) {
+                                $mail_sent = self::send_confirmation_email( $email, $clear_token );
+                        }
                 }
 
-                if ( '' !== $token ) {
-                        self::send_confirmation_email( $email, $token );
+                /* Invio fallito → log attività onesto (mai silenzio, mai PII nel log). */
+                if ( ! $mail_sent ) {
+                        self::log_newsletter_error( 'Invio dell\'email di conferma iscrizione fallito (verifica la configurazione mail del sito).' );
                 }
 
-                $message = $existing
-                        ? __( 'Email già registrata: ti abbiamo appena inviato un nuovo link di conferma.', 'nexus-news-ai' )
-                        : __( 'Iscrizione completata: apri la tua casella email e clicca il link di conferma.', 'nexus-news-ai' );
-
+                /* ANTI-ENUMERATION: risposta identica per nuovo / pending / già confermato. */
                 return rest_ensure_response(
                         array(
                                 'ok'      => true,
-                                'message' => $message,
+                                'message' => __( "Se l'email è valida riceverai a breve la conferma.", 'nexus-news-ai' ),
                         )
                 );
         }
@@ -212,7 +226,10 @@ class Nexus_Newsletter {
          * Handler POST /nexus/v1/unsubscribe.
          *
          * Parametro 'token' (il link con ?nexus_unsub={token} resta la via utente):
-         * token valido → status 'unsubscribed'; token invalido → 404.
+         * token valido → status 'unsubscribed'; token invalido → 404. La lookup usa
+         * find_subscriber_by_token (v1.1.9: prima l'hash sha256, poi fallback in
+         * chiaro per i token legacy con migrazione morbida). Nessun TTL: la
+         * disiscrizione resta sempre possibile.
          *
          * @param WP_REST_Request $request Richiesta REST.
          * @return WP_REST_Response|WP_Error
@@ -227,7 +244,7 @@ class Nexus_Newsletter {
                 }
 
                 $token      = sanitize_text_field( (string) $request->get_param( 'token' ) );
-                $subscriber = ( '' !== $token ) ? Nexus_DB::get_subscriber_by_token( $token ) : null;
+                $subscriber = ( '' !== $token ) ? self::find_subscriber_by_token( $token ) : null;
 
                 if ( ! $subscriber ) {
                         return new WP_Error(
@@ -281,13 +298,26 @@ class Nexus_Newsletter {
 
                 /* ---------- Conferma iscrizione ---------- */
                 if ( '' !== $confirm ) {
-                        $subscriber = Nexus_DB::get_subscriber_by_token( $confirm );
+                        // v1.1.9: lookup con hash (fallback in chiaro per i token legacy).
+                        $subscriber = self::find_subscriber_by_token( $confirm );
 
                         if ( ! $subscriber ) {
                                 self::render_notice_page(
                                         __( 'Link non valido', 'nexus-news-ai' ),
                                         __( 'Il link di conferma non è valido o non esiste più.', 'nexus-news-ai' ),
                                         404
+                                );
+                        }
+
+                        // TTL (v1.1.9): il link di conferma vale SOLO per iscritti 'pending'
+                        // creati da ≤ 7 giorni. Scaduto → errore onesto + invito a re-iscriversi:
+                        // il link scaduto NON conferma nulla, ripetendo l'iscrizione arriva
+                        // un nuovo link con token ruotato.
+                        if ( 'confirmed' !== (string) $subscriber->status && self::confirm_link_expired( $subscriber ) ) {
+                                self::render_notice_page(
+                                        __( 'Link scaduto', 'nexus-news-ai' ),
+                                        __( 'Il link di conferma è scaduto (vale 7 giorni). Ripeti l\'iscrizione dalla pagina del sito per ricevere un nuovo link.', 'nexus-news-ai' ),
+                                        410
                                 );
                         }
 
@@ -313,7 +343,9 @@ class Nexus_Newsletter {
                 }
 
                 /* ---------- Disiscrizione ---------- */
-                $subscriber = Nexus_DB::get_subscriber_by_token( $unsub );
+                // v1.1.9: lookup con hash (fallback in chiaro per i token legacy). Nessun
+                // TTL: la disiscrizione deve restare sempre possibile.
+                $subscriber = self::find_subscriber_by_token( $unsub );
 
                 if ( ! $subscriber ) {
                         self::render_notice_page(
@@ -633,9 +665,13 @@ JS;
                                 if ( ! $email || ! is_email( $email ) ) {
                                         continue;
                                 }
-                                $token = (string) ( $subscriber->token ?? '' );
-                                $body  = self::build_digest_html( $intro_html, $items, $token );
-                                if ( wp_mail( $email, $subject, $body, $headers ) ) {
+                                // v1.1.9: il token persistito è l'sha256 (i link di disiscrizione
+                                // restano validi: find_subscriber_by_token matcha per uguaglianza
+                                // diretta sull'hash senza riscriverlo).
+                                $token   = (string) ( $subscriber->token ?? '' );
+                                $unsub   = '' !== $token ? home_url( '/?nexus_unsub=' . rawurlencode( $token ) ) : '';
+                                $body    = self::build_digest_html( $intro_html, $items, $token );
+                                if ( wp_mail( $email, $subject, $body, self::mail_headers( $unsub ) ) ) {
                                         $sent++;
                                 }
                         }
@@ -696,6 +732,128 @@ JS;
                 wp_clear_scheduled_hook( self::HOOK_DIGEST );
         }
 
+        /* ============ TOKEN E LOOKUP (v1.1.9) ============ */
+
+        /**
+         * Genera un token casuale per i link double opt-in.
+         *
+         * 64 caratteri hex da 32 byte random (random_bytes); se la funzione non
+         * è disponibile (PHP < 7.0 o esotiche build) fallback wp_generate_password
+         * alfanumerico. Il token in CHIARO vive solo nel link email: nel DB va
+         * SEMPRE salvato token_hash( $token ).
+         *
+         * @return string Token in chiaro (64 caratteri alfanumerici).
+         */
+        private static function new_token() {
+                try {
+                        return bin2hex( random_bytes( 32 ) );
+                } catch ( Exception $e ) {
+                        return wp_generate_password( 64, false, false );
+                } catch ( Throwable $e ) {
+                        return wp_generate_password( 64, false, false );
+                }
+        }
+
+        /**
+         * Hash del token per la persistenza: sha256 hex (64 char, sta in VARCHAR(64)).
+         *
+         * @param string $token Token in chiaro.
+         * @return string
+         */
+        private static function token_hash( $token ) {
+                return hash( 'sha256', (string) $token );
+        }
+
+        /**
+         * Cerca un iscritto a partire dal token IN CHIARO di un link.
+         *
+         * Ordine (v1.1.9): 1) lookup per sha256 del token (token hashati); 2) fallback
+         * per token in chiaro (righe legacy precedenti alla migrazione); in caso di
+         * match legacy il token viene RI-HASHATO e ri-salvato (migrazione morbida,
+         * il token in chiaro nella riga non resta esposto più a lungo del necessario).
+         *
+         * Nota: se il token fornito È già un hash valido (64 hex) e coincide con la
+         * riga (caso dei link digest che portano l'hash), il match avviene per
+         * uguaglianza diretta e la riga NON viene riscritta (nessun hash dell'hash).
+         *
+         * @param string $clear_token Token in chiaro dal link (o hash nei link digest).
+         * @return object|null Riga iscritto oppure null.
+         */
+        private static function find_subscriber_by_token( $clear_token ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_subscriber_by_token' ) ) {
+                        return null;
+                }
+
+                $clear_token = trim( (string) $clear_token );
+                if ( '' === $clear_token ) {
+                        return null;
+                }
+
+                // 1) Percorso nuovo: lookup per hash del token in chiaro.
+                $subscriber = Nexus_DB::get_subscriber_by_token( self::token_hash( $clear_token ) );
+                if ( $subscriber ) {
+                        return $subscriber;
+                }
+
+                // 2) Migrazione morbida: token legacy salvato in chiaro.
+                $legacy = Nexus_DB::get_subscriber_by_token( $clear_token );
+                if ( ! $legacy ) {
+                        return null;
+                }
+
+                $stored = (string) ( $legacy->token ?? '' );
+                $is_hash = ( 64 === strlen( $stored ) && ctype_xdigit( $stored ) );
+
+                // Re-salva l'hash SOLO se il token fornito era il chiaro di una riga
+                // legacy (32 char): se il match era per uguaglianza diretta con un hash
+                // (link digest) riscrivere corromperebbe il token (hash dell'hash).
+                if ( ! $is_hash && self::token_hash( $clear_token ) !== $stored ) {
+                        Nexus_DB::update_subscriber( (int) $legacy->id, array( 'token' => self::token_hash( $clear_token ) ) );
+                }
+
+                return $legacy;
+        }
+
+        /**
+         * Dice se il link di conferma è scaduto (v1.1.9): solo gli iscritti
+         * 'pending' con created_at entro CONFIRM_TTL (7 giorni) possono confermare.
+         *
+         * @param object $subscriber Riga iscritto.
+         * @return bool True se scaduto.
+         */
+        private static function confirm_link_expired( $subscriber ) {
+                if ( ! $subscriber || 'pending' !== (string) $subscriber->status ) {
+                        return false; // confermato/unsubscribed: il flusso gestisce lo stato, non il TTL.
+                }
+
+                $created = isset( $subscriber->created_at ) ? strtotime( (string) $subscriber->created_at ) : 0;
+                if ( $created <= 0 ) {
+                        // Data assente/malformata: per difetto il link è considerato scaduto
+                        // (non c'è modo di valutare il TTL, meglio chiudere la porta).
+                        return true;
+                }
+
+                return ( time() - $created ) > self::CONFIRM_TTL;
+        }
+
+        /**
+         * Log attività best-effort per errori newsletter (onesto, senza PII).
+         *
+         * @param string $message Messaggio errore sintetico.
+         * @return void
+         */
+        private static function log_newsletter_error( $message ) {
+                try {
+                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                Nexus_DB::insert_activity( 0, 'newsletter', sanitize_text_field( (string) $message ), 'error' );
+                        }
+                } catch ( Exception $e ) {
+                        /* Silenzio: il log non deve mai bloccare il flusso. */
+                } catch ( Throwable $e ) {
+                        /* Silenzio: il log non deve mai bloccare il flusso. */
+                }
+        }
+
         /* ============ HELPER PRIVATI ============ */
 
         /**
@@ -726,9 +884,13 @@ JS;
         /**
          * Email di conferma double opt-in con link ?nexus_confirm={token}.
          *
+         * Il $token è il token IN CHIARO (generato al volo dal chiamante): non viene
+         * mai persistito. Ritorna l'esito di wp_mail (v1.1.9) così il chiamante può
+         * loggare onestamente un eventuale fallimento dell'invio.
+         *
          * @param string $email Destinatario.
-         * @param string $token Token dell'iscritto.
-         * @return void
+         * @param string $token Token dell'iscritto (in chiaro).
+         * @return bool Esito di wp_mail.
          */
         private static function send_confirmation_email( $email, $token ) {
                 $confirm_url = home_url( '/?nexus_confirm=' . rawurlencode( $token ) );
@@ -744,22 +906,37 @@ JS;
                 $body .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;">' . esc_html__( 'Se non hai richiesto questa iscrizione ignora questa email: nessun account verrà creato.', 'nexus-news-ai' ) . '</p>';
                 $body .= '</div>';
 
-                wp_mail( $email, $subject, $body, self::mail_headers() );
+                return (bool) wp_mail( $email, $subject, $body, self::mail_headers() );
         }
 
         /**
-         * Headers email: HTML UTF-8 + From con nome sito e admin email.
+         * Headers email: HTML UTF-8 + From/Reply-To con nome sito e admin email,
+         * X-Mailer del plugin e, quando esiste l'URL di disiscrizione, header
+         * List-Unsubscribe (v1.1.9: richiesto dalle migliori pratiche antispam).
          *
+         * @param string $list_unsub_url URL di disiscrizione per il destinatario ('' = header omesso).
          * @return array
          */
-        private static function mail_headers() {
+        private static function mail_headers( $list_unsub_url = '' ) {
                 $from_name = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
                 $from_mail = get_bloginfo( 'admin_email' );
+                $version   = defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '1.1.9';
 
-                return array(
+                $headers = array(
                         'Content-Type: text/html; charset=UTF-8',
                         'From: ' . $from_name . ' <' . $from_mail . '>',
+                        'Reply-To: ' . $from_name . ' <' . $from_mail . '>',
+                        'X-Mailer: Nexus News AI (' . $version . ')',
                 );
+
+                $list_unsub_url = trim( (string) $list_unsub_url );
+                if ( '' !== $list_unsub_url ) {
+                        // Formato RFC 2369: <url> (angolari richiesti; il GET one-click è
+                        // il link ?nexus_unsub già offerto nel footer del digest).
+                        $headers[] = 'List-Unsubscribe: <' . esc_url_raw( $list_unsub_url ) . '>';
+                }
+
+                return $headers;
         }
 
         /**

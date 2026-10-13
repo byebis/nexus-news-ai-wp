@@ -13,6 +13,20 @@
  * Tutte le rotte usano come permission_callback Nexus_Public_API::auth(),
  * che valida la chiave, impone il rate limit e imposta l'header CORS.
  *
+ * v1.1.9 (D6) — MEMORIZZAZIONE DELLA CHIAVE: in settings è salvato SOLO
+ * hash('sha256', chiave) (esadecimale, 64 caratteri). MIGRAZIONE SOFT: le
+ * chiavi legacy salvate in chiaro dalle versioni precedenti restano valide
+ * (auth le confronta in chiaro) e vengono ri-salvate hashate alla prima
+ * occasione (upgrade-on-use, best effort, mai fatale). La risposta 401 è la
+ * STESSA per chiave sbagliata, formato hash o legacy: nessuna informazione
+ * sul formato memorizzato viene esposta.
+ *
+ * v1.1.9 (D6) — CORS E 429 ONESTI: l'header CORS (Access-Control-Allow-Origin: *)
+ * viene inviato ALL'INIZIO di auth(), quindi è presente anche su 401/403/429 e
+ * i client JS cross-origin possono leggere il corpo dell'errore; il 429 porta
+ * Retry-After con i secondi REALI rimasti della finestra corrente (non più un
+ * fisso "60").
+ *
  * ENDPOINT (tutti GET, tutti dietro auth() con API key):
  *
  *   GET /wp-json/nexus-public/v1/articles
@@ -67,15 +81,18 @@
  *   429 nexus_rate_limited          "Troppe richieste: limite 120 al minuto."
  *
  * CORS: a auth superata viene inviato "Access-Control-Allow-Origin: *" (dati
- * pubblici in sola lettura, nessuna credenziale o cookie coinvolta). NOTA per
- * i client browser: i preflight OPTIONS di WordPress non annunciano l'header
- * custom X-Api-Key, quindi da JavaScript cross-origin conviene passare la
- * chiave con la query string (?api_key=...) invece dell'header.
+ * pubblici in sola lettura, nessuna credenziale o cookie coinvolta). Dalla
+ * v1.1.9 l'header è inviato all'INIZIO di auth(): anche le risposte 401/403/429
+ * lo portano e sono leggibili da JavaScript cross-origin. NOTA per i client
+ * browser: i preflight OPTIONS di WordPress non annunciano l'header custom
+ * X-Api-Key, quindi da JavaScript cross-origin conviene passare la chiave con
+ * la query string (?api_key=...) invece dell'header.
  *
  * RATE LIMIT: 120 richieste al minuto per chiave. Finestra fissa di 60
  * secondi allineata al minuto (floor(time()/60)); il contatore è salvato in
- * un transient con TTL 120 secondi. Al superamento si risponde 429 con
- * header "Retry-After: 60". Il contatore non è atomico (get + set_transient):
+ * un transient con TTL 120 secondi. Al superamento si risponde 429 con header
+ * "Retry-After" impostato ai secondi effettivi rimasti della finestra (v1.1.9:
+ * prima era un fisso 60). Il contatore non è atomico (get + set_transient):
  * sotto burst altamente concorrenti può sottostimare di poche unità —
  * tollerabile per un limite di cortesia, non è una misura di sicurezza.
  *
@@ -255,16 +272,29 @@ class Nexus_Public_API {
          * Permission callback per tutte le rotte pubbliche.
          *
          * Ordine dei controlli:
+         *  0. header CORS (v1.1.9: inviato subito, così anche le risposte d'errore
+         *     401/503/429 sono leggibili da JavaScript cross-origin — stesso ACAO
+         *     delle risposte 200).
          *  1. guard Nexus_DB (altrimenti 501) e check setting enable_public_api (503).
          *  2. chiave da header X-Api-Key, fallback query/body api_key (401 se vuota).
          *  3. chiave configurata nel setting public_api_key (503 se vuota).
-         *  4. confronto hash_equals (401 se diversa).
-         *  5. header CORS + rate limit.
+         *  4. confronto hash_equals in DUE MODALITÀ (v1.1.9, D6):
+         *     - valore memorizzato hex-64 → è un hash SHA-256: confronto con
+         *       sha256 della chiave fornita;
+         *     - valore memorizzato altro → chiave legacy in chiaro: confronto
+         *       diretto; se matcha, upgrade-on-use (ri-salvataggio hashato,
+         *       best effort, mai fatale — vedi upgrade_legacy_key()).
+         *     La 401 è IDENTICA nei due casi: nessuna informazione sul formato
+         *     memorizzato transita nella risposta.
+         *  5. rate limit (429 al superamento).
          *
          * @param WP_REST_Request $request Richiesta corrente.
          * @return true|WP_Error
          */
         public static function auth( $request ) {
+
+                // 0. CORS v1.1.9 (D6): stesso ACAO su 200 ed errori, inviato subito.
+                @header( 'Access-Control-Allow-Origin: *' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 
                 // 1. Nexus_DB è il modulo base: senza di esso l'API non può rispondere.
                 if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
@@ -293,15 +323,69 @@ class Nexus_Public_API {
                         return new WP_Error( 'nexus_api_key_not_configured', 'Chiave API non configurata: generala dalla pagina Strumenti di Nexus.', array( 'status' => 503 ) );
                 }
 
-                // 4. Confronto a tempo costante tra chiave salvata e chiave ricevuta.
-                if ( ! hash_equals( (string) $s['public_api_key'], (string) $key ) ) {
+                // 4. Confronto a tempo costante, dual-mode v1.1.9 (D6): hash SHA-256
+                // (hex-64 memorizzato) o legacy in chiaro, stessa 401 per entrambi.
+                $stored = (string) $s['public_api_key'];
+
+                if ( preg_match( '/^[0-9a-f]{64}$/i', $stored ) ) {
+                        // Formato nuovo: il valore memorizzato è un hash della chiave.
+                        $ok = hash_equals( strtolower( $stored ), hash( 'sha256', $key ) );
+                } else {
+                        // Legacy pre-v1.1.9: il valore memorizzato è la chiave in chiaro.
+                        $ok = hash_equals( $stored, $key );
+                        if ( $ok ) {
+                                // Upgrade-on-use: da qui in poi anche in DB resta solo l'hash.
+                                self::upgrade_legacy_key( $stored, $key );
+                        }
+                }
+
+                if ( ! $ok ) {
                         return new WP_Error( 'nexus_api_key_invalid', 'Chiave API non valida.', array( 'status' => 401 ) );
                 }
 
-                // 5. Dati pubblici in sola lettura: CORS aperto e rate limit.
-                @header( 'Access-Control-Allow-Origin: *' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-
+                // 5. Dati pubblici in sola lettura: rate limit (il CORS è già in uscita, passo 0).
                 return self::rate_limit( $key );
+        }
+
+        /**
+         * Upgrade-on-use delle chiavi legacy in chiaro (v1.1.9, D6).
+         *
+         * Chiamato SOLO quando la chiave legacy fornita ha appena matchato quella
+         * memorizzata: ri-salva nelle settings hash('sha256', chiave) così il
+         * valore in chiaro scompare dal DB alla prima richiesta valida. BEST
+         * EFFORT: qualunque problema (DB, object cache, race) NON deve mai
+         * compromettere la risposta già decisa (la chiave è valida e la richiesta
+         * proseguirà) — tutto in try/catch, nessuna eccezione propagata.
+         *
+         * Anti-race: ri-legge le settings PRIMA di scrivere e procede solo se il
+         * valore corrente è ancora lo stesso legacy visto in auth (se nel frattempo
+         * l'admin ha rigenerato la chiave o un'altra richiesta l'ha già migrata,
+         * non si sovrascrive nulla).
+         *
+         * @param string $stored   Valore legacy letto in auth (in chiaro, matchato).
+         * @param string $provided Chiave in chiaro fornita dal client (già validata).
+         * @return void
+         */
+        private static function upgrade_legacy_key( $stored, $provided ) {
+                try {
+                        if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'update_settings' ) ) {
+                                return;
+                        }
+
+                        // Ri-lettura fresca: evita di pestare una chiave rigenerata nel frattempo.
+                        $fresh   = Nexus_DB::get_settings();
+                        $current = isset( $fresh['public_api_key'] ) ? (string) $fresh['public_api_key'] : '';
+
+                        // Se non è più lo stesso legacy (già hashato o sostituito): nessuna scrittura.
+                        if ( '' === $current || preg_match( '/^[0-9a-f]{64}$/i', $current ) || ! hash_equals( $current, $stored ) ) {
+                                return;
+                        }
+
+                        Nexus_DB::update_settings( array( 'public_api_key' => hash( 'sha256', $provided ) ) );
+                } catch ( Throwable $e ) {
+                        // Upgrade-on-use puramente best effort: mai fatale, mai log del valore.
+                        return;
+                }
         }
 
         /**
@@ -313,6 +397,10 @@ class Nexus_Public_API {
          * Race-condition TOLLERATA di proposito: il limite serve a scoraggiare
          * abusi grossolani, non è un meccanismo di sicurezza; evitare lock/DB
          * extra mantiene il costo della verifica praticamente nullo.
+         *
+         * v1.1.9 (D6): il 429 porta Retry-After con i secondi REALI rimasti della
+         * finestra corrente (fine finestra = (window+1)*60), clampato a [1, 60];
+         * prima era un fisso "Retry-After: 60".
          *
          * @param string $key Chiave API già validata.
          * @return true|WP_Error true se dentro il limite, 429 al superamento.
@@ -327,7 +415,9 @@ class Nexus_Public_API {
                 set_transient( $tid, $count, 120 );
 
                 if ( $count > self::RATE_LIMIT ) {
-                        @header( 'Retry-After: 60' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                        // v1.1.9 (D6): secondi effettivi alla fine della finestra corrente.
+                        $remaining = ( ( (int) $window + 1 ) * 60 ) - time();
+                        @header( 'Retry-After: ' . max( 1, min( 60, (int) $remaining ) ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
                         return new WP_Error( 'nexus_rate_limited', 'Troppe richieste: limite 120 al minuto.', array( 'status' => 429 ) );
                 }
 

@@ -41,12 +41,19 @@
  *
  * CONTRATTO REST (rotte definite nel §2 T-03, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/export        → { version, exported_at, site_url, settings, agents }
- *                                  ATTENZIONE: il file esportato contiene segreti
- *                                  (chiavi API/token): conservalo in modo sicuro.
+ *                                  NOTA v1.1.9 (D2): i segreti sono MASCHERATI
+ *                                  ('' + x_*_set): l'export non contiene più
+ *                                  chiavi API/token e non ripristina i segreti
+ *                                  al re-import (vanno ricaricati a mano).
  * - POST {restUrl}/import        body: JSON prodotto da GET /export
  *                                  → { settings_updated, agents_updated,
  *                                      agents_inserted, errors: [] }
- * - POST {restUrl}/tools/api-key → { api_key } (la chiave precedente diventa invalida)
+ * - POST {restUrl}/tools/api-key → { api_key_plain, api_key, message } (v1.1.9, D6:
+ *                                  la chiave IN CHIARO è restituita UNA SOLA VOLTA
+ *                                  — 'api_key_plain' è il nome canonico, 'api_key'
+ *                                  resta come alias per compatibilità; in settings
+ *                                  è salvato solo l'hash SHA-256, quindi la chiave
+ *                                  precedente diventa invalida e non è più leggibile).
  * - GET  {restUrl}/ai/models     → { models:[id...], base_url, cached, count,
  *                                  fetched_at } (v1.0.7; errori: 400 key_missing,
  *                                  502 con messaggio onesto dal provider)
@@ -62,7 +69,10 @@
  * - #nxa-tools-import-file    input file accept=".json,application/json".
  * - #nxa-tools-import         bottone "Importa".
  * - #nxa-tools-import-result  box esiti dell'importazione.
- * - #nxa-tools-key            input readonly con la chiave API pubblica corrente.
+ * - #nxa-tools-key            input readonly con la chiave API pubblica corrente
+ *                             (v1.1.9, D6: vuoto con placeholder di stato quando
+ *                             in DB c'è solo l'hash — la chiave in chiaro esiste
+ *                             solo al momento della generazione).
  * - #nxa-tools-keygen         bottone "Genera nuova chiave" (con window.confirm).
  * - #nxa-tools-key-copy       bottone "Copia" (v1.0.6): copia #nxa-tools-key negli
  *                             appunti; stato "Copiata" temporaneo sul bottone.
@@ -120,6 +130,12 @@ if ( class_exists( 'Nexus_DB' ) ) {
 /* API pubblica: stato e chiave corrente (sezione 4). */
 $api_enabled = ! empty( $settings['enable_public_api'] );
 $api_key     = isset( $settings['public_api_key'] ) ? (string) $settings['public_api_key'] : '';
+
+/* v1.1.9 (D6): la chiave è memorizzata come hash SHA-256 (hex-64): l'hash NON
+   è la chiave e non va mai mostrato/copiato — si indica solo che esiste. Le
+   chiavi legacy in chiaro (pre-migrazione) restano mostrate come prima finché
+   non vengono rigenerate o migrate dall'upgrade-on-use dell'API pubblica. */
+$api_key_is_hash = ( '' !== $api_key ) && (bool) preg_match( '/^[0-9a-f]{64}$/i', $api_key );
 
 /* Diagnostica AI (v1.0.7): configurazione AI corrente. La chiave non viene MAI
    esposta (nemmeno parzialmente): solo un booleano configurata/manca. */
@@ -399,7 +415,8 @@ $queue_rows = array(
                 </p>
                 <p class="nxa-tools-actions">
                         <label class="nxa-tools-key-label" for="nxa-tools-key"><?php esc_html_e( 'Chiave API corrente', 'nexus-news-ai' ); ?></label>
-                        <input type="text" id="nxa-tools-key" class="nxa-tools-key" readonly value="<?php echo esc_attr( $api_key ); ?>" placeholder="<?php esc_attr_e( 'Nessuna chiave generata', 'nexus-news-ai' ); ?>">
+                        <?php /* v1.1.9 (D6): chiave hashata → campo vuoto con placeholder di stato (l'hash non è la chiave, non va copiato); legacy in chiaro → mostrata come prima finché non migrata. */ ?>
+                        <input type="text" id="nxa-tools-key" class="nxa-tools-key" readonly value="<?php echo esc_attr( $api_key_is_hash ? '' : $api_key ); ?>" placeholder="<?php echo esc_attr( $api_key_is_hash ? __( '•••• (salvata, hashing) — rigenera per ottenerne una nuova', 'nexus-news-ai' ) : __( 'Nessuna chiave generata', 'nexus-news-ai' ) ); ?>">
                         <button type="button" id="nxa-tools-key-copy" class="nxa-btn"><?php esc_html_e( 'Copia', 'nexus-news-ai' ); ?></button>
                         <button type="button" id="nxa-tools-keygen" class="nxa-btn"><?php esc_html_e( 'Genera nuova chiave', 'nexus-news-ai' ); ?></button>
                 </p>
@@ -1190,10 +1207,15 @@ $queue_rows = array(
                                 busy = true;
                                 keygenBtn.disabled = true;
                                 api('/tools/api-key', { method: 'POST' }).then(function (data) {
-                                        var key = data && data.api_key ? String(data.api_key) : '';
+                                        /* v1.1.9 (D6): la chiave in chiaro arriva UNA SOLA VOLTA nella risposta
+                                           ('api_key_plain'; fallback ad 'api_key', alias storico) e viene mostrata
+                                           solo qui: il server salva in settings SOLO il suo hash SHA-256, quindi
+                                           ricaricando la pagina il campo torna mascherato e la chiave non sarà
+                                           più recuperabile — chi non la salva deve rigenerarla. */
+                                        var key = data ? String(data.api_key_plain || data.api_key || '') : '';
                                         if (key) {
                                                 keyInput.value = key;
-                                                toast('Nuova chiave API generata', 'success');
+                                                toast('Nuova chiave API generata: copiala subito, non verrà più mostrata', 'success');
                                         } else {
                                                 toast('Risposta senza chiave API', 'error');
                                         }

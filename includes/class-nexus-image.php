@@ -19,6 +19,17 @@
  *   Qualsiasi errore → log attività (Nexus_DB::insert_activity, con guard) + false,
  *   mai fatal e mai eccezioni non catturate.
  *
+ * Sicurezza (v1.1.9, WP2):
+ * - SSRF guard sul download remoto (guard_url): http/https + wp_http_validate_url +
+ *   risoluzione DNS + blocco IP privati/riservati (logica duplicata da Nexus_Tools:
+ *   db.php non deve essere toccato e la classe immagine resta autonoma).
+ * - 'redirection' => 1, 'limit_response_size' => 5MB e timeout espliciti sul download.
+ * - SVG REMOTI RIFIUTATI (content-type o sniffing): vettore di stored XSS.
+ * - MIME reale del corpo scaricato validato (getimagesizefromstring) prima del salvataggio.
+ * - FALLBACK file_put_contents RIMOSSO (v1.1.9): scrivere in uploads bypassando
+ *   la whitelist mime di wp_upload_bits poteva depositare XML/SVG eseguibile;
+ *   se wp_upload_bits rifiuta, la featured image non viene impostata (log onesto).
+ *
  * wiring: l'integratore farà require in nexus-news-ai.php
  * (require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';).
  *
@@ -28,6 +39,14 @@
 defined( 'ABSPATH' ) || exit;
 
 class Nexus_Image {
+
+        /**
+         * Dimensione massima del download di un'immagine remota (5 MB).
+         */
+        const MAX_DOWNLOAD_BYTES = 5242880; // 5 MB (5 * 1024 * 1024).
+
+        /** CIDR IPv4 bloccati dall'SSRF guard (stessa lista di Nexus_Tools). */
+        const BANNED_IPV4_CIDR = '0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 100.64.0.0/10 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4';
 
         /**
          * Punto d'ingresso: garantisce che il post WP abbia una featured image.
@@ -276,6 +295,12 @@ class Nexus_Image {
         /**
          * Scarica un'immagine da URL e ritorna il binario con l'estensione rilevata.
          *
+         * Guardie (v1.1.9): SSRF (guard_url: schema+host validati, DNS risolto
+         * fuori dagli IP privati/riservati), 'redirection' => 1, timeout esplicito,
+         * 'limit_response_size' 5MB, SVG remoti rifiutati (content-type o sniffing,
+         * vettore di stored XSS) e MIME reale del corpo validato con
+         * getimagesizefromstring PRIMA di consegnare il binario al chiamante.
+         *
          * @param string $url     URL dell'immagine (viene sanificato con esc_url_raw).
          * @param int    $timeout Timeout in secondi.
          * @return array|string Array( 'binary', 'ext' ) in successo, stringa di errore italiano altrimenti.
@@ -286,10 +311,19 @@ class Nexus_Image {
                         return 'URL immagine vuoto o non valido';
                 }
 
+                // SSRF guard (v1.1.9): l'URL (dall'articolo o dal provider AI) non deve
+                // puntare a servizi interni dell'host.
+                $guard = self::guard_url( $url );
+                if ( '' !== $guard ) {
+                        return $guard;
+                }
+
                 $response = wp_remote_get(
                         $url,
                         array(
-                                'timeout' => max( 1, (int) $timeout ),
+                                'timeout'             => max( 1, (int) $timeout ),
+                                'redirection'         => 1, // al massimo un rimbalzo: i CDN di immagini a volte redirigono.
+                                'limit_response_size' => self::MAX_DOWNLOAD_BYTES,
                         )
                 );
 
@@ -307,15 +341,261 @@ class Nexus_Image {
                         return 'download: contenuto vuoto';
                 }
 
+                // SVG BAN (v1.1.9): content-type dichiarato o sniffing del contenuto
+                // (<?xml / <svg): un SVG in uploads è un vettore di stored XSS.
+                $content_type = strtolower( (string) wp_remote_retrieve_header( $response, 'content-type' ) );
+                if ( false !== strpos( $content_type, 'image/svg' ) ) {
+                        return 'il file remoto è un SVG: formato non ammesso per le immagini degli articoli';
+                }
+
                 $ext = self::detect_image_ext( $body );
+                if ( 'svg' === $ext ) {
+                        return 'il file remoto è un SVG: formato non ammesso per le immagini degli articoli';
+                }
                 if ( '' === $ext ) {
                         return 'il file scaricato non è un\'immagine riconosciuta';
+                }
+
+                // Validazione del MIME REALE del corpo scaricato (firma strutturale,
+                // non il content-type dichiarato): blocca file camaleonte che si
+                // presentano come PNG ma non sono immagini valide.
+                $mime = self::real_image_mime( $body );
+                if ( '' === $mime ) {
+                        return 'il file scaricato non è un\'immagine valida';
+                }
+                if ( false !== strpos( $mime, 'svg' ) ) {
+                        return 'il file remoto è un SVG: formato non ammesso per le immagini degli articoli';
                 }
 
                 return array(
                         'binary' => $body,
                         'ext'    => $ext,
                 );
+        }
+
+        /* ============ SSRF GUARD E MIME (v1.1.9) ============ */
+
+        /**
+         * Guardia SSRF per il download remoto: ritorna '' se l'URL è sicuro,
+         * altrimenti un messaggio di errore italiano ('URL non consentito…').
+         *
+         * Logica duplicata da Nexus_Tools::assert_safe_url (la classe immagine resta
+         * autonoma e db.php non viene toccato): http/https + wp_http_validate_url +
+         * risoluzione DNS + blocco IP privati/riservati.
+         *
+         * @param string $url URL da validare.
+         * @return string '' se sicuro, messaggio di errore altrimenti.
+         */
+        private static function guard_url( $url ) {
+                $url = trim( (string) $url );
+                if ( '' === $url || ! function_exists( 'wp_http_validate_url' ) ) {
+                        return 'URL non consentito: sono ammessi solo URL http/https con host valido.';
+                }
+
+                $validated = wp_http_validate_url( $url );
+                if ( ! $validated ) {
+                        return 'URL non consentito: sono ammessi solo URL http/https con host valido.';
+                }
+
+                $host = (string) ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $validated, PHP_URL_HOST ) : parse_url( $validated, PHP_URL_HOST ) );
+                if ( '' === $host ) {
+                        return 'URL non consentito: host mancante.';
+                }
+
+                $ips = self::resolve_host_ips( $host );
+                if ( empty( $ips ) ) {
+                        return 'URL non consentito: impossibile risolvere il nome host.';
+                }
+
+                foreach ( $ips as $ip ) {
+                        if ( self::is_banned_ip( $ip ) ) {
+                                // Messaggio generico di proposito: non rivelare la topologia interna.
+                                return 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.';
+                        }
+                }
+
+                return '';
+        }
+
+        /**
+         * Risolve un host in una lista di IP (A e AAAA; fallback gethostbyname).
+         *
+         * @param string $host Hostname o IP.
+         * @return array Lista di IP (vuota se non risolvibile).
+         */
+        private static function resolve_host_ips( $host ) {
+                $host = trim( (string) $host );
+                if ( '' === $host ) {
+                        return array();
+                }
+
+                $bare = trim( $host, '[]' );
+                if ( filter_var( $bare, FILTER_VALIDATE_IP ) ) {
+                        return array( $bare );
+                }
+
+                $ips = array();
+
+                if ( function_exists( 'dns_get_record' ) ) {
+                        // @: il DNS failure genera warning, qui è un percorso di errore atteso.
+                        $a = @dns_get_record( $host, DNS_A );
+                        if ( is_array( $a ) ) {
+                                foreach ( $a as $row ) {
+                                        if ( ! empty( $row['ip'] ) && filter_var( $row['ip'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
+                                                $ips[] = (string) $row['ip'];
+                                        }
+                                }
+                        }
+                        $aaaa = @dns_get_record( $host, DNS_AAAA );
+                        if ( is_array( $aaaa ) ) {
+                                foreach ( $aaaa as $row ) {
+                                        if ( ! empty( $row['ipv6'] ) && filter_var( $row['ipv6'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+                                                $ips[] = (string) $row['ipv6'];
+                                        }
+                                }
+                        }
+                }
+
+                if ( empty( $ips ) ) {
+                        $resolved = @gethostbyname( $host );
+                        if ( is_string( $resolved ) && '' !== $resolved && $resolved !== $host && filter_var( $resolved, FILTER_VALIDATE_IP ) ) {
+                                $ips[] = $resolved;
+                        }
+                }
+
+                return array_values( array_unique( $ips ) );
+        }
+
+        /**
+         * True se l'IP rientra negli intervalli privati/riservati bloccati.
+         * IPv4 sui CIDR in BANNED_IPV4_CIDR; IPv6: ::, ::1, fc00::/7, fe80::/10,
+         * ff00::/8 e IPv4-mapped ricontrollati come IPv4. Fail-closed su IP malformati.
+         *
+         * @param string $ip Indirizzo IP.
+         * @return bool
+         */
+        private static function is_banned_ip( $ip ) {
+                $ip = trim( (string) $ip );
+                if ( '' === $ip || ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+                        return true;
+                }
+
+                $is_v6 = ( false !== strpos( $ip, ':' ) );
+
+                if ( $is_v6 && preg_match( '/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i', $ip, $m ) ) {
+                        return self::is_banned_ipv4( $m[1] );
+                }
+
+                $packed = (string) @inet_pton( $ip );
+                if ( '' === $packed || false === $packed ) {
+                        return true; // fail-closed.
+                }
+
+                if ( ! $is_v6 ) {
+                        return self::is_banned_ipv4( $ip );
+                }
+
+                // IPv6: unspecified (::) e loopback (::1) — confronto sui 16 byte binari.
+                if ( $packed === str_repeat( "\x00", 16 ) || $packed === str_repeat( "\x00", 15 ) . "\x01" ) {
+                        return true;
+                }
+
+                foreach ( array( 'fc00::/7', 'fe80::/10', 'ff00::/8' ) as $cidr ) {
+                        if ( self::cidr_match( $packed, $cidr ) ) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
+
+        /**
+         * Blocco IPv4 sui CIDR dichiarati in BANNED_IPV4_CIDR.
+         *
+         * @param string $ip Indirizzo IPv4.
+         * @return bool
+         */
+        private static function is_banned_ipv4( $ip ) {
+                $packed = (string) @inet_pton( $ip );
+                if ( '' === $packed || false === $packed ) {
+                        return true;
+                }
+                foreach ( preg_split( '/\s+/', self::BANNED_IPV4_CIDR, -1, PREG_SPLIT_NO_EMPTY ) as $cidr ) {
+                        if ( self::cidr_match( $packed, $cidr ) ) {
+                                return true;
+                        }
+                }
+                return false;
+        }
+
+        /**
+         * Confronto binario IP (inet_pton) contro una notazione CIDR.
+         *
+         * @param string $packed IP in forma binaria.
+         * @param string $cidr   Rete CIDR (es. 10.0.0.0/8).
+         * @return bool
+         */
+        private static function cidr_match( $packed, $cidr ) {
+                $parts = explode( '/', $cidr );
+                if ( count( $parts ) !== 2 ) {
+                        return false;
+                }
+                $net_packed = @inet_pton( $parts[0] );
+                if ( false === $net_packed || '' === $net_packed || strlen( $net_packed ) !== strlen( $packed ) ) {
+                        return false;
+                }
+
+                $bits       = (int) $parts[1];
+                $total      = strlen( $packed ) * 8;
+                $full_bytes = (int) floor( $bits / 8 );
+                $rest_bits  = $bits % 8;
+
+                if ( $full_bytes > 0 && substr( $packed, 0, $full_bytes ) !== substr( $net_packed, 0, $full_bytes ) ) {
+                        return false;
+                }
+                if ( $rest_bits > 0 ) {
+                        $mask = chr( ( 0xFF << ( 8 - $rest_bits ) ) & 0xFF );
+                        if ( ( ord( $packed[ $full_bytes ] ) & ord( $mask ) ) !== ( ord( $net_packed[ $full_bytes ] ) & ord( $mask ) ) ) {
+                                return false;
+                        }
+                }
+                return true;
+        }
+
+        /**
+         * MIME reale del corpo immagine: getimagesizefromstring (fallo su funzione
+         * GD interna, valida la STRUTTURA del file) con fallback su finfo.
+         *
+         * @param string $binary Contenuto del file.
+         * @return string MIME rilevato ('' se non riconosciuto come immagine).
+         */
+        private static function real_image_mime( $binary ) {
+                $binary = (string) $binary;
+                if ( '' === $binary ) {
+                        return '';
+                }
+
+                // Preferenza: getimagesizefromstring valida la struttura dell'immagine.
+                if ( function_exists( 'getimagesizefromstring' ) ) {
+                        $info = @getimagesizefromstring( $binary );
+                        if ( is_array( $info ) && ! empty( $info['mime'] ) ) {
+                                return (string) $info['mime'];
+                        }
+                }
+
+                // Fallback: finfo (libmagic) sul buffer.
+                if ( function_exists( 'finfo_buffer' ) ) {
+                        $finfo = @finfo_open( FILEINFO_MIME_TYPE );
+                        if ( $finfo ) {
+                                $mime = @finfo_buffer( $finfo, $binary );
+                                @finfo_close( $finfo );
+                                if ( is_string( $mime ) && '' !== $mime ) {
+                                        return $mime;
+                                }
+                        }
+                }
+
+                return '';
         }
 
         /* ============ ③ PLACEHOLDER LOCALE ============ */
@@ -542,9 +822,11 @@ class Nexus_Image {
         /**
          * Salva il binario negli upload e crea l'attachment WP (senza thumbnail set).
          *
-         * Usa wp_upload_bits('nexus-<article_id>-<timestamp>.<ext>'); se la scrittura
-         * viene rifiutata (es. estensione non in whitelist mime come SVG), ripiega su
-         * una scrittura manuale nella cartella uploads. Metadata generati se disponibili.
+         * Usa wp_upload_bits('nexus-<article_id>-<timestamp>.<ext>'). Se la scrittura
+         * viene rifiutata (es. estensione non in whitelist mime) NON c'è ripiego
+         * manuale (v1.1.9): il vecchio fallback file_put_contents depositava file in
+         * uploads bypassando la whitelist mime (vettore stored XSS per XML/SVG).
+         * Ritorna 0 e il chiamante logga l'errore onesto.
          *
          * @param string $binary     Contenuto binario dell'immagine.
          * @param string $ext        Estensione rilevata (png|jpg|gif|webp|svg).
@@ -575,23 +857,15 @@ class Nexus_Image {
                 $file_url  = '';
 
                 $upload = wp_upload_bits( $filename, null, (string) $binary );
-                if ( is_array( $upload ) && empty( $upload['error'] ) && ! empty( $upload['file'] ) ) {
-                        $file_path = (string) $upload['file'];
-                        $file_url  = isset( $upload['url'] ) ? (string) $upload['url'] : '';
-                } else {
-                        // Ripiego manuale (es. SVG rifiutato dalla whitelist mime): scrittura diretta in uploads.
-                        $uploads = wp_upload_dir();
-                        if ( ! is_array( $uploads ) || ! empty( $uploads['error'] ) || empty( $uploads['path'] ) ) {
-                                return 0;
-                        }
-                        $unique    = wp_unique_filename( $uploads['path'], $filename );
-                        $file_path = trailingslashit( $uploads['path'] ) . $unique;
-                        $written   = @file_put_contents( $file_path, (string) $binary );
-                        if ( false === $written || ! file_exists( $file_path ) ) {
-                                return 0;
-                        }
-                        $file_url = trailingslashit( $uploads['url'] ) . $unique;
+                if ( ! is_array( $upload ) || ! empty( $upload['error'] ) || empty( $upload['file'] ) ) {
+                        // v1.1.9: NESSUN ripiego manuale su filesystem (ex file_put_contents):
+                        // se la whitelist mime di WP rifiuta il file (es. SVG), la featured
+                        // image semplicemente non viene impostata (errore onesto a monte).
+                        return 0;
                 }
+
+                $file_path = (string) $upload['file'];
+                $file_url  = isset( $upload['url'] ) ? (string) $upload['url'] : '';
 
                 $attachment = array(
                         'post_mime_type' => $mime,
