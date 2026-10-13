@@ -263,6 +263,9 @@ class Nexus_Rest {
                 );
 
                 // v1.0.7: modelli disponibili dal provider AI (auto-load da chiave API).
+                // v1.1.10 (WP12) v2: parametri NUOVI tutti opzionali, retrocompatibile —
+                // provider (slug catalog o cust_*, vuoto = legacy globale), custom_id
+                // (DEPRECATO, alias di provider), refresh (1 = invalida la cache).
                 register_rest_route(
                         self::NAMESPACE_URI,
                         '/ai/models',
@@ -271,6 +274,23 @@ class Nexus_Rest {
                                         'methods'             => WP_REST_Server::READABLE,
                                         'callback'            => array( __CLASS__, 'rest_ai_models' ),
                                         'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'provider'  => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'custom_id' => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'refresh'   => array(
+                                                        'type'              => 'boolean',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'rest_sanitize_boolean',
+                                                ),
+                                        ),
                                 ),
                         )
                 );
@@ -1828,14 +1848,60 @@ class Nexus_Rest {
         }
 
         /**
-         * GET /ai/models — elenco modelli disponibili dal provider AI (v1.0.7).
-         * Auto-load: chiamata a {ai_base_url}/models con la chiave configurata,
-         * risposta normalizzata e cachata in transient per 12 ore (chiave per base URL).
-         * Errori onesti: mai modelli inventati.
+         * GET /ai/models — elenco modelli disponibili (v1.0.7; v2 WP12 v1.1.10).
+         *
+         * v2: parametri NUOVI tutti opzionali, retrocompatibile col v1 (nessun
+         * parametro = chiave+base URL globali delle Impostazioni):
+         * - provider  : slug del catalog Nexus_Providers (openrouter, openai, …)
+         *               oppure id custom 'cust_*'. Vuoto = comportamento legacy.
+         * - custom_id : DEPRECATO — il provider custom si passa direttamente via
+         *               provider; mantenuto come alias BC.
+         * - refresh   : 1 = invalida la cache prima della fetch.
+         *
+         * Risoluzione endpoint/auth: catalog entry → models_endpoint + models_auth
+         * ('none'|'bearer'|'anthropic'|'query_key'); custom (cust_*) →
+         * {base_url}/models bearer con chiave DENTRO l'entry; chiave built-in da
+         * prov_key_{provider}. Guard: auth != 'none' e chiave vuota → errore
+         * chiaro con suggerimento di connettere prima il provider.
+         *
+         * Cache per-provider: transient 'nexus_ai_models_{md5(provider)}' 12h —
+         * nella chiave SOLO il provider, MAI la chiave API (chiavi diverse →
+         * stessa lista). Il ramo legacy mantiene la chiave storica md5(base_url).
+         *
+         * Output: {models:[{id, name?, context_length?, prompt_price?,
+         * completion_price?, free?}], provider, cached, count, fetched_at} —
+         * cap 800 modelli. Ogni fetch fresh fa il merge dei prezzi nel transient
+         * 'nexus_ai_live_prices' (fonte di Nexus_AI_Engine::estimate_cost).
          */
         public static function rest_ai_models( $request ) {
-                unset( $request );
+                $provider = '';
+                $refresh  = false;
+                if ( $request instanceof WP_REST_Request ) {
+                        $provider = sanitize_key( (string) $request->get_param( 'provider' ) );
+                        // v1.1.10 (WP12): 'custom_id' deprecato — alias BC di provider.
+                        $custom_id = sanitize_key( (string) $request->get_param( 'custom_id' ) );
+                        if ( '' === $provider && '' !== $custom_id ) {
+                                $provider = $custom_id;
+                        }
+                        $refresh = rest_sanitize_boolean( $request->get_param( 'refresh' ) );
+                }
 
+                if ( '' !== $provider ) {
+                        return self::rest_ai_models_for_provider( $provider, $refresh );
+                }
+                return self::rest_ai_models_global( $refresh );
+        }
+
+        /**
+         * Ramo LEGACY (provider vuoto): chiave+base URL globali delle Impostazioni
+         * (v1.0.7, invariato a parte il refresh e la normalizzazione v2). Se la
+         * base URL è OpenRouter la risposta arricchita (prezzi/contesto) arriva
+         * gratis: stessa API pubblica dei modelli.
+         *
+         * @param bool $refresh True per invalidare la cache.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_ai_models_global( $refresh ) {
                 $settings = Nexus_DB::get_settings();
                 $api_key  = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
                 $base_url = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
@@ -1852,23 +1918,232 @@ class Nexus_Rest {
                 }
 
                 $transient = 'nexus_ai_models_' . md5( $base_url );
-                $cached    = get_transient( $transient );
+                if ( $refresh ) {
+                        delete_transient( $transient );
+                }
+                $cached = get_transient( $transient );
                 if ( is_array( $cached ) && isset( $cached['models'] ) ) {
                         $cached['cached'] = true;
                         return rest_ensure_response( $cached );
                 }
 
-                $endpoint = untrailingslashit( $base_url ) . '/models';
+                $family = false !== strpos( $base_url, 'openrouter.ai' ) ? 'openrouter' : 'generic';
+                $result = self::fetch_models_body( untrailingslashit( $base_url ) . '/models', 'bearer', $api_key );
+                if ( is_wp_error( $result ) ) {
+                        return $result;
+                }
+
+                $models = self::normalize_ai_models_v2( $result['raw'], $family );
+                if ( ! $models ) {
+                        return self::err(
+                                'nexus_rest_ai_models_unparsable',
+                                __( 'Il provider AI non ha restituito un elenco di modelli riconoscibile.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                self::record_live_prices( $models );
+
+                $payload = array(
+                        'models'    => $models,
+                        'base_url'  => $base_url,
+                        'provider'  => '',
+                        'cached'    => false,
+                        'count'     => count( $models ),
+                        'fetched_at'=> current_time( 'mysql' ),
+                );
+                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
+
+                return rest_ensure_response( $payload );
+        }
+
+        /**
+         * Ramo v2 (WP12): modelli di UN provider del catalog (o custom 'cust_*').
+         * Endpoint/auth dai metadati models_endpoint/models_auth della voce; per
+         * i custom la voce stessa fa da fonte (bearer su {base_url}/models).
+         *
+         * @param string $provider ID provider (sanitize_key già fatto dal caller).
+         * @param bool   $refresh  True per invalidare la cache per-provider.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_ai_models_for_provider( $provider, $refresh ) {
+                if ( ! class_exists( 'Nexus_Providers' ) ) {
+                        return self::err(
+                                'nexus_rest_ai_models_no_catalog',
+                                __( 'Il catalogo provider non è disponibile: il plugin non è caricato correttamente.', 'nexus-news-ai' ),
+                                500
+                        );
+                }
+
+                $settings = Nexus_DB::get_settings();
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+
+                $endpoint = '';
+                $auth     = 'bearer';
+                $api_key  = '';
+                $label    = $provider;
+
+                if ( 0 === strpos( $provider, 'cust_' ) ) {
+                        // Provider personalizzato (F2b/WP11): endpoint e chiave vivono
+                        // DENTRO l'entry dell'option nexus_custom_providers.
+                        $customs = Nexus_Providers::custom_providers();
+                        if ( ! isset( $customs[ $provider ] ) || ! is_array( $customs[ $provider ] ) ) {
+                                return self::err(
+                                        'nexus_rest_ai_models_unknown_provider',
+                                        __( 'Provider personalizzato sconosciuto o eliminato (' . $provider . '). Ricontrolla la sezione Provider personalizzati.', 'nexus-news-ai' ),
+                                        404
+                                );
+                        }
+                        $custom_entry = $customs[ $provider ];
+                        $label = isset( $custom_entry['label'] ) && '' !== trim( (string) $custom_entry['label'] ) ? (string) $custom_entry['label'] : $provider;
+                        $base  = isset( $custom_entry['base_url'] ) ? trim( (string) $custom_entry['base_url'] ) : '';
+                        if ( '' === $base ) {
+                                return self::err(
+                                        'nexus_rest_ai_models_no_base',
+                                        __( 'URL base mancante per il provider personalizzato ' . $label . ': correggilo in Impostazioni → Provider AI.', 'nexus-news-ai' ),
+                                        400
+                                );
+                        }
+                        $endpoint = untrailingslashit( $base ) . '/models';
+                        $auth     = 'bearer';
+                        $api_key  = isset( $custom_entry['api_key'] ) ? trim( (string) $custom_entry['api_key'] ) : '';
+                } else {
+                        $catalog = Nexus_Providers::catalog();
+                        if ( ! isset( $catalog[ $provider ] ) || ! is_array( $catalog[ $provider ] ) ) {
+                                return self::err(
+                                        'nexus_rest_ai_models_unknown_provider',
+                                        __( 'Provider AI sconosciuto: ' . $provider . '. Scegli un provider del catalogo (o un id cust_*).', 'nexus-news-ai' ),
+                                        404
+                                );
+                        }
+                        $entry = $catalog[ $provider ];
+                        $label = isset( $entry['label'] ) && '' !== trim( (string) $entry['label'] ) ? (string) $entry['label'] : $provider;
+                        $auth  = isset( $entry['models_auth'] ) && in_array( (string) $entry['models_auth'], array( 'none', 'bearer', 'anthropic', 'query_key' ), true ) ? (string) $entry['models_auth'] : 'bearer';
+
+                        $endpoint = isset( $entry['models_endpoint'] ) ? trim( (string) $entry['models_endpoint'] ) : '';
+                        if ( '' === $endpoint ) {
+                                // Solo 'custom' built-in: base dinamica dal settings dedicato.
+                                $base = isset( $settings['prov_base_custom'] ) ? trim( (string) $settings['prov_base_custom'] ) : '';
+                                if ( '' === $base ) {
+                                        return self::err(
+                                                'nexus_rest_ai_models_no_base',
+                                                __( 'URL base mancante per il provider ' . $label . ": compila l'URL base del provider Personalizzato in Impostazioni → Provider AI.", 'nexus-news-ai' ),
+                                                400
+                                        );
+                                }
+                                $endpoint = untrailingslashit( $base ) . '/models';
+                        }
+
+                        $key_option = Nexus_Providers::key_option( $provider );
+                        $api_key    = isset( $settings[ $key_option ] ) ? trim( (string) $settings[ $key_option ] ) : '';
+                        if ( '' === $api_key && 'custom' === $provider ) {
+                                // BC: il provider 'custom' legacy usava la chiave globale.
+                                $api_key = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+                        }
+                }
+
+                // Guard chiave: solo gli endpoint pubblici ('none') possono fare a meno.
+                if ( 'none' !== $auth && '' === $api_key ) {
+                        return self::err(
+                                'nexus_rest_ai_models_key_missing',
+                                __( 'Chiave API mancante per il provider ' . $label . ': connetti il provider prima (Impostazioni → Provider AI) e salva la chiave, poi ricarica i modelli.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $transient = 'nexus_ai_models_' . md5( $provider );
+                if ( $refresh ) {
+                        delete_transient( $transient );
+                }
+                $cached = get_transient( $transient );
+                if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+                        $cached['cached'] = true;
+                        return rest_ensure_response( $cached );
+                }
+
+                $result = self::fetch_models_body( $endpoint, $auth, $api_key );
+                if ( is_wp_error( $result ) ) {
+                        return $result;
+                }
+
+                $models = self::normalize_ai_models_v2( $result['raw'], self::models_family_for( $provider ) );
+                if ( ! $models ) {
+                        return self::err(
+                                'nexus_rest_ai_models_unparsable',
+                                __( 'Il provider AI non ha restituito un elenco di modelli riconoscibile.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                self::record_live_prices( $models );
+
+                $payload = array(
+                        'models'     => $models,
+                        'provider'   => $provider,
+                        'cached'     => false,
+                        'count'      => count( $models ),
+                        'fetched_at' => current_time( 'mysql' ),
+                );
+                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
+
+                return rest_ensure_response( $payload );
+        }
+
+        /**
+         * WP12: famiglia di normalizzazione metadata per un provider.
+         *
+         * @param string $provider ID provider.
+         * @return string 'openrouter'|'anthropic'|'google'|'generic'.
+         */
+        private static function models_family_for( $provider ) {
+                if ( 'openrouter' === $provider ) {
+                        return 'openrouter';
+                }
+                if ( 'anthropic' === $provider ) {
+                        return 'anthropic';
+                }
+                if ( 'google' === $provider ) {
+                        return 'google';
+                }
+                return 'generic';
+        }
+
+        /**
+         * WP12: GET {endpoint}/models con lo schema di auth dei metadati catalog.
+         * Ritorna array( 'code', 'raw' ) oppure WP_Error già pronto per la risposta
+         * (connection refused → 502, 401/403 → errore auth onesto).
+         *
+         * @param string $endpoint URL lista modelli.
+         * @param string $auth     'none'|'bearer'|'anthropic'|'query_key'.
+         * @param string $api_key  Chiave (può essere vuota con auth 'none').
+         * @return array|WP_Error
+         */
+        private static function fetch_models_body( $endpoint, $auth, $api_key ) {
+                $url     = (string) $endpoint;
+                $headers = array( 'Accept' => 'application/json' );
+
+                if ( 'anthropic' === $auth ) {
+                        $headers['x-api-key']          = $api_key;
+                        $headers['anthropic-version']  = '2023-06-01';
+                } elseif ( 'query_key' === $auth ) {
+                        $url = add_query_arg( 'key', $api_key, $url );
+                } elseif ( 'bearer' === $auth ) {
+                        $headers['Authorization'] = 'Bearer ' . $api_key;
+                }
+
+                // OpenRouter apprezza i meta header (classificazione app): innocui altrove.
+                if ( false !== strpos( $url, 'openrouter.ai' ) ) {
+                        $headers['HTTP-Referer'] = home_url( '/' );
+                        $headers['X-Title']      = 'Nexus News AI';
+                }
+
                 $response = wp_remote_get(
-                        $endpoint,
+                        $url,
                         array(
                                 'timeout' => 30,
-                                'headers' => array(
-                                        'Authorization' => 'Bearer ' . $api_key,
-                                        'Accept'        => 'application/json',
-                                        'HTTP-Referer'  => home_url( '/' ),
-                                        'X-Title'       => 'Nexus News AI',
-                                ),
+                                'headers' => $headers,
                         )
                 );
 
@@ -1904,29 +2179,133 @@ class Nexus_Rest {
                         );
                 }
 
-                $models = self::normalize_ai_models_body( $raw );
-                if ( ! $models ) {
-                        return self::err(
-                                'nexus_rest_ai_models_unparsable',
-                                __( 'Il provider AI non ha restituito un elenco di modelli riconoscibile.', 'nexus-news-ai' ),
-                                502
-                        );
-                }
-
-                $payload = array(
-                        'models'    => $models,
-                        'base_url'  => $base_url,
-                        'cached'    => false,
-                        'count'     => count( $models ),
-                        'fetched_at'=> current_time( 'mysql' ),
+                return array(
+                        'code' => $code,
+                        'raw'  => $raw,
                 );
-                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
-
-                return rest_ensure_response( $payload );
         }
 
         /**
-         * Estrae e normalizza gli id dei modelli da un body /models.
+         * WP12: normalizzazione v2 del body /models con metadata per famiglia
+         * (il picker v2 la usa al posto della v1 a soli id, che resta per il
+         * test connessione WP10).
+         *
+         * - openrouter → {id, name?, context_length?, prompt_price?, completion_price?
+         *   (USD/1M token, convertite dalle stringhe USD/token), free? (prompt = 0)}
+         * - anthropic  → {id, name: display_name}
+         * - google     → {id: name senza prefisso 'models/', name: displayName,
+         *   context_length: inputTokenLimit}
+         * - altri      → {id} (stringhe o oggetti {id|name|model}, v1 BC)
+         *
+         * @param string $raw    Body JSON della risposta.
+         * @param string $family Famiglia (models_family_for).
+         * @return array Lista di modelli normalizzati (cap 800), ordinata per id.
+         */
+        private static function normalize_ai_models_v2( $raw, $family ) {
+                $data = json_decode( (string) $raw, true );
+                if ( ! is_array( $data ) ) {
+                        return array();
+                }
+
+                $list = array();
+                if ( isset( $data['data'] ) && is_array( $data['data'] ) ) {
+                        $list = $data['data'];
+                } elseif ( isset( $data['models'] ) && is_array( $data['models'] ) ) {
+                        $list = $data['models'];
+                } else {
+                        $list = $data;
+                }
+
+                $out  = array();
+                $seen = array();
+                foreach ( $list as $item ) {
+                        $model = null;
+
+                        if ( 'openrouter' === $family && is_array( $item ) ) {
+                                $id = isset( $item['id'] ) ? trim( (string) $item['id'] ) : '';
+                                if ( '' !== $id ) {
+                                        $model = array( 'id' => $id );
+                                        if ( ! empty( $item['name'] ) && is_string( $item['name'] ) ) {
+                                                $model['name'] = $item['name'];
+                                        }
+                                        if ( isset( $item['context_length'] ) ) {
+                                                $model['context_length'] = (int) $item['context_length'];
+                                        }
+                                        $pricing = isset( $item['pricing'] ) && is_array( $item['pricing'] ) ? $item['pricing'] : array();
+                                        $prompt_raw = isset( $pricing['prompt'] ) ? trim( (string) $pricing['prompt'] ) : '';
+                                        if ( '' !== $prompt_raw && is_numeric( $prompt_raw ) ) {
+                                                // USD/token → USD/1M token.
+                                                $model['prompt_price'] = round( (float) $prompt_raw * 1000000, 6 );
+                                                $completion_raw = isset( $pricing['completion'] ) ? trim( (string) $pricing['completion'] ) : '';
+                                                if ( '' !== $completion_raw && is_numeric( $completion_raw ) ) {
+                                                        $model['completion_price'] = round( (float) $completion_raw * 1000000, 6 );
+                                                }
+                                                $model['free'] = ( 0.0 === (float) $prompt_raw );
+                                        }
+                                }
+                        } elseif ( 'anthropic' === $family && is_array( $item ) ) {
+                                $id = isset( $item['id'] ) ? trim( (string) $item['id'] ) : '';
+                                if ( '' !== $id ) {
+                                        $model = array( 'id' => $id );
+                                        if ( ! empty( $item['display_name'] ) && is_string( $item['display_name'] ) ) {
+                                                $model['name'] = $item['display_name'];
+                                        }
+                                }
+                        } elseif ( 'google' === $family && is_array( $item ) ) {
+                                $raw_name = isset( $item['name'] ) ? trim( (string) $item['name'] ) : '';
+                                $id       = '' !== $raw_name ? preg_replace( '/^models\//', '', $raw_name ) : '';
+                                if ( '' !== $id ) {
+                                        $model = array( 'id' => $id );
+                                        if ( ! empty( $item['displayName'] ) && is_string( $item['displayName'] ) ) {
+                                                $model['name'] = $item['displayName'];
+                                        }
+                                        if ( isset( $item['inputTokenLimit'] ) ) {
+                                                $model['context_length'] = (int) $item['inputTokenLimit'];
+                                        }
+                                }
+                        } elseif ( is_string( $item ) ) {
+                                $id = trim( $item );
+                                if ( '' !== $id ) {
+                                        $model = array( 'id' => $id );
+                                }
+                        } elseif ( is_array( $item ) ) {
+                                foreach ( array( 'id', 'name', 'model' ) as $k ) {
+                                        if ( ! empty( $item[ $k ] ) && is_string( $item[ $k ] ) ) {
+                                                $model = array( 'id' => trim( $item[ $k ] ) );
+                                                break;
+                                        }
+                                }
+                        }
+
+                        if ( is_array( $model ) && '' !== $model['id'] && ! isset( $seen[ $model['id'] ] ) ) {
+                                $seen[ $model['id'] ] = true;
+                                $out[] = $model;
+                        }
+                        if ( count( $out ) >= 800 ) {
+                                break;
+                        }
+                }
+
+                usort( $out, array( __CLASS__, 'sort_models_by_id' ) );
+                return $out;
+        }
+
+        /**
+         * WP12: usort callback — modelli ordinati per id (naturale, case-insensitive).
+         *
+         * @param array $a Primo modello.
+         * @param array $b Secondo modello.
+         * @return int
+         */
+        private static function sort_models_by_id( $a, $b ) {
+                return strnatcasecmp( isset( $a['id'] ) ? (string) $a['id'] : '', isset( $b['id'] ) ? (string) $b['id'] : '' );
+        }
+
+        /**
+         * Estrae e normalizza gli id dei modelli da un body /models (v1.0.7).
+         * Il picker WP12 usa normalize_ai_models_v2 (metadata per famiglia);
+         * questa versione a soli id resta per il test connessione WP10
+         * (POST /ai/test/{provider}: conta i modelli e ne mostra 5 di esempio).
          * Formati supportati: {data:[{id}]} (OpenAI/OpenRouter), {data:["id"]},
          * {models:[{id|name}]} (alcuni gateway), ["id"].
          *
@@ -1965,6 +2344,48 @@ class Nexus_Rest {
                 $ids = array_values( array_unique( array_filter( $ids ) ) );
                 sort( $ids, SORT_STRING );
                 return array_slice( $ids, 0, 500 );
+        }
+
+        /**
+         * WP12: merge dei prezzi fresh (famiglia openrouter) nel transient dedicato
+         * 'nexus_ai_live_prices' — mappa model_id → [prompt, completion] USD/1M —
+         * letta da Nexus_AI_Engine::estimate_cost() (UNA read, mai bloccante).
+         * Cap 3000 voci (taglio FIFO preservando le chiavi). Tutto in try/catch:
+         * un fallimento qui non deve MAI rompere la risposta del picker.
+         *
+         * @param array $models Lista normalizzata da normalize_ai_models_v2.
+         * @return void
+         */
+        private static function record_live_prices( $models ) {
+                try {
+                        if ( ! is_array( $models ) || ! $models ) {
+                                return;
+                        }
+                        $map = get_transient( 'nexus_ai_live_prices' );
+                        if ( ! is_array( $map ) ) {
+                                $map = array();
+                        }
+                        $added = 0;
+                        foreach ( $models as $model ) {
+                                if ( ! is_array( $model ) || empty( $model['id'] ) || ! isset( $model['prompt_price'] ) || ! is_numeric( $model['prompt_price'] ) ) {
+                                        continue;
+                                }
+                                $id              = strtolower( (string) $model['id'] );
+                                $completion      = isset( $model['completion_price'] ) && is_numeric( $model['completion_price'] ) ? (float) $model['completion_price'] : (float) $model['prompt_price'];
+                                $map[ $id ]      = array( (float) $model['prompt_price'], $completion );
+                                $added++;
+                        }
+                        if ( ! $added ) {
+                                return;
+                        }
+                        if ( count( $map ) > 3000 ) {
+                                $map = array_slice( $map, -3000, null, true );
+                        }
+                        set_transient( 'nexus_ai_live_prices', $map, 12 * HOUR_IN_SECONDS );
+                } catch ( Throwable $e ) {
+                        // Prezzi live: mai bloccanti.
+                        return;
+                }
         }
 
         /* =========================================================================

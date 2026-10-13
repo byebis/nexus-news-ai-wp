@@ -17,12 +17,16 @@
  *   il submit è intercettato, i campi serializzati come name=value e inviati
  *   con PUT /settings (nexus/v1), che è PARZIALE con whitelist: ogni pagina
  *   invia solo le proprie chiavi (i campi assenti non toccano il setting).
- * - Sezione "Configurazione AI": input #nxa-ai-model riceve list=
- *   "nxa-ai-models-datalist" (id invariato) e riga con bottone
- *   #nxa-ai-models-load, span #nxa-ai-models-status (aria-live="polite") e
- *   datalist #nxa-ai-models-datalist: i modelli si caricano dalla REST
- *   route /ai/models (cache 12h per base_url) con la chiave salvata, al
- *   click sul bottone o al blur del campo chiave.
+ * - Sezione "Configurazione AI": input #nxa-ai-model (name="ai_model") è il
+ *   COMBOBOX cercabile WP12 (admin.js nexusModelPicker): dropdown .nxa-mp-panel
+ *   con box di ricerca interna (match su id/name, case-insensitive), badge
+ *   GRATIS/contesto/prezzo, max 60 risultati con scroll, frecce+Invio per
+ *   scegliere, Esc/blur chiude. La lista arriva da GET /ai/models (cache
+ *   server 12h per provider, cache client 60s); il provider è '' = globale
+ *   (ai_base_url). Bottone #nxa-ai-models-load ("Carica modelli", refresh=1:
+ *   invalida la cache server) + span #nxa-ai-models-status (aria-live) invariati
+ *   nel contratto; la vecchia <datalist> #nxa-ai-models-datalist è RIMOSSA
+ *   (sostituita dal picker WP12).
  * - ai_api_key: input type="password" (mai mostrata in chiaro a schermo);
  *   il value è stampato con esc_attr e inviato SOLO se compilato (password
  *   vuota = nessun cambio). Stesso pattern per le chiavi prov_key_* e per
@@ -241,8 +245,9 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                 <tr>
                                                         <th scope="row"><label for="nxa-ai-model"><?php esc_html_e( 'Modello AI', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="text" name="ai_model" id="nxa-ai-model" value="<?php echo esc_attr( $settings['ai_model'] ); ?>" list="nxa-ai-models-datalist" class="regular-text code" />
-                                                                <p class="description"><?php esc_html_e( "Identificativo del modello (es. openai/gpt-4o-mini). I modelli si caricano dal provider con la chiave salvata: automaticamente all'uscita dal campo Chiave API AI oppure col bottone Carica modelli (cache 12 ore).", 'nexus-news-ai' ); ?></p>
+                                                                <?php /* WP12: combobox cercabile — admin.js (nexusModelPicker) avvolge l'input in span.nxa-mp e apre il dropdown .nxa-mp-panel al focus: ricerca su id/name, badge GRATIS/contesto/prezzo, max 60 risultati, frecce+Invio. Il provider della lista è '' = globale (chiave+base URL qui a fianco). */ ?>
+                                                                <input type="text" name="ai_model" id="nxa-ai-model" value="<?php echo esc_attr( $settings['ai_model'] ); ?>" class="regular-text code" autocomplete="off" />
+                                                                <p class="description"><?php esc_html_e( "Identificativo del modello (es. openai/gpt-4o-mini). Al focus si apre il picker cercabile: digita per filtrare i modelli del provider, clic o Invio per scegliere, Esc per chiudere.", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
@@ -250,7 +255,7 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                         <td>
                                                                 <button type="button" id="nxa-ai-models-load" class="nxa-btn is-sm"><?php esc_html_e( 'Carica modelli', 'nexus-news-ai' ); ?></button>
                                                                 <span id="nxa-ai-models-status" class="nxa-ai-models-status" aria-live="polite"></span>
-                                                                <datalist id="nxa-ai-models-datalist"></datalist>
+                                                                <p class="description"><?php esc_html_e( "Forza l'aggiornamento della lista dal provider (invalida la cache di 12 ore). I badge del picker mostrano gratuità, contesto e prezzo per 1M token quando il provider li espone.", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>

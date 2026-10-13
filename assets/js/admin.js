@@ -1539,8 +1539,14 @@
                         // delle redazioni in cui l'agente compare, "—" se nessuna.
                         '<div class="nxa-agent-redazioni" data-agent-id="' + esc( pick( agent, 'id' ) ) + '"></div>' +
                         // Modello AI dedicato (v1.0.3): vuoto = modello globale da settings.
+                        // WP12: l'input è avvolto in span.nxa-mp (combobox cercabile con
+                        // inizializzazione delegata al focus — vedi mpBindDocument) e
+                        // porta data-provider (ai_provider dell'agente): la lista modelli
+                        // del picker segue il provider DEDICATO dell'agente.
                         '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-                                '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" style="flex:1 1 170px;min-width:0" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
+                                '<span class="nxa-mp" style="flex:1 1 170px;min-width:0">' +
+                                        '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-provider="' + esc( pick( agent, 'ai_provider', 'aiProvider' ) || '' ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
+                                '</span>' +
                                 '<button type="button" class="button nxa-agent-model-save" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Salva modello</button>' +
                         '</div>' +
                         // v1.0.7: riga azioni in contenitore flex wrap: i nuovi
@@ -1804,7 +1810,10 @@
                 }
                 modal.hidden = false;
                 document.body.style.overflow = 'hidden';
-                fillModelDatalists(); // v1.0.7: solo cache, nessun fetch dal modal
+                // WP12: niente più datalist dei modelli da riempire qui — il campo
+                // #nxa-agent-model è un combobox cercabile (nexusModelPicker) che
+                // carica da solo la lista del provider selezionato (cache client 60s,
+                // fix G5: reload al cambio di #nxa-agent-provider).
                 loadWpCategories(); // v1.1.0: datalist categorie native (cache 60s, fetch solo in questo contesto)
                 nameField.focus();
         }
@@ -1922,6 +1931,25 @@
                         scopeToggle.addEventListener( 'change', function () {
                                 updateAgentChiefVisibility( qs( '#nxa-agent-modal' ) );
                         } );
+                }
+
+                // WP12 (fix G5): il combobox del modello nel modal segue il provider
+                // selezionato — al cambio si ricarica la lista (GET /ai/models
+                // ?provider={slug}, cache client 60s per provider). Il picker valuta
+                // #nxa-agent-provider a ogni apertura, il reload aggiorna lo stato
+                // se il pannello è già aperto.
+                var modalModelInput = qs( '#nxa-agent-model' );
+                if ( modalModelInput ) {
+                        var modalPicker = nexusModelPicker( modalModelInput, function () {
+                                var sel = qs( '#nxa-agent-provider' );
+                                return sel ? String( sel.value || '' ) : '';
+                        } );
+                        var providerSel = qs( '#nxa-agent-provider' );
+                        if ( providerSel && modalPicker ) {
+                                providerSel.addEventListener( 'change', function () {
+                                        modalPicker.reload();
+                                } );
+                        }
                 }
                 // v1.0.7: chiusure — "Annulla", × [data-nxa-agent-close], tasto ESC.
                 var cancelBtn = qs( '#nxa-agent-cancel' );
@@ -2290,40 +2318,581 @@
         }
 
         /* ==================================================================
-         * 9-bis. MODELLI AI PROVIDER (v1.0.7)
+         * 9-bis. MODELLI AI PROVIDER + MODEL PICKER (v1.0.7; v2 WP12 v1.1.10)
          * ================================================================== */
 
         /**
-         * v1.0.7: cache client dei modelli esposti dal provider (GET /ai/models).
-         * Il bottone in Impostazioni forza la chiamata; il modal agenti legge
-         * SOLO questa cache (fillModelDatalists, nessun fetch automatico).
+         * WP12: cache client GET /ai/models PER PROVIDER (Map slug→entry).
+         * '__global__' = ramo legacy (chiave+base URL globali). TTL 60s: il
+         * server ha la sua cache 12h per-provider, qui si limitano i rifetch.
          */
-        var aiModelsCache = { list: null, at: 0, ttl: 60000 };
+        var mpCache = {};
+        var MP_TTL = 60000;
+        var MP_MAX_RESULTS = 60;
 
-        /** v1.0.7: svuota e riempie un <datalist> con <option value="id">. */
-        function fillDatalist( node, models ) {
-                if ( ! node ) {
+        /**
+         * WP12: registry dei picker apribili + bind document UNICO (fuori-click,
+         * focusin delegato per le card agente). Evita che ogni picker aggiunga il
+         * proprio listener document (le card si rirenderizzano: leak evitato,
+         * i wrap staccati dal DOM vengono potati).
+         */
+        var mpRegistry = [];
+        var mpDocBound = false;
+
+        /** WP12: normalizza una voce modello (stringa legacy v1 o oggetto v2). */
+        function mpNormModel( m ) {
+                if ( typeof m === 'string' ) {
+                        var sid = m.trim();
+                        return sid ? { id: sid } : null;
+                }
+                if ( m && typeof m === 'object' && m.id ) {
+                        var out = { id: String( m.id ).trim() };
+                        if ( m.name ) {
+                                out.name = String( m.name );
+                        }
+                        var cl = num( m.context_length );
+                        if ( cl > 0 ) {
+                                out.context_length = cl;
+                        }
+                        if ( m.prompt_price !== undefined && m.prompt_price !== null && isFinite( parseFloat( m.prompt_price ) ) ) {
+                                out.prompt_price = parseFloat( m.prompt_price );
+                        }
+                        if ( m.completion_price !== undefined && m.completion_price !== null && isFinite( parseFloat( m.completion_price ) ) ) {
+                                out.completion_price = parseFloat( m.completion_price );
+                        }
+                        if ( m.free ) {
+                                out.free = true;
+                        }
+                        return out.id ? out : null;
+                }
+                return null;
+        }
+
+        /** WP12: cache client fresca per provider ('' = globale)? */
+        function mpCacheFresh( provider ) {
+                var c = mpCache[ provider || '__global__' ];
+                return !!( c && c.list && ( Date.now() - c.at ) < MP_TTL );
+        }
+
+        /**
+         * WP12: GET /ai/models[?provider={slug}&refresh=1] → Promise che risolve
+         * {list:[{id,…}], cached, count}. Cache client per-provider 60s e dedupe
+         * delle chiamate concorrenti; force=true bypassa la cache client E
+         * invalida quella server (refresh=1). Nessuna cache negativa: un errore
+         * lascia ripartire il prossimo open pulito.
+         */
+        function fetchProviderModels( provider, force ) {
+                var key = provider || '__global__';
+                var now = Date.now();
+                var cached = mpCache[ key ];
+                if ( ! force && cached && cached.list && ( now - cached.at ) < MP_TTL ) {
+                        return Promise.resolve( { list: cached.list, cached: true, count: cached.list.length } );
+                }
+                if ( ! force && cached && cached.pending ) {
+                        return cached.pending;
+                }
+                var query = 'ai/models';
+                if ( provider ) {
+                        query += '?provider=' + encodeURIComponent( provider );
+                        if ( force ) {
+                                query += '&refresh=1';
+                        }
+                } else if ( force ) {
+                        query += '?refresh=1';
+                }
+                var req = api( query ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        var raw = Array.isArray( data.models ) ? data.models : getList( payload, [ 'models', 'items', 'list' ] );
+                        var list = [];
+                        for ( var i = 0; i < raw.length; i++ ) {
+                                var m = mpNormModel( raw[ i ] );
+                                if ( m && m.id ) {
+                                        list.push( m );
+                                }
+                        }
+                        mpCache[ key ] = { list: list, at: Date.now(), ttl: MP_TTL, pending: null };
+                        return { list: list, cached: !!data.cached, count: num( data.count ) || list.length };
+                } ).catch( function ( err ) {
+                        if ( mpCache[ key ] ) {
+                                mpCache[ key ].pending = null;
+                        }
+                        throw err;
+                } );
+                if ( ! mpCache[ key ] ) {
+                        mpCache[ key ] = { list: null, at: 0, ttl: MP_TTL, pending: null };
+                }
+                mpCache[ key ].pending = req;
+                return req;
+        }
+
+        /** WP12: CSS del picker (.nxa-mp-*), iniettato UNA volta per pagina. */
+        var MP_CSS = [
+                '.nxa-mp{position:relative;display:inline-block;max-width:100%}',
+                '.nxa-mp>.nxa-agent-model,.nxa-agent-field .nxa-mp>input{width:100%;max-width:none;box-sizing:border-box}',
+                '.nxa-mp .nxa-mp-panel{position:absolute;top:100%;left:0;right:0;z-index:100500;margin-top:4px;display:block;padding:8px;background:var(--nxa-surface,#fff);border:1px solid var(--nxa-border,#e2e8f2);border-radius:10px;box-shadow:var(--nxa-shadow,0 10px 28px rgba(15,23,42,.12));text-align:left}',
+                '.nxa-mp .nxa-mp-search{display:block;width:100%;box-sizing:border-box;margin:0 0 8px;padding:6px 10px;border:1px solid var(--nxa-border,#e2e8f2);border-radius:8px;background:var(--nxa-surface-2,#f2f5fa);color:var(--nxa-text-body,#1d2327);font-size:13px;line-height:1.5}',
+                '.nxa-mp .nxa-mp-search:focus{border-color:var(--nxa-focus,#0891b2);outline:none;box-shadow:0 0 0 2px var(--nxa-info-bg,rgba(14,165,233,.12))}',
+                '.nxa-mp .nxa-mp-list{display:block;max-height:320px;overflow-y:auto;overscroll-behavior:contain}',
+                '.nxa-mp .nxa-mp-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;line-height:1.45}',
+                '.nxa-mp .nxa-mp-item:hover,.nxa-mp .nxa-mp-item.is-active{background:var(--nxa-surface-2,#f2f5fa)}',
+                '.nxa-mp .nxa-mp-id{font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--nxa-text-body,#1d2327);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+                '.nxa-mp .nxa-mp-name{color:var(--nxa-muted,#5c6b84);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}',
+                '.nxa-mp .nxa-mp-badges{margin-left:auto;display:inline-flex;gap:4px;flex-shrink:0}',
+                '.nxa-mp .nxa-mp-badge{display:inline-block;padding:1px 7px;border-radius:999px;border:1px solid var(--nxa-border,#e2e8f2);background:var(--nxa-surface-2,#f2f5fa);color:var(--nxa-muted,#5c6b84);font-size:10px;font-weight:600;line-height:1.6;white-space:nowrap}',
+                '.nxa-mp .nxa-mp-badge--free{color:var(--nxa-ok-text,#15803d);background:var(--nxa-ok-bg,rgba(34,197,94,.12));border-color:transparent}',
+                '.nxa-mp .nxa-mp-badge--ctx{font-family:Consolas,Monaco,monospace}',
+                '.nxa-mp .nxa-mp-empty{display:block;padding:10px 8px;color:var(--nxa-muted,#5c6b84);font-size:12px}',
+                '.nxa-mp .nxa-mp-empty--err{color:var(--nxa-err-text,#b91c1c);font-weight:600}',
+                '.nxa-mp .nxa-mp-more{display:block;padding:8px 8px 2px;color:var(--nxa-muted,#5c6b84);font-size:11px}'
+        ].join( '\n' );
+
+        function mpInjectStyles() {
+                if ( qs( '#nxa-mp-css' ) ) {
                         return;
                 }
-                node.innerHTML = '';
-                for ( var i = 0; i < models.length; i++ ) {
-                        var modelId = String( models[ i ] || '' ).trim();
-                        if ( ! modelId ) {
-                                continue;
-                        }
-                        var option = document.createElement( 'option' );
-                        option.setAttribute( 'value', modelId );
-                        node.appendChild( option );
+                var style = document.createElement( 'style' );
+                style.id = 'nxa-mp-css';
+                style.textContent = MP_CSS;
+                var head = document.head || qs( 'head' );
+                if ( head ) {
+                        head.appendChild( style );
                 }
         }
 
-        /** v1.0.7: riempie i datalist (Impostazioni + editor agente) dalla cache. */
-        function fillModelDatalists() {
-                if ( ! aiModelsCache.list ) {
+        /** WP12: bind document UNICO — fuori-click chiude i picker, focusin inizializza le card agente. */
+        function mpBindDocument() {
+                if ( mpDocBound ) {
                         return;
                 }
-                fillDatalist( qs( '#nxa-ai-models-datalist' ), aiModelsCache.list );
-                fillDatalist( qs( '#nxa-agent-model-datalist' ), aiModelsCache.list );
+                mpDocBound = true;
+                document.addEventListener( 'mousedown', function ( ev ) {
+                        for ( var i = 0; i < mpRegistry.length; i++ ) {
+                                var p = mpRegistry[ i ];
+                                if ( p.wrap && ! p.wrap.contains( ev.target ) ) {
+                                        p.close();
+                                }
+                        }
+                } );
+                // Card agente (.nxa-agent-model): il combobox WP12 si attacca al
+                // focus con inizializzazione delegata (le card si rirenderizzano).
+                document.addEventListener( 'focusin', function ( ev ) {
+                        var input = ev.target && ev.target.classList && ev.target.classList.contains( 'nxa-agent-model' ) ? ev.target : null;
+                        if ( ! input || input.id === 'nxa-agent-model' ) {
+                                return; // il modal è agganciato a parte in bindAgents()
+                        }
+                        var picker = nexusModelPicker( input, function () {
+                                return String( input.getAttribute( 'data-provider' ) || '' );
+                        } );
+                        if ( picker && document.activeElement === input ) {
+                                picker.open();
+                        }
+                } );
+        }
+
+        /** WP12: pota dal registry i picker il cui input è stato rimosso dal DOM. */
+        function mpRegister( wrap, closeFn ) {
+                mpRegistry.push( { wrap: wrap, close: closeFn } );
+                var alive = [];
+                for ( var i = 0; i < mpRegistry.length; i++ ) {
+                        var w = mpRegistry[ i ].wrap;
+                        if ( w && document.contains( w ) ) {
+                                alive.push( mpRegistry[ i ] );
+                        }
+                }
+                mpRegistry = alive;
+        }
+
+        /**
+         * WP12: factory del COMBOBOX cercabile riusabile (Impostazioni → modello
+         * globale, modal agenti, card agente). nexusModelPicker( inputEl, getProviderFn ):
+         * - inputEl       : input testo (value = model id);
+         * - getProviderFn : () → provider slug ('' = globale), rivalutato a ogni
+         *                   apertura (il cambio provider reload la lista, fix G5).
+         * Dropdown assoluto con box di ricerca interna (match su id/name,
+         * case-insensitive), badge GRATIS/contesto/prezzo, max 60 risultati con
+         * scroll, frecce + Invio, Esc/blur chiude. Nessuna virtualizzazione: il
+         * filtering client-side sul cap server 800 basta.
+         * Doppie inizializzazioni bloccate da data-nxa-mp="1". Ritorna {reload, open, close}.
+         */
+        function nexusModelPicker( inputEl, getProviderFn ) {
+                if ( ! inputEl || ! inputEl.parentNode || inputEl.getAttribute( 'data-nxa-mp' ) ) {
+                        return null;
+                }
+                inputEl.setAttribute( 'data-nxa-mp', '1' );
+                inputEl.setAttribute( 'autocomplete', 'off' );
+                inputEl.setAttribute( 'role', 'combobox' );
+                inputEl.setAttribute( 'aria-autocomplete', 'list' );
+                inputEl.setAttribute( 'aria-expanded', 'false' );
+                mpInjectStyles();
+                mpBindDocument();
+
+                // La card agente arriva GIÀ avvolta in span.nxa-mp (template
+                // agentCardHtml, col flex inline): riusala invece di annidarne
+                // una seconda; per gli input nudi (Impostazioni/modal) creala qui.
+                var wrap = inputEl.parentNode;
+                if ( ! ( wrap && wrap.classList && wrap.classList.contains( 'nxa-mp' ) ) ) {
+                        wrap = document.createElement( 'span' );
+                        wrap.className = 'nxa-mp';
+                        inputEl.parentNode.insertBefore( wrap, inputEl );
+                        wrap.appendChild( inputEl );
+                }
+
+                // Dentro una modal (.nxa-modal-panel ha overflow-y:auto) l'absolute
+                // verrebbe clippato: positioning FIXED ancorato al rettangolo input.
+                var fixedMode = !!( inputEl.closest && inputEl.closest( '.nxa-modal' ) );
+
+                var panel = document.createElement( 'span' );
+                panel.className = 'nxa-mp-panel';
+                panel.setAttribute( 'role', 'listbox' );
+                panel.hidden = true;
+
+                var search = document.createElement( 'input' );
+                search.type = 'text';
+                search.className = 'nxa-mp-search';
+                search.placeholder = 'Cerca modello per id o nome…';
+                search.setAttribute( 'aria-label', 'Cerca modello' );
+
+                var listBox = document.createElement( 'span' );
+                listBox.className = 'nxa-mp-list';
+
+                panel.appendChild( search );
+                panel.appendChild( listBox );
+                wrap.appendChild( panel );
+
+                var state = { open: false, filter: '', all: [], matches: [], active: -1, loading: false, err: '' };
+
+                function providerSlug() {
+                        try {
+                                return String( ( typeof getProviderFn === 'function' ? getProviderFn() : '' ) || '' ).trim();
+                        } catch ( e ) {
+                                return '';
+                        }
+                }
+
+                function mpPrice( v ) {
+                        var n = parseFloat( v );
+                        if ( ! isFinite( n ) ) {
+                                return '?';
+                        }
+                        var s = n >= 1 ? n.toFixed( 2 ) : n.toFixed( 3 );
+                        s = s.replace( /0+$/, '' ).replace( /\.$/, '' );
+                        return s === '' || s === '-' ? '0' : s;
+                }
+
+                function mpCtx( n ) {
+                        n = num( n );
+                        if ( n >= 1000000 ) {
+                                return ( Math.round( ( n / 1000000 ) * 10 ) / 10 ) + 'M';
+                        }
+                        if ( n >= 1000 ) {
+                                return Math.round( n / 1000 ) + 'k';
+                        }
+                        return n > 0 ? String( n ) : '';
+                }
+
+                function badgeHtml( m ) {
+                        var out = '';
+                        if ( m.free ) {
+                                out += '<span class="nxa-mp-badge nxa-mp-badge--free">GRATIS</span>';
+                        } else if ( typeof m.prompt_price === 'number' && typeof m.completion_price === 'number' ) {
+                                out += '<span class="nxa-mp-badge">$' + mpPrice( m.prompt_price ) + '/' + mpPrice( m.completion_price ) + '</span>';
+                        } else if ( typeof m.prompt_price === 'number' ) {
+                                out += '<span class="nxa-mp-badge">~$' + mpPrice( m.prompt_price ) + '</span>';
+                        }
+                        var ctx = mpCtx( m.context_length );
+                        if ( ctx ) {
+                                out += '<span class="nxa-mp-badge nxa-mp-badge--ctx">' + esc( ctx ) + '</span>';
+                        }
+                        return out;
+                }
+
+                function itemHtml( m ) {
+                        var name = ( m.name && String( m.name ) !== String( m.id ) )
+                                ? '<span class="nxa-mp-name">' + esc( m.name ) + '</span>'
+                                : '';
+                        return '<span class="nxa-mp-item" role="option" data-mp-id="' + esc( m.id ) + '">' +
+                                '<span class="nxa-mp-id">' + esc( m.id ) + '</span>' + name +
+                                '<span class="nxa-mp-badges">' + badgeHtml( m ) + '</span></span>';
+                }
+
+                /** WP12: filtro su id/name case-insensitive; prefisso id prima; cap 60. */
+                function computeMatches() {
+                        var q = state.filter.trim().toLowerCase();
+                        var all = state.all;
+                        if ( ! q ) {
+                                return all.slice( 0, MP_MAX_RESULTS );
+                        }
+                        var scored = [];
+                        for ( var i = 0; i < all.length; i++ ) {
+                                var m = all[ i ];
+                                var id = String( m.id || '' ).toLowerCase();
+                                var nm = m.name ? String( m.name ).toLowerCase() : '';
+                                if ( id.indexOf( q ) === -1 && nm.indexOf( q ) === -1 ) {
+                                        continue;
+                                }
+                                scored.push( { m: m, rank: id.indexOf( q ) === 0 ? 0 : 1 } );
+                        }
+                        scored.sort( function ( a, b ) {
+                                if ( a.rank !== b.rank ) {
+                                        return a.rank - b.rank;
+                                }
+                                var ai = String( a.m.id ).toLowerCase();
+                                var bi = String( b.m.id ).toLowerCase();
+                                return ai < bi ? -1 : ( ai > bi ? 1 : 0 );
+                        } );
+                        return scored.slice( 0, MP_MAX_RESULTS ).map( function ( s ) {
+                                return s.m;
+                        } );
+                }
+
+                function syncActive() {
+                        var items = listBox.querySelectorAll( '.nxa-mp-item' );
+                        for ( var i = 0; i < items.length; i++ ) {
+                                if ( i === state.active ) {
+                                        items[ i ].classList.add( 'is-active' );
+                                        items[ i ].setAttribute( 'aria-selected', 'true' );
+                                } else {
+                                        items[ i ].classList.remove( 'is-active' );
+                                        items[ i ].removeAttribute( 'aria-selected' );
+                                }
+                        }
+                }
+
+                function render() {
+                        var html = '';
+                        if ( state.err ) {
+                                html = '<span class="nxa-mp-empty nxa-mp-empty--err">' + esc( state.err ) + '</span>';
+                        } else if ( state.loading && ! state.all.length ) {
+                                html = '<span class="nxa-mp-empty">Caricamento modelli…</span>';
+                        } else {
+                                var matches = computeMatches();
+                                state.matches = matches;
+                                if ( ! matches.length ) {
+                                        html = '<span class="nxa-mp-empty">Nessun modello trovato' + ( state.filter ? ' per “' + esc( state.filter ) + '”' : '' ) + '.</span>';
+                                } else {
+                                        var parts = [];
+                                        for ( var i = 0; i < matches.length; i++ ) {
+                                                parts.push( itemHtml( matches[ i ] ) );
+                                        }
+                                        if ( state.all.length > matches.length ) {
+                                                parts.push( '<span class="nxa-mp-more">Mostrati ' + matches.length + ' di ' + state.all.length + ' modelli: affina la ricerca.</span>' );
+                                        }
+                                        html = parts.join( '' );
+                                }
+                        }
+                        listBox.innerHTML = html;
+                        state.active = state.matches.length ? 0 : -1;
+                        syncActive();
+                        if ( search.value !== state.filter ) {
+                                search.value = state.filter;
+                        }
+                }
+
+                function moveActive( delta ) {
+                        if ( ! state.matches.length ) {
+                                return;
+                        }
+                        state.active = ( state.active + delta + state.matches.length ) % state.matches.length;
+                        syncActive();
+                        var items = listBox.querySelectorAll( '.nxa-mp-item' );
+                        if ( items[ state.active ] && items[ state.active ].scrollIntoView ) {
+                                items[ state.active ].scrollIntoView( { block: 'nearest' } );
+                        }
+                }
+
+                function choose( m ) {
+                        if ( ! m ) {
+                                return;
+                        }
+                        inputEl.value = String( m.id || '' );
+                        close();
+                        try {
+                                inputEl.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+                        } catch ( e ) {
+                                // browser legacy: il value è già impostato, nessun danno
+                        }
+                }
+
+                /** WP12: fetch per il provider CORRENTE (cache client 60s). */
+                function load( force ) {
+                        var prov = providerSlug();
+                        state.err = '';
+                        state.loading = true;
+                        render();
+                        fetchProviderModels( prov, !!force ).then( function ( res ) {
+                                if ( prov !== providerSlug() || ! state.open ) {
+                                        return; // il provider è cambiato nel frattempo
+                                }
+                                state.loading = false;
+                                state.all = res.list || [];
+                                render();
+                        } ).catch( function ( err ) {
+                                if ( prov !== providerSlug() || ! state.open ) {
+                                        return;
+                                }
+                                state.loading = false;
+                                state.err = ( err && err.message ) ? err.message : 'Caricamento modelli fallito';
+                                render();
+                        } );
+                }
+
+                function positionFixed() {
+                        var rect = inputEl.getBoundingClientRect();
+                        panel.style.position = 'fixed';
+                        panel.style.left = rect.left + 'px';
+                        panel.style.top = ( rect.bottom + 4 ) + 'px';
+                        panel.style.width = Math.max( rect.width, 280 ) + 'px';
+                }
+
+                function open() {
+                        if ( state.open ) {
+                                return;
+                        }
+                        state.open = true;
+                        state.filter = '';
+                        state.err = '';
+                        search.value = '';
+                        if ( fixedMode ) {
+                                positionFixed();
+                        }
+                        panel.hidden = false;
+                        inputEl.setAttribute( 'aria-expanded', 'true' );
+                        render();
+                        load( false );
+                }
+
+                function close() {
+                        if ( ! state.open ) {
+                                return;
+                        }
+                        state.open = false;
+                        panel.hidden = true;
+                        inputEl.setAttribute( 'aria-expanded', 'false' );
+                }
+
+                /** WP12: chiudi dopo un blur, SALVO il focus spostato nel pannello. */
+                function closeSoon() {
+                        window.setTimeout( function () {
+                                if ( ! state.open ) {
+                                        return;
+                                }
+                                var active = document.activeElement;
+                                if ( active && wrap.contains( active ) ) {
+                                        return;
+                                }
+                                close();
+                        }, 140 );
+                }
+
+                function onKeyDown( ev, fromSearch ) {
+                        var key = ev.key || '';
+                        if ( key === 'ArrowDown' || key === 'ArrowUp' ) {
+                                ev.preventDefault();
+                                if ( ! state.open ) {
+                                        open();
+                                        return;
+                                }
+                                moveActive( key === 'ArrowDown' ? 1 : -1 );
+                        } else if ( key === 'Enter' ) {
+                                if ( state.open ) {
+                                        ev.preventDefault(); // pannello aperto: mai submit accidentale
+                                        if ( state.matches.length && state.active >= 0 ) {
+                                                ev.stopPropagation();
+                                                choose( state.matches[ state.active ] );
+                                        }
+                                }
+                        } else if ( key === 'Escape' || key === 'Esc' ) {
+                                if ( state.open ) {
+                                        ev.preventDefault();
+                                        ev.stopPropagation(); // Esc chiude il picker, NON il modal/pagina
+                                        close();
+                                        if ( fromSearch ) {
+                                                inputEl.focus();
+                                        }
+                                }
+                        } else if ( key === 'Tab' ) {
+                                close();
+                        }
+                }
+
+                if ( fixedMode ) {
+                        // La modal scorre: allineare continuamente è rumore → chiudi.
+                        document.addEventListener( 'scroll', function ( ev ) {
+                                if ( state.open && wrap.contains( ev.target ) === false ) {
+                                        close();
+                                }
+                        }, true );
+                        window.addEventListener( 'resize', close );
+                }
+
+                inputEl.addEventListener( 'focus', open );
+                inputEl.addEventListener( 'input', function () {
+                        if ( ! state.open ) {
+                                open();
+                        }
+                        state.filter = inputEl.value;
+                        render();
+                } );
+                inputEl.addEventListener( 'keydown', function ( ev ) {
+                        onKeyDown( ev, false );
+                } );
+                inputEl.addEventListener( 'blur', closeSoon );
+
+                search.addEventListener( 'input', function () {
+                        if ( ! state.open ) {
+                                open();
+                        }
+                        state.filter = search.value;
+                        render();
+                } );
+                search.addEventListener( 'keydown', function ( ev ) {
+                        onKeyDown( ev, true );
+                } );
+                search.addEventListener( 'blur', closeSoon );
+
+                // Click su un risultato: preventDefault al mousedown per non perdere
+                // il focus dall'input (il blur-chiusura non scatta).
+                listBox.addEventListener( 'mousedown', function ( ev ) {
+                        var item = ev.target && ev.target.closest ? ev.target.closest( '.nxa-mp-item' ) : null;
+                        if ( item ) {
+                                ev.preventDefault();
+                        }
+                } );
+                listBox.addEventListener( 'click', function ( ev ) {
+                        var item = ev.target && ev.target.closest ? ev.target.closest( '.nxa-mp-item' ) : null;
+                        if ( ! item ) {
+                                return;
+                        }
+                        var id = item.getAttribute( 'data-mp-id' );
+                        for ( var i = 0; i < state.matches.length; i++ ) {
+                                if ( String( state.matches[ i ].id ) === id ) {
+                                        choose( state.matches[ i ] );
+                                        return;
+                                }
+                        }
+                } );
+
+                var picker = {
+                        /**
+                         * WP12 (fix G5): lista aggiornata al cambio provider.
+                         * force=true scarta anche la cache client 60s.
+                         */
+                        reload: function ( force ) {
+                                var key = providerSlug() || '__global__';
+                                if ( force ) {
+                                        delete mpCache[ key ];
+                                }
+                                state.all = [];
+                                state.err = '';
+                                if ( state.open ) {
+                                        load( false );
+                                }
+                        },
+                        open: open,
+                        close: close
+                };
+                mpRegister( wrap, close );
+                return picker;
         }
 
         /** v1.0.7: stato leggibile accanto al bottone "Carica modelli". */
@@ -2335,27 +2904,18 @@
         }
 
         /**
-         * v1.0.7: GET /ai/models → datalist + stato "{count} modelli
-         * disponibili dal provider" (+ " (cache)" se il provider serve la sua).
-         * Errori onesti: toast + err.message nello stato (chiave assente, HTTP
-         * errato, …); chiave non ancora salvata → invito esplicito a salvare.
+         * v1.0.7 (v2 WP12): forza il caricamento dei modelli del provider GLOBALE
+         * (force → refresh=1 lato server). Aggiorna lo stato leggibile; i picker
+         * aperti si riallineano da soli al prossimo render (cache client
+         * invalidata da fetchProviderModels(force)). Errori onesti: toast +
+         * messaggio nello stato (chiave assente, HTTP errato, …).
          */
         function loadAiModels( force ) {
-                var fresh = aiModelsCache.list && ( Date.now() - aiModelsCache.at ) < aiModelsCache.ttl;
-                if ( fresh && ! force ) {
-                        fillModelDatalists();
-                        return Promise.resolve();
-                }
                 var loadBtn = qs( '#nxa-ai-models-load' );
                 setBtnLoading( loadBtn, true, 'Carico…' );
-                return api( 'ai/models' ).then( function ( payload ) {
-                        var data = unwrap( payload ) || {};
-                        var models = Array.isArray( data.models ) ? data.models : getList( payload, [ 'models', 'items', 'list' ] );
-                        aiModelsCache.list = models;
-                        aiModelsCache.at = Date.now();
-                        fillModelDatalists();
-                        var count = num( data.count ) || models.length;
-                        setModelsStatus( count + ' modelli disponibili dal provider' + ( data.cached ? ' (cache)' : '' ) );
+                return fetchProviderModels( '', !!force ).then( function ( res ) {
+                        var list = res.list || [];
+                        setModelsStatus( ( num( res.count ) || list.length ) + ' modelli disponibili dal provider' + ( res.cached ? ' (cache)' : '' ) );
                 } ).catch( function ( err ) {
                         apiErrorToast( err, 'Caricamento modelli fallito' );
                         var message = ( err && err.message ) ? err.message : 'Operazione non riuscita';
@@ -3434,9 +3994,17 @@
                         } );
                 } );
 
-                // v1.0.7: modelli AI provider — click sul bottone "Carica modelli"
-                // e precarico al blur della chiave (solo se compilata e i datalist
-                // sono ancora vuoti; il server legge la chiave SALVATA).
+                // v1.0.7 (WP12): modelli AI provider — il combobox cercabile del
+                // modello globale (provider legacy '' = chiave+base URL globali) e
+                // il bottone "Carica modelli" (refresh=1, invalida la cache server).
+                // Precarico al blur della chiave (solo se compilata e cache client
+                // scaduta; il server legge la chiave SALVATA).
+                var globalModelInput = qs( '#nxa-ai-model' );
+                if ( globalModelInput ) {
+                        nexusModelPicker( globalModelInput, function () {
+                                return '';
+                        } );
+                }
                 var modelsBtn = qs( '#nxa-ai-models-load' );
                 if ( modelsBtn ) {
                         modelsBtn.addEventListener( 'click', function () {
@@ -3446,9 +4014,8 @@
                 var apiKeyField = qs( '#nxa-ai-api-key' );
                 if ( apiKeyField ) {
                         apiKeyField.addEventListener( 'blur', function () {
-                                var modelsList = qs( '#nxa-ai-models-datalist' );
-                                if ( String( apiKeyField.value || '' ).trim() !== '' && ( ! modelsList || ! modelsList.firstChild ) ) {
-                                        loadAiModels( true );
+                                if ( String( apiKeyField.value || '' ).trim() !== '' && ! mpCacheFresh( '' ) ) {
+                                        loadAiModels( false );
                                 }
                         } );
                 }

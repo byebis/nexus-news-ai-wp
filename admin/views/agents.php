@@ -64,8 +64,11 @@
  *        /agents/{id}/update (esiti in #nxa-agent-form-status, aria-live);
  *      - click #nxa-agent-cancel, click [data-nxa-agent-close] e tasto ESC
  *        (con la modal aperta) → closeAgentEditor();
- *      - #nxa-agent-model-datalist viene riempito da admin.js dalla cache
- *        GET /ai/models (nessun fetch automatico dalla modal);
+ *      - #nxa-agent-model è un COMBOBOX cercabile WP12 (admin.js
+ *        nexusModelPicker: dropdown con ricerca su id/name, badge
+ *        GRATIS/contesto/prezzo, max 60 risultati, frecce+Invio, Esc chiude):
+ *        la lista segue il provider scelto in #nxa-agent-provider (reload al
+ *        cambio, fix G5; GET /ai/models?provider=…, cache client 60s);
  *      - i bottoni "Modifica"/"Clona" sulle card (.nxa-agent-edit /
  *        .nxa-agent-clone, con data-agent-id) sono generati da admin.js
  *        dentro #nxa-agents-grid e NON sono nel markup di questa vista.
@@ -328,8 +331,9 @@ $nxa_agent_status_labels = array(
 
         <!-- EDITOR AGENTE (v1.0.7): modal statica servita dal PHP, gestita da admin.js
              (openAgentEditor/closeAgentEditor, submit #nxa-agent-form, click su
-             #nxa-agent-new / #nxa-agent-cancel / [data-nxa-agent-close]; datalist dei
-             modelli riempito da admin.js dalla cache GET /ai/models). -->
+             #nxa-agent-new / #nxa-agent-cancel / [data-nxa-agent-close]; il campo
+             modello #nxa-agent-model è un combobox cercabile WP12 che carica da
+             solo la lista del provider scelto). -->
         <div id="nxa-agent-modal" class="nxa-modal" hidden role="dialog" aria-modal="true" aria-labelledby="nxa-agent-modal-title">
                 <div class="nxa-modal-panel" role="document">
                         <button type="button" class="nxa-modal-close" data-nxa-agent-close aria-label="<?php esc_attr_e( 'Chiudi', 'nexus-news-ai' ); ?>">&times;</button>
@@ -370,8 +374,9 @@ $nxa_agent_status_labels = array(
                                                 </select>
                                                 <span class="nxa-agent-field-hint"><?php echo esc_html( 'Visibile solo per il ruolo Capo redattore: dice al capo quali articoli verifica (intero giornale, solo la sua categoria o una redazione specifica).' ); ?></span></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-model"><?php esc_html_e( 'Modello AI (vuoto = globale)', 'nexus-news-ai' ); ?></label>
-                                                <input type="text" id="nxa-agent-model" name="ai_model" maxlength="100" list="nxa-agent-model-datalist" class="code" />
-                                                <datalist id="nxa-agent-model-datalist"></datalist></p>
+                                                <?php /* WP12: combobox cercabile — admin.js (nexusModelPicker) avvolge l'input in span.nxa-mp e apre il dropdown al focus: la lista segue #nxa-agent-provider (reload al cambio, fix G5). La vecchia <datalist> #nxa-agent-model-datalist è rimossa. */ ?>
+                                                <input type="text" id="nxa-agent-model" name="ai_model" maxlength="100" class="code" autocomplete="off" placeholder="vuoto = modello globale" />
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'Digita per cercare tra i modelli del provider scelto: clic o Invio per scegliere, Esc per chiudere.', 'nexus-news-ai' ); ?></span></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-description"><?php esc_html_e( 'Descrizione', 'nexus-news-ai' ); ?></label>
                                                 <textarea id="nxa-agent-description" name="description" rows="3"></textarea></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-personality"><?php esc_html_e( 'Personalità / tono di voce', 'nexus-news-ai' ); ?></label>

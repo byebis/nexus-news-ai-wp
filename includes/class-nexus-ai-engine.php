@@ -1697,12 +1697,76 @@ class Nexus_AI_Engine {
         }
 
         /**
+         * v1.1.10 (WP12): prezzi LIVE per modello dal transient
+         * 'nexus_ai_live_prices', popolato (merge) a ogni fetch fresh di
+         * GET /ai/models (model picker WP12). Match: esatto sul model_id oppure
+         * fine-suffix (es. 'openai/gpt-4o-mini' matcha la voce 'gpt-4o-mini');
+         * a parità di match vince il suffisso PIÙ LUNGO, e il confine del
+         * suffisso dev'essere '/' o l'inizio della stringa (niente falsi positivi
+         * tipo 'xgpt-4o'). Ritorna array( prompt, completion ) USD/1M token o null.
+         * Costo: UN solo get_transient, try/catch totale — MAI rallenta o rompe
+         * la pipeline di chat.
+         *
+         * @param string $model Nome del modello (lowercase già fatto dal caller).
+         * @return array|null array( prompt_usd_1m, completion_usd_1m ) oppure null.
+         */
+        private static function cached_live_price( $model ) {
+                try {
+                        $model = strtolower( trim( (string) $model ) );
+                        if ( '' === $model ) {
+                                return null;
+                        }
+                        $map = get_transient( 'nexus_ai_live_prices' );
+                        if ( ! is_array( $map ) || ! $map ) {
+                                return null;
+                        }
+                        if ( isset( $map[ $model ] ) && is_array( $map[ $model ] ) ) {
+                                return array( (float) $map[ $model ][0], (float) $map[ $model ][1] );
+                        }
+                        $best_key = '';
+                        $best     = null;
+                        foreach ( $map as $key => $prices ) {
+                                if ( ! is_array( $prices ) ) {
+                                        continue;
+                                }
+                                $key = strtolower( trim( (string) $key ) );
+                                $len = strlen( $key );
+                                if ( '' === $key || $len > strlen( $model ) ) {
+                                        continue;
+                                }
+                                if ( substr( $model, -$len ) !== $key ) {
+                                        continue;
+                                }
+                                // Confine suffisso: tutto il model_id o precededuto da '/'.
+                                if ( $len < strlen( $model ) && '/' !== substr( $model, -$len - 1, 1 ) ) {
+                                        continue;
+                                }
+                                if ( $len > strlen( $best_key ) ) {
+                                        $best_key = $key;
+                                        $best     = $prices;
+                                }
+                        }
+                        if ( '' !== $best_key && is_array( $best ) ) {
+                                return array( (float) $best[0], (float) $best[1] );
+                        }
+                } catch ( Throwable $e ) {
+                        return null;
+                }
+                return null;
+        }
+
+        /**
          * Stima il costo USD di una chiamata AI (v1.0.3) con prezzi per 1M token
          * (input/output) e matching per substringa sul nome del modello (lowercase).
          *
          * ATTENZIONE: le voci più specifiche (es. gpt-4o-mini) devono essere
          * controllate PRIMA delle generiche (es. gpt-4o), perché strpos matcherebbe
          * entrambe e risulterebbe il prezzo sbagliato.
+         *
+         * v1.1.10 (WP12): i prezzi LIVE in cache dal model picker (transient
+         * 'nexus_ai_live_prices', match esatto o fine-suffix) hanno la PRECEDENZA
+         * sulla mappa statica; la mappa statica resta il fallback quando il picker
+         * non ha ancora fetchato quel modello. Un modello GRATIS in cache → costo 0.
          *
          * @param string $model             Nome del modello (es. "openai/gpt-4o-mini").
          * @param int    $prompt_tokens     Token di input.
@@ -1754,12 +1818,23 @@ class Nexus_AI_Engine {
 
                 $map = apply_filters( 'nexus_ai_model_prices', $map, $model );
 
-                foreach ( $map as $needle => $prices ) {
-                        if ( '' !== $needle && false !== strpos( $model, $needle ) ) {
-                                $in      = (float) $prices[0];
-                                $out     = (float) $prices[1];
-                                $matched = true;
-                                break;
+                // v1.1.10 (WP12): prezzi LIVE dal model picker (transient
+                // 'nexus_ai_live_prices') — fonte preferita sulla mappa statica.
+                // Un solo get_transient + try/catch dentro cached_live_price():
+                // mai rallenta o rompe la pipeline di chat.
+                $live = self::cached_live_price( $model );
+                if ( is_array( $live ) ) {
+                        $in      = (float) $live[0];
+                        $out     = (float) $live[1];
+                        $matched = true;
+                } else {
+                        foreach ( $map as $needle => $prices ) {
+                                if ( '' !== $needle && false !== strpos( $model, $needle ) ) {
+                                        $in      = (float) $prices[0];
+                                        $out     = (float) $prices[1];
+                                        $matched = true;
+                                        break;
+                                }
                         }
                 }
 
