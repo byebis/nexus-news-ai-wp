@@ -68,6 +68,8 @@ class Nexus_Rss {
         /**
          * Feed RSS italiani reali e attivi per categoria (3-4 per categoria).
          * Per categorie non mappate viene usato il feed generico ANSA.
+         * v1.1.10 (B1): il risultato passa per il filtro
+         * 'nexus_rss_global_sources' (array URL, categoria come secondo arg).
          *
          * @param string $category Nome della categoria (es. "Tecnologia").
          * @return array Array di URL dei feed.
@@ -116,12 +118,21 @@ class Nexus_Rss {
                 );
 
                 $key = trim( (string) $category );
-                if ( isset( $map[ $key ] ) ) {
-                        return $map[ $key ];
-                }
 
-                // Default generico.
-                return array( 'https://www.ansa.it/sito/ansait_rss.xml' );
+                // v1.1.10 (B1): default generico + filtro estensibile.
+                $sources = isset( $map[ $key ] )
+                        ? $map[ $key ]
+                        : array( 'https://www.ansa.it/sito/ansait_rss.xml' );
+
+                /**
+                 * Filtra i feed RSS GLOBALI di categoria (usati quando l'agente
+                 * non ha fonti redazione, o per completare il paniere in
+                 * Nexus_Rss::fetch_for_agent). Ritorna un array di URL feed http(s).
+                 *
+                 * @param array  $sources  URL dei feed globali per la categoria.
+                 * @param string $category Nome della categoria richiesta.
+                 */
+                return apply_filters( 'nexus_rss_global_sources', $sources, $category );
         }
 
         /**

@@ -2327,6 +2327,250 @@
         }
 
         /* ==================================================================
+         * 9-bis/1. PROVIDER AI v2 — wizard chiavi, OAuth PKCE e test
+         * connessione (v1.1.10, WP10 — pagina Impostazioni AI, sezione
+         * "Provider AI per agente"; contratto classi/data-attribute nel
+         * docblock di settings-ai.php)
+         * ================================================================== */
+
+        /** Nodo dell'esito inline del test per un provider (aria-live). */
+        function providerStatusNode( provider ) {
+                return qs( '.nxa-prov-status[data-nxa-status="' + provider + '"]' );
+        }
+
+        /** Esito inline verde/rosso: kind 'ok' | 'err' | '' (neutro/in corso). */
+        function setProviderStatus( provider, message, kind ) {
+                var node = providerStatusNode( provider );
+                if ( ! node ) {
+                        return;
+                }
+                node.textContent = message || '';
+                node.classList.remove( 'nxa-prov-status--ok', 'nxa-prov-status--err' );
+                if ( kind === 'ok' ) {
+                        node.classList.add( 'nxa-prov-status--ok' );
+                } else if ( kind === 'err' ) {
+                        node.classList.add( 'nxa-prov-status--err' );
+                }
+        }
+
+        /** Badge stato provider: verde = chiave salvata, grigio = vuota. */
+        function setProviderDot( provider, on ) {
+                var dot = qs( '.nxa-prov-dot[data-nxa-dot="' + provider + '"]' );
+                if ( ! dot ) {
+                        return;
+                }
+                dot.classList.remove( 'nxa-prov-dot--on', 'nxa-prov-dot--off' );
+                dot.classList.add( on ? 'nxa-prov-dot--on' : 'nxa-prov-dot--off' );
+        }
+
+        /**
+         * Bottoni wizard provider (delega click sul form: i bottoni sono statici,
+         * renderizzati server-side, la pagina non li ricrea mai):
+         *   .nxa-prov-oauth[data-provider]      → POST /ai/oauth/start → redirect
+         *                                         sull'auth_url di OpenRouter;
+         *   .nxa-prov-test[data-provider]       → POST /ai/test/{provider} (esito
+         *                                         inline verde/rosso; {base_url}
+         *                                         dal campo #nxa-prov-base-custom
+         *                                         per il provider custom);
+         *   .nxa-prov-disconnect[data-provider] → POST /ai/disconnect/{provider}.
+         * Mai alert(): toast + esito inline. La chiave non è mai letta/loggata.
+         */
+        function bindProviderActions( form ) {
+                if ( ! form ) {
+                        return;
+                }
+
+                form.addEventListener( 'click', function ( ev ) {
+                        var target = ev.target;
+                        if ( ! target || ! target.closest ) {
+                                return;
+                        }
+
+                        // --- Connetti con OpenRouter (login web OAuth PKCE) -------
+                        var oauthBtn = target.closest( '.nxa-prov-oauth' );
+                        if ( oauthBtn ) {
+                                var oauthProvider = String( oauthBtn.getAttribute( 'data-provider' ) || '' ).trim();
+                                if ( ! oauthProvider ) {
+                                        return;
+                                }
+                                setProviderStatus( oauthProvider, 'Avvio del login web in corso…', '' );
+                                setBtnLoading( oauthBtn, true, 'Connessione…' );
+                                api( 'ai/oauth/start', { method: 'POST', body: { provider: oauthProvider } } ).then( function ( payload ) {
+                                        var data = unwrap( payload ) || {};
+                                        var authUrl = String( pick( data, 'auth_url' ) || '' );
+                                        if ( ! authUrl ) {
+                                                throw new Error( 'URL di autorizzazione mancante nella risposta del server.' );
+                                        }
+                                        window.location.href = authUrl;
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Connessione non riuscita' );
+                                        setProviderStatus( oauthProvider, ( err && err.message ) ? err.message : 'Avvio del login non riuscito', 'err' );
+                                        setBtnLoading( oauthBtn, false );
+                                } );
+                                return;
+                        }
+
+                        // --- Test connessione vivo (per Ollama è "Rileva Ollama") -
+                        var testBtn = target.closest( '.nxa-prov-test' );
+                        if ( testBtn ) {
+                                var testProvider = String( testBtn.getAttribute( 'data-provider' ) || '' ).trim();
+                                if ( ! testProvider ) {
+                                        return;
+                                }
+                                var testBody = {};
+                                if ( testProvider === 'custom' ) {
+                                        // Test dell'URL base PRIMA del salvataggio: se il campo è
+                                        // compilato ha la precedenza sul setting salvato.
+                                        var baseField = qs( '#nxa-prov-base-custom', form );
+                                        if ( baseField && String( baseField.value || '' ).trim() !== '' ) {
+                                                testBody.base_url = String( baseField.value ).trim();
+                                        }
+                                }
+                                setProviderStatus( testProvider, 'Test connessione in corso…', '' );
+                                setBtnLoading( testBtn, true, 'Test…' );
+                                api( 'ai/test/' + encodeURIComponent( testProvider ), { method: 'POST', body: testBody } ).then( function ( payload ) {
+                                        var data = unwrap( payload ) || {};
+                                        if ( data.ok === false ) {
+                                                // Esito del test = dato (200 con ok:false): messaggio
+                                                // già leggibile e tradotto dal server.
+                                                setProviderStatus( testProvider, String( data.error || 'Test non riuscito' ), 'err' );
+                                                return;
+                                        }
+                                        var count = num( data.models_count );
+                                        var latency = num( data.latency_ms );
+                                        var message = 'Connesso: ' + count + ' modelli, ' + latency + ' ms';
+                                        var sample = Array.isArray( data.sample ) ? data.sample.filter( Boolean ).slice( 0, 3 ) : [];
+                                        if ( sample.length ) {
+                                                message += ' · es. ' + sample.join( ', ' );
+                                        }
+                                        if ( data.account && typeof data.account === 'object' ) {
+                                                // OpenRouter: usage/limit dell'account (USD).
+                                                message += ' · utilizzo account $' + num( data.account.usage ).toFixed( 2 );
+                                                if ( data.account.limit !== undefined && data.account.limit !== null ) {
+                                                        message += ' su $' + num( data.account.limit ).toFixed( 2 );
+                                                }
+                                        }
+                                        setProviderStatus( testProvider, message, 'ok' );
+                                } ).catch( function ( err ) {
+                                        setProviderStatus( testProvider, ( err && err.message ) ? err.message : 'Test non riuscito', 'err' );
+                                } ).then( function () {
+                                        setBtnLoading( testBtn, false );
+                                } );
+                                return;
+                        }
+
+                        // --- Scollega provider (rimuove la chiave salvata) --------
+                        var discBtn = target.closest( '.nxa-prov-disconnect' );
+                        if ( discBtn ) {
+                                var discProvider = String( discBtn.getAttribute( 'data-provider' ) || '' ).trim();
+                                if ( ! discProvider ) {
+                                        return;
+                                }
+                                if ( ! window.confirm( nxaT( 'Rimuovere la chiave salvata per questo provider? Gli agenti non potranno più usarlo finché non la riconfiguri o ti riconnetti.' ) ) ) {
+                                        return;
+                                }
+                                setBtnLoading( discBtn, true, 'Scollego…' );
+                                api( 'ai/disconnect/' + encodeURIComponent( discProvider ), { method: 'POST' } ).then( function ( payload ) {
+                                        var data = unwrap( payload ) || {};
+                                        if ( data.ok === false ) {
+                                                throw new Error( String( data.error || 'Scollegamento non riuscito' ) );
+                                        }
+                                        var field = qs( '#nxa-prov-key-' + discProvider, form );
+                                        if ( field ) {
+                                                field.value = '';
+                                        }
+                                        setProviderDot( discProvider, false );
+                                        setProviderStatus( discProvider, '', '' );
+                                        discBtn.setAttribute( 'hidden', 'hidden' );
+                                        toast( 'Chiave rimossa: il provider è scollegato.', 'success', 'Scollegamento' );
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Scollegamento non riuscito' );
+                                } ).then( function () {
+                                        setBtnLoading( discBtn, false );
+                                } );
+                        }
+                } );
+        }
+
+        /**
+         * Completamento del login web OAuth (callback OpenRouter, v1.1.10).
+         *
+         * OpenRouter rimanda sulla pagina Impostazioni AI con
+         * ?nexus_oauth=1&state=…&code=… (il CODE viaggia in query): al load la
+         * pagina POSTa {state, code} a /ai/oauth/callback, mostra il toast
+         * dell'esito e pulisce la querystring con history.replaceState — il
+         * codice monouso non resta in cronologia né viene reinviato a un refresh
+         * (lo stato one-shot lato server lo rifiuterebbe comunque).
+         */
+        function maybeCompleteOauthCallback() {
+                var search = String( window.location.search || '' );
+                if ( search.indexOf( 'nexus_oauth=1' ) === -1 ) {
+                        return;
+                }
+
+                var params;
+                try {
+                        params = new URLSearchParams( search );
+                } catch ( err ) {
+                        return;
+                }
+
+                var state = String( params.get( 'state' ) || '' ).trim();
+                var code = String( params.get( 'code' ) || '' ).trim();
+                var oauthError = String( params.get( 'error' ) || '' ).trim();
+                cleanOauthQuery();
+
+                if ( oauthError ) {
+                        toast( 'OpenRouter non ha completato il login: ' + oauthError, 'error', 'Connessione OpenRouter' );
+                        return;
+                }
+                if ( ! state || ! code ) {
+                        toast( 'Ritorno dal login incompleto (state o code mancanti): riavvia la connessione da Impostazioni AI.', 'error', 'Connessione OpenRouter' );
+                        return;
+                }
+
+                toast( 'Completamento della connessione in corso…', 'info', 'Connessione OpenRouter' );
+                api( 'ai/oauth/callback', { method: 'POST', body: { state: state, code: code } } ).then( function () {
+                        // La chiave è già salvata server-side: il campo password resta
+                        // vuoto (password vuota = nessun cambio, contratto settings) e
+                        // il badge passa a verde.
+                        var field = qs( '#nxa-prov-key-openrouter' );
+                        if ( field ) {
+                                field.value = '';
+                        }
+                        setProviderDot( 'openrouter', true );
+                        var discBtn = qs( '.nxa-prov-disconnect[data-provider="openrouter"]' );
+                        if ( discBtn ) {
+                                discBtn.removeAttribute( 'hidden' );
+                        }
+                        setProviderStatus( 'openrouter', 'Connesso via login web: la chiave è stata salvata.', 'ok' );
+                        toast( 'OpenRouter connesso: la chiave è stata salvata.', 'success', 'Connessione OpenRouter' );
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Connessione OpenRouter non riuscita' );
+                } );
+        }
+
+        /**
+         * Rimuove i parametri OAuth dalla querystring (nexus_oauth/state/code/
+         * error*) preservando gli altri (page=…). best-effort: senza
+         * history.replaceState la pagina funziona comunque (lo stato è one-shot
+         * lato server).
+         */
+        function cleanOauthQuery() {
+                try {
+                        var params = new URLSearchParams( window.location.search );
+                        var drop = [ 'nexus_oauth', 'state', 'code', 'error', 'error_description', 'error_uri' ];
+                        for ( var i = 0; i < drop.length; i++ ) {
+                                params.delete( drop[ i ] );
+                        }
+                        var rest = params.toString();
+                        window.history.replaceState( {}, document.title, window.location.pathname + ( rest ? '?' + rest : '' ) );
+                } catch ( err ) {
+                        // no-op: senza replaceState il flusso resta corretto.
+                }
+        }
+
+        /* ==================================================================
          * 9-ter. CATEGORIE NATIVE (v1.1.0)
          * ================================================================== */
 
@@ -2771,12 +3015,24 @@
                 }
 
                 // (v1.1.4) chiavi per-provider + tools_search_key: stesso pattern
-                // solo-se-compilata di ai_api_key (password vuota = nessun cambio)
-                var secretNames = [ 'prov_key_openrouter', 'prov_key_openai', 'prov_key_anthropic', 'prov_key_google', 'prov_key_groq', 'prov_key_deepseek', 'prov_key_mistral', 'prov_key_xai', 'prov_key_custom', 'tools_search_key' ];
+                // solo-se-compilata di ai_api_key (password vuota = nessun cambio).
+                // v1.1.10 (WP10/G2): aggiunta prov_key_ollama (riga presente nella
+                // pagina Impostazioni AI dal wizard provider).
+                var secretNames = [ 'prov_key_openrouter', 'prov_key_openai', 'prov_key_anthropic', 'prov_key_google', 'prov_key_groq', 'prov_key_deepseek', 'prov_key_mistral', 'prov_key_xai', 'prov_key_custom', 'prov_key_ollama', 'tools_search_key' ];
                 for ( i = 0; i < secretNames.length; i++ ) {
                         var secretField = form.elements[ secretNames[ i ] ];
                         if ( secretField && String( secretField.value || '' ).trim() !== '' ) {
                                 payload[ secretNames[ i ] ] = String( secretField.value ).trim();
+                        }
+                }
+
+                // v1.1.10 (WP10): toggle endpoint AI su IP privati/localhost (page
+                // Impostazioni AI, sezione provider): presente → 1, assente → 0.
+                var providerFlags = [ 'allow_private_providers' ];
+                for ( i = 0; i < providerFlags.length; i++ ) {
+                        var provFlagBoxes = qsa( 'input[name="' + providerFlags[ i ] + '"]', form );
+                        if ( provFlagBoxes.length ) {
+                                payload[ providerFlags[ i ] ] = provFlagBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 
@@ -2825,6 +3081,12 @@
                                 }
                         } );
                 }
+
+                // v1.1.10 (WP10): wizard provider — bottoni OAuth/test/scollega
+                // (sezione "Provider AI per agente") + completamento del ritorno
+                // OAuth di OpenRouter (?nexus_oauth=1&state&code nella querystring).
+                bindProviderActions( form );
+                maybeCompleteOauthCallback();
         }
 
         /* ==================================================================

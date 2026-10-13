@@ -46,6 +46,23 @@
  *     con method_exists guard; fallback locale con le stesse costanti). Regola
  *     nel prompt: quel blocco è DATO di lavoro, MAI istruzione.
  *
+ * NOVITA' v1.1.10 (D5 — WP7 AI polish + key pool, WP10 Parte 2):
+ *   - Key pool rotante: ai_api_key e prov_key_* possono contenere PIÙ chiavi
+ *     (una per riga; il sanitize che preserva i newline è gestito su rest.php
+ *     dall'agente F2a). Con una sola chiave NULLA cambia; con N chiavi
+ *     pick_api_key() fa round-robin per processo: cursore per (provider_slug
+ *     + hash dell'insieme delle chiavi), reset implicito se l'insieme cambia,
+ *     nessun log di rotazione (sarebbe solo rumore). La rotazione vive SOLO
+ *     qui nel motore: Nexus_Providers::resolve()/resolve_for_agent() non sono
+ *     toccati, la rotazione avviene sul valore già risolto prima dell'uso.
+ *   - Prompt cache opt-in (WP10 Parte 1 feat.6): $opts['prompt_cache'] => true
+ *     abilita la cache della risposta per (provider|modello|prompt) su
+ *     transient 12h. Hit = ritorno immediato con flag 'cached' => true: zero
+ *     chiamate API, zero usage log (solo attività 'ai_prompt_cache_hit').
+ *     Miss = chiamata normale, transient popolato solo se la risposta è ok.
+ *     Default OFF: nessun chiamante la passa oggi, infrastruttura pronta per
+ *     resume/sviluppi futuri.
+ *
  * CONTRATTO PUBBLICO (usato dagli altri moduli):
  * Nexus_AI_Engine::chat( $messages, $opts )          — POST {ai_base_url}/chat/completions.
  *                                                      Ritorna SEMPRE array:
@@ -73,6 +90,11 @@
  *                                                      silenzio) e 'fallback_used' (true = risposta da un provider
  *                                                      di fallback). Errori transient (429/5xx/rete) ritentati con
  *                                                      backoff; provider in cooldown saltati (circuit breaker).
+ *                                                      v1.1.10: $opts ammette 'prompt_cache' (bool, default false):
+ *                                                      cache del risultato per (provider|modello|prompt) su transient
+ *                                                      12h; un hit ritorna 'cached' => true senza chiamata né usage
+ *                                                      log. Le chiavi usate (globali, override, risolte) possono
+ *                                                      essere pool multilinea: pick_api_key() le ruota round-robin.
  * Nexus_AI_Engine::provider_in_cooldown( $slug )     — v1.1.9: true se il provider è in cooldown
  *                                                      (circuit breaker, transient 'nexus_prov_cooldown_{slug}').
  * Nexus_AI_Engine::provider_cooldown_seconds( $slug ) — v1.1.9: secondi di cooldown rimasti (0 = nessuno).
@@ -151,6 +173,17 @@ class Nexus_AI_Engine {
         }
 
         /**
+         * v1.1.10 (D5, WP10 Parte 2) — cursori round-robin del key pool.
+         * Chiave slot = md5( slug_provider . '|' . hash dell'insieme delle chiavi ):
+         * se l'insieme cambia, l'hash cambia e il cursore riparte da 0 (reset
+         * implicito via hash compare). Vive solo per la durata del processo PHP:
+         * nessuna persistenza, nessun log.
+         *
+         * @var array
+         */
+        private static $pool_cursor = array();
+
+        /**
          * Chiama POST {ai_base_url}/chat/completions con le impostazioni del plugin
          * (Nexus_DB::get_settings(): ai_api_key, ai_base_url, ai_model).
          *
@@ -168,6 +201,10 @@ class Nexus_AI_Engine {
          *   (override con priorita' massima su provider e globali).
          * - 'agent'       (oggetto|array)        — v1.1.4: agente con eventuale campo 'ai_provider',
          *   risolto con Nexus_Providers::resolve_for_agent() (assente/vuoto/sconosciuto = globali).
+         * - 'prompt_cache' (bool,     default false) — v1.1.10 (WP10 Parte 1 feat.6): cache della
+         *   risposta per (provider|modello|prompt) su transient 12h; un hit ritorna subito il
+         *   contenuto cached con flag 'cached' => true (nessuna chiamata API, nessun usage log,
+         *   solo attività 'ai_prompt_cache_hit'); il miss popola la cache solo su risposta ok.
          *
          * v1.1.4: ordine di risoluzione credenziali — override diretti 'api_key'/'base_url' →
          * 'provider' esplicito → 'agent' con ai_provider → globali attuali (retrocompatibilita'
@@ -177,6 +214,12 @@ class Nexus_AI_Engine {
          * (/chat/completions) con header x-api-key, Authorization Bearer e
          * anthropic-version 2023-06-01. Chiave vuota ammessa solo per i provider che la
          * prevedono (es. Ollama locale): la validazione e' delegata a Nexus_Providers::resolve().
+         *
+         * v1.1.10 (key pool): ogni chiave usata (globale, override diretti e risolta
+         * da Nexus_Providers) può contenere PIÙ chiavi, una per riga: pick_api_key()
+         * ne estrae una per volta in round-robin. Con una sola chiave il comportamento
+         * è identico al passato; resolve()/resolve_for_agent() restano intatti (la
+         * rotazione avviene qui, sul valore già risolto, prima dell'uso).
          *
          * Ritorna SEMPRE un array con le chiavi 'ok', 'content', 'error', 'simulated'.
          * In caso di errore: 'ok' => false, 'error' descrittivo in italiano, 'content' vuoto.
@@ -242,7 +285,9 @@ class Nexus_AI_Engine {
 
                 $settings = Nexus_DB::get_settings();
 
-                $api_key  = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+                // v1.1.10 (key pool): la chiave globale può essere un pool multilinea
+                // (una chiave per riga): pick_api_key() ritorna quella di questo turno.
+                $api_key  = self::pick_api_key( isset( $settings['ai_api_key'] ) ? (string) $settings['ai_api_key'] : '', 'global' );
                 $base_url = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
                 // v1.0.3: override per-chiamata del modello (es. modello per-agente della pipeline
                 // o modello economico per screening/fact-check); vuoto = modello globale dai settings.
@@ -266,7 +311,8 @@ class Nexus_AI_Engine {
                 // 2) opts 'provider' (ID esplicito, risolto con Nexus_Providers::resolve());
                 // 3) opts 'agent' (oggetto/array con ai_provider, via resolve_for_agent());
                 // 4) globali attuali (retrocompatibilita' 100%).
-                $opt_api_key  = isset( $opts['api_key'] ) ? trim( (string) $opts['api_key'] ) : '';
+                // v1.1.10 (key pool): anche l'override diretto può essere un pool.
+                $opt_api_key  = self::pick_api_key( isset( $opts['api_key'] ) ? (string) $opts['api_key'] : '', 'custom_direct' );
                 $opt_base_url = isset( $opts['base_url'] ) ? trim( (string) $opts['base_url'] ) : '';
                 $opt_provider = isset( $opts['provider'] ) ? sanitize_key( (string) $opts['provider'] ) : '';
 
@@ -292,6 +338,9 @@ class Nexus_AI_Engine {
                                 $base_url = (string) $resolved['base_url'];
                         }
                         $api_key = isset( $resolved['api_key'] ) ? (string) $resolved['api_key'] : $api_key;
+                        // v1.1.10 (key pool): la chiave risolta da Nexus_Providers::resolve()
+                        // può essere un pool: si ruota qui, sul valore già risolto.
+                        $api_key = self::pick_api_key( $api_key, $opt_provider );
                         $auth    = ( isset( $resolved['auth'] ) && 'anthropic' === $resolved['auth'] ) ? 'anthropic' : 'bearer';
                         $provider_id = $opt_provider;
                         $fallback_eligible = true;
@@ -313,6 +362,9 @@ class Nexus_AI_Engine {
                                         $base_url = (string) $resolved['base_url'];
                                 }
                                 $api_key = isset( $resolved['api_key'] ) ? (string) $resolved['api_key'] : $api_key;
+                                // v1.1.10 (key pool): chiave risolta da resolve_for_agent():
+                                // rotazione qui sul valore già risolto (providers.php intatto).
+                                $api_key = self::pick_api_key( $api_key, isset( $resolved['provider'] ) ? (string) $resolved['provider'] : '' );
                                 $auth    = ( isset( $resolved['auth'] ) && 'anthropic' === $resolved['auth'] ) ? 'anthropic' : 'bearer';
                                 $provider_id = isset( $resolved['provider'] ) ? (string) $resolved['provider'] : '';
                                 $fallback_eligible = true;
@@ -344,6 +396,36 @@ class Nexus_AI_Engine {
                 if ( '' !== $guard_error ) {
                         $fail['error'] = $guard_error;
                         return $fail;
+                }
+
+                // v1.1.10 (D5, WP10 Parte 1 feat.6) — prompt cache opt-in per-articolo:
+                // chiave = md5(provider|modello|prompt serializzato), TTL 12h. Hit =
+                // risposta immediata con flag 'cached' => true: nessuna chiamata API,
+                // nessun usage log (zero token consumati adesso), solo un'attività
+                // 'ai_prompt_cache_hit' onesta per il log. Nota contratto WP10: nella
+                // chiave NON entrano temperature/max_tokens — chi cambia i parametri
+                // per lo stesso prompt non deve attivare la cache.
+                $prompt_cache = ! empty( $opts['prompt_cache'] );
+                $pc_key       = '';
+                if ( $prompt_cache ) {
+                        $pc_key = 'nexus_ai_promptcache_' . md5( $provider_id . '|' . $model . '|' . wp_json_encode( $normalized ) );
+                        $cached_content = get_transient( $pc_key );
+                        if ( is_string( $cached_content ) && '' !== trim( $cached_content ) ) {
+                                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                        try {
+                                                Nexus_DB::insert_activity( $agent_id, 'ai_prompt_cache_hit', 'Risposta servita dalla prompt cache (TTL 12h, modello ' . $model . '): nessuna chiamata API effettuata.', 'info' );
+                                        } catch ( Throwable $e ) {
+                                                // logging mai bloccante
+                                        }
+                                }
+                                return array(
+                                        'ok'        => true,
+                                        'content'   => $cached_content,
+                                        'error'     => '',
+                                        'simulated' => false,
+                                        'cached'    => true,
+                                );
+                        }
                 }
 
                 // v1.1.9 — JSON mode (opt-in retrocompatibile): risposta forzata a
@@ -412,7 +494,9 @@ class Nexus_AI_Engine {
                 // percorsa in ordine con lo stesso guard 401/403 e log 'ai_fallback'.
                 $auth_error = ( false !== strpos( (string) $result['error'], 'Chiave API' ) );
                 if ( empty( $result['ok'] ) && $fallback_eligible && ! $auth_error && ! ( isset( $result['http_code'] ) && 400 === (int) $result['http_code'] && $json_active ) ) {
-                        $gk = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+                        // v1.1.10 (key pool): anche la chiave globale del fallback chain
+                        // può essere un pool (round-robin, slug 'global').
+                        $gk = self::pick_api_key( isset( $settings['ai_api_key'] ) ? (string) $settings['ai_api_key'] : '', 'global' );
                         $gb = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
                         $gm = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
                         if ( '' === $gb ) {
@@ -456,6 +540,15 @@ class Nexus_AI_Engine {
                                         }
                                 }
                         }
+                }
+
+                // v1.1.10 (D5) — miss della prompt cache: popola il transient solo con
+                // una risposta valida, qualunque sia lo step che l'ha prodotta
+                // (primario, retry json_mode o fallback chain). Il consumo loggato
+                // resta quello della chiamata reale di oggi: i hit successivi non
+                // aggiungono usage (zero token).
+                if ( $prompt_cache && '' !== $pc_key && ! empty( $result['ok'] ) && isset( $result['content'] ) && '' !== trim( (string) $result['content'] ) ) {
+                        set_transient( $pc_key, (string) $result['content'], 12 * HOUR_IN_SECONDS );
                 }
 
                 return $result;
@@ -624,6 +717,73 @@ class Nexus_AI_Engine {
          */
         private static function provider_supports_json( $provider_id ) {
                 return in_array( (string) $provider_id, array( 'openai', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai', 'custom', 'custom_direct', 'global' ), true );
+        }
+
+        /**
+         * v1.1.10 (D5, WP10 Parte 2) — key pool rotante: estrae la chiave API da
+         * usare per QUESTA chiamata dal valore grezzo salvato nelle settings
+         * (ai_api_key e prov_key_* ammettono PIÙ chiavi, una per riga; il
+         * sanitize che preserva i newline è gestito su rest.php dall'agente F2a).
+         * Con una sola chiave tutto funziona come prima.
+         *
+         * Regole:
+         *  - spazi ai bordi e righe vuote ignorati; doppioni identici collassati;
+         *  - 0 chiavi → '' (la validazione a valle resta invariata);
+         *  - 1 chiave → quella (fast path senza cursore: comportamento storico);
+         *  - N chiavi → round-robin: il cursore è per processo PHP, identificato
+         *    da slug provider + hash dell'insieme delle chiavi; se l'insieme
+         *    cambia l'hash cambia e il cursore riparte da 0 (reset implicito).
+         *
+         * NESSUN log di rotazione (sarebbe solo rumore nelle attività).
+         *
+         * @param string $stored_key    Valore grezzo dalle settings (eventualmente multilinea).
+         * @param string $provider_slug Slug del canale chiave (identità del cursore:
+         *                              'global', 'custom_direct', id provider risolto, ...).
+         * @return string Chiave singola da usare per questa chiamata.
+         */
+        private static function pick_api_key( $stored_key, $provider_slug ) {
+                $stored_key = (string) $stored_key;
+                if ( '' === $stored_key ) {
+                        return '';
+                }
+                if ( false === strpos( $stored_key, "\n" ) ) {
+                        return trim( $stored_key ); // chiave singola: identico al passato.
+                }
+
+                $lines = preg_split( '/\r\n|\r|\n/', $stored_key );
+                if ( ! is_array( $lines ) ) {
+                        return trim( $stored_key ); // errore PCRE (non atteso): fallback innocuo.
+                }
+
+                $keys = array();
+                foreach ( $lines as $line ) {
+                        $line = trim( (string) $line );
+                        if ( '' !== $line && ! in_array( $line, $keys, true ) ) {
+                                $keys[] = $line;
+                        }
+                }
+
+                $count = count( $keys );
+                if ( 0 === $count ) {
+                        return '';
+                }
+                if ( 1 === $count ) {
+                        return $keys[0];
+                }
+
+                $slot = md5( (string) $provider_slug . '|' . md5( implode( "\n", $keys ) ) );
+                if ( ! isset( self::$pool_cursor[ $slot ] ) || ! is_int( self::$pool_cursor[ $slot ] ) ) {
+                        self::$pool_cursor[ $slot ] = 0;
+                } else {
+                        self::$pool_cursor[ $slot ] = ( self::$pool_cursor[ $slot ] + 1 ) % $count;
+                }
+
+                // Igiene memoria: slot orfani (insiemi di chiavi non più in uso) scartati.
+                if ( count( self::$pool_cursor ) > 32 ) {
+                        self::$pool_cursor = array( $slot => self::$pool_cursor[ $slot ] );
+                }
+
+                return $keys[ self::$pool_cursor[ $slot ] ];
         }
 
         /**

@@ -25,8 +25,39 @@
  *   click sul bottone o al blur del campo chiave.
  * - ai_api_key: input type="password" (mai mostrata in chiaro a schermo);
  *   il value è stampato con esc_attr e inviato SOLO se compilato (password
- *   vuota = nessun cambio). Stesso pattern per le 9 chiavi prov_key_* e per
+ *   vuota = nessun cambio). Stesso pattern per le chiavi prov_key_* e per
  *   tools_search_key.
+ * - Sezione "Provider AI per agente" (v1.1.10, WP10 — wizard provider): la
+ *   lista arriva da Nexus_Providers::catalog() (fallback elenco statico se la
+ *   classe non è caricata). CONTRATTO CON admin.js (non rinominare classi e
+ *   data-attribute):
+ *     input prov_key_{id}                    — chiave del provider (password);
+ *     .nxa-prov-dot[data-nxa-dot="{id}"]     — badge stato (verde = chiave
+ *                                              salvata, grigio = vuota; la UI
+ *                                              iniziale è renderizzata
+ *                                              server-side, admin.js la
+ *                                              aggiorna dopo OAuth/scollega);
+ *     .nxa-prov-oauth[data-provider]         — login web OAuth PKCE (solo
+ *                                              provider con oauth=true nel
+ *                                              catalog): POST /ai/oauth/start →
+ *                                              redirect auth_url; il ritorno
+ *                                              OpenRouter (?nexus_oauth=1&state&
+ *                                              code) è completato da admin.js;
+ *     .nxa-prov-test[data-provider]          — test connessione vivo: POST
+ *                                              /ai/test/{provider} ({base_url}
+ *                                              per custom dal campo
+ *                                              #nxa-prov-base-custom), esito
+ *                                              inline nel
+ *                                              .nxa-prov-status[data-nxa-status=
+ *                                              "{id}"] (verde/rosso, aria-live);
+ *     .nxa-prov-disconnect[data-provider]    — scollega: POST
+ *                                              /ai/disconnect/{provider} (per
+ *                                              i provider OAuth; hidden se la
+ *                                              chiave non è impostata);
+ *     "Ottieni chiave"                       — link esterno a key_page del
+ *                                              catalog (target _blank);
+ *     checkbox allow_private_providers       — flag 0/1 serializzato da
+ *                                              admin.js (endpoint privati/LAN).
  * - Toggle checkbox value="1" (enable_factcheck, enable_translations,
  *   enable_autotranslate_posts, chief_enabled, chief_auto_publish,
  *   tools_enabled, tools_read_page): admin.js li serializza 0/1 (0 quando
@@ -100,8 +131,11 @@ $ml_autotranslate = isset( $settings['enable_autotranslate_posts'] ) ? (int) $se
 /* Sub-sezioni v1.1.4 "Provider AI per agente", "Capo redattore AI" e
  * "Strumenti di ricerca per gli agenti": valori da Nexus_DB::get_settings()
  * con accesso difensivo (default del contratto v1.1.4 finché le chiavi nuove
- * non esistono in DB). Le etichette dei 9 provider replicano ordine e nomi
- * del catalog dei provider senza dipendere dalla classe. */
+ * non esistono in DB).
+ * v1.1.10 (WP10): la lista dei provider arriva dal registry
+ * Nexus_Providers::catalog() (metadati key_page/oauth per il wizard); l'elenco
+ * statico qui sotto resta SOLO come fallback degradato se la classe non è
+ * caricata (mai fatal, coerente con lo stile difensivo della vista). */
 $prov_keys = array(
         'openrouter' => 'OpenRouter',
         'openai'     => 'OpenAI',
@@ -114,7 +148,24 @@ $prov_keys = array(
         'custom'     => 'Personalizzato / compatibile OpenAI',
 );
 
-$prov_base_custom      = isset( $settings['prov_base_custom'] ) ? (string) $settings['prov_base_custom'] : '';
+$prov_catalog = array();
+if ( class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'catalog' ) ) {
+        $prov_catalog = Nexus_Providers::catalog();
+}
+if ( ! is_array( $prov_catalog ) || empty( $prov_catalog ) ) {
+        $prov_catalog = array();
+        foreach ( $prov_keys as $prov_fallback_id => $prov_fallback_label ) {
+                $prov_catalog[ $prov_fallback_id ] = array(
+                        'id'       => $prov_fallback_id,
+                        'label'    => $prov_fallback_label,
+                        'key_page' => '',
+                        'oauth'    => false,
+                );
+        }
+}
+
+$prov_base_custom        = isset( $settings['prov_base_custom'] ) ? (string) $settings['prov_base_custom'] : '';
+$allow_private_providers = isset( $settings['allow_private_providers'] ) ? (int) $settings['allow_private_providers'] : 0;
 
 $chief_enabled         = isset( $settings['chief_enabled'] ) ? (int) $settings['chief_enabled'] : 0;
 $chief_auto_publish    = isset( $settings['chief_auto_publish'] ) ? (int) $settings['chief_auto_publish'] : 0;
@@ -187,22 +238,63 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                 <span class="nxa-acc-chevron" aria-hidden="true"></span>
                         </button>
                         <div class="nxa-acc-panel" id="nxa-acc-panel-providers" hidden>
-                                <?php /* Sezione v1.1.4 "Provider AI per agente": una chiave API per provider (name = chiave settings esatta, serializzata per name da admin.js). */ ?>
+                                <?php /* Sezione v1.1.4 "Provider AI per agente", wizard v1.1.10 (WP10): una riga per provider del catalog Nexus_Providers (input chiave + badge stato + azioni wizard: OAuth OpenRouter, deep link key_page, test connessione, scollega). Contratto classi/data-attribute con admin.js: vedi docblock in testa alla vista. */ ?>
                                 <table class="form-table" role="presentation">
                                         <tbody>
-                                                <?php foreach ( $prov_keys as $prov_id => $prov_label ) : ?>
+                                                <?php foreach ( $prov_catalog as $prov_loop_id => $prov_entry ) :
+                                                        $prov_id      = is_array( $prov_entry ) && isset( $prov_entry['id'] ) && '' !== trim( (string) $prov_entry['id'] ) ? sanitize_key( (string) $prov_entry['id'] ) : sanitize_key( (string) $prov_loop_id );
+                                                        $prov_label   = is_array( $prov_entry ) && isset( $prov_entry['label'] ) ? (string) $prov_entry['label'] : $prov_id;
+                                                        $prov_keypage = is_array( $prov_entry ) && isset( $prov_entry['key_page'] ) ? (string) $prov_entry['key_page'] : '';
+                                                        $prov_oauth   = is_array( $prov_entry ) && ! empty( $prov_entry['oauth'] );
+                                                        $prov_set     = isset( $settings[ 'prov_key_' . $prov_id ] ) && '' !== trim( (string) $settings[ 'prov_key_' . $prov_id ] );
+                                                        /* "Rileva Ollama" = il test connessione dell'endpoint locale (auto-detect Ollama, WP10). */
+                                                        $prov_test_label = 'ollama' === $prov_id ? __( 'Rileva Ollama', 'nexus-news-ai' ) : __( 'Test', 'nexus-news-ai' );
+                                                        ?>
                                                         <tr>
-                                                                <th scope="row"><label for="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>"><?php echo esc_html( $prov_label ); ?></label></th>
+                                                                <th scope="row">
+                                                                        <label for="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>"><?php echo esc_html( $prov_label ); ?></label>
+                                                                        <?php /* Badge stato: verde = chiave salvata, grigio = vuota (admin.js aggiorna dopo OAuth/test/scollega). */ ?>
+                                                                        <span class="nxa-prov-dot <?php echo $prov_set ? 'nxa-prov-dot--on' : 'nxa-prov-dot--off'; ?>" data-nxa-dot="<?php echo esc_attr( $prov_id ); ?>" title="<?php echo $prov_set ? esc_attr__( 'Chiave configurata', 'nexus-news-ai' ) : esc_attr__( 'Chiave non configurata', 'nexus-news-ai' ); ?>" aria-hidden="true"></span>
+                                                                        <span class="screen-reader-text"><?php echo $prov_set ? esc_html__( 'Chiave configurata', 'nexus-news-ai' ) : esc_html__( 'Chiave non configurata', 'nexus-news-ai' ); ?></span>
+                                                                </th>
                                                                 <td>
                                                                         <input type="password" name="prov_key_<?php echo esc_attr( $prov_id ); ?>" id="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>" value="<?php echo esc_attr( $settings[ 'prov_key_' . $prov_id ] ?? '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                        <p class="nxa-prov-actions">
+                                                                                <?php if ( $prov_oauth ) : ?>
+                                                                                        <button type="button" class="button button-secondary nxa-prov-oauth" data-provider="<?php echo esc_attr( $prov_id ); ?>">🔗 <?php echo esc_html( sprintf( __( 'Connetti con %s', 'nexus-news-ai' ), $prov_label ) ); ?></button>
+                                                                                <?php endif; ?>
+                                                                                <?php if ( '' !== $prov_keypage ) : ?>
+                                                                                        <a class="button" href="<?php echo esc_url( $prov_keypage ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Ottieni chiave', 'nexus-news-ai' ); ?></a>
+                                                                                <?php endif; ?>
+                                                                                <button type="button" class="button nxa-prov-test" data-provider="<?php echo esc_attr( $prov_id ); ?>"><?php echo esc_html( $prov_test_label ); ?></button>
+                                                                                <?php if ( $prov_oauth ) : ?>
+                                                                                        <?php /* Scollega (solo provider OAuth): hidden se la chiave non è impostata; admin.js lo mostra dopo la connessione. */ ?>
+                                                                                        <button type="button" class="button-link nxa-prov-disconnect" data-provider="<?php echo esc_attr( $prov_id ); ?>" <?php echo $prov_set ? '' : 'hidden'; ?>><?php esc_html_e( 'Scollega', 'nexus-news-ai' ); ?></button>
+                                                                                <?php endif; ?>
+                                                                        </p>
+                                                                        <?php /* Esito inline del test (verde/rosso, aria-live): riempito da admin.js, mai server-side. */ ?>
+                                                                        <p class="description nxa-prov-status" data-nxa-status="<?php echo esc_attr( $prov_id ); ?>" aria-live="polite"></p>
+                                                                        <?php if ( 'ollama' === $prov_id ) : ?>
+                                                                                <p class="description"><?php esc_html_e( 'Ollama locale (127.0.0.1:11434): il rilevamento funziona se WordPress gira sulla stessa macchina di Ollama (o su Ollama esposto in LAN con l’opzione qui sotto).', 'nexus-news-ai' ); ?></p>
+                                                                        <?php endif; ?>
                                                                 </td>
                                                         </tr>
                                                 <?php endforeach; ?>
                                                 <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Endpoint su IP privati/localhost', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-allow-private-providers" title="<?php esc_attr_e( 'Solo se usi LM Studio/vLLM su LAN; Ollama è sempre ammesso.', 'nexus-news-ai' ); ?>">
+                                                                        <input type="checkbox" name="allow_private_providers" id="nxa-allow-private-providers" value="1" <?php checked( $allow_private_providers, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Consenti endpoint AI su IP privati/localhost', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Solo se usi LM Studio/vLLM su LAN; Ollama è sempre ammesso.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
                                                         <th scope="row"><label for="nxa-prov-base-custom"><?php esc_html_e( 'URL base del provider Personalizzato', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
                                                                 <input type="text" name="prov_base_custom" id="nxa-prov-base-custom" value="<?php echo esc_attr( $prov_base_custom ); ?>" placeholder="https://esempio.it/v1" class="regular-text code" />
-                                                                <p class="description"><?php esc_html_e( 'Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted). Il bottone Test può verificarla anche prima del salvataggio.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
@@ -484,6 +576,45 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
     font-size: 12px;
     font-weight: 600;
     line-height: 1.6;
+  }
+  /* WP10 (v1.1.10): wizard provider — SOLO classi locali .nxa-prov-*; nessun
+     colore fisso: tutto via token del design system (tema chiaro di default,
+     scuro via body.nexus-theme-dark). */
+  .nxa-prov-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-left: 6px;
+    border-radius: 50%;
+    vertical-align: middle;
+  }
+  .nxa-prov-dot--on {
+    background: var(--nxa-ok-text);
+    box-shadow: 0 0 0 3px var(--nxa-ok-bg);
+  }
+  .nxa-prov-dot--off {
+    background: var(--nxa-border);
+  }
+  .nxa-prov-actions {
+    margin: 6px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .nxa-prov-actions .button-link {
+    text-decoration: none;
+  }
+  .nxa-prov-status {
+    margin: 4px 0 0;
+  }
+  .nxa-prov-status--ok {
+    color: var(--nxa-ok-text);
+    font-weight: 600;
+  }
+  .nxa-prov-status--err {
+    color: var(--nxa-err-text);
+    font-weight: 600;
   }
 </style>
 <script>

@@ -45,6 +45,10 @@
  *   GET    /nexus/v1/multilang/translations-posts   args: article_id. Traduzioni native {article_id, source_post_id, source_lang, note, translations} (v1.1.2)
  *   GET    /nexus/v1/tools/catalog                  catalogo strumenti di ricerca e provider AI per agente (v1.1.4)
  *   POST   /nexus/v1/tools/test                     body {tool: search|read|feeds|mcp, query|url|server|tool_name|args}: test strumento dalla UI impostazioni (v1.1.4)
+ *   POST   /nexus/v1/ai/oauth/start                 body {provider}: avvia il login web OAuth PKCE (solo provider con oauth=true nel catalog), risposta {ok, auth_url} (v1.1.10)
+ *   POST   /nexus/v1/ai/oauth/callback              body {state, code}: scambia il codice con la chiave di provisioning SALVATA server-side, risposta {ok} — MAI la chiave (v1.1.10)
+ *   POST   /nexus/v1/ai/disconnect/{provider}       svuota prov_key_{provider} (cancellazione VOLUTA, log 'oauth_disconnected'), risposta {ok, provider} (v1.1.10)
+ *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10)
  *   POST   /nexus/v1/chief/run/{id}                 forza la revisione del capo redattore su un articolo, risposta {ok, chief_status, note} (v1.1.4)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
@@ -263,6 +267,101 @@ class Nexus_Rest {
                                         'methods'             => WP_REST_Server::READABLE,
                                         'callback'            => array( __CLASS__, 'rest_ai_models' ),
                                         'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.10 (WP10): login web OAuth PKCE per i provider con
+                // 'oauth' => true nel catalog (oggi OpenRouter). start ritorna
+                // l'URL di autorizzazione; callback scambia state+code con la
+                // chiave di provisioning SALVATA server-side (mai in risposta).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/oauth/start',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_ai_oauth_start' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'provider'          => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/oauth/callback',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_ai_oauth_callback' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'state'             => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'code'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.10 (WP10): scollega un provider (svuota prov_key_{provider}).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/disconnect/(?P<provider>[a-z0-9_-]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_ai_disconnect' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'provider'          => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.10 (WP10): test connessione VIVO del provider (GET /models con
+                // l'auth giusta + info account per OpenRouter). Risposta SEMPRE 200
+                // con {ok, ...}: l'esito del test è un dato, non un errore HTTP.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/test/(?P<provider>[a-z0-9_-]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_ai_test' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'provider'          => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'base_url'          => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'esc_url_raw',
+                                                ),
+                                        ),
                                 ),
                         )
                 );
@@ -1720,6 +1819,423 @@ class Nexus_Rest {
         }
 
         /* =========================================================================
+         * CALLBACK — ADMIN: PROVIDER AI v2 (v1.1.10, WP10)
+         * OAuth PKCE OpenRouter + wizard chiavi + test connessione.
+         * ======================================================================= */
+
+        /**
+         * POST /ai/oauth/start — avvia il login web OAuth PKCE (v1.1.10).
+         *
+         * Body {provider}. Solo provider con 'oauth' => true nel catalog
+         * (oggi OpenRouter): Nexus_Providers::oauth_start genera state one-shot
+         * + PKCE e ritorna l'URL di autorizzazione. Risposta {ok, auth_url}:
+         * il browser redirige l'admin su openrouter.ai; il ritorno arriva sulla
+         * pagina Impostazioni AI con ?nexus_oauth=1&state=…&code=….
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_ai_oauth_start( $request ) {
+                $provider = sanitize_key( (string) $request->get_param( 'provider' ) );
+
+                $catalog = class_exists( 'Nexus_Providers' ) ? Nexus_Providers::catalog() : array();
+                if ( ! isset( $catalog[ $provider ] ) || empty( $catalog[ $provider ]['oauth'] ) ) {
+                        return self::err(
+                                'nexus_rest_oauth_provider_unsupported',
+                                __( 'Login web OAuth non disponibile per questo provider: usa la chiave API manuale.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $start = Nexus_Providers::oauth_start( $provider );
+                if ( empty( $start['ok'] ) || empty( $start['auth_url'] ) ) {
+                        return self::err(
+                                'nexus_rest_oauth_start_failed',
+                                // Il messaggio arriva da Nexus_Providers (runtime, già in italiano).
+                                isset( $start['error'] ) && '' !== trim( (string) $start['error'] ) ? (string) $start['error'] : __( 'Avvio del login web non riuscito: riprova.', 'nexus-news-ai' ),
+                                429
+                        );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'       => true,
+                                'provider' => $provider,
+                                'auth_url' => (string) $start['auth_url'],
+                        )
+                );
+        }
+
+        /**
+         * POST /ai/oauth/callback — completa il login web OAuth PKCE (v1.1.10).
+         *
+         * Body {state, code}: Nexus_Providers::oauth_callback consuma lo stato
+         * (one-shot, user-bound), scambia il codice con la chiave di provisioning
+         * e la salva in prov_key_openrouter. La risposta è SOLO {ok: true}:
+         * la chiave NON torna mai in risposta REST (coerente con la mascheratura
+         * dei segreti). L'attività 'oauth_connected' è loggata senza la chiave.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_ai_oauth_callback( $request ) {
+                if ( ! class_exists( 'Nexus_Providers' ) || ! method_exists( 'Nexus_Providers', 'oauth_callback' ) ) {
+                        return self::err(
+                                'nexus_rest_providers_missing',
+                                __( 'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $state = (string) $request->get_param( 'state' );
+                $code  = (string) $request->get_param( 'code' );
+
+                if ( '' === trim( $state ) || '' === trim( $code ) ) {
+                        return self::err(
+                                'nexus_rest_oauth_missing_params',
+                                __( 'Parametri OAuth mancanti (state o code): riavvia il login da Impostazioni AI.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $result = Nexus_Providers::oauth_callback( $state, $code );
+                if ( empty( $result['ok'] ) ) {
+                        return self::err(
+                                'nexus_rest_oauth_failed',
+                                // Il messaggio arriva da Nexus_Providers (runtime, già in italiano).
+                                isset( $result['error'] ) && '' !== trim( (string) $result['error'] ) ? (string) $result['error'] : __( 'Connessione OAuth non riuscita: riavvia il login.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                // Mai la chiave: solo l'esito.
+                return rest_ensure_response( array( 'ok' => true ) );
+        }
+
+        /**
+         * POST /ai/disconnect/{provider} — scollega un provider (v1.1.10).
+         *
+         * Svuota prov_key_{provider} tramite Nexus_DB::update_settings (chiave
+         * '' esplicita: a differenza del PUT /settings qui la cancellazione è
+         * VOLUTA, è il flusso "Scollega" della UI). Log attività onesto
+         * 'oauth_disconnected' senza alcun valore sensibile.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_ai_disconnect( $request ) {
+                $provider = sanitize_key( (string) $request->get_param( 'provider' ) );
+
+                $catalog = class_exists( 'Nexus_Providers' ) ? Nexus_Providers::catalog() : array();
+                if ( ! isset( $catalog[ $provider ] ) || ! is_array( $catalog[ $provider ] ) ) {
+                        return self::err(
+                                'nexus_rest_provider_unknown',
+                                __( 'Provider AI sconosciuto.', 'nexus-news-ai' ),
+                                404
+                        );
+                }
+
+                $key_option = Nexus_Providers::key_option( $provider );
+                $defaults   = method_exists( 'Nexus_DB', 'default_settings' ) ? Nexus_DB::default_settings() : array();
+                if ( ! is_array( $defaults ) || ! array_key_exists( $key_option, $defaults ) ) {
+                        return self::err(
+                                'nexus_rest_provider_key_unknown',
+                                __( 'Questo provider non ha una chiave configurabile nelle impostazioni.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                Nexus_DB::update_settings( array( $key_option => '' ) );
+
+                $label = isset( $catalog[ $provider ]['label'] ) ? (string) $catalog[ $provider ]['label'] : $provider;
+                Nexus_DB::insert_activity(
+                        0,
+                        'oauth_disconnected',
+                        sprintf( 'Provider %s scollegato: chiave API rimossa dalle impostazioni.', $label ),
+                        'info'
+                );
+
+                return rest_ensure_response(
+                        array(
+                                'ok'       => true,
+                                'provider' => $provider,
+                        )
+                );
+        }
+
+        /**
+         * POST /ai/test/{provider} — test connessione VIVO del provider (v1.1.10).
+         *
+         * Body opzionale {base_url} (solo per 'custom': permette di testare l'URL
+         * del campo prima del salvataggio). La chiave prov_key_{provider} è
+         * obbligatoria per TUTTI tranne Ollama (endpoint locale senza auth): chiave
+         * vuota → errore chiaro (per OpenRouter invita a connettersi via login web).
+         * Il test chiama l'endpoint /models del provider con l'autenticazione giusta
+         * (models_endpoint/models_auth del catalog; custom: {base_url}/models),
+         * timeout 15s, guardia SSRF fail-closed (specchio G4: host privati solo per
+         * ollama o con allow_private_providers attivo).
+         *
+         * OpenRouter: la lista /models è PUBBLICA, quindi la validazione della
+         * chiave passa per GET https://openrouter.ai/api/v1/key con la stessa
+         * chiave (401/403 → chiave non valida, 429 → rate limit); la risposta di
+         * quell'endpoint alimenta anche account (usage/limit/is_free_tier).
+         *
+         * Risposta (SEMPRE 200, l'esito del test è un dato):
+         *   {ok: true, provider, models_count, sample: [primi 5 id], latency_ms,
+         *    account?: {usage, limit, is_free_tier} per OpenRouter}
+         *   {ok: false, error: messaggio leggibile e tradotto} — chiave non valida
+         *   (401/403), rate limit (429), endpoint non raggiungibile (rete).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_ai_test( $request ) {
+                if ( ! class_exists( 'Nexus_Providers' ) ) {
+                        return self::err(
+                                'nexus_rest_providers_missing',
+                                __( 'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $provider = sanitize_key( (string) $request->get_param( 'provider' ) );
+                $catalog  = Nexus_Providers::catalog();
+                if ( ! isset( $catalog[ $provider ] ) || ! is_array( $catalog[ $provider ] ) ) {
+                        return self::err(
+                                'nexus_rest_provider_unknown',
+                                __( 'Provider AI sconosciuto.', 'nexus-news-ai' ),
+                                404
+                        );
+                }
+                $entry = $catalog[ $provider ];
+
+                $settings = Nexus_DB::get_settings();
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+
+                // Chiave del provider (guard vuota con errore chiaro). SOLO Ollama è
+                // ammessa senza chiave (endpoint locale senza auth): per gli altri la
+                // chiave è obbligatoria — per OpenRouter anche se /models è pubblico,
+                // perché il test serve a validare la chiave salvata (vedi /key sotto).
+                $api_key = isset( $settings[ 'prov_key_' . $provider ] ) ? trim( (string) $settings[ 'prov_key_' . $provider ] ) : '';
+                if ( '' === $api_key && 'ollama' !== $provider ) {
+                        $is_oauth = ! empty( $entry['oauth'] );
+                        $label    = isset( $entry['label'] ) ? (string) $entry['label'] : $provider;
+                        return rest_ensure_response(
+                                array(
+                                        'ok'       => false,
+                                        'provider' => $provider,
+                                        'error'    => $is_oauth
+                                                ? sprintf( __( 'Chiave API mancante per il provider %1$s: connettiti con il login web o salva una chiave e riprova.', 'nexus-news-ai' ), $label )
+                                                : sprintf( __( 'Chiave API mancante per il provider %1$s: salvala in Impostazioni AI e riprova.', 'nexus-news-ai' ), $label ),
+                                )
+                        );
+                }
+
+                // Endpoint modelli: catalogo, oppure {base_url}/models per 'custom'
+                // (il body permette di testare l'URL del campo PRIMA del salvataggio).
+                if ( 'custom' === $provider ) {
+                        $base_url = trim( (string) $request->get_param( 'base_url' ) );
+                        if ( '' === $base_url ) {
+                                $base_url = isset( $settings['prov_base_custom'] ) ? trim( (string) $settings['prov_base_custom'] ) : '';
+                        }
+                        if ( '' === $base_url ) {
+                                return rest_ensure_response(
+                                        array(
+                                                'ok'       => false,
+                                                'provider' => $provider,
+                                                'error'    => __( 'URL base mancante per il provider Personalizzato: inseriscila nel campo “URL base” e riprova.', 'nexus-news-ai' ),
+                                        )
+                                );
+                        }
+                        $endpoint = untrailingslashit( $base_url ) . '/models';
+                } else {
+                        $endpoint = isset( $entry['models_endpoint'] ) ? trim( (string) $entry['models_endpoint'] ) : '';
+                        if ( '' === $endpoint ) {
+                                return rest_ensure_response(
+                                        array(
+                                                'ok'       => false,
+                                                'provider' => $provider,
+                                                'error'    => __( 'Endpoint modelli non configurato per questo provider: il test live non è disponibile.', 'nexus-news-ai' ),
+                                        )
+                                );
+                        }
+                }
+
+                // Guardia SSRF fail-closed (specchio G4, Nexus_Providers::url_guard_error).
+                $guard = Nexus_Providers::url_guard_error( $endpoint, $provider, $settings );
+                if ( '' !== $guard ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'       => false,
+                                        'provider' => $provider,
+                                        'error'    => $guard,
+                                )
+                        );
+                }
+
+                // OpenRouter: validazione chiave + info account con GET /api/v1/key
+                // (lista modelli è pubblica: senza questo passo un "test riuscito"
+                // non proverebbe affatto la chiave salvata). Messaggi onesti:
+                // 401/403 = chiave non valida, 429 = rate limit.
+                $account = array();
+                if ( 'openrouter' === $provider ) {
+                        $acc = wp_remote_get(
+                                'https://openrouter.ai/api/v1/key',
+                                array(
+                                        'timeout' => 15,
+                                        'headers' => array(
+                                                'Authorization' => 'Bearer ' . $api_key,
+                                                'Accept'        => 'application/json',
+                                        ),
+                                )
+                        );
+                        if ( is_wp_error( $acc ) ) {
+                                return rest_ensure_response(
+                                        array(
+                                                'ok'       => false,
+                                                'provider' => $provider,
+                                                'error'    => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . $acc->get_error_message(),
+                                        )
+                                );
+                        }
+                        $acc_http = (int) wp_remote_retrieve_response_code( $acc );
+                        if ( 200 !== $acc_http ) {
+                                $acc_error = __( 'Il provider ha risposto con errore HTTP ' . $acc_http . ' sul controllo della chiave.', 'nexus-news-ai' );
+                                if ( 401 === $acc_http || 403 === $acc_http ) {
+                                        $acc_error = __( 'Chiave API non valida o non autorizzata (HTTP ' . $acc_http . '): verifica la chiave nelle impostazioni o riconnettiti.', 'nexus-news-ai' );
+                                } elseif ( 429 === $acc_http ) {
+                                        $acc_error = __( 'Rate limit del provider raggiunto (HTTP 429): riprova tra qualche minuto.', 'nexus-news-ai' );
+                                }
+                                return rest_ensure_response(
+                                        array(
+                                                'ok'        => false,
+                                                'provider'  => $provider,
+                                                'http_code' => $acc_http,
+                                                'error'     => $acc_error,
+                                        )
+                                );
+                        }
+                        $acc_body = json_decode( (string) wp_remote_retrieve_body( $acc ), true );
+                        if ( is_array( $acc_body ) && isset( $acc_body['data'] ) && is_array( $acc_body['data'] ) ) {
+                                $acc_data = $acc_body['data'];
+                                // usage/limit in USD; limit null = credito illimitato (omesso).
+                                if ( isset( $acc_data['usage'] ) && is_numeric( $acc_data['usage'] ) ) {
+                                        $account['usage'] = (float) $acc_data['usage'];
+                                }
+                                if ( isset( $acc_data['limit'] ) && null !== $acc_data['limit'] && is_numeric( $acc_data['limit'] ) ) {
+                                        $account['limit'] = (float) $acc_data['limit'];
+                                }
+                                if ( isset( $acc_data['is_free_tier'] ) ) {
+                                        $account['is_free_tier'] = (bool) $acc_data['is_free_tier'];
+                                }
+                        }
+                }
+
+                // Autenticazione secondo models_auth del catalog:
+                // bearer (Authorization) | anthropic (x-api-key + anthropic-version) |
+                // query_key (?key=) | none.
+                $models_auth = isset( $entry['models_auth'] ) ? (string) $entry['models_auth'] : 'bearer';
+                $args        = array(
+                        'timeout' => 15,
+                        'headers' => array( 'Accept' => 'application/json' ),
+                );
+                if ( 'bearer' === $models_auth ) {
+                        $args['headers']['Authorization'] = 'Bearer ' . $api_key;
+                        $args['headers']['HTTP-Referer']  = home_url( '/' );
+                        $args['headers']['X-Title']       = 'Nexus News AI';
+                } elseif ( 'anthropic' === $models_auth ) {
+                        $args['headers']['x-api-key']         = $api_key;
+                        $args['headers']['anthropic-version'] = '2023-06-01';
+                } elseif ( 'query_key' === $models_auth ) {
+                        $endpoint = add_query_arg( 'key', $api_key, $endpoint );
+                }
+
+                $started    = microtime( true );
+                $response   = wp_remote_get( $endpoint, $args );
+                $latency_ms = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+                if ( is_wp_error( $response ) ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'         => false,
+                                        'provider'   => $provider,
+                                        'latency_ms' => $latency_ms,
+                                        'error'      => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . $response->get_error_message() . __( ' Se l’endpoint è in rete locale o sull’host di WordPress verifica che sia attivo e raggiungibile.', 'nexus-news-ai' ),
+                                )
+                        );
+                }
+
+                $http = (int) wp_remote_retrieve_response_code( $response );
+                $raw  = (string) wp_remote_retrieve_body( $response );
+
+                if ( 200 !== $http ) {
+                        $detail = '';
+                        $data   = json_decode( $raw, true );
+                        if ( is_array( $data ) ) {
+                                foreach ( array( 'message', 'error' ) as $k ) {
+                                        if ( ! empty( $data[ $k ] ) && is_string( $data[ $k ] ) ) {
+                                                $detail = $data[ $k ];
+                                                break;
+                                        }
+                                }
+                        }
+                        if ( 401 === $http || 403 === $http ) {
+                                $error = __( 'Chiave API non valida o non autorizzata (HTTP ' . $http . '): verifica la chiave nelle impostazioni o riconnettiti.', 'nexus-news-ai' );
+                        } elseif ( 429 === $http ) {
+                                $error = __( 'Rate limit del provider raggiunto (HTTP 429): riprova tra qualche minuto.', 'nexus-news-ai' );
+                        } else {
+                                $error = __( 'Il provider ha risposto con errore HTTP ' . $http . ( '' !== $detail ? ': ' . $detail : '.' ), 'nexus-news-ai' );
+                        }
+                        return rest_ensure_response(
+                                array(
+                                        'ok'         => false,
+                                        'provider'   => $provider,
+                                        'http_code'  => $http,
+                                        'latency_ms' => $latency_ms,
+                                        'error'      => $error,
+                                )
+                        );
+                }
+
+                $models = self::normalize_ai_models_body( $raw );
+                if ( ! $models ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'         => false,
+                                        'provider'   => $provider,
+                                        'latency_ms' => $latency_ms,
+                                        'error'      => __( 'Il provider non ha restituito un elenco di modelli riconoscibile.', 'nexus-news-ai' ),
+                                )
+                        );
+                }
+
+                $out = array(
+                        'ok'           => true,
+                        'provider'     => $provider,
+                        'models_count' => count( $models ),
+                        'sample'       => array_slice( $models, 0, 5 ),
+                        'latency_ms'   => $latency_ms,
+                );
+
+                // OpenRouter: info account già raccolte dalla validazione /key qui sopra.
+                if ( ! empty( $account ) ) {
+                        $out['account'] = $account;
+                }
+
+                // Log attività onesto: mai la chiave, solo esito e numeri.
+                Nexus_DB::insert_activity(
+                        0,
+                        'provider_test',
+                        sprintf( 'Test connessione provider %1$s riuscito: %2$d modelli in %3$d ms.', isset( $entry['label'] ) ? $entry['label'] : $provider, count( $models ), $latency_ms ),
+                        'success'
+                );
+
+                return rest_ensure_response( $out );
+        }
+
+        /* =========================================================================
          * CALLBACK — ADMIN: ARTICOLI
          * ======================================================================= */
 
@@ -3120,16 +3636,20 @@ class Nexus_Rest {
                         // Tema UI admin (v1.0.6).
                         'admin_theme'          => 'sanitize_key',
                         // Provider AI per agente (v1.1.4): chiavi per provider e base URL personalizzato.
-                        'prov_key_openrouter'  => 'sanitize_text_field',
-                        'prov_key_openai'      => 'sanitize_text_field',
-                        'prov_key_anthropic'   => 'sanitize_text_field',
-                        'prov_key_google'      => 'sanitize_text_field',
-                        'prov_key_groq'        => 'sanitize_text_field',
-                        'prov_key_deepseek'    => 'sanitize_text_field',
-                        'prov_key_mistral'     => 'sanitize_text_field',
-                        'prov_key_xai'         => 'sanitize_text_field',
-                        'prov_key_custom'      => 'sanitize_text_field',
-                        'prov_key_ollama'      => 'sanitize_text_field', // v1.1.10 (G2): ora in whitelist anche per Ollama
+                        // v1.1.10 (WP10, contratto D5): il sanitize delle prov_key_* passa
+                        // a sanitize_secret_multiline() (vedi docblock del metodo) invece
+                        // di sanitize_text_field, che avrebbe PERSO i newline del pool
+                        // multi-chiave (una chiave per riga, rotazione round-robin).
+                        'prov_key_openrouter'  => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_openai'      => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_anthropic'   => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_google'      => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_groq'        => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_deepseek'    => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_mistral'     => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_xai'         => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_custom'      => array( __CLASS__, 'sanitize_secret_multiline' ),
+                        'prov_key_ollama'      => array( __CLASS__, 'sanitize_secret_multiline' ), // v1.1.10 (G2): ora in whitelist anche per Ollama
                         'prov_base_custom'     => 'esc_url_raw',
                         // v1.1.10 — motore fonti multi-tipo + provider v2.
                         'youtube_api_key'      => 'sanitize_text_field',
@@ -3331,6 +3851,28 @@ class Nexus_Rest {
         /* =========================================================================
          * SEGRETI: MASCHERATURA (v1.1.9)
          * ======================================================================= */
+
+        /**
+         * Sanitize dei SEGRETI multi-riga (prov_key_*, v1.1.10 WP10).
+         *
+         * Contratto D5 (key pool multi-chiave): in prov_key_{provider} le chiavi
+         * multiple vanno salvate UNA PER RIGA (il consumer ruota round-robin),
+         * quindi il sanitize deve PRESERVARE i newline: sanitize_text_field li
+         * avrebbe persi (li sostituisce con spazi) e avrebbe fuso il pool in una
+         * riga sola illeggibile. sanitize_textarea_field + trim mantiene le righe
+         * e ripulisce i bordi; niente strip_tags perché una chiave API non
+         * contiene markup (e gli eventuali '<'/'>' veri andrebbero preservati).
+         *
+         * Usato dalla whitelist di sanitize_settings_payload tramite callback
+         * callable (array( __CLASS__, … )): call_user_func accetta array-callable
+         * come le stringhe di funzione già presenti nella mappa.
+         *
+         * @param string $value Valore grezzo del campo.
+         * @return string Valore sanificato, newline preservati.
+         */
+        private static function sanitize_secret_multiline( $value ) {
+                return trim( (string) sanitize_textarea_field( (string) $value ) );
+        }
 
         /**
          * Chiavi settings considerate SEGRETI (mai in risposta REST, mai nell'export).

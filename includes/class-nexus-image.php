@@ -7,7 +7,20 @@
  *    con Authorization Bearer {ai_api_key}; accetta sia data[0].b64_json (decodifica)
  *    sia data[0].url (download con wp_remote_get). Timeout 30s per richiesta.
  * ② FALLBACK image_url — se l'articolo ha image_url non vuota, download (timeout 20s).
- * ③ FALLBACK placeholder locale — con GD: PNG 1200x675 con gradiente derivato dall'hash
+ * ③ FALLBACK Pixabay (v1.1.10) — SOLO se AI disabilitata/fallita E nessun image_url
+ *    utilizzabile: ricerca foto (GET https://pixabay.com/api/, image_type=photo,
+ *    per_page=10, safesearch=true) con query dalle KEYWORD dell'articolo (titolo:
+ *    prime 3-4 parole significative con stopwords IT/EN rimosse; categoria come
+ *    fallback). Dedup: transient 'nexus_pixabay_seen' (id già usati, cap 500,
+ *    scadenza 30 giorni) — si sceglie il primo risultato NON già usato e lo si
+ *    marca usato. Cache risposta per-query 24h ('nexus_pixabay_{md5(query)}').
+ *    Gate qualità: scartati gli hit con imageWidth < 640px, preferita
+ *    largeImageURL (~960px) a previewURL (mai usata); il download passa SEMPRE
+ *    da download_image (stesse guardie SSRF/SVG/MIME degli altri download remoti).
+ *    Chiave mancante (settings `pixabay_key`) → log 'pixabay_skip' UNA volta
+ *    (non spam) e ritorno alla catena. Risposta API non valida/zero risultati →
+ *    log onesto e ritorno alla catena senza rompere il flusso.
+ * ④ FALLBACK placeholder locale — con GD: PNG 1200x675 con gradiente derivato dall'hash
  *    della categoria e iniziali del titolo (font builtin, nessun file esterno);
  *    senza GD: SVG minimale (gradiente + testo) come ultima spiaggia.
  *
@@ -29,6 +42,13 @@
  * - FALLBACK file_put_contents RIMOSSO (v1.1.9): scrivere in uploads bypassando
  *   la whitelist mime di wp_upload_bits poteva depositare XML/SVG eseguibile;
  *   se wp_upload_bits rifiuta, la featured image non viene impostata (log onesto).
+ * - v1.1.10 (WP6): il download dell'immagine Pixabay PASSA dallo stesso
+ *   download_image (SSRF guard + SVG ban + MIME reale + limit_response_size):
+ *   nessuna via parallela. Attribuzione: Pixabay non la richiede e NON viene
+ *   inventata — alt text = titolo dell'articolo (comportamento esistente di
+ *   save_and_attach). Gate qualità: min-width 640px su TUTTE le immagini
+ *   candidate remote (image_url e Pixabay; generazione AI esente); il nome
+ *   file è sanificato da sanitize_file_name + wp_upload_bits (verificato).
  *
  * wiring: l'integratore farà require in nexus-news-ai.php
  * (require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';).
@@ -47,6 +67,18 @@ class Nexus_Image {
 
         /** CIDR IPv4 bloccati dall'SSRF guard (stessa lista di Nexus_Tools). */
         const BANNED_IPV4_CIDR = '0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 100.64.0.0/10 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4';
+
+        /** Gate qualità (v1.1.10): larghezza minima (px) per le immagini candidate remote. */
+        const MIN_IMAGE_WIDTH = 640;
+
+        /** Dedup Pixabay: cap di ID ricordati (transient 'nexus_pixabay_seen'). */
+        const PIXABAY_SEEN_CAP = 500;
+
+        /** Dedup Pixabay: scadenza del transient (30 giorni), rinnovata a ogni marcatura. */
+        const PIXABAY_SEEN_TTL = 2592000; // 30 * 24 * 3600.
+
+        /** Cache della risposta API Pixabay per singola query (24 ore). */
+        const PIXABAY_QUERY_TTL = 86400; // 24 h.
 
         /**
          * Punto d'ingresso: garantisce che il post WP abbia una featured image.
@@ -88,10 +120,13 @@ class Nexus_Image {
                         $article_id = absint( self::pick( $article, 'id' ) );
                         $image_url  = esc_url_raw( trim( (string) self::pick( $article, 'image_url' ) ) );
 
-                        $binary       = '';
-                        $ext          = '';
-                        $source_desc  = '';
-                        $notes        = array();
+                        $binary          = '';
+                        $ext             = '';
+                        $source_desc     = '';
+                        $notes           = array();
+                        // featured_source (v1.1.10): anello che ha fornito l'immagine —
+                        // 'ai' | 'source' | 'pixabay' | 'none' (placeholder o fallimento).
+                        $featured_source = 'none';
 
                         // Impostazioni plugin (guard: il layer dati deve esistere).
                         $settings = array();
@@ -114,28 +149,66 @@ class Nexus_Image {
                                 } else {
                                         $generated = self::generate_ai_image( $title, $category, $settings, $api_key, $base_url );
                                         if ( is_array( $generated ) ) {
-                                                $binary      = $generated['binary'];
-                                                $ext         = $generated['ext'];
-                                                $source_desc = 'generazione AI (modello ' . $generated['model'] . ')';
+                                                $binary          = $generated['binary'];
+                                                $ext             = $generated['ext'];
+                                                $source_desc     = 'generazione AI (modello ' . $generated['model'] . ')';
+                                                $featured_source = 'ai';
                                         } else {
                                                 $notes[] = 'generazione AI fallita (' . (string) $generated . ')';
                                         }
                                 }
                         }
 
-                        // ② FALLBACK image_url dell'articolo.
+                        // ② FALLBACK image_url dell'articolo (gate qualità: larghezza minima v1.1.10).
                         if ( '' === $binary && '' !== $image_url ) {
                                 $downloaded = self::download_image( $image_url, 20 );
                                 if ( is_array( $downloaded ) ) {
-                                        $binary      = $downloaded['binary'];
-                                        $ext         = $downloaded['ext'];
-                                        $source_desc = 'immagine dall\'articolo (image_url)';
+                                        // Gate qualità v1.1.10 (AI esente): larghezza REALE del file scaricato.
+                                        // Se la larghezza non è determinabile (funzione assente) il gate non blocca
+                                        // (fail-open dichiarato): il MIME resta comunque validato da download_image.
+                                        $width = self::binary_image_width( $downloaded['binary'] );
+                                        if ( $width > 0 && $width < self::MIN_IMAGE_WIDTH ) {
+                                                $notes[] = 'image_url scartata dal gate qualità: larghezza ' . $width . 'px sotto il minimo di ' . self::MIN_IMAGE_WIDTH . 'px';
+                                        } else {
+                                                $binary          = $downloaded['binary'];
+                                                $ext             = $downloaded['ext'];
+                                                $source_desc     = 'immagine dall\'articolo (image_url)';
+                                                $featured_source = 'source';
+                                        }
                                 } else {
                                         $notes[] = 'image_url non utilizzabile (' . (string) $downloaded . ')';
                                 }
                         }
 
-                        // ③ FALLBACK placeholder locale (PNG con GD, altrimenti SVG).
+                        // ③ FALLBACK Pixabay (v1.1.10) — scatta SOLO se AI è disabilitata/fallita
+                        // E nessuna image_url utilizzabile (a questo punto '' === $binary).
+                        if ( '' === $binary ) {
+                                $pixabay = self::fetch_pixabay_image( $title, $category, $settings );
+                                if ( is_array( $pixabay ) ) {
+                                        // Download SEMPRE via download_image: SSRF guard + SVG ban + MIME
+                                        // reale + limit_response_size (le guardie v1.1.9 non vengono aggirate).
+                                        $downloaded = self::download_image( $pixabay['url'], 20 );
+                                        if ( is_array( $downloaded ) ) {
+                                                // Secondo gate sulla larghezza REALE del file scaricato.
+                                                $width = self::binary_image_width( $downloaded['binary'] );
+                                                if ( $width > 0 && $width < self::MIN_IMAGE_WIDTH ) {
+                                                        $notes[] = 'pixabay scartata dal gate qualità: larghezza reale ' . $width . 'px sotto il minimo di ' . self::MIN_IMAGE_WIDTH . 'px';
+                                                } else {
+                                                        $binary          = $downloaded['binary'];
+                                                        $ext             = $downloaded['ext'];
+                                                        $source_desc     = 'immagine Pixabay (query "' . $pixabay['query'] . '")';
+                                                        $featured_source = 'pixabay';
+                                                }
+                                        } else {
+                                                $notes[] = 'pixabay non utilizzabile (' . (string) $downloaded . ')';
+                                        }
+                                } elseif ( '' !== (string) $pixabay ) {
+                                        // Errore onesto della ricerca (chiave mancante → '' già loggato una volta sola).
+                                        $notes[] = (string) $pixabay;
+                                }
+                        }
+
+                        // ④ FALLBACK placeholder locale (PNG con GD, altrimenti SVG).
                         if ( '' === $binary ) {
                                 $placeholder = self::build_placeholder( $title, $category );
                                 $binary      = $placeholder['binary'];
@@ -146,7 +219,7 @@ class Nexus_Image {
                         // SALVATAGGIO: upload + attachment + metadata.
                         $attach_id = self::save_and_attach( $binary, $ext, $article_id, $title, $post_id );
                         if ( $attach_id <= 0 ) {
-                                self::log_activity( 'Impossibile salvare la featured image per il post #' . $post_id . ' (upload o attachment falliti).', 'error' );
+                                self::log_activity( 'Impossibile salvare la featured image per il post #' . $post_id . ' (upload o attachment falliti; featured_source: ' . $featured_source . ').', 'error' );
                                 return false;
                         }
 
@@ -165,7 +238,7 @@ class Nexus_Image {
                         }
 
                         $suffix = empty( $notes ) ? '' : ' Note: ' . implode( '; ', $notes ) . '.';
-                        self::log_activity( 'Featured image impostata sul post #' . $post_id . ' (origine: ' . $source_desc . ').' . $suffix, 'success' );
+                        self::log_activity( 'Featured image impostata sul post #' . $post_id . ' (origine: ' . $source_desc . '; featured_source: ' . $featured_source . ').' . $suffix, 'success' );
 
                         return true;
                 } catch ( Throwable $e ) {
@@ -598,7 +671,396 @@ class Nexus_Image {
                 return '';
         }
 
-        /* ============ ③ PLACEHOLDER LOCALE ============ */
+        /* ============ ③ FALLBACK PIXABAY E GATE QUALITÀ (v1.1.10) ============ */
+
+        /**
+         * Larghezza in pixel di un binario immagine (getimagesizefromstring).
+         *
+         * Gate qualità v1.1.10: verifica la larghezza REALE delle immagini candidate
+         * scaricate (image_url e Pixabay; la generazione AI è esente). Ritorna 0 se
+         * la larghezza non è determinabile (funzione assente o binario atipico): in
+         * quel caso il gate NON blocca (fail-open dichiarato nel chiamante) — il
+         * MIME resta comunque validato da download_image.
+         *
+         * @param string $binary Contenuto del file immagine.
+         * @return int Larghezza in pixel, 0 se non determinabile.
+         */
+        private static function binary_image_width( $binary ) {
+                $binary = (string) $binary;
+                if ( '' === $binary || ! function_exists( 'getimagesizefromstring' ) ) {
+                        return 0;
+                }
+
+                $info = @getimagesizefromstring( $binary );
+                if ( is_array( $info ) && ! empty( $info[0] ) ) {
+                        return (int) $info[0];
+                }
+
+                return 0;
+        }
+
+        /**
+         * Anello ③: cerca una foto Pixabay idonea per la featured image.
+         *
+         * Scatta SOLO se AI è disabilitata/fallita e non c'è image_url utilizzabile
+         * (il chiamante invoca questo metodo solo con '' === $binary).
+         *
+         * - Settings `pixabay_key` mancante → log 'pixabay_skip' UNA volta sola
+         *   (opzione nexus_pixabay_key_missing, ri-armata al primo uso di una chiave
+         *   valida) e ritorno '' (skip silenzioso nelle note per-articolo: niente spam).
+         * - Query: prime 3-4 parole significative del titolo (stopwords IT/EN
+         *   rimosse), fallback sulla categoria; URL-encoding via http_build_query.
+         * - Cache risposta per-query 24h (transient 'nexus_pixabay_{md5(query)}'):
+         *   viene cachata la lista di hit idonei, ANCHE se vuota (evita di martellare
+         *   l'API); gli errori HTTP/connessione NON vengono cachati.
+         * - Dedup: transient 'nexus_pixabay_seen' (map id => timestamp, cap 500,
+         *   scadenza 30 giorni rinnovata a ogni uso): si sceglie il PRIMO risultato
+         *   NON già usato e lo si marca usato SUBITO (anche se il download dovesse
+         *   poi fallire: evita retry-loop sullo stesso ID rotto).
+         * - Gate qualità: scartati gli hit con imageWidth < MIN_IMAGE_WIDTH (640px);
+         *   URL preferito largeImageURL (~960px), fallback webformatURL solo se
+         *   ≥ 640px dichiarati, MAI previewURL (troppo piccola).
+         *
+         * @param string $title    Titolo dell'articolo (testo pulito).
+         * @param string $category Categoria dell'articolo (testo pulito).
+         * @param array  $settings Impostazioni del plugin.
+         * @return array Array( 'url' => string, 'query' => string ) in successo;
+         *               stringa di errore onesta altrimenti ('' = skip già gestito).
+         */
+        private static function fetch_pixabay_image( $title, $category, $settings ) {
+                $key = isset( $settings['pixabay_key'] ) ? trim( (string) $settings['pixabay_key'] ) : '';
+                if ( '' === $key ) {
+                        self::pixabay_skip_once( 'chiave Pixabay (setting pixabay_key) non configurata: anello ③ disattivato' );
+                        return '';
+                }
+
+                // La chiave c'è: ri-armo l'eventuale log "una volta sola" dello skip.
+                self::pixabay_rearm_skip();
+
+                $query = self::pixabay_query( $title, $category );
+                if ( '' === $query ) {
+                        return 'pixabay: nessuna keyword utilizzabile (titolo e categoria vuoti o composti solo da stopwords)';
+                }
+
+                $hits = self::pixabay_search( $query, $key );
+                if ( ! is_array( $hits ) ) {
+                        // Errore API (connessione/HTTP/JSON): messaggio onesto, la catena prosegue.
+                        return (string) $hits;
+                }
+                if ( empty( $hits ) ) {
+                        return 'pixabay: zero risultati utilizzabili per la query "' . $query . '" (nessun esito o tutti sotto il gate di ' . self::MIN_IMAGE_WIDTH . 'px)';
+                }
+
+                // Dedup: primo hit idoneo NON ancora usato.
+                $seen = self::pixabay_seen_ids();
+                foreach ( $hits as $hit ) {
+                        $id = isset( $hit['id'] ) ? (int) $hit['id'] : 0;
+                        if ( $id <= 0 || empty( $hit['url'] ) ) {
+                                continue;
+                        }
+                        if ( isset( $seen[ $id ] ) ) {
+                                continue;
+                        }
+                        self::pixabay_mark_seen( $id );
+                        return array(
+                                'url'   => (string) $hit['url'],
+                                'query' => $query,
+                        );
+                }
+
+                return 'pixabay: tutti i risultati per la query "' . $query . '" sono già stati usati';
+        }
+
+        /**
+         * Chiama l'API Pixabay e ritorna gli hit idonei (già filtrati dal gate).
+         *
+         * Endpoint: GET https://pixabay.com/api/?key={key}&q={query}&image_type=photo
+         * &per_page=10&safesearch=true (URL-encoding completo via http_build_query).
+         * L'endpoint passa per guard_url (stessa SSRF guard degli altri fetch remoti:
+         * l'host è fisso ma il controllo resta identico per coerenza). La chiave API
+         * non finisce mai nei messaggi di errore (generici by design).
+         *
+         * @param string $query Query di ricerca (parole separate da spazio).
+         * @param string $key   Chiave API Pixabay.
+         * @return array Lista di hit idonei (map 'id'/'url', anche vuota) oppure stringa di errore.
+         */
+        private static function pixabay_search( $query, $key ) {
+                $cache_key = 'nexus_pixabay_' . md5( (string) $query );
+
+                $cached = function_exists( 'get_transient' ) ? get_transient( $cache_key ) : false;
+                if ( is_array( $cached ) ) {
+                        return $cached;
+                }
+
+                $endpoint = 'https://pixabay.com/api/?' . http_build_query( array(
+                        'key'        => $key,
+                        'q'          => (string) $query,
+                        'image_type' => 'photo',
+                        'per_page'   => 10,
+                        'safesearch' => 'true',
+                ) );
+
+                $guard = self::guard_url( $endpoint );
+                if ( '' !== $guard ) {
+                        return 'pixabay: ' . $guard;
+                }
+
+                $response = wp_remote_get( $endpoint, array(
+                        'timeout'             => 15,
+                        'redirection'         => 1,
+                        'limit_response_size' => self::MAX_DOWNLOAD_BYTES,
+                ) );
+
+                if ( is_wp_error( $response ) ) {
+                        return 'pixabay: errore di connessione all\'API (' . $response->get_error_message() . ')';
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+                $raw  = (string) wp_remote_retrieve_body( $response );
+
+                if ( 200 !== $code ) {
+                        // 401 chiave invalida, 429 rate limit, ecc.: messaggio onesto, senza corpo.
+                        return 'pixabay: API ha risposto con errore HTTP ' . $code;
+                }
+
+                $data = json_decode( $raw, true );
+                if ( ! is_array( $data ) || ! isset( $data['hits'] ) || ! is_array( $data['hits'] ) ) {
+                        return 'pixabay: risposta API non valida';
+                }
+
+                $hits = array();
+                foreach ( $data['hits'] as $hit ) {
+                        if ( ! is_array( $hit ) ) {
+                                continue;
+                        }
+
+                        // Gate qualità: larghezza dell'originale dichiarata dall'API.
+                        $width = isset( $hit['imageWidth'] ) ? (int) $hit['imageWidth'] : 0;
+                        if ( $width < self::MIN_IMAGE_WIDTH ) {
+                                continue;
+                        }
+
+                        // largeImageURL (~960px) preferita; fallback webformatURL solo se
+                        // ≥ 640px dichiarati; previewURL MAI (troppo piccola).
+                        $url = '';
+                        if ( ! empty( $hit['largeImageURL'] ) ) {
+                                $url = (string) $hit['largeImageURL'];
+                        } elseif ( ! empty( $hit['webformatURL'] ) && ( isset( $hit['webformatWidth'] ) ? (int) $hit['webformatWidth'] : 0 ) >= self::MIN_IMAGE_WIDTH ) {
+                                $url = (string) $hit['webformatURL'];
+                        }
+                        if ( '' === $url ) {
+                                continue;
+                        }
+
+                        $hits[] = array(
+                                'id'  => isset( $hit['id'] ) ? (int) $hit['id'] : 0,
+                                'url' => $url,
+                        );
+                }
+
+                // Cache per-query 24h ANCHE dei risultati vuoti (zero risultati = esito valido).
+                if ( function_exists( 'set_transient' ) ) {
+                        set_transient( $cache_key, $hits, self::PIXABAY_QUERY_TTL );
+                }
+
+                return $hits;
+        }
+
+        /**
+         * Costruisce la query Pixabay dalle keyword dell'articolo.
+         *
+         * Prima scelta: prime 3-4 parole significative del titolo (stopwords IT/EN
+         * rimosse). Se il titolo non produce nulla di utile, fallback sulla categoria.
+         *
+         * @param string $title    Titolo dell'articolo.
+         * @param string $category Categoria dell'articolo.
+         * @return string Query (parole separate da spazio), '' se nulla di utilizzabile.
+         */
+        private static function pixabay_query( $title, $category ) {
+                $terms = self::pixabay_terms( $title );
+                if ( empty( $terms ) ) {
+                        $terms = self::pixabay_terms( $category );
+                }
+
+                return implode( ' ', array_slice( $terms, 0, 4 ) );
+        }
+
+        /**
+         * Estrae le parole significative (max 4) da un testo: tokenizzazione
+         * unicode, rimozione stopwords IT/EN, token di almeno 2 caratteri.
+         *
+         * Gli accenti vengono rimossi (remove_accents) per uniformare i token
+         * (È → E). La lista stopwords copre i casi comuni ma non è esaustiva:
+         * falsi positivi possibili su nomi propri (es. "La" in "La Liga"),
+         * accettati: la ricerca Pixabay è fuzzy e la query resta sensata.
+         *
+         * @param string $text Testo sorgente (titolo o categoria).
+         * @return array Lista di termini (max 4).
+         */
+        private static function pixabay_terms( $text ) {
+                $text = function_exists( 'remove_accents' ) ? remove_accents( (string) $text ) : (string) $text;
+                $text = trim( strtolower( $text ) );
+                if ( '' === $text ) {
+                        return array();
+                }
+
+                // Tokenizzazione unicode; fallback ASCII se il pattern /u fallisce su input degradato.
+                $matches = array();
+                if ( ! preg_match_all( '/[\\p{L}\\p{N}]{2,}/u', $text, $matches ) || empty( $matches[0] ) ) {
+                        preg_match_all( '/[a-z0-9]{2,}/', $text, $matches );
+                }
+                if ( empty( $matches[0] ) || ! is_array( $matches[0] ) ) {
+                        return array();
+                }
+
+                $stopwords = self::pixabay_stopwords();
+
+                $terms = array();
+                foreach ( $matches[0] as $word ) {
+                        if ( isset( $stopwords[ $word ] ) ) {
+                                continue;
+                        }
+                        $terms[] = $word;
+                        if ( count( $terms ) >= 4 ) {
+                                break;
+                        }
+                }
+
+                return $terms;
+        }
+
+        /**
+         * Stopwords IT/EN per la costruzione della query (lookup per chiave, O(1)).
+         *
+         * @return array Map parola => true.
+         */
+        private static function pixabay_stopwords() {
+                static $map = null;
+                if ( null !== $map ) {
+                        return $map;
+                }
+
+                $words = array(
+                        // Italiano.
+                        'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una',
+                        'di', 'del', 'della', 'dei', 'dello', 'delle', 'degli', 'dell',
+                        'a', 'al', 'allo', 'alla', 'ai', 'agli', 'alle', 'all',
+                        'da', 'dal', 'dallo', 'dalla', 'dai', 'dagli', 'dalle', 'dall',
+                        'in', 'nel', 'nello', 'nella', 'nei', 'negli', 'nelle', 'nell',
+                        'su', 'sul', 'sullo', 'sulla', 'sui', 'sugli', 'sulle', 'sull',
+                        'con', 'per', 'tra', 'fra', 'e', 'ed', 'o', 'od', 'ma', 'se',
+                        'che', 'chi', 'cui', 'non', 'come', 'dove', 'quando', 'perche',
+                        'cosa', 'quale', 'quali', 'sono', 'stato', 'stata', 'stati', 'state',
+                        'ha', 'hanno', 'ho', 'hai', 'avere', 'aveva', 'era', 'erano',
+                        'essere', 'sia', 'anche', 'pero', 'quindi', 'gia', 'ancora',
+                        'dopo', 'prima', 'contro', 'senza', 'fino', 'verso', 'secondo',
+                        'piu', 'meno', 'molto', 'poco', 'tutto', 'tutti', 'tutta', 'tutte',
+                        'questo', 'questa', 'questi', 'queste', 'quello', 'quella',
+                        'quelli', 'quelle', 'suo', 'sua', 'suoi', 'sue', 'loro',
+                        'nostro', 'vostro', 'oggi', 'ieri', 'giorno', 'fare', 'detto',
+                        // Inglese.
+                        'the', 'an', 'and', 'or', 'but', 'if', 'of', 'to', 'at', 'for',
+                        'with', 'from', 'by', 'as', 'is', 'are', 'was', 'were', 'be',
+                        'been', 'being', 'am', 'it', 'its', 'this', 'that', 'these',
+                        'those', 'he', 'she', 'they', 'them', 'his', 'her', 'their',
+                        'we', 'our', 'us', 'you', 'your', 'me', 'my', 'not', 'no',
+                        'do', 'does', 'did', 'done', 'has', 'have', 'had', 'will',
+                        'would', 'can', 'could', 'should', 'shall', 'may', 'might',
+                        'must', 'about', 'into', 'over', 'under', 'than', 'then', 'so',
+                        'who', 'whom', 'whose', 'what', 'when', 'where', 'why', 'how',
+                        'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other',
+                        'some', 'such', 'only', 'own', 'same', 'too', 'very', 'just',
+                        'also', 'after', 'before', 'between', 'during', 'through',
+                        'against', 'out', 'up', 'down', 'off', 'again', 'once', 'here',
+                        'there', 'on', 'said', 'says', 'new',
+                );
+
+                $map = array();
+                foreach ( $words as $w ) {
+                        $map[ $w ] = true;
+                }
+
+                return $map;
+        }
+
+        /**
+         * ID Pixabay già usati per la dedup (transient 'nexus_pixabay_seen').
+         *
+         * Struttura: map id => timestamp dell'uso. Scadenza 30 giorni, rinnovata a
+         * ogni nuova marcatura (sliding); cap 500 ID, i più vecchi vengono scartati.
+         *
+         * @return array Map id => timestamp.
+         */
+        private static function pixabay_seen_ids() {
+                if ( ! function_exists( 'get_transient' ) ) {
+                        return array();
+                }
+
+                $seen = get_transient( 'nexus_pixabay_seen' );
+                return is_array( $seen ) ? $seen : array();
+        }
+
+        /**
+         * Marca un ID Pixabay come usato (cap 500, scadenza 30 giorni slittante).
+         *
+         * @param int $id ID della foto Pixabay.
+         * @return void
+         */
+        private static function pixabay_mark_seen( $id ) {
+                $id = (int) $id;
+                if ( $id <= 0 || ! function_exists( 'set_transient' ) ) {
+                        return;
+                }
+
+                $seen        = self::pixabay_seen_ids();
+                $seen[ $id ] = time();
+
+                if ( count( $seen ) > self::PIXABAY_SEEN_CAP ) {
+                        // Scarta i più vecchi (timestamp minore = usato prima);
+                        // preserve_keys = true: le chiavi ID restano intatte.
+                        asort( $seen );
+                        $seen = array_slice( $seen, -self::PIXABAY_SEEN_CAP, self::PIXABAY_SEEN_CAP, true );
+                }
+
+                set_transient( 'nexus_pixabay_seen', $seen, self::PIXABAY_SEEN_TTL );
+        }
+
+        /**
+         * Log 'pixabay_skip' UNA volta sola: la chiave API Pixabay è mancante.
+         *
+         * L'opzione nexus_pixabay_key_missing evita di scrivere un log a ogni
+         * articolo (non spam): viene scritta al primo skip e RIMOSSA appena una
+         * chiave viene trovata (pixabay_rearm_skip), così un cambio di configurazione
+         * viene comunque riportato nel log una volta.
+         *
+         * @param string $detail Dettaglio onesto dello skip.
+         * @return void
+         */
+        private static function pixabay_skip_once( $detail ) {
+                if ( function_exists( 'get_option' ) && get_option( 'nexus_pixabay_key_missing' ) ) {
+                        return;
+                }
+
+                if ( function_exists( 'update_option' ) ) {
+                        update_option( 'nexus_pixabay_key_missing', 1, false );
+                }
+
+                self::log_activity( 'pixabay_skip: ' . (string) $detail, 'warning' );
+        }
+
+        /**
+         * Ri-arma il log 'pixabay_skip' (rimuove l'opzione una-tantum).
+         * Chiamato ogni volta che una chiave Pixabay risulta configurata.
+         *
+         * @return void
+         */
+        private static function pixabay_rearm_skip() {
+                if ( function_exists( 'get_option' ) && function_exists( 'delete_option' ) && get_option( 'nexus_pixabay_key_missing' ) ) {
+                        delete_option( 'nexus_pixabay_key_missing' );
+                }
+        }
+
+        /* ============ ④ PLACEHOLDER LOCALE ============ */
 
         /**
          * Genera il placeholder locale: PNG con GD se disponibile, altrimenti SVG minimale.

@@ -146,14 +146,20 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                /* ---- FASE 1a: fonti RSS reali (o percorso evergreen) ----
-                 * NOTA v1.1.4: i feed delle fonti della redazione sono gia' uniti
-                 * DENTRO Nexus_Rss::fetch_for_agent() (T-08: fonti redazione prima
-                 * dei globali, dedup per link, cap 10). Il collect NON fa ulteriori
-                 * merge di fonti: gli item arrivano pronti, stessa shape.
+                /* ---- FASE 1a: fonti multi-tipo (o percorso evergreen) ----
+                 * v1.1.10 (B1): il dispatcher fonti e' Nexus_Sources::fetch_for_agent
+                 * (fonti redazione di OGNI tipo: rss/site/youtube/telegram/reddit/
+                 * search/mcp/web, fair-share, merge + dedup per link + cap 10,
+                 * campo additivo source_type per item). Fallback storico
+                 * Nexus_Rss::fetch_for_agent (solo RSS) se il modulo manca.
                  */
                 $items = array();
-                if ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'fetch_for_agent' ) ) {
+                if ( class_exists( 'Nexus_Sources' ) && method_exists( 'Nexus_Sources', 'fetch_for_agent' ) ) {
+                        $fetched = Nexus_Sources::fetch_for_agent( $agent );
+                        if ( is_array( $fetched ) ) {
+                                $items = $fetched;
+                        }
+                } elseif ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'fetch_for_agent' ) ) {
                         $fetched = Nexus_Rss::fetch_for_agent( $agent );
                         if ( is_array( $fetched ) ) {
                                 $items = $fetched;
@@ -182,20 +188,22 @@ class Nexus_Pipeline {
                         $candidates  = self::normalize_candidates( Nexus_AI_Engine::extract_json( (string) $res['content'] ) );
                         $source_name = 'Nexus News AI - Analisi editoriale';
                 } else {
-                        // Raggruppa gli item per fonte e usa il PRIMO feed/source disponibile.
-                        $groups = array();
+                        // v1.1.10 (B1): TUTTI gli item del dispatcher fonti (merge,
+                        // dedup e cap gia' fatti in Nexus_Sources), non piu' solo il
+                        // primo gruppo di fonte: il prompt vede l'intero paniere.
+                        $distinct = array();
                         foreach ( $items as $item ) {
                                 $src = self::item_field( $item, 'source' );
                                 if ( '' === $src ) {
                                         $src = 'RSS';
                                 }
-                                if ( ! isset( $groups[ $src ] ) ) {
-                                        $groups[ $src ] = array();
-                                }
-                                $groups[ $src ][] = $item;
+                                $distinct[ $src ] = true;
                         }
-                        $source_name = (string) array_key_first( $groups );
-                        $items_text  = self::build_items_text( $groups[ $source_name ] );
+                        $total_sources = count( $distinct );
+                        $source_name   = $total_sources > 1
+                                ? sprintf( '%d fonti redazione', $total_sources )
+                                : (string) array_key_first( $distinct );
+                        $items_text = self::build_items_text( $items );
 
                         $prompt = Nexus_AI_Engine::collect_prompt( $category, $personality, $items_text, $source_name );
                         // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
@@ -243,12 +251,25 @@ class Nexus_Pipeline {
                                 }
                         }
 
+                        // v1.1.10 (B1): propaga il tipo fonte dell'item reale (rss/
+                        // youtube/telegram/...) nel candidato, per insert_article.
+                        $source_type = '';
+                        if ( ! $evergreen ) {
+                                foreach ( $items as $item ) {
+                                        if ( self::item_field( $item, 'title' ) === $title || ( '' !== $source_url && self::item_field( $item, 'link' ) === $source_url ) ) {
+                                                $source_type = self::item_field( $item, 'source_type' );
+                                                break;
+                                        }
+                                }
+                        }
+
                         $kept[] = array(
                                 'title'      => $title,
                                 'summary'    => $summary,
                                 'content'    => $content,
                                 'sourceName' => trim( (string) ( isset( $candidate['sourceName'] ) ? $candidate['sourceName'] : '' ) ),
                                 'sourceUrl'  => $source_url,
+                                'sourceType' => $source_type,
                                 'score'      => $score,
                         );
 
@@ -283,6 +304,10 @@ class Nexus_Pipeline {
                                 'status'        => 'draft',
                                 'quality_score' => $candidate['score'],
                         );
+                        // v1.1.10 (B1): tipo fonte reale dell'item, se noto.
+                        if ( ! empty( $candidate['sourceType'] ) ) {
+                                $data['source_type'] = (string) $candidate['sourceType'];
+                        }
                         if ( '' !== $hash ) {
                                 $data['content_hash'] = $hash;
                         }
