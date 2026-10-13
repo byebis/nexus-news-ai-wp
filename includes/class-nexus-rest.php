@@ -45,6 +45,7 @@
  *   GET    /nexus/v1/multilang/translations-posts   args: article_id. Traduzioni native {article_id, source_post_id, source_lang, note, translations} (v1.1.2)
  *   GET    /nexus/v1/tools/catalog                  catalogo strumenti di ricerca e provider AI per agente (v1.1.4)
  *   POST   /nexus/v1/tools/test                     body {tool: search|read|feeds|mcp, query|url|server|tool_name|args}: test strumento dalla UI impostazioni (v1.1.4)
+ *   POST   /nexus/v1/sources/test                   body {type, url, query?, redazione_id?}: test UNA fonte della redazione (8 tipi) invocando l'adapter Nexus_Sources::fetch_{type} (via ReflectionMethod, v1.1.10 WP8); risposta SEMPRE 200 {ok, items_found, sample[], source_type, redazione_id?, error?} con ok:false sull'errore (stesso pattern /tools/test e /ai/test)
  *   POST   /nexus/v1/ai/oauth/start                 body {provider}: avvia il login web OAuth PKCE (solo provider con oauth=true nel catalog), risposta {ok, auth_url} (v1.1.10)
  *   POST   /nexus/v1/ai/oauth/callback              body {state, code}: scambia il codice con la chiave di provisioning SALVATA server-side, risposta {ok} — MAI la chiave (v1.1.10)
  *   POST   /nexus/v1/ai/disconnect/{provider}       svuota prov_key_{provider} (cancellazione VOLUTA, log 'oauth_disconnected'), risposta {ok, provider} (v1.1.10)
@@ -1244,6 +1245,51 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.10 (WP8): test di UNA fonte della redazione (8 tipi) —
+                // usato dall'editor fonti della pagina Redazioni e utile per il
+                // debug. Risposta SEMPRE 200 con {ok, ...}: l'esito del test è
+                // un dato, non un errore HTTP (stesso pattern di /tools/test).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/sources/test',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_sources_test' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'type'              => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                // NOTA: NON esc_url_raw — per i tipi non
+                                                // URL-based (youtube @canale, telegram,
+                                                // reddit, search, mcp server|tool|args)
+                                                // il valore NON è un URL; la normalizzazione
+                                                // per tipo avviene nell'handler.
+                                                'url'               => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'query'             => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'redazione_id'      => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 0,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
                 // v1.1.4: revisione forzata del capo redattore su un articolo.
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -1590,6 +1636,29 @@ class Nexus_Rest {
                 if ( null !== $request->get_param( 'chief_term_id' ) ) {
                         // v1.1.4: redazione di competenza quando chief_scope è 'term'.
                         $fields['chief_term_id'] = absint( $request->get_param( 'chief_term_id' ) );
+                }
+
+                // v1.1.10 (WP4, tools per-agente): provider di ricerca personale
+                // ('' = usa il provider globale) e server MCP personali (stesso
+                // formato righe 'nome|url|tokenOpzionale' del setting globale).
+                if ( null !== $request->get_param( 'search_provider' ) ) {
+                        $sp = sanitize_key( (string) $request->get_param( 'search_provider' ) );
+                        $fields['search_provider'] = in_array( $sp, array( 'tavily', 'serper', 'brave' ), true ) ? $sp : '';
+                }
+                if ( null !== $request->get_param( 'mcp_servers_text' ) ) {
+                        $fields['mcp_servers_text'] = sanitize_textarea_field( (string) $request->get_param( 'mcp_servers_text' ) );
+                }
+                if ( null !== $request->get_param( 'search_key' ) ) {
+                        // v1.1.10: chiave di ricerca PERSONALE dell'agente. Viene
+                        // memorizzata IN CHIARO nella colonna search_key_hash (nome
+                        // colonnale storico: le chiavi search servono in chiaro a
+                        // runtime per chiamare le API — stesse ragioni delle prov_key
+                        // in nexus_settings; un hash sarebbe inutilizzabile). Max 64
+                        // caratteri (VARCHAR/CHAR(64)), charset prudente.
+                        $sk = preg_replace( '/[^A-Za-z0-9_\-]/', '', trim( (string) $request->get_param( 'search_key' ) ) );
+                        if ( '' !== $sk ) {
+                                $fields['search_key_hash'] = mb_substr( $sk, 0, 64 );
+                        }
                 }
 
                 // Limiti di lunghezza coerenti con lo schema (VARCHAR 100).
@@ -4288,6 +4357,11 @@ class Nexus_Rest {
                         'personality' => (string) $agent->personality,
                         'ai_model'    => (string) ( $agent->ai_model ?? '' ),
                         'ai_provider' => (string) ( $agent->ai_provider ?? '' ),
+                        // v1.1.10 (WP4): strumenti personali dell'agente. La chiave
+                        // search NON viene mai restituita: solo il flag _set.
+                        'search_provider' => (string) ( $agent->search_provider ?? '' ),
+                        'search_key_set'  => ( 0 < strlen( (string) ( $agent->search_key_hash ?? '' ) ) ) ? 1 : 0,
+                        'mcp_servers_text' => (string) ( $agent->mcp_servers_text ?? '' ),
                         'role'        => (string) ( $agent->role ?? 'giornalista' ),
                         'chief_scope' => (string) ( $agent->chief_scope ?? '' ),
                         'chief_term_id' => absint( $agent->chief_term_id ?? 0 ),
@@ -5783,6 +5857,197 @@ class Nexus_Rest {
                                 'error'  => $error,
                         )
                 );
+        }
+
+        /**
+         * POST /sources/test — test di UNA fonte della redazione (v1.1.10, WP8).
+         *
+         * Body JSON: {type, url, query?, redazione_id?} con type in
+         * Nexus_Redazioni::TYPES (rss|site|youtube|telegram|reddit|search|mcp|web)
+         * e url = URL/valore della fonte (per i tipi non URL-based è l'handle:
+         * @canale, r/subreddit, parola chiave, "server|tool|{args}").
+         *
+         * MECCANICA (decisione WP8 documentata): gli adapter per tipo di
+         * Nexus_Sources (fetch_rss, fetch_youtube, ...) sono tutti private,
+         * quindi il test li invoca via ReflectionMethod::setAccessible() —
+         * accettato e documentato nel piano WP8 in alternativa a una modifica
+         * di class-nexus-sources.php (fuori perimetro). Costruito un array-fonte
+         * fittizio {type, url, query?} identico alla shape del term meta.
+         *
+         * Effetti collaterali controllati:
+         * - cooldown/fallimenti della fonte (transient nexus_src_cool_/fail_)
+         *   vengono PULITI prima del test (un test deve sempre provare davvero)
+         * e, se il test fallisce, il cooldown viene ripulito anche dopo (un
+         * test manuale non deve mandare in cooldown la fonte nel collect reale);
+         * - il budget full-content del run (statico privato) viene portato
+         *   temporaneamente al valore FULL_CONTENT_BUDGET (best-effort, reflection)
+         * così una fonte full=1 viene provata con l'estrazione Readability.
+         *
+         * Risposta: SEMPRE 200 con
+         *   {ok: bool, items_found: int, sample: [{title, link}] (max 3),
+         *    source_type: string, redazione_id?: int, error?: string}
+         * — ok:false sull'errore (stesso pattern di /tools/test e /ai/test:
+         * l'esito del test è un dato, non un errore HTTP).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_sources_test( $request ) {
+                if ( ! class_exists( 'Nexus_Sources' ) ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'          => false,
+                                        'source_type' => '',
+                                        'items_found' => 0,
+                                        'sample'      => array(),
+                                        'error'       => __( 'Il modulo fonti non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                )
+                        );
+                }
+
+                // PHP 7.4: la costante di classe si legge direttamente con la guardia
+                // class_exists (defined('Class::CONST') esiste solo da PHP 8.0).
+                $types = array( 'rss', 'site', 'youtube', 'telegram', 'reddit', 'search', 'mcp', 'web' );
+                if ( class_exists( 'Nexus_Redazioni' ) && ! empty( Nexus_Redazioni::TYPES ) && is_array( Nexus_Redazioni::TYPES ) ) {
+                        $types = array_map( 'strval', (array) Nexus_Redazioni::TYPES );
+                }
+
+                $type = sanitize_key( (string) $request->get_param( 'type' ) );
+                if ( ! in_array( $type, $types, true ) ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'          => false,
+                                        'source_type' => $type,
+                                        'items_found' => 0,
+                                        'sample'      => array(),
+                                        'error'       => __( 'Tipo di fonte non valido. Valori ammessi: rss, site, youtube, telegram, reddit, search, mcp, web.', 'nexus-news-ai' ),
+                                )
+                        );
+                }
+
+                // Valore fonte: per i tipi URL-based (rss/site/web) normalizza con
+                // esc_url_raw (come sanitize_sources), per gli altri toglie solo i
+                // caratteri di controllo (l'handle può contenere '@', '|', ecc.).
+                $value = trim( (string) $request->get_param( 'url' ) );
+                $value = trim( preg_replace( '/[\x00-\x1F\x7F]/', '', $value ) );
+                if ( in_array( $type, array( 'rss', 'site', 'web' ), true ) ) {
+                        $value = esc_url_raw( $value );
+                }
+                if ( '' === $value ) {
+                        return rest_ensure_response(
+                                array(
+                                        'ok'          => false,
+                                        'source_type' => $type,
+                                        'items_found' => 0,
+                                        'sample'      => array(),
+                                        'error'       => __( 'Valore della fonte mancante.', 'nexus-news-ai' ),
+                                )
+                        );
+                }
+
+                // Array-fonte fittizio, stessa shape del term meta _nexus_sources.
+                $source = array(
+                        'type' => $type,
+                        'url'  => $value,
+                );
+                $query  = trim( (string) $request->get_param( 'query' ) );
+                if ( '' !== $query ) {
+                        $source['query'] = sanitize_text_field( $query );
+                }
+
+                $redazione_id = absint( $request->get_param( 'redazione_id' ) );
+
+                // Chiave stato della fonte (stessa formula di Nexus_Sources::state_key):
+                // serve per pulire cooldown/fallimenti PRIMA del test.
+                $key = md5( $type . '|' . trim( $value ) );
+                delete_transient( 'nexus_src_cool_' . $key );
+                delete_transient( 'nexus_src_fail_' . $key );
+
+                // Budget full-content del "run" di test: i fetch_* non lo resettano
+                // (lo fa solo fetch_for_agent), quindi da 0 non proverebbe mai il
+                // Readability. Best-effort via reflection: se qualcosa cambia nella
+                // classe il test continua comunque (solo senza full-content).
+                try {
+                        // constant() con sintassi Class::CONST è disponibile da PHP 5.5
+                        // (a differenza di defined(): vedi nota sopra); se la costante
+                        // non esisse, l'Error viene intercettato qui sotto.
+                        $budget_value = (int) constant( 'Nexus_Sources::FULL_CONTENT_BUDGET' );
+                        $budget = new ReflectionProperty( 'Nexus_Sources', 'full_budget_left' );
+                        $budget->setAccessible( true );
+                        $budget->setValue( null, $budget_value );
+                } catch ( Throwable $e ) {
+                        // Budget non impostabile: il test prosegue senza full-content.
+                }
+
+                $adapter = 'fetch_' . $type;
+                $items   = array();
+                $error   = '';
+
+                if ( ! method_exists( 'Nexus_Sources', $adapter ) ) {
+                        $error = __( 'Nessun adapter disponibile per questo tipo di fonte.', 'nexus-news-ai' );
+                } else {
+                        try {
+                                $method = new ReflectionMethod( 'Nexus_Sources', $adapter );
+                                $method->setAccessible( true ); // PHP 7.4: richiesto per i metodi private.
+                                $invoked = $method->invoke( null, $source );
+                                if ( is_array( $invoked ) ) {
+                                        $items = $invoked;
+                                }
+                        } catch ( Throwable $e ) {
+                                // Mai fatal: l'errore dell'adapter diventa esito del test.
+                                $error = self::clip_sources_test( $e->getMessage(), 200 );
+                        }
+                }
+
+                // Un test fallito NON deve lasciare la fonte in cooldown per il
+                // collect reale: ripulisce cooldown e contatore fallimenti.
+                if ( '' !== $error || empty( $items ) ) {
+                        delete_transient( 'nexus_src_cool_' . $key );
+                        delete_transient( 'nexus_src_fail_' . $key );
+                }
+
+                // Sample: primi 3 item {title, link} (sanificati per il transito JSON).
+                $sample = array();
+                foreach ( array_slice( $items, 0, 3 ) as $item ) {
+                        if ( ! is_array( $item ) ) {
+                                continue;
+                        }
+                        $sample[] = array(
+                                'title' => sanitize_text_field( (string) ( isset( $item['title'] ) ? $item['title'] : '' ) ),
+                                'link'  => esc_url_raw( (string) ( isset( $item['link'] ) ? $item['link'] : '' ) ),
+                        );
+                }
+
+                $response = array(
+                        'ok'           => '' === $error,
+                        'items_found'  => count( $items ),
+                        'sample'       => $sample,
+                        'source_type'  => $type,
+                );
+                if ( $redazione_id > 0 ) {
+                        $response['redazione_id'] = $redazione_id;
+                }
+                if ( '' !== $error ) {
+                        $response['error'] = $error;
+                }
+
+                return rest_ensure_response( $response );
+        }
+
+        /**
+         * Clip locale per il messaggio d'errore del test fonti (multibyte-safe
+         * con fallback substr): non riutilizza Nexus_Sources::clip perché private.
+         *
+         * @param string $text   Testo di partenza.
+         * @param int    $length Lunghezza massima.
+         * @return string
+         */
+        private static function clip_sources_test( $text, $length ) {
+                $text = trim( (string) $text );
+                if ( function_exists( 'mb_substr' ) ) {
+                        return mb_substr( $text, 0, (int) $length );
+                }
+                return substr( $text, 0, (int) $length );
         }
 
         /**

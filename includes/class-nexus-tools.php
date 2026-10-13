@@ -36,12 +36,23 @@
  *                                                      (SimplePie, guard function_exists, try/catch).
  *                                                      Ritorna array di array( 'title', 'link', 'date',
  *                                                      'snippet' ) (snippet ≤ 400 caratteri); errori → array().
- * Nexus_Tools::mcp_servers()                         — parse del setting mcp_servers_text: una riga per
- *                                                      server nel formato "nome|url|tokenOpzionale"
- *                                                      (righe che iniziano con # = commenti). Ritorna
- *                                                      array di array( 'name', 'url', 'token' ) con nome
- *                                                      sanitize_key; nomi duplicati: vince il primo.
- * Nexus_Tools::mcp_call( $server_name, $tool, $args )— client MCP JSON-RPC 2.0 su Streamable HTTP:
+ * Nexus_Tools::mcp_servers( $agent_id = 0 )          — server MCP a cascata AGENTE → GLOBALE (v1.1.10 WP4):
+ *                                                      righe "nome|url|tokenOpzionale" (righe che
+ *                                                      iniziano con # = commenti): PRIMA quelle della
+ *                                                      colonna mcp_servers_text dell'agente, POI le
+ *                                                      globali (setting mcp_servers_text) SOLO se il
+ *                                                      nome non è già preso (conflitto: vince
+ *                                                      l'agente). Ritorna array di array( 'name',
+ *                                                      'url', 'token' ) con nome sanitize_key;
+ *                                                      $agent_id = 0 o agente senza campo → solo
+ *                                                      globali (comportamento pre-WP4).
+ * Nexus_Tools::hash_search_key( $plain )             — helper PUBLIC (contratto wave 4): SHA-256 hex-64
+ *                                                      della chiave di ricerca in chiaro; da usare in
+ *                                                      rest.php (agent_fields_from_request) prima di
+ *                                                      Nexus_DB::update_agent (colonna search_key_hash
+ *                                                      accetta solo hex-64).
+ * Nexus_Tools::mcp_call( $server_name, $tool, $args, $agent_id = 0 ) — client MCP
+ *                                                      JSON-RPC 2.0 su Streamable HTTP:
  *                                                      POST initialize (protocolVersion 2024-11-05,
  *                                                      capabilities oggetto vuoto, clientInfo
  *                                                      nexus-news-ai/NEXUS_VERSION) → cattura l'header
@@ -78,6 +89,9 @@
  *                                                      chat semplice). Guard dura a 90 secondi totali
  *                                                      (microtime): superata la soglia esci con errore IT.
  *                                                      Risposta non JSON valida → considerata "final".
+ *                                                      $opts['agent_id'] (int, v1.1.10 WP4): cascata
+ *                                                      strumenti per-agente (provider ricerca + server
+ *                                                      MCP; wiring del chiamante in wave 4).
  *                                                      Ritorna l'array chat finale (chiavi ok/content/
  *                                                      error/simulated [+usage]) con in più 'tool_trace'
  *                                                      (array dei tool usati: tool, args, ok, error, round,
@@ -395,30 +409,48 @@ class Nexus_Tools {
         /* ============ RICERCA WEB ============ */
 
         /**
-         * Ricerca web con il provider configurato (tavily | serper | brave | none).
+         * Ricerca web con il provider risolto a cascata (agente → globale).
          *
          * Ritorna array di array( 'title', 'url', 'snippet' ) con snippet ≤ 400
          * caratteri. Con provider "none", chiave mancante o errori HTTP ritorna
          * array() (l'errore descrittivo IT è disponibile nel tool-use loop tramite
          * il dispatcher interno, vedi search_web_raw()).
          *
-         * @param string $query Testo da cercare.
-         * @param int    $max   Numero massimo di risultati (0 = setting tools_max_results).
+         * @param string $query    Testo da cercare.
+         * @param int    $max      Numero massimo di risultati (0 = setting tools_max_results).
+         * @param int    $agent_id Id agente per la cascata provider (0 = solo globale).
          * @return array
          */
-        public static function search_web( $query, $max = 0 ) {
-                $res = self::search_web_raw( $query, $max );
+        public static function search_web( $query, $max = 0, $agent_id = 0 ) {
+                $res = self::search_web_raw( $query, $max, $agent_id );
                 return is_array( $res['data'] ) ? $res['data'] : array();
         }
 
         /**
          * Ricerca web con esito dettagliato (uso interno del tool-use loop).
          *
-         * @param string $query Testo da cercare.
-         * @param int    $max   Numero massimo di risultati (0 = setting tools_max_results).
+         * v1.1.10 (WP4): risoluzione a cascata AGENTE → GLOBALE del provider.
+         * Se $agent_id > 0 e l'agente ha search_provider impostato (tavily|serper|
+         * brave; l'UI non propone "none"), quel provider vince su quello globale.
+         * La CHIAVE resta per ora quella GLOBALE come fallback: la chiave
+         * per-agente non è persistente in questa wave (il modal la invia ma il PUT
+         * /agents la scarta finché rest.php agent_fields_from_request non la gestirà
+         * — wave 4). Se l'agente ha un provider proprio ma nessuna chiave
+         * utilizzabile → errore onesto "chiave ricerca agente non configurata".
+         *
+         * TODO(wave4): risolvere anche la chiave per-agente. Nota contrattuale: le
+         * chiavi dei motori di ricerca servono IN CHIARO per chiamare le API, quindi
+         * l'hash (Nexus_Tools::hash_search_key) vale solo come eventuale verifica,
+         * NON come deposito riutilizzabile; la persistenza in chiaro (pattern
+         * prov_key di nexus_settings) richiede l'allargamento del sanitize di
+         * search_key_hash in db.php (oggi hex-64 only) — decisione dell'integratore.
+         *
+         * @param string $query    Testo da cercare.
+         * @param int    $max      Numero massimo di risultati (0 = setting tools_max_results).
+         * @param int    $agent_id Id agente per la cascata provider (0 = solo globale).
          * @return array array( 'ok' => bool, 'data' => array di risultati, 'error' => string IT ).
          */
-        private static function search_web_raw( $query, $max = 0 ) {
+        private static function search_web_raw( $query, $max = 0, $agent_id = 0 ) {
                 $fail = array( 'ok' => false, 'data' => array(), 'error' => '' );
 
                 $query = trim( wp_strip_all_tags( (string) $query ) );
@@ -430,14 +462,42 @@ class Nexus_Tools {
                 $settings = self::get_settings();
                 $provider = sanitize_key( (string) self::setting( $settings, 'tools_search_provider', 'tavily' ) );
 
-                if ( 'none' === $provider ) {
+                // Cascata provider: search_provider dell'agente (whitelist update_agent
+                // v1.1.10) vince sul setting globale; vuoto/"none" → comportamento globale.
+                $agent_provider = '';
+                $agent_key      = '';
+                if ( (int) $agent_id > 0 ) {
+                        $agent = self::agent_row( $agent_id );
+                        if ( $agent && isset( $agent->search_provider ) ) {
+                                $agent_provider = sanitize_key( (string) $agent->search_provider );
+                        }
+                        // v1.1.10 (wave 4): chiave di ricerca PERSONALE dell'agente
+                        // (colonna search_key_hash, memorizzata in chiaro — vedi
+                        // docblock update_agent): vince sulla chiave globale.
+                        if ( $agent && isset( $agent->search_key_hash ) ) {
+                                $agent_key = trim( (string) $agent->search_key_hash );
+                        }
+                }
+                $use_agent_provider = ( '' !== $agent_provider && 'none' !== $agent_provider );
+                if ( $use_agent_provider ) {
+                        $provider = $agent_provider;
+                }
+
+                if ( ! $use_agent_provider && 'none' === $provider ) {
                         $fail['error'] = 'La ricerca web non è attiva: il provider di ricerca è impostato su "none" nelle impostazioni del plugin.';
                         return $fail;
                 }
 
                 $key = trim( (string) self::setting( $settings, 'tools_search_key', '' ) );
+                if ( '' !== $agent_key ) {
+                        $key = $agent_key;
+                }
                 if ( '' === $key ) {
-                        $fail['error'] = 'Chiave API di ricerca web mancante: compila il campo della chiave di ricerca nelle impostazioni del plugin.';
+                        if ( $use_agent_provider ) {
+                                $fail['error'] = 'Chiave ricerca agente non configurata: l\'agente usa un provider di ricerca personale ma non esiste una chiave utilizzabile (configura la chiave personale nel modal dell\'agente o una chiave globale nelle impostazioni del plugin).';
+                        } else {
+                                $fail['error'] = 'Chiave API di ricerca web mancante: compila il campo della chiave di ricerca nelle impostazioni del plugin.';
+                        }
                         return $fail;
                 }
 
@@ -869,18 +929,61 @@ class Nexus_Tools {
         /* ============ CLIENT MCP ============ */
 
         /**
-         * Parse del setting mcp_servers_text: una riga per server nel formato
-         * "nome|url|tokenOpzionale"; le righe che iniziano con # sono commenti.
+         * Server MCP in cascata AGENTE → GLOBALE (v1.1.10, WP4).
          *
+         * Merge NON distruttivo: i server dell'agente (colonna mcp_servers_text di
+         * wp_nexus_agents, stesso formato del setting globale) vengono PRIMA; le
+         * globali si aggiungono SOLO se il nome non è già coperto: in caso di
+         * conflitto vince l'agente.
+         *
+         * Guard: $agent_id = 0, agente inesistente o senza campo → solo i server
+         * globali (comportamento pre-WP4 invariato).
+         *
+         * @param int $agent_id Id agente (0 = solo impostazioni globali).
          * @return array Array di array( 'name' => string, 'url' => string, 'token' => string ).
          */
-        public static function mcp_servers() {
-                $text = trim( (string) self::setting( self::get_settings(), 'mcp_servers_text', '' ) );
-                if ( '' === $text ) {
+        public static function mcp_servers( $agent_id = 0 ) {
+                $servers = array();
+                $seen    = array();
+
+                if ( (int) $agent_id > 0 ) {
+                        $agent = self::agent_row( $agent_id );
+                        if ( $agent && isset( $agent->mcp_servers_text ) ) {
+                                foreach ( self::mcp_servers_from_text( (string) $agent->mcp_servers_text ) as $server ) {
+                                        $seen[ $server['name'] ] = true;
+                                        $servers[]               = $server;
+                                }
+                        }
+                }
+
+                $global_text = trim( (string) self::setting( self::get_settings(), 'mcp_servers_text', '' ) );
+                if ( '' !== $global_text ) {
+                        foreach ( self::mcp_servers_from_text( $global_text ) as $server ) {
+                                if ( isset( $seen[ $server['name'] ] ) ) {
+                                        continue; // conflitto sul nome: vince il server dell'agente.
+                                }
+                                $seen[ $server['name'] ] = true;
+                                $servers[]               = $server;
+                        }
+                }
+
+                return $servers;
+        }
+
+        /**
+         * Parse di un testo "nome|url|tokenOpzionale" (una riga per server, righe
+         * che iniziano con # = commenti): usato SIA per il setting globale SIA per
+         * la colonna mcp_servers_text dell'agente (stesso formato, v1.1.10 WP4).
+         *
+         * @param string $text Testo da parsare.
+         * @return array Array di array( 'name' => string, 'url' => string, 'token' => string ).
+         */
+        private static function mcp_servers_from_text( $text ) {
+                if ( '' === trim( (string) $text ) ) {
                         return array();
                 }
 
-                $lines   = preg_split( '/\r\n|\r|\n/', $text );
+                $lines   = preg_split( '/\r\n|\r|\n/', (string) $text );
                 $servers = array();
                 $seen    = array();
 
@@ -925,9 +1028,10 @@ class Nexus_Tools {
          * @param string $server_name Nome del server (sanitize_key, come in mcp_servers()).
          * @param string $tool        Nome del tool sul server MCP.
          * @param array  $args        Argomenti del tool (oggetto JSON per il server).
+         * @param int    $agent_id    Id agente per la cascata server MCP (0 = solo globali).
          * @return array array( 'ok' => bool, 'data' => mixed, 'error' => string IT ).
          */
-        public static function mcp_call( $server_name, $tool, $args = array() ) {
+        public static function mcp_call( $server_name, $tool, $args = array(), $agent_id = 0 ) {
                 $fail = array( 'ok' => false, 'data' => null, 'error' => '' );
 
                 try {
@@ -941,14 +1045,14 @@ class Nexus_Tools {
                         }
 
                         $server = null;
-                        foreach ( self::mcp_servers() as $candidate ) {
+                        foreach ( self::mcp_servers( (int) $agent_id ) as $candidate ) {
                                 if ( isset( $candidate['name'] ) && $server_name === $candidate['name'] ) {
                                         $server = $candidate;
                                         break;
                                 }
                         }
                         if ( null === $server || ! is_array( $server ) ) {
-                                $fail['error'] = 'Server MCP "' . $server_name . '" non presente tra i server configurati (impostazioni del plugin, campo server MCP).';
+                                $fail['error'] = 'Server MCP "' . $server_name . '" non presente tra i server configurati (impostazioni globali o strumenti personali dell\'agente).';
                                 return $fail;
                         }
 
@@ -1400,20 +1504,45 @@ class Nexus_Tools {
         /**
          * Elenco testuale degli strumenti attivi, da innestare nel system prompt.
          *
-         * Include search_web (solo se il provider è attivo e la chiave impostata),
-         * read_page (solo se tools_read_page = 1), read_feed (sempre) e i tool MCP
-         * reali (nome "mcp:{server}:{tool}", descrizione da tools/list con cache
-         * transient 10 minuti; i server che falliscono vengono saltati).
+         * Include search_web (solo se il provider effettivo è attivo e la chiave
+         * impostata), read_page (solo se tools_read_page = 1), read_feed (sempre) e
+         * i tool MCP reali (nome "mcp:{server}:{tool}", descrizione da tools/list
+         * con cache transient 10 minuti; i server che falliscono vengono saltati).
          *
+         * v1.1.10 (WP4): $agent_id attiva la cascata per-agente — search_web compare
+         * solo se (provider dell'agente, altrimenti quello globale) è diverso da
+         * "none", tools_enabled è attivo ed esiste una chiave; i tool MCP
+         * "mcp:{server}:{tool}" coprono OGNI server della cascata (agente +
+         * globali, agente vince sui conflitti di nome): la discovery resta a
+         * runtime (tools/list), il pattern esistente non cambia.
+         *
+         * @param int $agent_id Id agente per la cascata strumenti (0 = solo globale).
          * @return string Righe separate da newline (stringa vuota se nessuno attivo).
          */
-        public static function tool_catalog_for_prompt() {
+        public static function tool_catalog_for_prompt( $agent_id = 0 ) {
                 $settings = self::get_settings();
                 $provider = sanitize_key( (string) self::setting( $settings, 'tools_search_provider', 'tavily' ) );
                 $key      = trim( (string) self::setting( $settings, 'tools_search_key', '' ) );
-                $lines    = array();
 
-                if ( 'none' !== $provider && '' !== $key ) {
+                // Cascata provider ricerca: l'agente vince sul globale (la chiave resta
+                // quella globale finché la wave 4 non persiste la chiave per-agente;
+                // vedi search_web_raw). Provider agente impostato ma chiave assente →
+                // nessuna riga search_web nel catalogo: il tool risponderebbe con
+                // errore onesto, meglio non prometterlo al modello.
+                $agent_provider = '';
+                if ( (int) $agent_id > 0 ) {
+                        $agent = self::agent_row( $agent_id );
+                        if ( $agent && isset( $agent->search_provider ) ) {
+                                $agent_provider = sanitize_key( (string) $agent->search_provider );
+                        }
+                }
+                if ( '' !== $agent_provider && 'none' !== $agent_provider ) {
+                        $provider = $agent_provider;
+                }
+
+                $lines = array();
+
+                if ( self::available() && 'none' !== $provider && '' !== $key ) {
                         $label = $provider;
                         foreach ( self::search_providers_catalog() as $entry ) {
                                 if ( isset( $entry['id'] ) && $provider === $entry['id'] && isset( $entry['label'] ) ) {
@@ -1431,7 +1560,7 @@ class Nexus_Tools {
                 $lines[] = '- read_feed: legge un feed RSS/Atom e restituisce i titoli recenti. Argomenti JSON: {"url":"https://...","max_items":numero opzionale}.';
 
                 $mcp_started = microtime( true );
-                foreach ( self::mcp_servers() as $server ) {
+                foreach ( self::mcp_servers( (int) $agent_id ) as $server ) {
                         // Budget temporale per l'intera scoperta MCP: evita di bloccare
                         // il prompt quando più server non rispondono.
                         if ( microtime( true ) - $mcp_started > self::MCP_CATALOG_BUDGET_SECONDS ) {
@@ -1505,11 +1634,14 @@ class Nexus_Tools {
          * @param array|string $messages Messaggi chat (o stringa singola user).
          * @param array        $opts    Opzioni identiche a Nexus_AI_Engine::chat
          *                              (provider/model/agent_id/action/temperature/max_tokens transitano).
+         *                              v1.1.10 WP4: opts['agent_id'] guida anche la cascata
+         *                              strumenti per-agente (provider ricerca + server MCP).
          * @return array Array chat finale (ok/content/error/simulated [+usage]) con in più 'tool_trace'.
          */
         public static function run_with_tools( $messages, $opts = array() ) {
-                $trace = array();
-                $opts  = is_array( $opts ) ? $opts : array();
+                $trace    = array();
+                $opts     = is_array( $opts ) ? $opts : array();
+                $agent_id = isset( $opts['agent_id'] ) ? (int) $opts['agent_id'] : 0; // WP4: strumenti per-agente (wiring del chiamante in wave 4).
 
                 try {
                         if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
@@ -1538,7 +1670,7 @@ class Nexus_Tools {
                                 $messages,
                                 array(
                                         'role'    => 'system',
-                                        'content' => self::tool_rules_text( $max_rounds ),
+                                        'content' => self::tool_rules_text( $max_rounds, $agent_id ),
                                 )
                         );
 
@@ -1603,7 +1735,7 @@ class Nexus_Tools {
                                         );
                                 } else {
                                         $signatures[ $signature ] = true;
-                                        $result                   = self::dispatch_tool( $tool_name, $tool_args );
+                                        $result                   = self::dispatch_tool( $tool_name, $tool_args, $agent_id );
                                 }
 
                                 $trace[] = array(
@@ -1684,7 +1816,8 @@ class Nexus_Tools {
          * sono attivi esegue il tool-use loop, altrimenti la chat semplice.
          *
          * @param array|string $messages Messaggi chat (o stringa singola user).
-         * @param array        $opts    Opzioni identiche a Nexus_AI_Engine::chat.
+         * @param array        $opts    Opzioni identiche a Nexus_AI_Engine::chat; 'agent_id'
+         *                              (int, opzionale) attiva la cascata strumenti per-agente (WP4).
          * @return array Array chat (ok/content/error/simulated [+usage]) con 'tool_trace' se il loop è attivo.
          */
         public static function wrap_chat( $messages, $opts = array() ) {
@@ -1713,10 +1846,11 @@ class Nexus_Tools {
          * Testo delle regole del protocollo strumenti per il system message.
          *
          * @param int $max_rounds Numero massimo di utilizzi di strumenti.
+         * @param int $agent_id   Id agente per il catalogo strumenti a cascata (0 = globale).
          * @return string
          */
-        private static function tool_rules_text( $max_rounds ) {
-                $catalog = self::tool_catalog_for_prompt();
+        private static function tool_rules_text( $max_rounds, $agent_id = 0 ) {
+                $catalog = self::tool_catalog_for_prompt( $agent_id );
                 $lines   = array();
 
                 $lines[] = 'Hai a disposizione STRUMENTI per raccogliere informazioni reali prima di rispondere.';
@@ -1805,11 +1939,12 @@ class Nexus_Tools {
          *
          * Nomi ammessi: search_web, read_page, read_feed, mcp:{server}:{tool}.
          *
-         * @param string $name Nome dello strumento.
-         * @param array  $args Argomenti JSON passati dal modello.
+         * @param string $name     Nome dello strumento.
+         * @param array  $args     Argomenti JSON passati dal modello.
+         * @param int    $agent_id Id agente per la cascata strumenti (0 = solo globali).
          * @return array array( 'ok' => bool, 'data' => mixed, 'error' => string IT ).
          */
-        private static function dispatch_tool( $name, $args ) {
+        private static function dispatch_tool( $name, $args, $agent_id = 0 ) {
                 $name = trim( (string) $name );
                 $args = is_array( $args ) ? $args : array();
 
@@ -1821,7 +1956,7 @@ class Nexus_Tools {
                                 $query = (string) $args['q'];
                         }
                         $max = isset( $args['max'] ) ? (int) $args['max'] : 0;
-                        return self::search_web_raw( $query, $max );
+                        return self::search_web_raw( $query, $max, $agent_id );
                 }
 
                 if ( 'read_page' === $name ) {
@@ -1859,7 +1994,7 @@ class Nexus_Tools {
                 if ( preg_match( '/^mcp:([a-z0-9_\-]+):(.+)$/i', $name, $mcp_match ) && isset( $mcp_match[1], $mcp_match[2] ) ) {
                         $server = (string) $mcp_match[1];
                         $tool   = trim( (string) $mcp_match[2] );
-                        return self::mcp_call( $server, $tool, $args );
+                        return self::mcp_call( $server, $tool, $args, $agent_id );
                 }
 
                 return array(
@@ -2001,6 +2136,47 @@ class Nexus_Tools {
                         return $settings[ $key ];
                 }
                 return $default;
+        }
+
+        /**
+         * Riga agente difensiva per le cascate per-agente (v1.1.10 WP4): mai fatale,
+         * null se Nexus_DB/get_agent non disponibile, id invalido o riga assente.
+         *
+         * @param int $agent_id Id agente.
+         * @return object|null
+         */
+        private static function agent_row( $agent_id ) {
+                $agent_id = (int) $agent_id;
+                if ( $agent_id <= 0 || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_agent' ) ) {
+                        return null;
+                }
+                try {
+                        $agent = Nexus_DB::get_agent( $agent_id );
+                } catch ( Throwable $e ) {
+                        return null;
+                }
+                return is_object( $agent ) ? $agent : null;
+        }
+
+        /**
+         * Hash SHA-256 (hex-64) di una chiave di ricerca in chiaro — helper PUBLIC
+         * contrattuale per la wave 4: la rotta REST /agents (agent_fields_from_request
+         * in rest.php, NON questa classe) deve hashare search_key PRIMA di passarla a
+         * Nexus_DB::update_agent, il cui sanitize accetta solo hex-64 per la colonna
+         * search_key_hash. Nota onesta (WP4): l'hash è verifica one-way, NON deposito
+         * riutilizzabile — per USARE la chiave con Tavily/Serper/Brave servirà
+         * persistenza in chiaro (pattern prov_key di nexus_settings) e l'allargamento
+         * del sanitize in db.php: decisione dell'integratore wave 4 (vedi worklog C1).
+         *
+         * @param string $plain Chiave in chiaro.
+         * @return string Hash hex-64 (stringa vuota se input vuoto).
+         */
+        public static function hash_search_key( $plain ) {
+                $plain = trim( (string) $plain );
+                if ( '' === $plain ) {
+                        return '';
+                }
+                return hash( 'sha256', $plain );
         }
 
         /**

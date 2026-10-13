@@ -145,6 +145,32 @@
  * bottone .is-busy + spinner (setBtnLoading) durante l'attesa, esito in
  * toast riepilogo (shape §4.1 con results[], fallback alle chiavi BC).
  *
+ * =====================================================================
+ * v1.1.10 — STRUMENTI PER AGENTE (WP4 PARTE 1, Task C1)
+ * =====================================================================
+ *
+ * Il modal editor aggiunge la sezione "Strumenti personali (opzionali)",
+ * gestita interamente da admin.js (prefill al load + serializzazione nei
+ * POST/PUT /agents):
+ *  - #nxa-agent-search-provider (name="search_provider"): '' = "Ricerca web
+ *    globale (impostazioni)", tavily, serper, brave — "none" NON è una scelta
+ *    per-agente; risoluzione a cascata AGENTE → GLOBALE in Nexus_Tools
+ *    (search_web_raw/tool_catalog_for_prompt);
+ *  - #nxa-agent-search-key (name="search_key", type password): la chiave viene
+ *    INVIATA in chiaro col form ma l'attuale whitelist di
+ *    agent_fields_from_request (rest.php, NON questa vista) la scarta senza
+ *    errori: il salvataggio della chiave per-agente richiede il patch REST
+ *    della wave 4 (che deciderà hashing via Nexus_Tools::hash_search_key()
+ *    oppure persistenza in chiaro — vedi worklog C1). Il campo NON viene mai
+ *    precompilato (segreto);
+ *  - #nxa-agent-mcp-servers (name="mcp_servers_text"): righe
+ *    "nome|url|tokenOpzionale"; i server dell'agente si sommano a quelli
+ *    globali e in caso di conflitto sul nome vince l'agente
+ *    (Nexus_Tools::mcp_servers( $agent_id )).
+ * serialize_agent (rest.php) NON espone ancora search_provider/mcp_servers_text:
+ * admin.js applica un fallback vuoto client-side (la wave 4 aggiungerà i campi
+ * al serializzatore per il prefill reale).
+ *
  * @package Nexus_News_AI
  */
 
@@ -350,6 +376,27 @@ $nxa_agent_status_labels = array(
                                                 <textarea id="nxa-agent-description" name="description" rows="3"></textarea></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-personality"><?php esc_html_e( 'Personalità / tono di voce', 'nexus-news-ai' ); ?></label>
                                                 <textarea id="nxa-agent-personality" name="personality" rows="3"></textarea></p>
+
+                                        <!-- v1.1.10 WP4 (Task C1): strumenti personali per agente.
+                                             Serializzati da admin.js nei POST/PUT /agents; search_key
+                                             è inviata in chiaro ma l'attuale whitelist di
+                                             agent_fields_from_request (rest.php) la scarta senza
+                                             errori — persistenza chiave = patch REST wave 4. -->
+                                        <h3 class="nxa-agent-tools-title nxa-agent-field--full"><?php esc_html_e( 'Strumenti personali (opzionali)', 'nexus-news-ai' ); ?></h3>
+                                        <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-search-provider"><?php esc_html_e( 'Provider ricerca web (vuoto = globale)', 'nexus-news-ai' ); ?></label>
+                                                <select id="nxa-agent-search-provider" name="search_provider">
+                                                        <option value=""><?php esc_html_e( 'Ricerca web globale (impostazioni)', 'nexus-news-ai' ); ?></option>
+                                                        <option value="tavily"><?php esc_html_e( 'Tavily', 'nexus-news-ai' ); ?></option>
+                                                        <option value="serper"><?php esc_html_e( 'Serper (Google Search)', 'nexus-news-ai' ); ?></option>
+                                                        <option value="brave"><?php esc_html_e( 'Brave Search', 'nexus-news-ai' ); ?></option>
+                                                </select>
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'Se impostato, questo agente usa il proprio motore di ricerca invece di quello globale; se la chiave di ricerca globale non è configurata la ricerca dell’agente restituisce un errore chiaro.', 'nexus-news-ai' ); ?></span></p>
+                                        <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-search-key"><?php esc_html_e( 'Chiave ricerca web dell’agente', 'nexus-news-ai' ); ?></label>
+                                                <input type="password" id="nxa-agent-search-key" name="search_key" maxlength="64" autocomplete="new-password" />
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'Il salvataggio della chiave per questo agente arriva con un prossimo aggiornamento: attualmente viene usata la chiave di ricerca globale (impostazioni → Strumenti).', 'nexus-news-ai' ); ?></span></p>
+                                        <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-mcp-servers"><?php esc_html_e( 'Server MCP personali (una riga per server)', 'nexus-news-ai' ); ?></label>
+                                                <textarea id="nxa-agent-mcp-servers" name="mcp_servers_text" rows="3" class="code" placeholder="nome|https://server-url|token-opzionale"></textarea>
+                                                <span class="nxa-agent-field-hint"><?php esc_html_e( 'I server MCP dell’agente si sommano a quelli globali (in caso di conflitto vince l’agente). Formato: nome|URL|token opzionale; le righe che iniziano con # sono commenti.', 'nexus-news-ai' ); ?></span></p>
                                 </div>
                                 <p class="nxa-agent-form-actions">
                                         <button type="submit" id="nxa-agent-save" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Salva agente', 'nexus-news-ai' ); ?></button>

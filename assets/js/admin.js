@@ -26,6 +26,7 @@
  * v1.1.4: barra "Creazione rapida" con preset agenti (prefill + modal), editor con ruolo/provider AI/ambito capo redattore, badge e "Nota del capo redattore" in coda e dettaglio, bottone "Revisione capo redattore" (POST /chief/run/{id}) e flag settings capo/strumenti.
  * v1.1.5: bottoni "Avvia" (agente/redazione/testata) sul POST pipeline/run esteso con toast riepilogo e blocco .nxa-run-summary, e pannello live "In redazione ora" in dashboard (#nxa-live-strip: GET /live con polling 5s solo a pagina visibile, 404 → strip nascosta in silenzio).
  * v1.1.10 (F2b/WP11): sub-sezione "Provider personalizzati" in Impostazioni AI — CRUD REST /ai/custom-providers (chiave MAI in chiaro: solo has_key), preset 1-click Together/Fireworks/Perplexity/Cerebras/LM Studio/vLLM, delete con conferma INLINE in riga; i bottoni Test delle righe riusano il wizard WP10 (.nxa-prov-test → POST /ai/test/cust_{id}).
+ * v1.1.10 (WP4/C1): modal agente — sezione "Strumenti personali (opzionali)": provider ricerca per-agente (#nxa-agent-search-provider, '' = globale, senza "none"), chiave search_key (password: inviata ma non persistente in questa wave, la scarta la whitelist REST — patch wave 4) e server MCP personali (#nxa-agent-mcp-servers, cascata con i globali: vince l'agente). Prefill al load con fallback vuoto client-side (serialize_agent non espone ancora i campi: wave 4); serializzazione search_provider/search_key/mcp_servers_text nei POST/PUT /agents.
  *
  * @package Nexus_News_AI
  */
@@ -1772,6 +1773,24 @@
                 if ( termField ) {
                         termField.value = String( num( pick( a, 'chief_term_id', 'chiefTermId' ) ) );
                 }
+                // v1.1.10 WP4 (Task C1): strumenti personali per-agente. serialize_agent
+                // (rest.php) NON espone ancora search_provider/mcp_servers_text →
+                // fallback vuoto client-side (la wave 4 aggiungerà i campi al
+                // serializzatore per il prefill reale). La chiave NON viene MAI
+                // precompilata (segreto: non è leggibile dal server).
+                var searchProviderField = qs( '#nxa-agent-search-provider', modal );
+                if ( searchProviderField ) {
+                        var spSaved = String( pick( a, 'search_provider', 'searchProvider' ) || '' ).toLowerCase();
+                        searchProviderField.value = [ 'tavily', 'serper', 'brave' ].indexOf( spSaved ) >= 0 ? spSaved : '';
+                }
+                var searchKeyField = qs( '#nxa-agent-search-key', modal );
+                if ( searchKeyField ) {
+                        searchKeyField.value = ''; // mai in chiaro nel DOM al load.
+                }
+                var mcpField = qs( '#nxa-agent-mcp-servers', modal );
+                if ( mcpField ) {
+                        mcpField.value = String( pick( a, 'mcp_servers_text', 'mcpServersText' ) || '' );
+                }
                 updateAgentChiefVisibility( modal );
                 if ( termField ) {
                         loadAgentChiefTerms( termField, num( pick( a, 'chief_term_id', 'chiefTermId' ) ) );
@@ -1963,6 +1982,28 @@
                         var providerSel = qs( '#nxa-agent-provider', form );
                         if ( providerSel ) {
                                 fields.ai_provider = readField( '#nxa-agent-provider' );
+                        }
+                        // v1.1.10 WP4 (Task C1): strumenti personali per-agente.
+                        // search_provider e mcp_servers_text sono nella whitelist di
+                        // update_agent (db.php v1.1.10); search_key viene inviata IN CHIARO
+                        // ma l'attuale agent_fields_from_request (rest.php) la scarta senza
+                        // errori: la persistenza della chiave richiede il patch REST wave 4
+                        // (decisione hashing/chiaro documentata nel worklog C1).
+                        var searchProvSel = qs( '#nxa-agent-search-provider', form );
+                        if ( searchProvSel ) {
+                                var spVal = readField( '#nxa-agent-search-provider' ).toLowerCase();
+                                fields.search_provider = [ 'tavily', 'serper', 'brave' ].indexOf( spVal ) >= 0 ? spVal : '';
+                        }
+                        var searchKeyField = qs( '#nxa-agent-search-key', form );
+                        if ( searchKeyField ) {
+                                var skVal = readField( '#nxa-agent-search-key' );
+                                if ( skVal ) {
+                                        fields.search_key = skVal; // solo se compilata: mai svuotamenti accidentali.
+                                }
+                        }
+                        var mcpField = qs( '#nxa-agent-mcp-servers', form );
+                        if ( mcpField ) {
+                                fields.mcp_servers_text = readField( '#nxa-agent-mcp-servers' );
                         }
                         var statusBox = qs( '#nxa-agent-form-status', form );
                         if ( ! fields.name || ! fields.category ) {

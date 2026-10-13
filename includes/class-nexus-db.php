@@ -679,8 +679,13 @@ class Nexus_DB {
                         $allowed['search_provider'] = sanitize_key( $allowed['search_provider'] );
                 }
                 if ( isset( $allowed['search_key_hash'] ) ) {
-                        $hk = preg_replace( '/[^a-f0-9]/', '', strtolower( (string) $allowed['search_key_hash'] ) );
-                        $allowed['search_key_hash'] = ( 64 === strlen( $hk ) ) ? $hk : '';
+                        // v1.1.10 (wave 4): la colonna memorizza la CHIAVE di ricerca
+                        // personale dell'agente IN CHIARO (le chiavi Tavily/Serper/Brave
+                        // servono in chiaro a runtime per chiamare le API — stesse ragioni
+                        // delle prov_key_*; il nome colonnale resta per stabilità dello
+                        // schema). Charset prudente, max 64 (CHAR(64)).
+                        $sk = preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) $allowed['search_key_hash'] );
+                        $allowed['search_key_hash'] = ( 0 < strlen( $sk ) ) ? substr( $sk, 0, 64 ) : '';
                 }
                 if ( isset( $allowed['mcp_servers_text'] ) ) {
                         $allowed['mcp_servers_text'] = sanitize_textarea_field( $allowed['mcp_servers_text'] );

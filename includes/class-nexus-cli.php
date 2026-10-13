@@ -21,6 +21,13 @@
  *   cron      status                                  — eventi WP-Cron di Nexus schedulati (v1.1.9)
  *   multilang doctor [--fix]                          — diagnostica multilingua (v1.1.9, richiede Nexus_Multilang::doctor)
  *   settings  get [chiave] | set <chiave> <valore>    — impostazioni del plugin
+ *   sources   list [--redazione=<term_id|slug>]       — tabella fonti della redazione (8 tipi, v1.1.10 WP8)
+ *             test <tipo> <url|valore> [--query=...]  — testa UNA fonte via adapter Nexus_Sources::fetch_{tipo}
+ *                                                       (ReflectionMethod setAccessible, decisione WP8 documentata:
+ *                                                       gli adapter sono private) e stampa i primi 5 item (v1.1.10)
+ *             cooldown [--clear]                      — transient cooldown fonti attivi (nexus_src_cool_*, chiavi
+ *                                                       md5(type|url) NON decodificabili: count + chiavi + scadenza)
+ *                                                       oppure azzeramento con --clear → Nexus_Sources::clear_cooldown (v1.1.10)
  *
  * Note:
  * - Il file si auto-disabilita fuori da WP-CLI (guard class_exists('WP_CLI') con return).
@@ -1140,6 +1147,360 @@ class Nexus_CLI {
                 }
 
                 WP_CLI::success( sprintf( 'Diagnostica multilingua completata (%d interventi possibili; rieseguire con --fix per applicarli).', $fixed ) );
+        }
+
+        /* ========================= FONTI (v1.1.10, WP8) ========================= */
+
+        /**
+         * Comando «wp nexus sources»: ispezione e test delle fonti della
+         * redazione (term meta _nexus_sources, shape [{type,url,query?,full?,profile?}],
+         * tipi Nexus_Redazioni::TYPES: rss|site|youtube|telegram|reddit|search|mcp|web).
+         *
+         * Sottocomandi:
+         *   list [--redazione=<term_id|slug>]
+         *       Tabella fonti: redazione, tipo, url/valore, query, full e stato
+         *       (cooldown/fallimenti). NOTA ONESTÀ (regola ZERO MOCK): Nexus_Sources
+         *       NON memorizza un timestamp di "ultima esecuzione" (solo hash
+         *       early-exit, contatore fallimenti e cooldown), quindi la colonna
+         *       Stato mostra SOLO ciò che è realmente recoverible dai transient.
+         *   test <tipo> <url|valore> [--query=<q>]
+         *       Testa UNA fonte invocando l'adapter Nexus_Sources::fetch_{tipo}
+         *       (private → ReflectionMethod::setAccessible, decisione WP8
+         *       documentata: alternativa alla modifica di class-nexus-sources.php,
+         *       fuori perimetro). Prima del test pulisce cooldown/fallimenti della
+         *       fonte e ripristina (best-effort) il budget full-content, così il
+         *       test prova davvero la fonte; un test fallito NON lascia la fonte
+         *       in cooldown per il collect reale. Stampa i primi 5 item.
+         *   cooldown [--clear]
+         *       Elenco dei transient cooldown attivi (nexus_src_cool_*): le chiavi
+         *       sono md5(type|url) NON decodificabili → mostra count, chiavi e
+         *       scadenza (secondi residui, se l'opzione timeout esiste: con object
+         *       cache esterno potrebbe non esserci). --clear → Nexus_Sources::clear_cooldown().
+         *
+         * @subcommand sources
+         * @synopsis <azione> [<tipo>] [<url>] [--redazione=<term_id|slug>] [--query=<q>] [--clear]
+         *
+         * @param array $args       Argomenti posizionali.
+         * @param array $assoc_args Argomenti associativi (--chiave=valore).
+         */
+        public static function sources( $args, $assoc_args ) {
+                if ( ! class_exists( 'Nexus_Redazioni' ) || ! class_exists( 'Nexus_Sources' ) ) {
+                        WP_CLI::error( 'I moduli fonti (Nexus_Redazioni/Nexus_Sources) non sono caricati: attivare il plugin e riprovare.' );
+                }
+
+                $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : '';
+
+                if ( '' === $action ) {
+                        WP_CLI::error( 'Uso: wp nexus sources list [--redazione=<term_id|slug>] | test <tipo> <url|valore> [--query=...] | cooldown [--clear].' );
+                }
+
+                switch ( $action ) {
+                        case 'list':
+                                self::sources_list( $assoc_args );
+                                break;
+                        case 'test':
+                                self::sources_test( $args, $assoc_args );
+                                break;
+                        case 'cooldown':
+                                self::sources_cooldown( $assoc_args );
+                                break;
+                        default:
+                                WP_CLI::error( sprintf( 'Azione «%s» non riconosciuta: usare list, test oppure cooldown.', $action ) );
+                }
+        }
+
+        /**
+         * Sottocomando interno: sources list [--redazione=<term_id|slug>].
+         *
+         * @param array $assoc_args Argomenti associativi.
+         * @return void
+         */
+        private static function sources_list( $assoc_args ) {
+                if ( ! method_exists( 'Nexus_Redazioni', 'sources_for_term' ) ) {
+                        WP_CLI::error( 'Nexus_Redazioni::sources_for_term non è disponibile: plugin da aggiornare.' );
+                }
+
+                $tax = Nexus_Redazioni::TAX;
+                if ( ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( $tax ) ) {
+                        WP_CLI::error( 'Tassonomia «' . $tax . '» non registrata: aprire la pagina Redazioni in admin per inizializzarla (init) e riprovare.' );
+                }
+
+                $filter = isset( $assoc_args['redazione'] ) ? trim( (string) $assoc_args['redazione'] ) : '';
+                $terms  = array();
+
+                if ( '' !== $filter ) {
+                        if ( ctype_digit( $filter ) ) {
+                                $term = function_exists( 'get_term' ) ? get_term( absint( $filter ), $tax ) : null;
+                        } else {
+                                $term = function_exists( 'get_term_by' ) ? get_term_by( 'slug', sanitize_title( $filter ), $tax ) : null;
+                        }
+                        if ( ! $term || is_wp_error( $term ) ) {
+                                WP_CLI::error( sprintf( 'Redazione «%s» non trovata (term_id o slug).', $filter ) );
+                        }
+                        $terms = array( $term );
+                } else {
+                        if ( method_exists( 'Nexus_Redazioni', 'all_terms' ) ) {
+                                $terms = (array) Nexus_Redazioni::all_terms();
+                        } elseif ( function_exists( 'get_terms' ) ) {
+                                $terms = get_terms( array( 'taxonomy' => $tax, 'hide_empty' => false ) );
+                                $terms = is_wp_error( $terms ) ? array() : (array) $terms;
+                        }
+                }
+
+                if ( empty( $terms ) ) {
+                        WP_CLI::log( 'Nessuna redazione trovata: crearne una dalla pagina Redazioni in admin.' );
+                        return;
+                }
+
+                $rows  = array();
+                $total = 0;
+                $red   = 0;
+
+                foreach ( $terms as $term ) {
+                        $term_id = isset( $term->term_id ) ? absint( $term->term_id ) : 0;
+                        if ( $term_id < 1 ) {
+                                continue;
+                        }
+                        $red++;
+                        $sources = Nexus_Redazioni::sources_for_term( $term_id );
+                        $label   = ( isset( $term->name ) ? $term->name : 'Redazione #' . $term_id ) . ' (#' . $term_id . ')';
+
+                        if ( empty( $sources ) ) {
+                                $rows[] = array(
+                                        'Redazione'    => $label,
+                                        'Tipo'         => '—',
+                                        'URL / Valore' => '— (nessuna fonte)',
+                                        'Query'        => '',
+                                        'Full'         => '',
+                                        'Stato'        => '—',
+                                );
+                                continue;
+                        }
+
+                        foreach ( $sources as $source ) {
+                                if ( ! is_array( $source ) ) {
+                                        continue;
+                                }
+                                $total++;
+                                $rows[] = array(
+                                        'Redazione'    => $label,
+                                        'Tipo'         => (string) ( isset( $source['type'] ) ? $source['type'] : '' ),
+                                        'URL / Valore' => self::clip( (string) ( isset( $source['url'] ) ? $source['url'] : '' ), 70 ),
+                                        'Query'        => (string) ( isset( $source['query'] ) ? $source['query'] : '' ),
+                                        'Full'         => ! empty( $source['full'] ) ? 'sì' : 'no',
+                                        'Stato'        => self::sources_state_label( $source ),
+                                );
+                        }
+                }
+
+                if ( empty( $rows ) ) {
+                        WP_CLI::log( 'Nessuna fonte configurata.' );
+                        return;
+                }
+
+                \WP_CLI\Utils\format_items( 'table', $rows, array( 'Redazione', 'Tipo', 'URL / Valore', 'Query', 'Full', 'Stato' ) );
+                WP_CLI::log( sprintf( 'Redazioni: %d · fonti totali: %d.', $red, $total ) );
+        }
+
+        /**
+         * Stato recoverible di una fonte dai transient Nexus_Sources
+         * (cooldown 1h dopo 3 fallimenti consecutivi, contatore fallimenti 1h).
+         * Nessun timestamp di esecuzione esiste: qui NON se ne inventa uno.
+         *
+         * @param array $source Fonte {type,url}.
+         * @return string Etichetta per la tabella.
+         */
+        private static function sources_state_label( $source ) {
+                $type = isset( $source['type'] ) ? (string) $source['type'] : '';
+                $url  = isset( $source['url'] ) ? (string) $source['url'] : '';
+                if ( '' === $type || '' === $url || ! function_exists( 'get_transient' ) ) {
+                        return '—';
+                }
+
+                $key = md5( $type . '|' . trim( $url ) );
+
+                if ( get_transient( 'nexus_src_cool_' . $key ) ) {
+                        // Scadenza leggibile solo se il transient vive nella tabella
+                        // options (object cache esterno → solo "attivo").
+                        $timeout = function_exists( 'get_option' ) ? get_option( '_transient_timeout_nexus_src_cool_' . $key ) : 0;
+                        if ( $timeout ) {
+                                $left = max( 0, (int) $timeout - time() );
+                                return sprintf( 'Cooldown (ancora %ds)', $left );
+                        }
+                        return 'Cooldown attivo';
+                }
+
+                $fails = get_transient( 'nexus_src_fail_' . $key );
+                if ( $fails ) {
+                        return sprintf( 'Fallimenti recenti: %d', (int) $fails );
+                }
+
+                return '—';
+        }
+
+        /**
+         * Sottocomando interno: sources test <tipo> <url|valore> [--query=...].
+         *
+         * @param array $args       Argomenti posizionali (args[1] = tipo, args[2] = url/valore).
+         * @param array $assoc_args Argomenti associativi.
+         * @return void
+         */
+        private static function sources_test( $args, $assoc_args ) {
+                $types = array( 'rss', 'site', 'youtube', 'telegram', 'reddit', 'search', 'mcp', 'web' );
+                if ( ! empty( Nexus_Redazioni::TYPES ) && is_array( Nexus_Redazioni::TYPES ) ) {
+                        $types = array_map( 'strval', (array) Nexus_Redazioni::TYPES );
+                }
+
+                $type  = isset( $args[1] ) ? sanitize_key( (string) $args[1] ) : '';
+                $value = isset( $args[2] ) ? trim( (string) $args[2] ) : '';
+
+                if ( '' === $type || '' === $value ) {
+                        WP_CLI::error( 'Uso: wp nexus sources test <tipo> <url|valore> [--query=...] — tipi: ' . implode( ', ', $types ) . '.' );
+                }
+                if ( ! in_array( $type, $types, true ) ) {
+                        WP_CLI::error( sprintf( 'Tipo «%s» non valido. Tipi ammessi: %s.', $type, implode( ', ', $types ) ) );
+                }
+
+                // Normalizzazione identica a Nexus_Redazioni::sanitize_sources:
+                // URL-based (rss/site/web) → esc_url_raw; handle non-URL → solo
+                // pulizia dei caratteri di controllo.
+                $value = trim( preg_replace( '/[\x00-\x1F\x7F]/', '', $value ) );
+                if ( in_array( $type, array( 'rss', 'site', 'web' ), true ) ) {
+                        $value = esc_url_raw( $value );
+                }
+                if ( '' === $value ) {
+                        WP_CLI::error( 'Valore della fonte mancante o non valido.' );
+                }
+
+                $source = array(
+                        'type' => $type,
+                        'url'  => $value,
+                );
+                $query = isset( $assoc_args['query'] ) ? trim( (string) $assoc_args['query'] ) : '';
+                if ( '' !== $query ) {
+                        $source['query'] = sanitize_text_field( $query );
+                }
+
+                $adapter = 'fetch_' . $type;
+                if ( ! method_exists( 'Nexus_Sources', $adapter ) ) {
+                        WP_CLI::error( sprintf( 'Nessun adapter disponibile per il tipo «%s» (metodo Nexus_Sources::%s assente).', $type, $adapter ) );
+                }
+
+                // Chiave stato (formula Nexus_Sources::state_key): un test deve
+                // sempre provare davvero la fonte, mai restituire il vuoto del cooldown.
+                $key = md5( $type . '|' . trim( $value ) );
+                delete_transient( 'nexus_src_cool_' . $key );
+                delete_transient( 'nexus_src_fail_' . $key );
+
+                // Budget full-content del run di test (best-effort, vedi docblock comando).
+                try {
+                        $budget_value = (int) constant( 'Nexus_Sources::FULL_CONTENT_BUDGET' );
+                        $budget       = new ReflectionProperty( 'Nexus_Sources', 'full_budget_left' );
+                        $budget->setAccessible( true );
+                        $budget->setValue( null, $budget_value );
+                } catch ( Throwable $e ) {
+                        // Budget non impostabile: il test prosegue senza full-content.
+                }
+
+                WP_CLI::log( sprintf( 'Test fonte %s «%s»%s…', $type, self::clip( $value, 80 ), '' !== $query ? ' (query: ' . self::clip( $query, 40 ) . ')' : '' ) );
+
+                try {
+                        $method = new ReflectionMethod( 'Nexus_Sources', $adapter );
+                        $method->setAccessible( true ); // PHP 7.4: richiesto per i metodi private.
+                        $items = $method->invoke( null, $source );
+                } catch ( Throwable $e ) {
+                        // Un test fallito NON deve lasciare la fonte in cooldown.
+                        delete_transient( 'nexus_src_cool_' . $key );
+                        delete_transient( 'nexus_src_fail_' . $key );
+                        WP_CLI::error( 'Test fallito: ' . $e->getMessage() );
+                }
+
+                if ( ! is_array( $items ) ) {
+                        $items = array();
+                }
+
+                if ( empty( $items ) ) {
+                        // Nessun item: ripulisci anche qui (l'adapter può aver marcato
+                        // un fallimento) e dai un messaggio onesto con le cause tipiche.
+                        delete_transient( 'nexus_src_cool_' . $key );
+                        delete_transient( 'nexus_src_fail_' . $key );
+                        WP_CLI::warning( 'Nessun item ricevuto (0): verifica tipo/valore, chiavi API necessarie (youtube_api_key, tools_search_key, reddit, MCP) e la raggiungibilità della fonte. Vedi log attività.' );
+                        return;
+                }
+
+                WP_CLI::log( sprintf( 'Item trovati: %d. Primi %d:', count( $items ), min( 5, count( $items ) ) ) );
+
+                $rows = array();
+                foreach ( array_slice( $items, 0, 5 ) as $item ) {
+                        if ( ! is_array( $item ) ) {
+                                continue;
+                        }
+                        $rows[] = array(
+                                'Titolo' => self::clip( (string) ( isset( $item['title'] ) ? $item['title'] : '' ), 80 ),
+                                'Link'   => (string) ( isset( $item['link'] ) ? $item['link'] : '' ),
+                        );
+                }
+
+                if ( ! empty( $rows ) ) {
+                        \WP_CLI\Utils\format_items( 'table', $rows, array( 'Titolo', 'Link' ) );
+                }
+
+                WP_CLI::success( sprintf( 'Test completato: fonte %s «%s» ha restituito %d item.', $type, self::clip( $value, 60 ), count( $items ) ) );
+        }
+
+        /**
+         * Sottocomando interno: sources cooldown [--clear].
+         *
+         * @param array $assoc_args Argomenti associativi.
+         * @return void
+         */
+        private static function sources_cooldown( $assoc_args ) {
+                global $wpdb;
+
+                if ( ! empty( $assoc_args['clear'] ) ) {
+                        if ( ! method_exists( 'Nexus_Sources', 'clear_cooldown' ) ) {
+                                WP_CLI::error( 'Nexus_Sources::clear_cooldown non è disponibile: plugin da aggiornare.' );
+                        }
+                        try {
+                                $removed = (int) Nexus_Sources::clear_cooldown();
+                        } catch ( Throwable $e ) {
+                                WP_CLI::error( 'Azzeramento cooldown fallito: ' . $e->getMessage() );
+                        }
+                        WP_CLI::success( sprintf( 'Cooldown fonti azzerato: %d righe transient rimosse.', $removed ) );
+                        return;
+                }
+
+                if ( ! isset( $wpdb ) || ! method_exists( $wpdb, 'esc_like' ) || ! function_exists( 'get_option' ) ) {
+                        WP_CLI::error( 'Database non disponibile: impossibile elencare i cooldown.' );
+                }
+
+                $like  = $wpdb->esc_like( '_transient_nexus_src_cool_' ) . '%';
+                $names = $wpdb->get_col(
+                        $wpdb->prepare(
+                                "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_name ASC",
+                                $like
+                        )
+                );
+
+                if ( empty( $names ) || ! is_array( $names ) ) {
+                        WP_CLI::success( 'Nessuna fonte in cooldown (transient nexus_src_cool_* assenti).' );
+                        return;
+                }
+
+                WP_CLI::log( sprintf( 'Cooldown attivi: %d. Le chiavi sono md5(type|url): non decodificabili.', count( $names ) ) );
+
+                $rows = array();
+                foreach ( $names as $name ) {
+                        $plain   = preg_replace( '/^_transient_/', '', (string) $name );
+                        $timeout = (int) get_option( '_transient_timeout_' . $plain );
+                        $rows[]  = array(
+                                'Chiave'   => $plain,
+                                'Scadenza' => $timeout > 0 ? sprintf( 'tra %ds', max( 0, $timeout - time() ) ) : 'sconosciuta (object cache?)',
+                        );
+                }
+
+                \WP_CLI\Utils\format_items( 'table', $rows, array( 'Chiave', 'Scadenza' ) );
+                WP_CLI::log( 'Suggerimento: azzerare con «wp nexus sources cooldown --clear».' );
         }
 
         /* ========================= HELPER PRIVATI ========================= */
