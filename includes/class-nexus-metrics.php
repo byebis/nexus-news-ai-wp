@@ -27,14 +27,21 @@
  *  - budget di tempo 60 secondi (check nel loop con microtime: il cron finisce SEMPRE
  *    pulito, anche a metà lavoro — il completamento avviene al giro successivo);
  *  - timeout wp_remote 15 secondi;
- *  - 1 richiesta GSC a run + max 1 richiesta GA4 per post (matching esatto permalink;
- *    se il permalink non è risolvibile il post viene saltato con contatore skip).
+ *  - 1 richiesta GSC a run (rowLimit 1000, nessuna paginazione oltre la prima
+ *    pagina) + max 1 richiesta GA4 per post (matching esatto permalink; se il
+ *    permalink non è risolvibile il post viene saltato con contatore skip).
  *
  * SEMANTICA GSC:
- * L'API Search Analytics viene interrogata UNA volta a run con dimensione 'date'
- * (aggregati sito-wide per giorno, finestra oggi-4 → oggi-2: GSC ha lag sui dati).
- * Ogni riga giornaliera viene attribuita a ciascun post recente sincronizzato
- * (una riga per post+giorno, UNIQUE post_metric idempotente all'upsert).
+ * L'API Search Analytics viene interrogata UNA volta a run con dimensioni
+ * 'date' + 'page': righe per-pagina REALI (finestra oggi-4 → oggi-2: GSC ha
+ * lag sui dati; rowLimit 1000, nessuna paginazione oltre la prima pagina).
+ * Ogni riga (date, page, clicks, impressions, position) viene attribuita a UN
+ * post recente tramite matching del path del permalink: chiave = parse_url
+ * del permalink (fallback: prefisso home_url rimosso), confronto sul path
+ * della riga GSC (spesso un URL assoluto: path estratto con parse_url) con
+ * trailing slash normalizzata (rtrim '/') e fallback case-insensitive.
+ * Le righe che non matchano nessun post recente vengono SCARTATE: nessuna
+ * replica sito-wide e nessuna riga fittizia (il dato mancante è onesto).
  *
  * NESSUN DATO SENSIBILE NEI LOG: il token OAuth non viene MAI scritto in activity
  * log o error_log; i messaggi d'errore sono brevi e senza URL completi (brief_error()).
@@ -91,6 +98,12 @@ final class Nexus_Metrics {
          * Finestra dati GSC: end = oggi - 2 giorni (ultimi 3 giorni completi).
          */
         const GSC_END_OFFSET = 2;
+
+        /**
+         * rowLimit della query GSC: prima pagina di risultati, nessuna
+         * paginazione oltre (resta 1 sola richiesta HTTP a run).
+         */
+        const GSC_ROW_LIMIT = 1000;
 
         /**
          * Finestra dati GA4: start = oggi - 3 giorni (ultimi 3 giorni completi,
@@ -186,7 +199,8 @@ final class Nexus_Metrics {
          * Corpo della sincronizzazione (chiamato da run_sync dentro try/catch).
          *
          * Flusso: guardie (Google Auth, targets) → token → post recenti →
-         * 1 richiesta GSC → per post: attribuzione righe GSC + richiesta GA4 →
+         * 1 richiesta GSC per-pagina → attribuzione righe via path permalink
+         * (righe senza post corrispondente scartate) → per post: richiesta GA4 →
          * upsert su nexus_metrics → log attività finale.
          *
          * @return void
@@ -233,19 +247,21 @@ final class Nexus_Metrics {
                 $post_ids = self::recent_post_ids();
 
                 if ( empty( $post_ids ) ) {
-                        self::log_activity( 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0) — nessun articolo recente.', 'info' );
+                        self::log_activity( 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0, gsc non attribuite 0) — nessun articolo recente.', 'info' );
                         return;
                 }
 
-                $start_ts   = microtime( true );
-                $rows_gsc   = 0;
-                $rows_ga4   = 0;
-                $errors     = 0;
-                $last_error = '';
-                $skipped    = 0;
-                $budget_hit = false;
+                $start_ts      = microtime( true );
+                $rows_gsc      = 0;
+                $rows_ga4      = 0;
+                $gsc_unmapped  = 0;
+                $errors        = 0;
+                $last_error    = '';
+                $skipped       = 0;
+                $budget_hit    = false;
+                $gsc_truncated = false;
 
-                // GSC: UNA sola richiesta a run, righe giornaliere sito-wide.
+                // GSC: UNA sola richiesta a run, righe per-pagina (date + page).
                 $gsc_rows = array();
                 if ( $has_gsc ) {
                         if ( self::budget_exceeded( $start_ts ) ) {
@@ -257,47 +273,25 @@ final class Nexus_Metrics {
                                         $errors++;
                                         $last_error = $gsc_res['error'];
                                 } else {
-                                        $gsc_rows = $gsc_res['rows'];
+                                        $gsc_rows      = $gsc_res['rows'];
+                                        $gsc_truncated = ! empty( $gsc_res['truncated'] );
                                 }
                         }
                 }
 
-                // Per post: attribuzione righe GSC + richiesta GA4 (matching permalink).
-                foreach ( $post_ids as $post_id ) {
-                        if ( self::budget_exceeded( $start_ts ) ) {
-                                $budget_hit = true;
-                                break;
-                        }
+                // Mappa path permalink → post_id dei SOLO post recenti già caricati
+                // (nessuna query aggiuntiva): attribuzione GSC per-pagina.
+                $gsc_map = self::permalink_path_map( $post_ids );
 
-                        $permalink = get_permalink( $post_id );
+                // Attribuzione righe GSC: una riga per post+giorno (UNIQUE
+                // post_metric, idempotente all'upsert). Le righe che non
+                // matchano nessun post recente vengono SCARTATE: nessuna
+                // replica sito-wide, il dato mancante è onesto.
+                foreach ( $gsc_rows as $row ) {
+                        $row_post_id = self::resolve_post_by_page( $row['page'], $gsc_map['exact'], $gsc_map['ci'] );
 
-                        if ( ! is_string( $permalink ) || '' === $permalink ) {
-                                // Permalink non risolvibile: matching GA4 impossibile → salta il post.
-                                $skipped++;
-                                continue;
-                        }
-
-                        // GSC: una riga per post+giorno (UNIQUE post_metric, idempotente).
-                        foreach ( $gsc_rows as $row ) {
-                                $written = self::upsert_metric_row(
-                                        $post_id,
-                                        $row['date'],
-                                        'gsc',
-                                        $row['clicks'],
-                                        $row['impressions'],
-                                        $row['position'],
-                                        0
-                                );
-
-                                if ( $written ) {
-                                        $rows_gsc++;
-                                } else {
-                                        $errors++;
-                                        $last_error = 'Scrittura metrica GSC fallita (DB).';
-                                }
-                        }
-
-                        if ( ! $has_ga4 ) {
+                        if ( 0 === $row_post_id ) {
+                                $gsc_unmapped++;
                                 continue;
                         }
 
@@ -306,29 +300,76 @@ final class Nexus_Metrics {
                                 break;
                         }
 
-                        $ga4_res = self::fetch_ga4_rows( $token, $ga4_prop, $permalink );
+                        $written = self::upsert_metric_row(
+                                $row_post_id,
+                                $row['date'],
+                                'gsc',
+                                $row['clicks'],
+                                $row['impressions'],
+                                $row['position'],
+                                0
+                        );
 
-                        if ( '' !== $ga4_res['error'] ) {
+                        if ( $written ) {
+                                $rows_gsc++;
+                        } else {
                                 $errors++;
-                                $last_error = $ga4_res['error'];
-                                continue;
+                                $last_error = 'Scrittura metrica GSC fallita (DB).';
                         }
+                }
 
-                        foreach ( $ga4_res['rows'] as $row ) {
-                                $written = self::upsert_metric_row( $post_id, $row['date'], 'ga4', 0, 0, 0.0, $row['views'] );
+                // Per post: richiesta GA4 (matching esatto permalink). Il loop
+                // gira solo con GA4 configurata: GSC resta comunque 1 sola
+                // richiesta HTTP a run.
+                if ( $has_ga4 ) {
+                        foreach ( $post_ids as $post_id ) {
+                                if ( self::budget_exceeded( $start_ts ) ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
 
-                                if ( $written ) {
-                                        $rows_ga4++;
-                                } else {
+                                $permalink = get_permalink( $post_id );
+
+                                if ( ! is_string( $permalink ) || '' === $permalink ) {
+                                        // Permalink non risolvibile: matching GA4 impossibile → salta il post.
+                                        $skipped++;
+                                        continue;
+                                }
+
+                                if ( self::budget_exceeded( $start_ts ) ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $ga4_res = self::fetch_ga4_rows( $token, $ga4_prop, $permalink );
+
+                                if ( '' !== $ga4_res['error'] ) {
                                         $errors++;
-                                        $last_error = 'Scrittura metrica GA4 fallita (DB).';
+                                        $last_error = $ga4_res['error'];
+                                        continue;
+                                }
+
+                                foreach ( $ga4_res['rows'] as $row ) {
+                                        $written = self::upsert_metric_row( $post_id, $row['date'], 'ga4', 0, 0, 0.0, $row['views'] );
+
+                                        if ( $written ) {
+                                                $rows_ga4++;
+                                        } else {
+                                                $errors++;
+                                                $last_error = 'Scrittura metrica GA4 fallita (DB).';
+                                        }
                                 }
                         }
                 }
 
                 // Log finale: template richiesto, con aggiunte brevi solo se servono.
                 $total  = $rows_gsc + $rows_ga4;
-                $detail = 'Metriche sincronizzate: ' . $total . ' righe (gsc ' . $rows_gsc . ', ga4 ' . $rows_ga4 . ')';
+                $detail = 'Metriche sincronizzate: ' . $total . ' righe (gsc ' . $rows_gsc . ', ga4 ' . $rows_ga4
+                        . ', gsc non attribuite ' . $gsc_unmapped . ')';
+
+                if ( $gsc_truncated ) {
+                        $detail .= ' — GSC troncata: raggiunto rowLimit ' . self::GSC_ROW_LIMIT;
+                }
 
                 if ( $skipped > 0 ) {
                         $detail .= ' — post saltati: ' . $skipped;
@@ -351,12 +392,17 @@ final class Nexus_Metrics {
         /* ============ API REMOTE ============ */
 
         /**
-         * Richiesta GSC Search Analytics (dimensione 'date', ultimi 3 giorni
-         * completi con lag GSC: oggi-4 → oggi-2).
+         * Richiesta GSC Search Analytics (dimensioni 'date' + 'page': righe
+         * per-pagina REALI, ultimi 3 giorni completi con lag GSC: oggi-4 →
+         * oggi-2).
+         *
+         * rowLimit = GSC_ROW_LIMIT (prima pagina di risultati): NESSUNA
+         * paginazione oltre, resta 1 sola richiesta HTTP a run; se la risposta
+         * riempie il rowLimit il flag 'truncated' viene usato per la nota a log.
          *
          * @param string $token    Access token OAuth (mai loggato).
          * @param string $site_url Property Search Console (URL esatto).
-         * @return array { rows: array, error: string } — error '' = OK.
+         * @return array { rows: array, truncated: bool, error: string } — error '' = OK.
          */
         private static function fetch_gsc_rows( $token, $site_url ) {
                 $now_local = strtotime( current_time( 'mysql' ) );
@@ -365,7 +411,8 @@ final class Nexus_Metrics {
                         array(
                                 'startDate'  => gmdate( 'Y-m-d', $now_local - self::GSC_START_OFFSET * DAY_IN_SECONDS ),
                                 'endDate'    => gmdate( 'Y-m-d', $now_local - self::GSC_END_OFFSET * DAY_IN_SECONDS ),
-                                'dimensions' => array( 'date' ),
+                                'dimensions' => array( 'date', 'page' ),
+                                'rowLimit'   => self::GSC_ROW_LIMIT,
                         )
                 );
 
@@ -383,8 +430,9 @@ final class Nexus_Metrics {
 
                 if ( is_wp_error( $response ) ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'Search Console: ' . self::brief_error( $response->get_error_message() ),
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console: ' . self::brief_error( $response->get_error_message() ),
                         );
                 }
 
@@ -392,8 +440,9 @@ final class Nexus_Metrics {
 
                 if ( $code < 200 || $code >= 300 ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'Search Console: risposta HTTP ' . $code,
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console: risposta HTTP ' . $code,
                         );
                 }
 
@@ -401,8 +450,9 @@ final class Nexus_Metrics {
 
                 if ( ! is_array( $data ) ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'Search Console: risposta non valida.',
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console: risposta non valida.',
                         );
                 }
 
@@ -410,18 +460,21 @@ final class Nexus_Metrics {
 
                 if ( isset( $data['rows'] ) && is_array( $data['rows'] ) ) {
                         foreach ( $data['rows'] as $row ) {
-                                if ( ! is_array( $row ) || ! isset( $row['keys'][0] ) ) {
+                                // Con dimensions date+page: keys[0] = data, keys[1] = pagina.
+                                if ( ! is_array( $row ) || ! isset( $row['keys'][0], $row['keys'][1] ) ) {
                                         continue;
                                 }
 
                                 $date = (string) $row['keys'][0];
+                                $page = trim( (string) $row['keys'][1] );
 
-                                if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+                                if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) || '' === $page ) {
                                         continue;
                                 }
 
                                 $rows[] = array(
                                         'date'        => $date,
+                                        'page'        => $page,
                                         'clicks'      => isset( $row['clicks'] ) ? absint( $row['clicks'] ) : 0,
                                         'impressions' => isset( $row['impressions'] ) ? absint( $row['impressions'] ) : 0,
                                         'position'    => isset( $row['position'] ) ? round( (float) $row['position'], 2 ) : 0.0,
@@ -429,9 +482,14 @@ final class Nexus_Metrics {
                         }
                 }
 
+                // rowLimit raggiunto: probabilmente ci sono più righe oltre la
+                // prima pagina (nota a log, nessuna richiesta aggiuntiva).
+                $truncated = ( count( $rows ) >= self::GSC_ROW_LIMIT );
+
                 return array(
-                        'rows'  => $rows,
-                        'error' => '',
+                        'rows'      => $rows,
+                        'truncated' => $truncated,
+                        'error'     => '',
                 );
         }
 
@@ -544,6 +602,165 @@ final class Nexus_Metrics {
                         'rows'  => $rows,
                         'error' => '',
                 );
+        }
+
+        /* ============ ATTRIBUZIONE GSC ============ */
+
+        /**
+         * Mappa path permalink → post_id per i SOLO post recenti già caricati
+         * (lista di ID da recent_post_ids(), nessuna query aggiuntiva).
+         *
+         * Chiave: path del permalink — parse_url(get_permalink(post)) con
+         * fallback sulla rimozione del prefisso home_url(), trailing slash
+         * rimossa, encoding percentuale decodificato su entrambi i lati.
+         * Vengono restituite due mappe:
+         *  - 'exact': case-sensitive (match preferito);
+         *  - 'ci'   : path lowercase, fallback case-insensitive.
+         *
+         * @param array $post_ids ID dei post recenti (int).
+         * @return array { exact: array, ci: array }
+         */
+        private static function permalink_path_map( $post_ids ) {
+                $map_exact = array();
+                $map_ci    = array();
+
+                foreach ( $post_ids as $post_id ) {
+                        $permalink = get_permalink( $post_id );
+
+                        if ( ! is_string( $permalink ) || '' === $permalink ) {
+                                continue;
+                        }
+
+                        $path = self::permalink_path( $permalink );
+
+                        if ( '' === $path ) {
+                                continue;
+                        }
+
+                        if ( ! isset( $map_exact[ $path ] ) ) {
+                                $map_exact[ $path ] = absint( $post_id );
+                        }
+
+                        $key = strtolower( $path );
+
+                        if ( ! isset( $map_ci[ $key ] ) ) {
+                                $map_ci[ $key ] = absint( $post_id );
+                        }
+                }
+
+                return array(
+                        'exact' => $map_exact,
+                        'ci'    => $map_ci,
+                );
+        }
+
+        /**
+         * Risolve il post_id di una riga GSC dal valore 'page' (spesso un URL
+         * assoluto): 1) match esatto case-sensitive, 2) fallback
+         * case-insensitive. 0 = nessun post recente corrisponde → riga scartata.
+         *
+         * @param string $page      Valore 'page' della riga GSC (URL o path).
+         * @param array  $map_exact Mappa path → post_id (case-sensitive).
+         * @param array  $map_ci    Mappa path lowercase → post_id.
+         * @return int
+         */
+        private static function resolve_post_by_page( $page, $map_exact, $map_ci ) {
+                $path = self::gsc_page_path( $page );
+
+                if ( '' === $path ) {
+                        return 0;
+                }
+
+                if ( isset( $map_exact[ $path ] ) ) {
+                        return absint( $map_exact[ $path ] );
+                }
+
+                $key = strtolower( $path );
+
+                if ( isset( $map_ci[ $key ] ) ) {
+                        return absint( $map_ci[ $key ] );
+                }
+
+                return 0;
+        }
+
+        /**
+         * Path normalizzato di un permalink: parse_url con fallback sulla
+         * rimozione del prefisso home_url() se parse_url non restituisce un path.
+         *
+         * @param string $permalink Permalink del post.
+         * @return string Path normalizzato ('' se non ricavabile).
+         */
+        private static function permalink_path( $permalink ) {
+                $permalink = trim( (string) $permalink );
+                $path      = '';
+
+                if ( '' !== $permalink ) {
+                        $parsed = parse_url( $permalink, PHP_URL_PATH );
+
+                        if ( is_string( $parsed ) && '' !== $parsed ) {
+                                $path = $parsed;
+                        } else {
+                                // Fallback: rimuovi il prefisso home_url() dal permalink.
+                                $home = home_url();
+
+                                if ( is_string( $home ) && '' !== $home && 0 === strpos( $permalink, $home ) ) {
+                                        $path = substr( $permalink, strlen( $home ) );
+                                }
+                        }
+                }
+
+                return self::normalize_path( $path );
+        }
+
+        /**
+         * Path normalizzato del valore 'page' di una riga GSC: di solito è un
+         * URL assoluto (parse_url estrae il path), ma può arrivare anche un
+         * path già puro.
+         *
+         * @param string $page Valore 'page' della riga GSC.
+         * @return string Path normalizzato ('' se non ricavabile).
+         */
+        private static function gsc_page_path( $page ) {
+                $page = trim( (string) $page );
+                $path = '';
+
+                if ( '' !== $page ) {
+                        $parsed = parse_url( $page, PHP_URL_PATH );
+
+                        if ( is_string( $parsed ) && '' !== $parsed ) {
+                                $path = $parsed;
+                        } elseif ( 0 === strpos( $page, '/' ) ) {
+                                // Già un path puro che parse_url non ha riconosciuto.
+                                $path = $page;
+                        }
+                }
+
+                return self::normalize_path( $path );
+        }
+
+        /**
+         * Normalizzazione condivisa dei path per il confronto: encoding
+         * percentuale decodificato (GSC e permalink possono differire), query
+         * e fragment già esclusi da parse_url, trailing slash rimossa (rtrim
+         * '/'), leading slash garantita. La homepage ('/') restituisce ''.
+         *
+         * @param string $path Path grezzo.
+         * @return string
+         */
+        private static function normalize_path( $path ) {
+                if ( ! is_string( $path ) || '' === $path ) {
+                        return '';
+                }
+
+                $path = rawurldecode( $path );
+                $path = rtrim( $path, '/' );
+
+                if ( '' === $path ) {
+                        return '';
+                }
+
+                return ( '/' === $path[0] ) ? $path : '/' . $path;
         }
 
         /* ============ PERSISTENZA ============ */
