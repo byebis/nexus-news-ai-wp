@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
- * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. 7 agenti giornalisti AI con pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
+ * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
  * Version:     1.1.10.1
  * Author:      byebis
  * Author URI:  https://github.com/byebis

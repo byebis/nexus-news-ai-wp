@@ -91,6 +91,13 @@
  * nascosta in silenzio, nessun titolo orfano). Il bottone storico
  * .nxa-run-pipeline e il feed #nxa-activity-feed restano intatti.
  *
+ * v1.1.11 — ZERO AGENTI DEFAULT + WIZARD (Task R3): con la redazione VUOTA
+ * (Nexus_DB::agents() senza righe, guard class_exists/method_exists) sopra
+ * la griglia statistiche compare la card CTA "Crea la tua redazione": porta
+ * alla pagina Agenti con hash #nxa-onboarding, che admin.js (sezione
+ * v1.1.11) usa per aprire in automatico il wizard di onboarding. Il link è
+ * un semplice anchor: nessun JS nuovo in questa vista.
+ *
  * @package Nexus_News_AI
  */
 
@@ -102,6 +109,18 @@ $nexus_settings = Nexus_DB::get_settings();
 $nexus_tagline  = trim( (string) get_bloginfo( 'description' ) );
 if ( '' === $nexus_tagline ) {
         $nexus_tagline = isset( $nexus_settings['site_tagline'] ) ? (string) $nexus_settings['site_tagline'] : '';
+}
+
+/*
+ * v1.1.11 (R3) — Card CTA "Crea la tua redazione": visibile SOLO con la
+ * redazione vuota (0 agenti). Il wizard vive nella pagina Agenti
+ * (modal #nxa-onboarding): qui c'è solo l'invito con l'hash che admin.js
+ * usa per aprirlo in automatico. Guard complete: senza le classi fondamenta
+ * la card non viene stampata (degradazione senza fatal).
+ */
+$nexus_agents_count = 0;
+if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
+        $nexus_agents_count = count( (array) Nexus_DB::agents() );
 }
 
 /*
@@ -218,6 +237,19 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
                 <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
         </div>
+
+        <?php if ( 0 === $nexus_agents_count ) : ?>
+                <!-- v1.1.11 (R3): card CTA wizard — SOLO con zero agenti (guard nel
+                     docblock di testa). L'hash #nxa-onboarding apre il wizard in
+                     automatico nella pagina Agenti (sezione v1.1.11 di admin.js). -->
+                <div class="nxa-onboarding-cta">
+                        <div class="nxa-onboarding-cta__text">
+                                <strong><?php esc_html_e( 'Crea la tua redazione', 'nexus-news-ai' ); ?></strong>
+                                <span><?php esc_html_e( 'Nessun agente ancora: apri il wizard e parti da un pacchetto pronto (1, 3 o più giornalisti), tutto personalizzabile.', 'nexus-news-ai' ); ?></span>
+                        </div>
+                        <a class="nxa-btn nxa-btn-primary nxa-onboarding-cta__btn" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ) ); ?>"><?php esc_html_e( 'Apri il wizard', 'nexus-news-ai' ); ?></a>
+                </div>
+        <?php endif; ?>
 
         <div class="nxa-stat-grid">
                 <div class="nxa-stat-card">

@@ -174,6 +174,24 @@
  * admin.js applica un fallback vuoto client-side (la wave 4 aggiungerà i campi
  * al serializzatore per il prefill reale).
  *
+ * =====================================================================
+ * v1.1.11 — ZERO AGENTI DEFAULT + WIZARD ONBOARDING (Task R3)
+ * =====================================================================
+ *
+ * Dalla v1.1.11 il plugin NON inserisce più agenti all'attivazione (il seed
+ * class-nexus-db.php::seed_agents() è un no-op BC): una installazione nuova
+ * nasce con la redazione vuota. Per questo:
+ *  - il sottotitolo pagina e l'empty state NON citano più "i 7 agenti":
+ *    la redazione è e resta quella che l'utente crea;
+ *  - in fondo alla vista è incluso il partial onboarding-wizard.php
+ *    (modal #nxa-onboarding, gestito da admin.js — sezione v1.1.11):
+ *    quando la griglia agenti è vuota admin.js apre il wizard al posto
+ *    dell'empty state (una sola volta per vista) e a ogni click su
+ *    .nxa-onboarding-open o con hash #nxa-onboarding (la card CTA della
+ *    dashboard punta a admin.php?page=nexus-agents#nxa-onboarding);
+ *  - la barra "Creazione rapida" è INVARIATA (preset 1-click v1.1.4):
+ *    resta il modo manuale/progressivo di creare agenti.
+ *
  * @package Nexus_News_AI
  */
 
@@ -208,7 +226,7 @@ $nxa_agent_status_labels = array(
 
         <h1><?php esc_html_e( 'Agenti giornalisti', 'nexus-news-ai' ); ?></h1>
 
-        <p class="nxa-page-subtitle"><?php esc_html_e( 'Gli agenti raccolgono notizie RSS reali della loro categoria, le valutano e le riscrivono con AI. Puoi creare, modificare e clonare gli agenti: i 7 agenti predefiniti restano modificabili.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'Gli agenti raccolgono notizie reali, le valutano e le riscrivono con AI. Crea quanti agenti vuoi: da 1 a una redazione completa, con preset pronti.', 'nexus-news-ai' ); ?></p>
 
         <div class="nxa-toolbar">
                 <button type="button" class="nxa-btn nxa-agents-refresh"><?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?></button>
@@ -257,10 +275,13 @@ $nxa_agent_status_labels = array(
         </div>
 
         <?php if ( empty( $nxa_agents ) ) : ?>
+                <!-- v1.1.11: niente più "riattiva il plugin per i 7 agenti": con la
+                     redazione vuota la via è il wizard (che admin.js apre in
+                     automatico su 0 agenti) o i preset. Fallback no-JS onesto. -->
                 <div class="nxa-empty">
                         <span class="dashicons dashicons-groups" aria-hidden="true"></span>
                         <p class="nxa-empty__title"><?php esc_html_e( 'Nessun agente in tabella', 'nexus-news-ai' ); ?></p>
-                        <p><?php esc_html_e( 'Riattiva il plugin per rigenerare il set iniziale dei 7 agenti.', 'nexus-news-ai' ); ?></p>
+                        <p><?php esc_html_e( 'Nessun agente: usa il wizard o i preset per creare il tuo primo giornalista.', 'nexus-news-ai' ); ?></p>
                 </div>
         <?php elseif ( $nxa_has_utils ) : ?>
                 <?php
@@ -411,5 +432,12 @@ $nxa_agent_status_labels = array(
                         </form>
                 </div>
         </div>
+
+        <?php
+        /* v1.1.11 (R3): WIZARD ONBOARDING — modal statica #nxa-onboarding,
+         * gestita da admin.js (sezione v1.1.11). Contratto nel docblock del
+         * partial. Non cambia il markup/ganci esistenti di questa vista. */
+        include NEXUS_PLUGIN_DIR . 'admin/views/onboarding-wizard.php';
+        ?>
 
 </div>

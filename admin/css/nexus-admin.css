@@ -2549,3 +2549,327 @@ hr.nxa-hairline {
     animation: none;
   }
 }
+
+/* =========================================================================
+ * 23. Onboarding wizard (v1.1.11, Task R3) — wizard "Crea la tua redazione"
+ *     + card CTA dashboard + empty state agenti con bottone wizard.
+ *     Markup: admin/views/onboarding-wizard.php (modal #nxa-onboarding,
+ *     riusa .nxa-modal[role="dialog"] + .nxa-modal-panel) e dashboard.php
+ *     (card CTA solo con 0 agenti). Solo token --nxa-*: tema scuro incluso
+ *     senza override dedicati (stessa strategia degli altri componenti).
+ * ======================================================================= */
+
+/* Card CTA della dashboard (visibile SOLO con zero agenti). */
+.nxa-onboarding-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nxa-space-4);
+  margin: 0 0 var(--nxa-space-4);
+  padding: var(--nxa-space-4) var(--nxa-space-5);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-panel-line);
+  border-left: 4px solid var(--nxa-accent-1);
+  border-radius: var(--nxa-radius);
+  box-shadow: var(--nxa-shadow);
+}
+
+.nxa-onboarding-cta__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nxa-onboarding-cta__text strong {
+  font-size: 1rem;
+  color: var(--nxa-heading);
+}
+
+.nxa-onboarding-cta__text span {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+.nxa-onboarding-cta__btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .nxa-onboarding-cta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nxa-onboarding-cta__btn {
+    text-align: center;
+  }
+}
+
+/* Pannello wizard: un po' più largo del modal editor (le radio card
+ * leggono meglio su 2 colonne). Tutto il resto eredita da .nxa-modal-panel. */
+.nxa-onboarding-panel {
+  width: min(92vw, 780px);
+}
+
+.nxa-obs-sub {
+  margin: -6px 0 var(--nxa-space-5);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--nxa-muted);
+}
+
+.nxa-obs-step-title {
+  margin: 0 0 var(--nxa-space-3);
+  font-size: 0.95rem;
+  color: var(--nxa-heading);
+}
+
+/* Step 1 — radio card dei pacchetti preset. */
+.nxa-obs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--nxa-space-3);
+}
+
+@media (max-width: 600px) {
+  .nxa-obs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nxa-obs-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: var(--nxa-space-4);
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-panel-line);
+  border-radius: var(--nxa-radius-sm);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.nxa-obs-card:hover {
+  border-color: var(--nxa-line-strong);
+  box-shadow: var(--nxa-shadow);
+}
+
+/* La card scelta: accento brand + superficie tenue. Il radio resta
+ * raggiungibile da tastiera (focus-visible sul bordo). */
+.nxa-obs-card.is-selected {
+  background: var(--nxa-surface-2);
+  border-color: var(--nxa-accent-1);
+  box-shadow: 0 0 0 1px var(--nxa-accent-1) inset;
+}
+
+.nxa-obs-card:focus-within {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+/* Radio visivamente nascosto ma accessibile (label cliccabile + tastiera). */
+.nxa-obs-card input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.nxa-obs-emoji {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.nxa-obs-card-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--nxa-heading);
+}
+
+.nxa-obs-card-desc {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+.nxa-obs-card-count {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--nxa-info-text);
+  background: var(--nxa-info-bg);
+  border: 1px solid var(--nxa-info-line);
+  border-radius: 999px;
+}
+
+.nxa-obs-card--manual .nxa-obs-card-count {
+  color: var(--nxa-muted);
+  background: var(--nxa-surface-3);
+  border-color: var(--nxa-border);
+}
+
+/* Step 2 — opzioni. */
+.nxa-obs-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 var(--nxa-space-3);
+  padding: 10px 12px;
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-panel-line);
+  border-radius: var(--nxa-radius-sm);
+  cursor: pointer;
+}
+
+.nxa-obs-option input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.nxa-obs-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nxa-obs-option-text strong {
+  color: var(--nxa-heading);
+  font-size: 0.9rem;
+}
+
+.nxa-obs-option-text span {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+}
+
+.nxa-obs-rss-textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 var(--nxa-space-2);
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--nxa-input-bg);
+  color: var(--nxa-text);
+  border: 1px solid var(--nxa-input-line);
+  border-radius: var(--nxa-radius-sm);
+}
+
+.nxa-obs-rss-textarea:focus {
+  border-color: var(--nxa-focus);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--nxa-focus);
+}
+
+/* Step 3 — progresso esecuzione. */
+.nxa-obs-progress {
+  margin: 0 0 var(--nxa-space-2);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--nxa-heading);
+}
+
+.nxa-obs-progressbar {
+  height: 8px;
+  margin: 0 0 var(--nxa-space-4);
+  background: var(--nxa-surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.nxa-obs-progressbar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--nxa-accent-grad);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.nxa-obs-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.nxa-obs-log li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+  overflow-wrap: anywhere;
+}
+
+.nxa-obs-log li:last-child {
+  border-bottom: 0;
+}
+
+.nxa-obs-log li.is-ok {
+  color: var(--nxa-ok-text);
+}
+
+.nxa-obs-log li.is-err {
+  color: var(--nxa-err-text);
+}
+
+/* Step 4 — riepilogo onesto. */
+.nxa-obs-summary-head {
+  margin: 0 0 var(--nxa-space-2);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--nxa-heading);
+}
+
+.nxa-obs-summary-row {
+  margin: 0 0 var(--nxa-space-2);
+  font-size: 0.9rem;
+  color: var(--nxa-text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.nxa-obs-summary-row.is-ok {
+  color: var(--nxa-ok-text);
+}
+
+.nxa-obs-summary-row.is-err {
+  color: var(--nxa-err-text);
+}
+
+.nxa-obs-summary-errors {
+  margin: 0 0 var(--nxa-space-3);
+  padding-left: 18px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--nxa-err-text);
+  overflow-wrap: anywhere;
+}
+
+/* Azioni in fondo al pannello (Continua/Indietro/Crea/Chiudi/Annulla). */
+.nxa-obs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-2);
+  margin: var(--nxa-space-5) 0 0;
+}
+
+/* Empty state agenti v1.1.11 (grid a 0 agenti): respiro verticale in più
+ * per il bottone che apre il wizard. */
+.nxa-onboarding-empty {
+  padding: 56px 16px;
+}
