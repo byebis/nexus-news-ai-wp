@@ -1723,8 +1723,11 @@ class Nexus_Pipeline {
         /**
          * Scarica il testo della fonte originale per il fact-check (v1.1.9).
          *
-         * Fetch SOLO del source_url dell'articolo (proviene da feed già validati dal
-         * collect; gli SSRF guard centrali arrivano da WP2/D2 su tools.php). Cache
+         * Fetch SOLO del source_url dell'articolo. Dalla v1.1.10 il source_url può
+         * arrivare da adapter multi-tipo (web, search, MCP) e da contenuti non
+         * fidati: la guardia SSRF centralizzata Nexus_Tools::assert_safe_url()
+         * (DNS + IP privati/riservati) viene applicata SEMPRE, fail-closed
+         * (v1.1.10.1 — chiude il gap audit 1.1.9/1.1.10). Cache
          * transient 'nexus_src_{md5url}' 6h: il fact-check gira a ogni riscrittura ma
          * la fonte non cambia. Ritorna '' a qualunque fallimento (chiamante fa il
          * fallback sul riassunto con log onesto).
@@ -1735,6 +1738,13 @@ class Nexus_Pipeline {
         private static function fetch_source_text( $url ) {
                 $url = trim( (string) $url );
                 if ( '' === $url || ! function_exists( 'wp_remote_get' ) ) {
+                        return '';
+                }
+
+                // v1.1.10.1 — Guardia SSRF esplicita: anche il fetch del fact-check
+                // passa dalla guardia centralizzata (DNS + IP privati/riservati).
+                // Fail-closed: URL non consentito → nessun fetch, testo vuoto.
+                if ( true !== Nexus_Tools::assert_safe_url( $url ) ) {
                         return '';
                 }
 

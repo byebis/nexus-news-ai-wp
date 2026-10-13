@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.10
+Stable tag: 1.1.10.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -98,6 +98,12 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.10.1 =
+* SICUREZZA — chiuso il gap SSRF dell'audit: anche il fetch del fact-check (testo della fonte originale) passa ora dalla guardia centralizzata assert_safe_url (DNS + blocco IP privati/riservati), fail-closed. Dalla 1.1.10 il source_url può arrivare da adapter multi-tipo (web, search, MCP): la verifica esplicita è doverosa.
+* I18N — 64 stringhe della 1.1.10 (provider custom, login web OAuth, model picker, strumenti/fonti per agente, editor fonti redazioni, messaggi REST) hanno ora la traduzione inglese nel dizionario, più 7 pattern per i messaggi compositi REST concatenati con variabili.
+* FIX COSMETICO — il messaggio di errore della guardia endpoint AI mostrava letteralmente «l\u2019endpoint» (escape finito in una stringa single-quoted): ora mostra «l'endpoint».
+* UNINSTALL — pulizia completa dei transients: 7 famiglie con prefisso (cache feed RSS, cache fact-check fonti con cooldown/fallimenti, rate limit REST, cache full-content Readability, lock traduzioni, rate limit OAuth, circuit breaker provider) e 4 transients singoli (prezzi AI live, conteggio CPT legacy, featured viste, token Reddit). Tutti con TTL: ora la cancellazione lascia l'installazione davvero pulita.
 
 = 1.1.10 =
 * MOTORE FONTI MULTI-TIPO (il salto più grande dalla nascita): le fonti di ogni redazione non sono più solo RSS — 8 tipi nativi: rss, site (scoperta feed da sito), youtube (Data API ufficiale: canale o ricerca), telegram (canali pubblici via preview web, ZERO chiavi), reddit (RSS nativo o OAuth client-credentials), search (ricerca web periodica con Tavily/Serper/Brave come FONTE, non solo come strumento), mcp (una fonte servita da un tuo server MCP custom) e web (pagina singola con estrazione). Fix bloccante: il salvataggio delle fonti degradava ogni tipo non-RSS a rss (le fonti nuove si perdevano al primo save) e la raccolta passava il materiale di UNA sola fonte al prompt: ora tutte le fonti arrivano insieme, con dedup per link.

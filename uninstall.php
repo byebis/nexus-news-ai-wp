@@ -43,6 +43,12 @@
  * come categorie e tag — sopravvivono al plugin esattamente come i post.
  * Reinstallare il plugin ritrova le redazioni al loro posto.
  *
+ * Dalla v1.1.10.1 la pulizia dei transients è COMPLETA (audit 1.1.10): tutte
+ * le famiglie transient del plugin (feed, fact-check fonti, rate limit,
+ * full-content, lock traduzioni, OAuth, circuit breaker provider) e i
+ * transients singoli nominati vengono rimossi alla cancellazione — vedi
+ * nexus_uninstall_delete_transients().
+ *
  * @package Nexus_News_AI
  */
 
@@ -121,19 +127,52 @@ function nexus_uninstall_delete_bot_users() {
 /**
  * Elimina i transients di cache RSS (nexus_rss_*) e le voci di scadenza.
  *
+ * Dalla v1.1.10.1 la pulizia copre TUTTE le famiglie transient del plugin
+ * (censimento audit 1.1.10): nexus_rss_ (cache feed), nexus_src_ (cache
+ * fact-check fonti, include le sottofamiglie nexus_src_cool_ e
+ * nexus_src_fail_), nexus_rl_ (rate limit REST), nexus_full_ (cache
+ * full-content Readability), nexus_tr_lock_ (lock traduzioni),
+ * nexus_oauth_rl_ (rate limit OAuth) e nexus_ai_breaker_ (circuit breaker
+ * provider, chiave + suffisso _cooldown). Tutte hanno TTL: qui vengono
+ * rimosse subito per lasciare l'installazione davvero pulita. I singoli
+ * transients nominati (prezzi AI, conteggio CPT legacy, featured viste,
+ * token Reddit) vengono rimossi esplicitamente. nexus_ai_models_* e
+ * nexus_oauth_state_* sono già puliti da nexus_uninstall_delete_bot_users().
+ *
  * @return void
  */
 function nexus_uninstall_delete_transients() {
         global $wpdb;
-        $like_transient = $wpdb->esc_like( '_transient_nexus_rss_' ) . '%';
-        $like_timeout   = $wpdb->esc_like( '_transient_timeout_nexus_rss_' ) . '%';
-        $wpdb->query(
-                $wpdb->prepare(
-                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-                        $like_transient,
-                        $like_timeout
-                )
+
+        // Famiglie transient con prefisso (anche dinamiche): ciascuna viene
+        // rimossa insieme alle proprie voci di scadenza (_transient_timeout_*).
+        $prefixes = array(
+                'nexus_rss_',        // v1.1.x — cache feed RSS (collect).
+                'nexus_src_',        // v1.1.9/10 — cache fact-check + cooldown/fail fonti.
+                'nexus_rl_',         // v1.1.9 — rate limit REST.
+                'nexus_full_',       // v1.1.10 — cache full-content Readability.
+                'nexus_tr_lock_',    // v1.1.9 — lock traduzioni multilang.
+                'nexus_oauth_rl_',   // v1.1.10 — rate limit OAuth OpenRouter.
+                'nexus_ai_breaker_', // v1.1.9 — circuit breaker provider (+ _cooldown).
         );
+
+        foreach ( $prefixes as $prefix ) {
+                $like_transient = $wpdb->esc_like( '_transient_' . $prefix ) . '%';
+                $like_timeout   = $wpdb->esc_like( '_transient_timeout_' . $prefix ) . '%';
+                $wpdb->query(
+                        $wpdb->prepare(
+                                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+                                $like_transient,
+                                $like_timeout
+                        )
+                );
+        }
+
+        // Transients singoli nominati (fuori da qualunque famiglia).
+        delete_transient( 'nexus_ai_live_prices' );
+        delete_transient( 'nexus_cpt_legacy_count' );
+        delete_transient( 'nexus_pixabay_seen' );
+        delete_transient( 'nexus_reddit_token' );
 }
 
 /**

@@ -907,6 +907,76 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Analitico e orientato all’impatto pratico' => 'Analytical and focused on practical impact',
             'Legge gli articoli dei giornalisti e li approva, modifica, manda in revisione o rifiuta.' => 'Reads the journalists’ articles and approves, edits, sends them for review or rejects them.',
 
+            /* ---- v1.1.10.1 — audit v1.1.10: 64 stringhe nuove senza EN
+             * (provider custom illimitati, OAuth OpenRouter PKCE, model picker,
+             * strumenti/fonti per agente, editor fonti redazioni, messaggi REST).
+             * Tre voci sono identiche in EN ('Brave Search', 'Serper (Google Search)',
+             * 'Test'): dichiarate coperte perché la traduzione corretta è quella stessa. ---- */
+            ' Se l’endpoint è in rete locale o sull’host di WordPress verifica che sia attivo e raggiungibile.' => ' If the endpoint is on the local network or on the WordPress host, check that it is running and reachable.',
+            'Aggiungi fonte' => 'Add source',
+            'Aggiungi le fonti della redazione: feed RSS, siti, canali YouTube o Telegram, subreddit, ricerche, server MCP o pagine web. Usa “Test” per provare una fonte prima di salvare. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare.' => 'Add the desk sources: RSS feeds, sites, YouTube or Telegram channels, subreddits, searches, MCP servers or web pages. Use “Test” to try a source before saving. Sources are optional: the desk journalists will use them for collection and the editor-in-chief for fact-checking.',
+            'Aggiungi provider personalizzato' => 'Add custom provider',
+            'Avvio del login web non riuscito: riprova.' => 'Web login could not be started: try again.',
+            'Brave Search' => 'Brave Search',
+            'Chiave API' => 'API key',
+            'Chiave API mancante per il provider ' => 'Missing API key for provider ',
+            'Chiave API mancante per il provider %1$s: connettiti con il login web o salva una chiave e riprova.' => 'Missing API key for provider %1$s: connect with the web login or save a key and try again.',
+            'Chiave API mancante per il provider %1$s: salvala in Impostazioni AI e riprova.' => 'Missing API key for provider %1$s: save it in AI Settings and try again.',
+            'Chiave configurata' => 'Key configured',
+            'Chiave non configurata' => 'Key not configured',
+            'Chiave ricerca web dell’agente' => 'Agent web search key',
+            'Connessione OAuth non riuscita: riavvia il login.' => 'OAuth connection failed: restart the login.',
+            'Connetti con %s' => 'Connect with %s',
+            'Consenti endpoint AI su IP privati/localhost' => 'Allow AI endpoints on private IPs/localhost',
+            'Digita per cercare tra i modelli del provider scelto: clic o Invio per scegliere, Esc per chiudere.' => 'Type to search the models of the selected provider: click or Enter to choose, Esc to close.',
+            'Endpoint compatibile OpenAI usato dal provider Personalizzato (es. proxy interno o modello self-hosted). Il bottone Test può verificarla anche prima del salvataggio.' => 'OpenAI-compatible endpoint used by the Custom provider (e.g. internal proxy or self-hosted model). The Test button can verify it even before saving.',
+            'Endpoint modelli non configurato per questo provider: il test live non è disponibile.' => 'Models endpoint not configured for this provider: the live test is unavailable.',
+            'Endpoint su IP privati/localhost' => 'Endpoints on private IPs/localhost',
+            'Etichetta' => 'Label',
+            'I server MCP dell’agente si sommano a quelli globali (in caso di conflitto vince l’agente). Formato: nome|URL|token opzionale; le righe che iniziano con # sono commenti.' => 'The agent’s MCP servers are added to the global ones (in case of conflict the agent wins). Format: name|URL|optional token; lines starting with # are comments.',
+            'Identificativo del provider personalizzato non valido: deve avere la forma “cust_” + 8 caratteri esadecimali.' => 'Invalid custom provider identifier: it must have the form “cust_” + 8 hexadecimal characters.',
+            'Il catalogo provider non è disponibile: il plugin non è caricato correttamente.' => 'The provider catalog is unavailable: the plugin is not loaded correctly.',
+            'Il modulo fonti non è disponibile: verifica che il plugin sia aggiornato.' => 'The sources module is unavailable: make sure the plugin is up to date.',
+            'Il provider ha risposto con errore HTTP ' => 'The provider responded with HTTP error ',
+            'Il provider non ha restituito un elenco di modelli riconoscibile.' => 'The provider did not return a recognizable list of models.',
+            'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.' => 'The AI provider registry is unavailable: make sure the plugin is up to date.',
+            'Il salvataggio della chiave per questo agente arriva con un prossimo aggiornamento: attualmente viene usata la chiave di ricerca globale (impostazioni → Strumenti).' => 'Saving a key for this agent will come in a future update: currently the global search key is used (settings → Tools).',
+            'Login web OAuth non disponibile per questo provider: usa la chiave API manuale.' => 'OAuth web login unavailable for this provider: use the manual API key.',
+            'Mai mostrata in chiaro. Su modifica, vuota = nessun cambio della chiave salvata.' => 'Never shown in plain text. When editing, empty = no change to the saved key.',
+            'Nessun adapter disponibile per questo tipo di fonte.' => 'No adapter available for this source type.',
+            'Nessun provider personalizzato: aggiungine uno per usare qualsiasi servizio compatibile OpenAI (Together, Fireworks, Perplexity, Cerebras, LM Studio, vLLM…).' => 'No custom providers: add one to use any OpenAI-compatible service (Together, Fireworks, Perplexity, Cerebras, LM Studio, vLLM…).',
+            'Ollama locale (127.0.0.1:11434): il rilevamento funziona se WordPress gira sulla stessa macchina di Ollama (o su Ollama esposto in LAN con l’opzione qui sotto).' => 'Local Ollama (127.0.0.1:11434): detection works if WordPress runs on the same machine as Ollama (or on Ollama exposed on the LAN with the option below).',
+            'Ottieni chiave' => 'Get key',
+            'Parametri OAuth mancanti (state o code): riavvia il login da Impostazioni AI.' => 'Missing OAuth parameters (state or code): restart the login from AI Settings.',
+            'Preset (precompila i campi)' => 'Preset (pre-fills the fields)',
+            'Provider AI sconosciuto.' => 'Unknown AI provider.',
+            'Provider AI sconosciuto: ' => 'Unknown AI provider: ',
+            'Provider non raggiungibile: ' => 'Provider unreachable: ',
+            'Provider personalizzati' => 'Custom providers',
+            'Provider personalizzato non trovato: forse è già stato eliminato.' => 'Custom provider not found: it may have already been deleted.',
+            'Provider personalizzato sconosciuto o eliminato (' => 'Unknown or deleted custom provider (',
+            'Provider ricerca web (vuoto = globale)' => 'Web search provider (empty = global)',
+            'Questo provider non ha una chiave configurabile nelle impostazioni.' => 'This provider has no configurable key in the settings.',
+            'Rate limit del provider raggiunto (HTTP 429): riprova tra qualche minuto.' => 'Provider rate limit reached (HTTP 429): try again in a few minutes.',
+            'Ricerca web globale (impostazioni)' => 'Global web search (settings)',
+            'Rileva Ollama' => 'Detect Ollama',
+            'Salva provider' => 'Save provider',
+            'Salvataggio del provider personalizzato non riuscito.' => 'Custom provider could not be saved.',
+            'Scollega' => 'Disconnect',
+            'Se impostato, questo agente usa il proprio motore di ricerca invece di quello globale; se la chiave di ricerca globale non è configurata la ricerca dell’agente restituisce un errore chiaro.' => 'If set, this agent uses its own search engine instead of the global one; if the global search key is not configured, the agent’s search returns a clear error.',
+            'Serper (Google Search)' => 'Serper (Google Search)',
+            'Server MCP personali (una riga per server)' => 'Personal MCP servers (one per line)',
+            'Solo se usi LM Studio/vLLM su LAN; Ollama è sempre ammesso.' => 'Only if you use LM Studio/vLLM on LAN; Ollama is always allowed.',
+            'Strumenti personali (opzionali)' => 'Personal tools (optional)',
+            'Test' => 'Test',
+            'Tipo di fonte non valido. Valori ammessi: rss, site, youtube, telegram, reddit, search, mcp, web.' => 'Invalid source type. Allowed values: rss, site, youtube, telegram, reddit, search, mcp, web.',
+            'URL base (compatibile OpenAI)' => 'Base URL (OpenAI-compatible)',
+            'URL base mancante per il provider ' => 'Missing base URL for provider ',
+            'URL base mancante per il provider Personalizzato: inseriscila nel campo “URL base” e riprova.' => 'Missing base URL for the Custom provider: enter it in the “Base URL” field and try again.',
+            'URL base mancante per il provider personalizzato ' => 'Missing base URL for custom provider ',
+            'Valore della fonte mancante.' => 'Missing source value.',
+            '— Nessun preset: compilazione manuale —' => '— No preset: fill in manually —',
+
         );
 }
 
@@ -1797,6 +1867,39 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => '\(nessun output\)',
             'tpl' => '(no output)',
+        ),
+        /* ---- v1.1.10.1 — audit v1.1.10: messaggi compositi REST (model picker,
+         * OAuth, provider custom). I frammenti esatti del dict non bastano: il
+         * messaggio completo arriva da concatenazione PHP con variabili. Ordine:
+         * i pattern più specifici PRIMA dei generici (URL base “personalizzato”
+         * prima di URL base generico). ---- */
+        array(
+            're'  => 'URL base mancante per il provider personalizzato (.+)$',
+            'tpl' => 'Missing base URL for custom provider $1',
+        ),
+        array(
+            're'  => 'URL base mancante per il provider (.+)$',
+            'tpl' => 'Missing base URL for provider $1',
+        ),
+        array(
+            're'  => 'Chiave API mancante per il provider (.+)$',
+            'tpl' => 'Missing API key for provider $1',
+        ),
+        array(
+            're'  => 'Provider personalizzato sconosciuto o eliminato \\((.+)\\)$',
+            'tpl' => 'Unknown or deleted custom provider ($1)',
+        ),
+        array(
+            're'  => 'Provider AI sconosciuto: (.+)$',
+            'tpl' => 'Unknown AI provider: $1',
+        ),
+        array(
+            're'  => 'Provider non raggiungibile: (.+)$',
+            'tpl' => 'Provider unreachable: $1',
+        ),
+        array(
+            're'  => 'Il provider(?: AI)? ha risposto con errore HTTP (\\d+)(.*)$',
+            'tpl' => 'The provider responded with HTTP error $1$2',
         ),
     );
 }

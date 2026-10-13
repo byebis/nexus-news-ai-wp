@@ -704,7 +704,7 @@ class Nexus_Sources {
                                 'https://www.reddit.com/r/' . rawurlencode( $sub ) . '/.rss',
                                 array(
                                         'timeout'    => self::HTTP_TIMEOUT,
-                                        'user-agent' => 'Nexus News AI/1.1.10 (WordPress; ' . $home . ')',
+                                        'user-agent' => 'Nexus News AI/' . ( defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '1.1.10' ) . ' (WordPress; ' . $home . ')',
                                 )
                         );
                         if ( ! is_wp_error( $res ) && 200 === (int) wp_remote_retrieve_response_code( $res ) ) {

@@ -591,7 +591,7 @@ class Nexus_AI_Engine {
                 if ( $allow_private ) {
                         return '';
                 }
-                return 'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l\u2019endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).';
+                return 'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l’endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).';
         }
 
         /**
