@@ -48,7 +48,10 @@
  *   POST   /nexus/v1/ai/oauth/start                 body {provider}: avvia il login web OAuth PKCE (solo provider con oauth=true nel catalog), risposta {ok, auth_url} (v1.1.10)
  *   POST   /nexus/v1/ai/oauth/callback              body {state, code}: scambia il codice con la chiave di provisioning SALVATA server-side, risposta {ok} — MAI la chiave (v1.1.10)
  *   POST   /nexus/v1/ai/disconnect/{provider}       svuota prov_key_{provider} (cancellazione VOLUTA, log 'oauth_disconnected'), risposta {ok, provider} (v1.1.10)
- *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10)
+ *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10) — dalla v1.1.10 (F2b) funziona anche per i provider personalizzati cust_* (endpoint e chiave DALL'ENTRY, body base_url ignorato)
+ *   GET    /nexus/v1/ai/custom-providers           elenco provider personalizzati {id, label, base_url, auth, has_key}: api_key MAI in chiaro (v1.1.10, F2b)
+ *   POST   /nexus/v1/ai/custom-providers           body {id?, label, base_url, api_key?}: upsert (id assente = nuovo 'cust_'+8hex tornato nella risposta; api_key vuota su update NON cancella — pattern segreti), risposta {ok, id, provider} (v1.1.10, F2b)
+ *   DELETE /nexus/v1/ai/custom-providers/{id}      rimozione definitiva (gli agenti che lo usavano ricevono errore onesto, MAI fallback legacy), risposta {ok, id} (v1.1.10, F2b)
  *   POST   /nexus/v1/chief/run/{id}                 forza la revisione del capo redattore su un articolo, risposta {ok, chief_status, note} (v1.1.4)
  *
  * ROUTE PUBBLICHE (permission_callback: __return_true, dati SOLO pubblicabili):
@@ -360,6 +363,74 @@ class Nexus_Rest {
                                                         'required'          => false,
                                                         'default'           => '',
                                                         'sanitize_callback' => 'esc_url_raw',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                /* ---------------- ADMIN: PROVIDER PERSONALIZZATI (F2b/WP11) ---------------- */
+
+                // v1.1.10 (F2b/WP11): provider personalizzati ILLIMITATI (option
+                // 'nexus_custom_providers', id 'cust_' + 8 hex, qualsiasi servizio
+                // compatibile OpenAI). CRUD admin-only; la chiave API NON è MAI
+                // restituita (api_key sempre '' + has_key, pattern segreti D2/WP2).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/custom-providers',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_custom_providers_list' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_custom_providers_upsert' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'id'                => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                                'label'             => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'base_url'          => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'esc_url_raw',
+                                                ),
+                                                'api_key'           => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'default'           => '',
+                                                        'sanitize_callback' => 'sanitize_textarea_field',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/ai/custom-providers/(?P<id>cust_[a-z0-9]+)',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::DELETABLE,
+                                        'callback'            => array( __CLASS__, 'rest_custom_providers_delete' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'id'                => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
                                                 ),
                                         ),
                                 ),
@@ -1454,7 +1525,9 @@ class Nexus_Rest {
          * Regole: name max 100, category max 100, ai_model max 100, status in
          * active|paused (error non è impostabile a mano), testi sanitizzati.
          * v1.1.4: ai_provider ('' = provider globale, altrimenti id presente
-         * nel catalogo Nexus_Providers, altrimenti ''), role in
+         * nel catalogo Nexus_Providers — dalla v1.1.10 (F2b/WP11) anche i
+         * provider personalizzati 'cust_*', validati contro custom_providers() —
+         * altrimenti ''), role in
          * giornalista|capo_redattore (valore non riconosciuto → giornalista),
          * chief_scope in ''|global|category|term (valore non riconosciuto → ''),
          * chief_term_id sempre intero positivo.
@@ -1493,6 +1566,13 @@ class Nexus_Rest {
                         if ( '' !== $provider ) {
                                 $catalog  = class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'catalog' ) ? Nexus_Providers::catalog() : null;
                                 $valid    = is_array( $catalog ) && array_key_exists( $provider, $catalog );
+                                // v1.1.10 (F2b/WP11): i provider PERSONALIZZATI ('cust_*')
+                                // sono validi se esistono in custom_providers(); il catalog
+                                // li mergia già, la doppia verifica è difensiva (catalog
+                                // obsoleto o classe parzialmente caricata).
+                                if ( ! $valid && 0 === strpos( $provider, 'cust_' ) && class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'custom_providers' ) ) {
+                                        $valid = array_key_exists( $provider, Nexus_Providers::custom_providers() );
+                                }
                                 $provider = $valid ? $provider : '';
                         }
                         $fields['ai_provider'] = $provider;
@@ -1963,6 +2043,188 @@ class Nexus_Rest {
                 );
         }
 
+        /* =========================================================================
+         * CALLBACK — ADMIN: PROVIDER PERSONALIZZATI (v1.1.10, F2b/WP11)
+         *
+         * Storage: option 'nexus_custom_providers' letta/scritta SOLO da
+         * Nexus_Providers (custom_providers / save_custom_providers /
+         * upsert_custom_provider / delete_custom_provider). La chiave API NON è
+         * MAI inclusa nelle risposte REST: ogni voce è mascherata con
+         * api_key '' + has_key (pattern segreti D2/WP2).
+         * ======================================================================= */
+
+        /**
+         * Voce provider custom mascherata per le risposte REST: mai la chiave.
+         *
+         * @param array $entry Entry da Nexus_Providers::custom_providers().
+         * @return array Array( id, label, base_url, auth, has_key ).
+         */
+        private static function serialize_custom_provider( $entry ) {
+                return array(
+                        'id'       => isset( $entry['id'] ) ? (string) $entry['id'] : '',
+                        'label'    => isset( $entry['label'] ) ? (string) $entry['label'] : '',
+                        'base_url' => isset( $entry['base_url'] ) ? (string) $entry['base_url'] : '',
+                        'auth'     => isset( $entry['auth'] ) ? (string) $entry['auth'] : 'bearer',
+                        'has_key'  => isset( $entry['api_key'] ) && '' !== trim( (string) $entry['api_key'] ),
+                );
+        }
+
+        /**
+         * GET /ai/custom-providers — elenco provider personalizzati (F2b/WP11).
+         *
+         * Risposta { providers: [ {id, label, base_url, auth, has_key} ] }:
+         * api_key SEMPRE vuota (has_key porta la sola presenza). base_url NON è
+         * un segreto (endpoint dichiarato dall'admin) e torna integro per
+         * precompilare il form di modifica nella UI.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_custom_providers_list( $request ) {
+                unset( $request );
+                if ( ! class_exists( 'Nexus_Providers' ) || ! method_exists( 'Nexus_Providers', 'custom_providers' ) ) {
+                        return self::err(
+                                'nexus_rest_providers_missing',
+                                __( 'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $providers = array();
+                foreach ( Nexus_Providers::custom_providers() as $entry ) {
+                        $providers[] = self::serialize_custom_provider( $entry );
+                }
+
+                return rest_ensure_response( array( 'providers' => $providers ) );
+        }
+
+        /**
+         * POST /ai/custom-providers — crea o aggiorna un provider personalizzato.
+         *
+         * Body {id?, label, base_url, api_key?}: id assente → CREAZIONE (id
+         * generato 'cust_' + 8 hex, tornato nella risposta); id presente →
+         * UPDATE dell'entry esistente (id inesistente → 400, niente creazione
+         * accidentale). SEMANTICA SEGRETI: api_key vuota su update NON cancella
+         * la chiave salvata (come PUT /settings). La guardia SSRF G4-style è
+         * applicata dal upsert (host privato rifiutato se allow_private_providers
+         * è off, messaggio con l'istruzione per abilitarlo).
+         *
+         * Risposta { ok: true, id: 'cust_xxxxxxxx', provider: {...mascherata} }.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_custom_providers_upsert( $request ) {
+                if ( ! class_exists( 'Nexus_Providers' ) || ! method_exists( 'Nexus_Providers', 'upsert_custom_provider' ) ) {
+                        return self::err(
+                                'nexus_rest_providers_missing',
+                                __( 'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $result = Nexus_Providers::upsert_custom_provider(
+                        array(
+                                'id'       => (string) $request->get_param( 'id' ),
+                                'label'    => (string) $request->get_param( 'label' ),
+                                'base_url' => (string) $request->get_param( 'base_url' ),
+                                'api_key'  => (string) $request->get_param( 'api_key' ),
+                        )
+                );
+
+                if ( empty( $result['ok'] ) ) {
+                        return self::err(
+                                'nexus_rest_custom_provider_invalid',
+                                // Messaggio da Nexus_Providers (runtime, già in italiano).
+                                isset( $result['error'] ) && '' !== trim( (string) $result['error'] ) ? (string) $result['error'] : __( 'Salvataggio del provider personalizzato non riuscito.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                $new_id = isset( $result['id'] ) ? (string) $result['id'] : '';
+                $entry  = array();
+                foreach ( Nexus_Providers::custom_providers() as $custom_id => $custom_entry ) {
+                        if ( $custom_id === $new_id ) {
+                                $entry = $custom_entry;
+                                break;
+                        }
+                }
+
+                // Log attività onesto: solo esito e nome, MAI la chiave.
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        Nexus_DB::insert_activity(
+                                0,
+                                'custom_provider_saved',
+                                sprintf( 'Provider personalizzato “%1$s” salvato (%2$s).', isset( $entry['label'] ) ? $entry['label'] : $new_id, $new_id ),
+                                'success'
+                        );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'       => true,
+                                'id'       => $new_id,
+                                'provider' => self::serialize_custom_provider( $entry ),
+                        )
+                );
+        }
+
+        /**
+         * DELETE /ai/custom-providers/{id} — rimozione definitiva (F2b/WP11).
+         *
+         * I riferimenti negli agenti (ai_provider = cust_*) NON vengono toccati:
+         * le loro generazioni falliranno con errore onesto finché l'admin non
+         * riassegna un provider (mai fallback silenzioso sul provider globale).
+         *
+         * Risposta { ok: true, id }.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_custom_providers_delete( $request ) {
+                if ( ! class_exists( 'Nexus_Providers' ) || ! method_exists( 'Nexus_Providers', 'delete_custom_provider' ) ) {
+                        return self::err(
+                                'nexus_rest_providers_missing',
+                                __( 'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $id = sanitize_key( (string) $request->get_param( 'id' ) );
+                if ( '' === $id || ! preg_match( '/^cust_[0-9a-f]{8}$/', $id ) ) {
+                        return self::err(
+                                'nexus_rest_custom_provider_invalid_id',
+                                __( 'Identificativo del provider personalizzato non valido: deve avere la forma “cust_” + 8 caratteri esadecimali.', 'nexus-news-ai' ),
+                                400
+                        );
+                }
+
+                if ( ! Nexus_Providers::delete_custom_provider( $id ) ) {
+                        return self::err(
+                                'nexus_rest_custom_provider_not_found',
+                                __( 'Provider personalizzato non trovato: forse è già stato eliminato.', 'nexus-news-ai' ),
+                                404
+                        );
+                }
+
+                // Log attività onesto: nessun dato sensibile (solo l'id).
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        Nexus_DB::insert_activity(
+                                0,
+                                'custom_provider_deleted',
+                                sprintf( 'Provider personalizzato rimosso (%s).', $id ),
+                                'info'
+                        );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok' => true,
+                                'id' => $id,
+                        )
+                );
+        }
+
         /**
          * POST /ai/test/{provider} — test connessione VIVO del provider (v1.1.10).
          *
@@ -1970,10 +2232,15 @@ class Nexus_Rest {
          * del campo prima del salvataggio). La chiave prov_key_{provider} è
          * obbligatoria per TUTTI tranne Ollama (endpoint locale senza auth): chiave
          * vuota → errore chiaro (per OpenRouter invita a connettersi via login web).
-         * Il test chiama l'endpoint /models del provider con l'autenticazione giusta
-         * (models_endpoint/models_auth del catalog; custom: {base_url}/models),
-         * timeout 15s, guardia SSRF fail-closed (specchio G4: host privati solo per
-         * ollama o con allow_private_providers attivo).
+         * v1.1.10 (F2b/WP11): funziona anche per i provider PERSONALIZZATI cust_* —
+         * endpoint {base_url}/models e chiave DALL'ENTRY (option
+         * 'nexus_custom_providers'); per i cust_* il body base_url è ignorato
+         * (l'entry è l'unica fonte di verità: si modifica e si salvano, poi si
+         * riprova il test). Il test chiama l'endpoint /models del provider con
+         * l'autenticazione giusta (models_endpoint/models_auth del catalog;
+         * custom: {base_url}/models), timeout 15s, guardia SSRF fail-closed
+         * (specchio G4: host privati solo per ollama o con allow_private_providers
+         * attivo — vale anche per i cust_*).
          *
          * OpenRouter: la lista /models è PUBBLICA, quindi la validazione della
          * chiave passa per GET https://openrouter.ai/api/v1/key con la stessa
@@ -2018,7 +2285,23 @@ class Nexus_Rest {
                 // ammessa senza chiave (endpoint locale senza auth): per gli altri la
                 // chiave è obbligatoria — per OpenRouter anche se /models è pubblico,
                 // perché il test serve a validare la chiave salvata (vedi /key sotto).
-                $api_key = isset( $settings[ 'prov_key_' . $provider ] ) ? trim( (string) $settings[ 'prov_key_' . $provider ] ) : '';
+                // v1.1.10 (F2b/WP11): i provider CUSTOM (cust_*) tengono la chiave
+                // DENTRO l'entry (option 'nexus_custom_providers'), NON in
+                // prov_key_{id}: risoluzione dedicata prima del lookup standard.
+                $is_custom = 0 === strpos( $provider, 'cust_' );
+                if ( $is_custom ) {
+                        $customs = method_exists( 'Nexus_Providers', 'custom_providers' ) ? Nexus_Providers::custom_providers() : array();
+                        if ( ! isset( $customs[ $provider ] ) ) {
+                                return self::err(
+                                        'nexus_rest_provider_unknown',
+                                        __( 'Provider AI sconosciuto.', 'nexus-news-ai' ),
+                                        404
+                                );
+                        }
+                        $api_key = trim( (string) $customs[ $provider ]['api_key'] );
+                } else {
+                        $api_key = isset( $settings[ 'prov_key_' . $provider ] ) ? trim( (string) $settings[ 'prov_key_' . $provider ] ) : '';
+                }
                 if ( '' === $api_key && 'ollama' !== $provider ) {
                         $is_oauth = ! empty( $entry['oauth'] );
                         $label    = isset( $entry['label'] ) ? (string) $entry['label'] : $provider;

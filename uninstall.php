@@ -62,6 +62,11 @@ function nexus_uninstall_delete_options() {
         delete_option( 'nexus_db_version' );
         delete_option( 'nexus_wire_runs' );
         delete_option( 'nexus_native_migration' ); // v1.1.0 — stato migrazione nativa
+        // v1.1.10 — provider custom illimitati (WP11) e cursore fair-share fonti (WP2).
+        delete_option( 'nexus_custom_providers' );
+        delete_option( 'nexus_source_cursor' );
+        // v1.1.10 — flag log-once imagery (C2).
+        delete_option( 'nexus_pixabay_key_missing' );
 }
 
 /**

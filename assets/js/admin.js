@@ -25,6 +25,7 @@
  * v1.1.3: modal dettaglio mobile-safe (flex-start, dvh, overflow-wrap) e link "Vedi bozza WordPress" (wpViewLink).
  * v1.1.4: barra "Creazione rapida" con preset agenti (prefill + modal), editor con ruolo/provider AI/ambito capo redattore, badge e "Nota del capo redattore" in coda e dettaglio, bottone "Revisione capo redattore" (POST /chief/run/{id}) e flag settings capo/strumenti.
  * v1.1.5: bottoni "Avvia" (agente/redazione/testata) sul POST pipeline/run esteso con toast riepilogo e blocco .nxa-run-summary, e pannello live "In redazione ora" in dashboard (#nxa-live-strip: GET /live con polling 5s solo a pagina visibile, 404 → strip nascosta in silenzio).
+ * v1.1.10 (F2b/WP11): sub-sezione "Provider personalizzati" in Impostazioni AI — CRUD REST /ai/custom-providers (chiave MAI in chiaro: solo has_key), preset 1-click Together/Fireworks/Perplexity/Cerebras/LM Studio/vLLM, delete con conferma INLINE in riga; i bottoni Test delle righe riusano il wizard WP10 (.nxa-prov-test → POST /ai/test/cust_{id}).
  *
  * @package Nexus_News_AI
  */
@@ -2571,6 +2572,335 @@
         }
 
         /* ==================================================================
+         * 9-bis/2. PROVIDER PERSONALIZZATI ILLIMITATI (v1.1.10, F2b/WP11 —
+         * pagina Impostazioni AI, sub-sezione del pannello "Provider AI per
+         * agente"; contratto id/classi nel docblock di settings-ai.php).
+         * QUALSIASI servizio compatibile OpenAI: storage lato server (option
+         * 'nexus_custom_providers', via REST /ai/custom-providers), chiave MAI
+         * in chiaro in pagina (la lista porta solo has_key). Il bottone Test di
+         * ogni riga riusa il wizard WP10 (.nxa-prov-test → POST
+         * /ai/test/cust_{id} con esito inline .nxa-prov-status).
+         * ================================================================== */
+
+        /** Preset 1-click: precompilano etichetta + URL base del form. */
+        var CUSTOM_PROVIDER_PRESETS = {
+                together:   { label: 'Together',   baseUrl: 'https://api.together.xyz/v1' },
+                fireworks:  { label: 'Fireworks',  baseUrl: 'https://api.fireworks.ai/inference/v1' },
+                perplexity: { label: 'Perplexity', baseUrl: 'https://api.perplexity.ai' },
+                cerebras:   { label: 'Cerebras',   baseUrl: 'https://api.cerebras.ai/v1' },
+                lmstudio:   { label: 'LM Studio',  baseUrl: 'http://localhost:1234/v1' },
+                vllm:       { label: 'vLLM',       baseUrl: 'http://localhost:8000/v1' }
+        };
+
+        /** Ultima lista nota (GET /ai/custom-providers) per Modifica/Elimina. */
+        var customProvidersCache = [];
+
+        /** Riga con conferma di eliminazione inline attiva (id), oppure ''. */
+        var customProvidersConfirmId = '';
+
+        /** Trova una voce della cache per id (o null). */
+        function findCustomProvider( id ) {
+                for ( var i = 0; i < customProvidersCache.length; i++ ) {
+                        if ( String( customProvidersCache[ i ].id || '' ) === String( id ) ) {
+                                return customProvidersCache[ i ];
+                        }
+                }
+                return null;
+        }
+
+        /**
+         * Render della lista: una riga .nxa-custprov-row per provider con dot
+         * stato chiave (riuso .nxa-prov-dot--on/--off), etichetta, URL base
+         * (troncato via CSS, integro nel title), badge has_key e azioni. Con
+         * customProvidersConfirmId la riga mostra la conferma inline al posto
+         * delle azioni (niente window.confirm: conferma cancellabile in riga).
+         */
+        function renderCustomProviders() {
+                var box = qs( '#nxa-custprov-list' );
+                if ( ! box ) {
+                        return;
+                }
+                if ( ! customProvidersCache.length ) {
+                        box.innerHTML = '';
+                        return;
+                }
+                box.innerHTML = customProvidersCache.map( function ( p ) {
+                        var id = String( p.id || '' );
+                        var hasKey = !! p.has_key;
+                        var actions;
+                        if ( customProvidersConfirmId === id ) {
+                                actions = '<span class="nxa-custprov-confirm">' +
+                                        esc( 'Eliminare definitivamente? Gli agenti che lo usavano mostreranno un errore finché non riassegni un provider.' ) +
+                                        '<button type="button" class="button nxa-custprov-del-yes" data-id="' + esc( id ) + '">' + esc( 'Sì, elimina' ) + '</button>' +
+                                        '<button type="button" class="button nxa-custprov-del-no" data-id="' + esc( id ) + '">' + esc( 'No' ) + '</button>' +
+                                        '</span>';
+                        } else {
+                                actions = '<button type="button" class="button nxa-prov-test" data-provider="' + esc( id ) + '">' + esc( 'Test' ) + '</button>' +
+                                        '<button type="button" class="button nxa-custprov-edit" data-id="' + esc( id ) + '">' + esc( 'Modifica' ) + '</button>' +
+                                        '<button type="button" class="button-link nxa-custprov-del" data-id="' + esc( id ) + '">' + esc( 'Elimina' ) + '</button>';
+                        }
+                        return '<div class="nxa-custprov-row" data-id="' + esc( id ) + '">' +
+                                '<span class="nxa-prov-dot ' + ( hasKey ? 'nxa-prov-dot--on' : 'nxa-prov-dot--off' ) + '" title="' + esc( hasKey ? 'Chiave salvata' : 'Nessuna chiave' ) + '" aria-hidden="true"></span>' +
+                                '<span class="nxa-custprov-label">' + esc( String( p.label || id ) ) + '</span>' +
+                                '<span class="nxa-custprov-url" title="' + esc( String( p.base_url || '' ) ) + '">' + esc( String( p.base_url || '' ) ) + '</span>' +
+                                '<span class="nxa-custprov-badge">' + esc( hasKey ? 'Chiave salvata' : 'Nessuna chiave' ) + '</span>' +
+                                '<span class="nxa-custprov-actions">' + actions + '</span>' +
+                                '<p class="description nxa-prov-status" data-nxa-status="' + esc( id ) + '" aria-live="polite"></p>' +
+                                '</div>';
+                } ).join( '' );
+        }
+
+        /** Esito operazioni del form (verde/rosso, aria-live). */
+        function setCustomFormStatus( message, kind ) {
+                var node = qs( '#nxa-custprov-status' );
+                if ( ! node ) {
+                        return;
+                }
+                node.textContent = message || '';
+                node.classList.remove( 'nxa-prov-status--ok', 'nxa-prov-status--err' );
+                if ( kind === 'ok' ) {
+                        node.classList.add( 'nxa-prov-status--ok' );
+                } else if ( kind === 'err' ) {
+                        node.classList.add( 'nxa-prov-status--err' );
+                }
+        }
+
+        /** Apre il form per CREARE (entry null) o MODIFICARE una voce esistente. */
+        function openCustomProviderForm( entry ) {
+                var form = qs( '#nxa-custprov-form' );
+                if ( ! form ) {
+                        return;
+                }
+                var editing = !!( entry && entry.id );
+                var idField = qs( '#nxa-custprov-id' );
+                var labelField = qs( '#nxa-custprov-label' );
+                var urlField = qs( '#nxa-custprov-base-url' );
+                var keyField = qs( '#nxa-custprov-api-key' );
+                if ( idField ) {
+                        idField.value = editing ? String( entry.id ) : '';
+                }
+                if ( labelField ) {
+                        labelField.value = editing ? String( entry.label || '' ) : '';
+                }
+                if ( urlField ) {
+                        urlField.value = editing ? String( entry.base_url || '' ) : '';
+                }
+                if ( keyField ) {
+                        keyField.value = '';
+                        keyField.placeholder = editing ? 'invariata se lasciata vuota' : '';
+                }
+                var preset = qs( '#nxa-custprov-preset' );
+                if ( preset ) {
+                        preset.value = '';
+                }
+                var saveBtn = qs( '#nxa-custprov-save' );
+                if ( saveBtn ) {
+                        saveBtn.removeAttribute( 'data-nxa-label' );
+                        saveBtn.innerHTML = editing ? 'Aggiorna provider' : 'Salva provider';
+                }
+                var cancelBtn = qs( '#nxa-custprov-cancel' );
+                if ( cancelBtn ) {
+                        cancelBtn.hidden = ! editing;
+                }
+                form.removeAttribute( 'hidden' );
+                setCustomFormStatus( editing ? 'Modifica in corso: la chiave salvata resta invariata se lasci vuota.' : '', '' );
+                if ( labelField ) {
+                        labelField.focus();
+                }
+        }
+
+        /** Chiude il form e azzera i campi (niente attributi name: solo reset JS). */
+        function closeCustomProviderForm() {
+                var form = qs( '#nxa-custprov-form' );
+                if ( form ) {
+                        form.setAttribute( 'hidden', 'hidden' );
+                }
+                var fields = [ 'nxa-custprov-id', 'nxa-custprov-label', 'nxa-custprov-base-url', 'nxa-custprov-api-key' ];
+                for ( var i = 0; i < fields.length; i++ ) {
+                        var field = qs( '#' + fields[ i ] );
+                        if ( field ) {
+                                field.value = '';
+                        }
+                }
+                var preset = qs( '#nxa-custprov-preset' );
+                if ( preset ) {
+                        preset.value = '';
+                }
+                setCustomFormStatus( '', '' );
+        }
+
+        /** Carica la lista dal server e la renderizza (al bind e dopo le CRUD). */
+        function loadCustomProviders() {
+                var box = qs( '#nxa-custprov-list' );
+                if ( ! box ) {
+                        return Promise.resolve();
+                }
+                return api( 'ai/custom-providers' ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        var list = Array.isArray( data.providers ) ? data.providers : getList( payload, [ 'providers' ] );
+                        customProvidersCache = Array.isArray( list ) ? list : [];
+                        customProvidersConfirmId = '';
+                        renderCustomProviders();
+                } ).catch( function ( err ) {
+                        window.console.warn( '[Nexus] custom providers:', err );
+                        toast( ( err && err.message ) ? err.message : 'Caricamento dei provider personalizzati non riuscito.', 'error', 'Provider personalizzati' );
+                } );
+        }
+
+        /**
+         * Salvataggio (create se id nascosto vuoto, update altrimenti). La
+         * chiave è inviata SOLO se compilata: vuota = nessun cambio (pattern
+         * segreti, rispettato anche dal server).
+         */
+        function saveCustomProvider( saveBtn ) {
+                var idField = qs( '#nxa-custprov-id' );
+                var labelField = qs( '#nxa-custprov-label' );
+                var urlField = qs( '#nxa-custprov-base-url' );
+                var keyField = qs( '#nxa-custprov-api-key' );
+                var idValue = idField ? String( idField.value || '' ).trim() : '';
+                var label = labelField ? String( labelField.value || '' ).trim() : '';
+                var baseUrl = urlField ? String( urlField.value || '' ).trim() : '';
+                var apiKey = keyField ? String( keyField.value || '' ) : '';
+
+                if ( ! label || ! baseUrl ) {
+                        setCustomFormStatus( 'Etichetta e URL base sono obbligatori.', 'err' );
+                        toast( 'Etichetta e URL base sono obbligatori per il provider personalizzato.', 'error', 'Provider personalizzati' );
+                        return;
+                }
+
+                var body = { label: label, base_url: baseUrl };
+                if ( idValue ) {
+                        body.id = idValue;
+                }
+                if ( String( apiKey ).trim() !== '' ) {
+                        body.api_key = apiKey;
+                }
+
+                setBtnLoading( saveBtn, true, 'Salvataggio…' );
+                api( 'ai/custom-providers', { method: 'POST', body: body } ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        if ( data.ok === false ) {
+                                throw new Error( String( data.error || 'Salvataggio non riuscito' ) );
+                        }
+                        closeCustomProviderForm();
+                        toast( 'Provider personalizzato salvato: ora è selezionabile dagli agenti.', 'success', 'Provider personalizzati' );
+                        return loadCustomProviders();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Provider personalizzati' );
+                        setCustomFormStatus( ( err && err.message ) ? err.message : 'Salvataggio non riuscito', 'err' );
+                } ).then( function () {
+                        setBtnLoading( saveBtn, false );
+                } );
+        }
+
+        /** Eliminazione (conferma già data INLINE nella riga). */
+        function deleteCustomProvider( id, deleteBtn ) {
+                setBtnLoading( deleteBtn, true, 'Elimino…' );
+                api( 'ai/custom-providers/' + encodeURIComponent( id ), { method: 'DELETE' } ).then( function () {
+                        var idField = qs( '#nxa-custprov-id' );
+                        if ( idField && String( idField.value || '' ) === String( id ) ) {
+                                closeCustomProviderForm();
+                        }
+                        toast( 'Provider personalizzato eliminato.', 'success', 'Provider personalizzati' );
+                        return loadCustomProviders();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Provider personalizzati' );
+                        return loadCustomProviders();
+                } ).then( function () {
+                        setBtnLoading( deleteBtn, false );
+                } );
+        }
+
+        /**
+         * Bind della sub-sezione (chiamato da bindSettings SOLO se la pagina ha
+         * #nxa-custprov-list): delega click per add/edit/delete + conferma
+         * inline + Salva/Annulla, change sul preset 1-click, caricamento lista.
+         * I bottoni Test NON sono gestiti qui: portano .nxa-prov-test e il
+         * wizard WP10 (bindProviderActions) li gestisce con la stessa POST
+         * /ai/test/cust_{id} scrivendo l'esito inline nella riga.
+         */
+        function bindCustomProviders( form ) {
+                var box = qs( '#nxa-custprov-list' );
+                if ( ! box || ! form ) {
+                        return;
+                }
+
+                form.addEventListener( 'click', function ( ev ) {
+                        var target = ev.target;
+                        if ( ! target || ! target.closest ) {
+                                return;
+                        }
+
+                        var addBtn = target.closest( '#nxa-custprov-add' );
+                        if ( addBtn ) {
+                                customProvidersConfirmId = '';
+                                renderCustomProviders();
+                                openCustomProviderForm( null );
+                                return;
+                        }
+
+                        var editBtn = target.closest( '.nxa-custprov-edit' );
+                        if ( editBtn ) {
+                                var editId = String( editBtn.getAttribute( 'data-id' ) || '' );
+                                customProvidersConfirmId = '';
+                                renderCustomProviders();
+                                openCustomProviderForm( findCustomProvider( editId ) );
+                                return;
+                        }
+
+                        var delBtn = target.closest( '.nxa-custprov-del' );
+                        if ( delBtn ) {
+                                // Conferma INLINE: la riga mostra "Sì, elimina / No".
+                                customProvidersConfirmId = String( delBtn.getAttribute( 'data-id' ) || '' );
+                                renderCustomProviders();
+                                return;
+                        }
+
+                        var delYes = target.closest( '.nxa-custprov-del-yes' );
+                        if ( delYes ) {
+                                deleteCustomProvider( String( delYes.getAttribute( 'data-id' ) || '' ), delYes );
+                                return;
+                        }
+
+                        var delNo = target.closest( '.nxa-custprov-del-no' );
+                        if ( delNo ) {
+                                customProvidersConfirmId = '';
+                                renderCustomProviders();
+                                return;
+                        }
+
+                        if ( target.closest( '#nxa-custprov-save' ) ) {
+                                saveCustomProvider( qs( '#nxa-custprov-save' ) );
+                                return;
+                        }
+
+                        if ( target.closest( '#nxa-custprov-cancel' ) ) {
+                                closeCustomProviderForm();
+                        }
+                } );
+
+                var presetSelect = qs( '#nxa-custprov-preset' );
+                if ( presetSelect ) {
+                        presetSelect.addEventListener( 'change', function () {
+                                var preset = CUSTOM_PROVIDER_PRESETS[ String( presetSelect.value || '' ) ];
+                                if ( ! preset ) {
+                                        return;
+                                }
+                                var labelField = qs( '#nxa-custprov-label' );
+                                var urlField = qs( '#nxa-custprov-base-url' );
+                                if ( labelField ) {
+                                        labelField.value = preset.label;
+                                }
+                                if ( urlField ) {
+                                        urlField.value = preset.baseUrl;
+                                }
+                        } );
+                }
+
+                loadCustomProviders();
+        }
+
+        /* ==================================================================
          * 9-ter. CATEGORIE NATIVE (v1.1.0)
          * ================================================================== */
 
@@ -3087,6 +3417,11 @@
                 // OAuth di OpenRouter (?nexus_oauth=1&state&code nella querystring).
                 bindProviderActions( form );
                 maybeCompleteOauthCallback();
+
+                // v1.1.10 (F2b/WP11): sub-sezione "Provider personalizzati" — CRUD
+                // REST, preset 1-click, conferma delete inline (no-op fuori da
+                // Impostazioni AI: il bind richiede #nxa-custprov-list).
+                bindCustomProviders( form );
         }
 
         /* ==================================================================

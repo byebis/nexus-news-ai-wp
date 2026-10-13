@@ -78,6 +78,44 @@
  *                                            Ritorna '' = permesso, altrimenti il
  *                                            messaggio d'errore da mostrare.
  *
+ * v1.1.10 (F2b/WP11 — provider personalizzati ILLIMITATI): qualsiasi servizio
+ * compatibile OpenAI (Together, Fireworks, Perplexity, Cerebras, LM Studio,
+ * vLLM, gateway interni…) può essere aggiunto dalla pagina Impostazioni AI
+ * come PROVIDER CUSTOM con id 'cust_' + 8 caratteri esadecimali generati.
+ * Storage DEDICATO, toccato SOLO da questa classe:
+ * Nexus_Providers::custom_providers()          — legge l'option
+ *                                            'nexus_custom_providers' e la
+ *                                            restituisce SEMPRE come mappa
+ *                                            normalizzata id => entry
+ *                                            { id, label, base_url, api_key,
+ *                                            auth:'bearer' } (solo id canonici
+ *                                            cust_*, entry corrotte scartate).
+ * Nexus_Providers::save_custom_providers( $list ) — sanifica e riscrive l'intera
+ *                                            option (update_option con
+ *                                            autoload NO: contiene chiavi API).
+ * Nexus_Providers::upsert_custom_provider( $data ) — crea (id assente → nuovo
+ *                                            'cust_'+8hex) o aggiorna l'entry
+ *                                            { id?, label, base_url, api_key? }
+ *                                            con sanitize e guardia SSRF
+ *                                            url_guard_error (G4-style: host
+ *                                            privato → rifiuto se
+ *                                            allow_private_providers è off).
+ *                                            Ritorna array( ok, id, error ):
+ *                                            la chiave VUOTA su update NON
+ *                                            cancella quella salvata (pattern
+ *                                            segreti, come PUT /settings).
+ * Nexus_Providers::delete_custom_provider( $id ) — rimozione dell'entry. Gli
+ *                                            agenti che lo referenziavano
+ *                                            (ai_provider = cust_*) NON cadono
+ *                                            sul fallback legacy: resolve_for_agent()
+ *                                            ritorna errore onesto (ok=false).
+ * Nel catalog() i custom compaiono DOPO i 10 built-in con base_url,
+ * models_endpoint = {base_url}/models, models_auth 'bearer', key_page '',
+ * oauth=false, native_search=false, custom=true (mai sovrascrivere un
+ * built-in a parità di id). La CHIAVE API NON arriva mai dal catalog: vive
+ * SOLO dentro l'entry e viene risolta da resolve()/resolve_for_agent(),
+ * che per gli id cust_* leggono l'entry invece di prov_key_{id}.
+ *
  * Rate limit OAuth: 1 avvio per utente ogni 30 secondi (transient per-user).
  *
  * Retrocompatibilita' 100%: nessun comportamento cambia per chi non usa i
@@ -101,6 +139,12 @@ class Nexus_Providers {
          *   Bearer + anthropic-version).
          * - 'ollama' ha chiave opzionale (server locale, la chiave vuota e' ammessa).
          *
+         * v1.1.10 (F2b/WP11): il risultato MERGIA anche i provider personalizzati
+         * (custom_providers(), id 'cust_' + 8 hex) DOPO i built-in: le voci custom
+         * portano custom=true, models_endpoint = {base_url}/models e models_auth
+         * 'bearer'; la chiave API resta NELL'ENTRY (option nexus_custom_providers)
+         * e NON passa dal catalog — la risolve resolve()/resolve_for_agent().
+         *
          * @return array
          */
         public static function catalog() {
@@ -111,7 +155,7 @@ class Nexus_Providers {
                 //   key_page        = deep link alla pagina dove creare la chiave
                 //   oauth           = true se esiste provisioning chiavi via OAuth PKCE
                 //   native_search   = true se il provider espone ricerca web nativa nei tool
-                return array(
+                $builtin = array(
                         'openrouter' => array(
                                 'id'              => 'openrouter',
                                 'label'           => 'OpenRouter',
@@ -223,6 +267,34 @@ class Nexus_Providers {
                                 'native_search'   => false,
                         ),
                 );
+
+                // v1.1.10 (F2b/WP11 — provider personalizzati ILLIMITATI): dopo i
+                // 10 built-in compaiono i CUSTOM dell'option 'nexus_custom_providers'
+                // (id 'cust_' + 8 hex). Contratto voce custom: bearer su
+                // {base_url}/models, niente OAuth, niente ricerca nativa. A parità
+                // di id vince SEMPRE il built-in (mai sovrascritto, difesa da
+                // option corrotte o manomesse).
+                foreach ( self::custom_providers() as $custom ) {
+                        $custom_id = isset( $custom['id'] ) ? (string) $custom['id'] : '';
+                        if ( '' === $custom_id || isset( $builtin[ $custom_id ] ) ) {
+                                continue;
+                        }
+                        $custom_base = isset( $custom['base_url'] ) ? trim( (string) $custom['base_url'] ) : '';
+                        $builtin[ $custom_id ] = array(
+                                'id'              => $custom_id,
+                                'label'           => isset( $custom['label'] ) && '' !== trim( (string) $custom['label'] ) ? (string) $custom['label'] : $custom_id,
+                                'base_url'        => $custom_base,
+                                'auth'            => 'bearer',
+                                'models_endpoint' => '' !== $custom_base ? untrailingslashit( $custom_base ) . '/models' : '',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => '',
+                                'oauth'           => false,
+                                'native_search'   => false,
+                                'custom'          => true,
+                        );
+                }
+
+                return $builtin;
         }
 
         /**
@@ -247,6 +319,10 @@ class Nexus_Providers {
          * - ID vuoto o assente nel catalogo → ok=false, errore in italiano.
          * - 'custom': base_url dal settings 'prov_base_custom' (errore se vuota).
          * - 'ollama': la chiave vuota e' ammessa (server locale).
+         * - v1.1.10 (F2b/WP11), id 'cust_*' (provider personalizzati): la chiave
+         *   e la base_url arrivano DALL'ENTRY (option nexus_custom_providers),
+         *   non da prov_key_{id}; id inesistente (es. provider eliminato dopo
+         *   l'assegnazione all'agente) → ok=false con errore onesto.
          * - Tutti gli altri: ok=false se la chiave e' vuota.
          *
          * @param string $provider_id ID del provider (vedi catalog()).
@@ -266,6 +342,36 @@ class Nexus_Providers {
                         'label'    => '',
                         'error'    => '',
                 );
+
+                // v1.1.10 (F2b/WP11): provider personalizzati (id 'cust_' + 8 hex).
+                // La chiave NON vive in prov_key_{id} ma DENTRO l'entry (option
+                // 'nexus_custom_providers'): risoluzione dedicata con errori onesti
+                // per id inesistente, URL base vuoto o chiave mancante.
+                if ( 0 === strpos( $provider_id, 'cust_' ) ) {
+                        $customs = self::custom_providers();
+                        if ( ! isset( $customs[ $provider_id ] ) || ! is_array( $customs[ $provider_id ] ) ) {
+                                $out['error'] = 'Provider personalizzato sconosciuto o eliminato (' . $provider_id . '): scegli un altro provider per gli agenti che lo usavano.';
+                                return $out;
+                        }
+
+                        $custom_entry = $customs[ $provider_id ];
+                        $out['label']    = isset( $custom_entry['label'] ) && '' !== trim( (string) $custom_entry['label'] ) ? (string) $custom_entry['label'] : $provider_id;
+                        $out['auth']     = 'bearer';
+                        $out['base_url'] = isset( $custom_entry['base_url'] ) ? trim( (string) $custom_entry['base_url'] ) : '';
+                        $out['api_key']  = isset( $custom_entry['api_key'] ) ? trim( (string) $custom_entry['api_key'] ) : '';
+
+                        if ( '' === $out['base_url'] ) {
+                                $out['error'] = 'URL base mancante per il provider personalizzato ' . $out['label'] . ': correggilo in Nexus News AI → Impostazioni → Provider AI.';
+                                return $out;
+                        }
+                        if ( '' === $out['api_key'] ) {
+                                $out['error'] = 'Chiave API mancante per il provider personalizzato ' . $out['label'] . ': inseriscila in Nexus News AI → Impostazioni → Provider AI.';
+                                return $out;
+                        }
+
+                        $out['ok'] = true;
+                        return $out;
+                }
 
                 $catalog = self::catalog();
                 if ( '' === $provider_id || ! isset( $catalog[ $provider_id ] ) || ! is_array( $catalog[ $provider_id ] ) ) {
@@ -326,6 +432,12 @@ class Nexus_Providers {
          * - il risultato di resolve() (con 'legacy' => false) altrimenti: controlla
          *   'ok' prima di usare base_url/api_key/auth.
          *
+         * v1.1.10 (F2b/WP11): un provider PERSONALIZZATO (ai_provider = 'cust_*')
+         * risolve SEMPRE da custom_providers() e non conosce il fallback legacy:
+         * se l'entry non esiste più (provider eliminato) il risultato è ok=false
+         * con errore onesto — usare i globali scruberebbe un provider DIVERSO da
+         * quello scelto per l'agente.
+         *
          * @param object|array $agent Agente con eventuale campo 'ai_provider'.
          * @return array
          */
@@ -351,6 +463,18 @@ class Nexus_Providers {
                         return $legacy;
                 }
 
+                // v1.1.10 (F2b/WP11): i provider personalizzati NON hanno fallback
+                // legacy — risolvono SEMPRE da custom_providers(): entry
+                // mancante/eliminata → errore onesto (resolve() con ok=false),
+                // così nessuna generazione parte con le credenziali sbagliate.
+                // Il branch sta PRIMA del check catalog: un cust_* eliminato non è
+                // più nel catalog merged e senza questo check cadrebbe sul legacy.
+                if ( 0 === strpos( $provider_id, 'cust_' ) ) {
+                        $resolved = self::resolve( $provider_id );
+                        $resolved['legacy'] = false;
+                        return $resolved;
+                }
+
                 $catalog = self::catalog();
                 if ( ! isset( $catalog[ $provider_id ] ) ) {
                         // Provider non in catalogo (dati incompleti o vecchie installazioni):
@@ -361,6 +485,243 @@ class Nexus_Providers {
                 $resolved = self::resolve( $provider_id );
                 $resolved['legacy'] = false;
                 return $resolved;
+        }
+
+        /* =====================================================================
+         * PROVIDER PERSONALIZZATI ILLIMITATI (v1.1.10, F2b/WP11)
+         *
+         * Storage: option 'nexus_custom_providers' — mappa id => entry
+         * { id, label, base_url, api_key, auth:'bearer' }. Letta e scritta SOLO
+         * da questi metodi statici (custom_providers / save_custom_providers /
+         * upsert_custom_provider / delete_custom_provider): nessun altro modulo
+         * tocca l'option. Le chiavi API non transitano mai nei settings globali
+         * né nelle risposte REST (la UI riceve solo has_key).
+         * ===================================================================== */
+
+        /**
+         * Nome dell'option dei provider personalizzati (v1.1.10, F2b/WP11).
+         * Autoload NO (contiene chiavi API, non serve su ogni pagina).
+         *
+         * @var string
+         */
+        const CUSTOM_PROVIDERS_OPTION = 'nexus_custom_providers';
+
+        /**
+         * Legge l'option dei provider personalizzati (read-only, normalizzante).
+         *
+         * Ritorna SEMPRE una mappa id => entry { id, label, base_url, api_key,
+         * auth:'bearer' }: le entry corrotte o con id non canonico ('cust_' +
+         * 8 esadecimali) vengono scartate in lettura, così i consumatori
+         * (catalog, resolve, REST) non vedono mai dati malformati.
+         *
+         * @return array
+         */
+        public static function custom_providers() {
+                $raw = get_option( self::CUSTOM_PROVIDERS_OPTION, array() );
+                if ( ! is_array( $raw ) ) {
+                        return array();
+                }
+
+                $out = array();
+                foreach ( $raw as $raw_key => $entry ) {
+                        if ( ! is_array( $entry ) ) {
+                                continue;
+                        }
+                        $id = isset( $entry['id'] ) ? sanitize_key( (string) $entry['id'] ) : sanitize_key( (string) $raw_key );
+                        if ( '' === $id || ! preg_match( '/^cust_[0-9a-f]{8}$/', $id ) ) {
+                                continue; // Solo id canonici: entry corrotte fuori.
+                        }
+                        $out[ $id ] = array(
+                                'id'       => $id,
+                                'label'    => isset( $entry['label'] ) ? sanitize_text_field( (string) $entry['label'] ) : $id,
+                                'base_url' => isset( $entry['base_url'] ) ? esc_url_raw( (string) $entry['base_url'] ) : '',
+                                'api_key'  => isset( $entry['api_key'] ) ? str_replace( array( "\r", "\n" ), '', trim( (string) $entry['api_key'] ) ) : '',
+                                'auth'     => 'bearer',
+                        );
+                }
+
+                return $out;
+        }
+
+        /**
+         * Sanifica e scrive l'INTERA option dei provider personalizzati.
+         *
+         * Unico punto di scrittura dell'option (autoload NO): qualunque entry
+         * non canonica (id non 'cust_'+8hex, tipi sbagliati) viene scartata;
+         * i campi sono risanati con gli stessi sanitize della lettura, quindi
+         * l'operazione è idempotente e sicura anche su dati già puliti.
+         *
+         * @param array $list Mappa id => entry (o lista di entry).
+         * @return bool Esito di update_option.
+         */
+        public static function save_custom_providers( $list ) {
+                if ( ! is_array( $list ) ) {
+                        return false;
+                }
+
+                $clean = array();
+                foreach ( $list as $list_key => $entry ) {
+                        if ( ! is_array( $entry ) ) {
+                                continue;
+                        }
+                        $id = isset( $entry['id'] ) ? sanitize_key( (string) $entry['id'] ) : sanitize_key( (string) $list_key );
+                        if ( '' === $id || ! preg_match( '/^cust_[0-9a-f]{8}$/', $id ) ) {
+                                continue;
+                        }
+                        $clean[ $id ] = array(
+                                'id'       => $id,
+                                'label'    => isset( $entry['label'] ) ? sanitize_text_field( (string) $entry['label'] ) : '',
+                                'base_url' => isset( $entry['base_url'] ) ? esc_url_raw( (string) $entry['base_url'] ) : '',
+                                'api_key'  => isset( $entry['api_key'] ) ? str_replace( array( "\r", "\n" ), '', trim( (string) sanitize_textarea_field( (string) $entry['api_key'] ) ) ) : '',
+                                'auth'     => 'bearer',
+                        );
+                }
+
+                // Autoload NO: la option contiene chiavi API, non serve mai su
+                // ogni pagina (stessa filosofia dei segreti nei settings).
+                return update_option( self::CUSTOM_PROVIDERS_OPTION, $clean, false );
+        }
+
+        /**
+         * Crea o aggiorna un provider personalizzato.
+         *
+         * Sanitize:
+         * - label: sanitize_text_field, obbligatoria, max 100 caratteri;
+         * - base_url: trim + esc_url_raw, obbligatoria http/https, poi GUARDIA
+         *   SSRF url_guard_error (G4-style): host privato/localhost rifiutato a
+         *   meno che allow_private_providers sia attivo (presidi LM Studio/vLLM
+         *   in LAN; il messaggio della guardia spiega come abilitarla);
+         * - api_key: sanitize_textarea_field + trim (i newline vengono rimossi:
+         *   la chiave viaggia in UN header Authorization, il pool multi-riga dei
+         *   prov_key_* non esiste per i custom).
+         *
+         * SEMANTICA SEGRETI: su UPDATE una api_key vuota NON cancella la chiave
+         * salvata (come PUT /settings): la cancellazione esiste solo rimuovendo
+         * il provider. Su CREATE la chiave può essere vuota (il test e le chat
+         * falliranno con errore onesto finché non viene inserita).
+         *
+         * @param array $data Array( id? => 'cust_xxxxxxxx' (esistente),
+         *                       label, base_url, api_key? ).
+         * @return array Array( ok => bool, id => string, error => string ).
+         */
+        public static function upsert_custom_provider( $data ) {
+                $out = array(
+                        'ok'    => false,
+                        'id'    => '',
+                        'error' => '',
+                );
+
+                if ( ! is_array( $data ) ) {
+                        $out['error'] = 'Dati del provider personalizzato mancanti o non validi.';
+                        return $out;
+                }
+
+                $list = self::custom_providers();
+
+                // --- ID: assente = nuovo ('cust_' + 8 hex generato); presente =
+                // aggiornamento di un entry che DEVE esistere (niente creazione
+                // accidentale con id sbagliato).
+                $id = isset( $data['id'] ) ? sanitize_key( (string) $data['id'] ) : '';
+                if ( '' !== $id ) {
+                        if ( ! preg_match( '/^cust_[0-9a-f]{8}$/', $id ) ) {
+                                $out['error'] = 'Identificativo del provider personalizzato non valido: deve avere la forma “cust_” + 8 caratteri esadecimali.';
+                                return $out;
+                        }
+                        if ( ! isset( $list[ $id ] ) ) {
+                                $out['error'] = 'Provider personalizzato non trovato: forse è stato eliminato. Ricarica la pagina e riprova.';
+                                return $out;
+                        }
+                } else {
+                        for ( $i = 0; $i < 5; $i++ ) {
+                                $candidate = 'cust_' . bin2hex( random_bytes( 4 ) ); // 8 caratteri hex.
+                                if ( ! isset( $list[ $candidate ] ) ) {
+                                        $id = $candidate;
+                                        break;
+                                }
+                        }
+                        if ( '' === $id ) {
+                                $out['error'] = 'Generazione dell’identificativo non riuscita: riprova.';
+                                return $out;
+                        }
+                }
+                $out['id'] = $id;
+
+                // --- Etichetta: obbligatoria, testo semplice, max 100.
+                $label = isset( $data['label'] ) ? trim( sanitize_text_field( (string) $data['label'] ) ) : '';
+                if ( '' === $label ) {
+                        $out['error'] = 'Etichetta del provider mancante: dai un nome riconoscibile (es. “Together”).';
+                        return $out;
+                }
+                if ( mb_strlen( $label ) > 100 ) {
+                        $label = mb_substr( $label, 0, 100 );
+                }
+
+                // --- URL base: obbligatorio, http/https + guardia SSRF G4-style
+                // (host privato ammesso solo con allow_private_providers attivo).
+                $base_url = isset( $data['base_url'] ) ? esc_url_raw( trim( (string) $data['base_url'] ) ) : '';
+                if ( '' === $base_url ) {
+                        $out['error'] = 'URL base mancante o non valido: inserisci l’endpoint compatibile OpenAI (es. https://api.together.xyz/v1).';
+                        return $out;
+                }
+
+                $settings = class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ? Nexus_DB::get_settings() : array();
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+                $guard = self::url_guard_error( $base_url, $id, $settings );
+                if ( '' !== $guard ) {
+                        $out['error'] = $guard;
+                        return $out;
+                }
+
+                // --- Chiave API: sanitize_textarea_field + trim; i newline vengono
+                // rimossi (UN header Authorization, niente pool multi-riga). Vuota
+                // su update = NESSUN cambio (pattern segreti).
+                $api_key = isset( $data['api_key'] ) ? str_replace( array( "\r", "\n" ), '', trim( (string) sanitize_textarea_field( (string) $data['api_key'] ) ) ) : '';
+                if ( '' === $api_key && isset( $list[ $id ] ) && '' !== trim( (string) $list[ $id ]['api_key'] ) ) {
+                        $api_key = (string) $list[ $id ]['api_key'];
+                }
+
+                $list[ $id ] = array(
+                        'id'       => $id,
+                        'label'    => $label,
+                        'base_url' => $base_url,
+                        'api_key'  => $api_key,
+                        'auth'     => 'bearer',
+                );
+
+                if ( ! self::save_custom_providers( $list ) ) {
+                        $out['error'] = 'Salvataggio del provider personalizzato non riuscito: verifica i permessi del database.';
+                        return $out;
+                }
+
+                $out['ok'] = true;
+                return $out;
+        }
+
+        /**
+         * Rimuove un provider personalizzato (id 'cust_' + 8 hex).
+         *
+         * I riferimenti negli agenti (ai_provider = cust_*) NON vengono toccati:
+         * resolve_for_agent() restituirà errore onesto (ok=false) finché l'admin
+         * non riassegna un provider, mai il fallback legacy globale.
+         *
+         * @param string $id ID del provider ('cust_xxxxxxxx').
+         * @return bool true = rimosso, false = id non valido o entry assente.
+         */
+        public static function delete_custom_provider( $id ) {
+                $id = sanitize_key( (string) $id );
+                if ( '' === $id || ! preg_match( '/^cust_[0-9a-f]{8}$/', $id ) ) {
+                        return false;
+                }
+
+                $list = self::custom_providers();
+                if ( ! isset( $list[ $id ] ) ) {
+                        return false;
+                }
+
+                unset( $list[ $id ] );
+                return (bool) self::save_custom_providers( $list );
         }
 
         /* =====================================================================

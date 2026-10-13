@@ -29,7 +29,9 @@
  *   tools_search_key.
  * - Sezione "Provider AI per agente" (v1.1.10, WP10 — wizard provider): la
  *   lista arriva da Nexus_Providers::catalog() (fallback elenco statico se la
- *   classe non è caricata). CONTRATTO CON admin.js (non rinominare classi e
+ *   classe non è caricata); le voci CUSTOM (chiave 'cust_*') sono SALTATE
+ *   server-side nel loop built-in (la loro chiave vive nell'entry, non nei
+ *   settings) e sono gestite dalla sub-sezione dedicata qui sotto. CONTRATTO CON admin.js (non rinominare classi e
  *   data-attribute):
  *     input prov_key_{id}                    — chiave del provider (password);
  *     .nxa-prov-dot[data-nxa-dot="{id}"]     — badge stato (verde = chiave
@@ -58,6 +60,37 @@
  *                                              catalog (target _blank);
  *     checkbox allow_private_providers       — flag 0/1 serializzato da
  *                                              admin.js (endpoint privati/LAN).
+ * - Sub-sezione "Provider personalizzati" (v1.1.10, F2b/WP11): QUALSIASI
+ *   servizio compatibile OpenAI come provider con id 'cust_' + 8 caratteri
+ *   esadecimali, storage nell'option 'nexus_custom_providers' gestita SOLO
+ *   da Nexus_Providers. La lista è renderizzata da admin.js (GET
+ *   /ai/custom-providers: {id, label, base_url, auth, has_key} — api_key
+ *   MAI in chiaro). Il form add/edit NON ha attributi name: i campi NON
+ *   finiscono mai nel PUT /settings, l'unica via è la REST dedicata.
+ *   CONTRATTO CON admin.js (non rinominare id e classi):
+ *     #nxa-custprov-list                     — container delle righe
+ *                                              .nxa-custprov-row (render JS);
+ *                                              il bottone Test di ogni riga
+ *                                              riusa .nxa-prov-test[data-
+ *                                              provider="cust_…"] del wizard
+ *                                              WP10 (POST /ai/test/cust_{id});
+ *     #nxa-custprov-add / .nxa-custprov-edit — apre il form (#nxa-custprov-form,
+ *                                              hidden di default) per creare
+ *                                              o modificare;
+ *     .nxa-custprov-del / .nxa-custprov-del-yes / .nxa-custprov-del-no
+ *                                            — Elimina con CONFERMA INLINE
+ *                                              nella riga (non window.confirm):
+ *                                              DELETE /ai/custom-providers/{id};
+ *     #nxa-custprov-preset                   — preset 1-click che precompila
+ *                                              etichetta + URL base (Together,
+ *                                              Fireworks, Perplexity, Cerebras,
+ *                                              LM Studio, vLLM);
+ *     #nxa-custprov-id / #nxa-custprov-label / #nxa-custprov-base-url /
+ *     #nxa-custprov-api-key                  — campi del form (password: vuota
+ *                                              su modifica = nessun cambio);
+ *     #nxa-custprov-save / #nxa-custprov-cancel — POST /ai/custom-providers
+ *                                              (upsert) e chiusura form;
+ *     #nxa-custprov-status                   — esito operazioni (aria-live).
  * - Toggle checkbox value="1" (enable_factcheck, enable_translations,
  *   enable_autotranslate_posts, chief_enabled, chief_auto_publish,
  *   tools_enabled, tools_read_page): admin.js li serializza 0/1 (0 quando
@@ -238,10 +271,16 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                 <span class="nxa-acc-chevron" aria-hidden="true"></span>
                         </button>
                         <div class="nxa-acc-panel" id="nxa-acc-panel-providers" hidden>
-                                <?php /* Sezione v1.1.4 "Provider AI per agente", wizard v1.1.10 (WP10): una riga per provider del catalog Nexus_Providers (input chiave + badge stato + azioni wizard: OAuth OpenRouter, deep link key_page, test connessione, scollega). Contratto classi/data-attribute con admin.js: vedi docblock in testa alla vista. */ ?>
+                                <?php /* Sezione v1.1.4 "Provider AI per agente", wizard v1.1.10 (WP10): una riga per provider del catalog Nexus_Providers (input chiave + badge stato + azioni wizard: OAuth OpenRouter, deep link key_page, test connessione, scollega). Dalla v1.1.10 (F2b/WP11) le voci custom del catalog (chiave 'cust_*') sono SALTATE qui: la loro chiave vive nell'entry (non in prov_key_*) e le renderizza la sub-sezione "Provider personalizzati" più sotto. Contratto classi/data-attribute con admin.js: vedi docblock in testa alla vista. */ ?>
                                 <table class="form-table" role="presentation">
                                         <tbody>
                                                 <?php foreach ( $prov_catalog as $prov_loop_id => $prov_entry ) :
+                                                        // v1.1.10 (F2b/WP11): i provider PERSONALIZZATI (chiave 'cust_*')
+                                                        // non hanno la riga prov_key_* (la chiave vive nell'entry
+                                                        // dell'option nexus_custom_providers, non nei settings).
+                                                        if ( 0 === strpos( (string) $prov_loop_id, 'cust_' ) ) {
+                                                                continue;
+                                                        }
                                                         $prov_id      = is_array( $prov_entry ) && isset( $prov_entry['id'] ) && '' !== trim( (string) $prov_entry['id'] ) ? sanitize_key( (string) $prov_entry['id'] ) : sanitize_key( (string) $prov_loop_id );
                                                         $prov_label   = is_array( $prov_entry ) && isset( $prov_entry['label'] ) ? (string) $prov_entry['label'] : $prov_id;
                                                         $prov_keypage = is_array( $prov_entry ) && isset( $prov_entry['key_page'] ) ? (string) $prov_entry['key_page'] : '';
@@ -280,6 +319,50 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                                 </td>
                                                         </tr>
                                                 <?php endforeach; ?>
+                                                <?php /* Sub-sezione v1.1.10 (F2b/WP11) "Provider personalizzati": QUALSIASI servizio compatibile OpenAI. Lista renderizzata da admin.js (GET /ai/custom-providers; api_key MAI in chiaro, solo has_key). Il form NON ha attributi name (i campi NON finiscono nel PUT /settings: l'unica via è la REST dedicata). Contratto completo con admin.js nel docblock in testa alla vista. */ ?>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Provider personalizzati', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <div id="nxa-custprov-list" class="nxa-custprov-list"></div>
+                                                                <p class="description" id="nxa-custprov-hint"><?php esc_html_e( 'Nessun provider personalizzato: aggiungine uno per usare qualsiasi servizio compatibile OpenAI (Together, Fireworks, Perplexity, Cerebras, LM Studio, vLLM…).', 'nexus-news-ai' ); ?></p>
+                                                                <div id="nxa-custprov-form" class="nxa-custprov-form" hidden>
+                                                                        <p>
+                                                                                <label for="nxa-custprov-preset"><?php esc_html_e( 'Preset (precompila i campi)', 'nexus-news-ai' ); ?></label>
+                                                                                <select id="nxa-custprov-preset">
+                                                                                        <option value=""><?php esc_html_e( '— Nessun preset: compilazione manuale —', 'nexus-news-ai' ); ?></option>
+                                                                                        <option value="together"><?php echo esc_html( 'Together — https://api.together.xyz/v1' ); ?></option>
+                                                                                        <option value="fireworks"><?php echo esc_html( 'Fireworks — https://api.fireworks.ai/inference/v1' ); ?></option>
+                                                                                        <option value="perplexity"><?php echo esc_html( 'Perplexity — https://api.perplexity.ai' ); ?></option>
+                                                                                        <option value="cerebras"><?php echo esc_html( 'Cerebras — https://api.cerebras.ai/v1' ); ?></option>
+                                                                                        <option value="lmstudio"><?php echo esc_html( 'LM Studio — http://localhost:1234/v1' ); ?></option>
+                                                                                        <option value="vllm"><?php echo esc_html( 'vLLM — http://localhost:8000/v1' ); ?></option>
+                                                                                </select>
+                                                                        </p>
+                                                                        <p>
+                                                                                <label for="nxa-custprov-label"><?php esc_html_e( 'Etichetta', 'nexus-news-ai' ); ?></label>
+                                                                                <input type="text" id="nxa-custprov-label" class="regular-text" maxlength="100" placeholder="<?php echo esc_attr( 'es. Together' ); ?>" />
+                                                                        </p>
+                                                                        <p>
+                                                                                <label for="nxa-custprov-base-url"><?php esc_html_e( 'URL base (compatibile OpenAI)', 'nexus-news-ai' ); ?></label>
+                                                                                <input type="url" id="nxa-custprov-base-url" class="regular-text code" placeholder="https://api.together.xyz/v1" />
+                                                                        </p>
+                                                                        <p>
+                                                                                <label for="nxa-custprov-api-key"><?php esc_html_e( 'Chiave API', 'nexus-news-ai' ); ?></label>
+                                                                                <input type="password" id="nxa-custprov-api-key" class="regular-text code" autocomplete="new-password" placeholder="<?php echo esc_attr( 'su modifica, vuota = nessun cambio' ); ?>" />
+                                                                                <span class="description"><?php esc_html_e( 'Mai mostrata in chiaro. Su modifica, vuota = nessun cambio della chiave salvata.', 'nexus-news-ai' ); ?></span>
+                                                                        </p>
+                                                                        <p class="nxa-prov-actions">
+                                                                                <input type="hidden" id="nxa-custprov-id" value="" />
+                                                                                <button type="button" class="button button-primary" id="nxa-custprov-save"><?php esc_html_e( 'Salva provider', 'nexus-news-ai' ); ?></button>
+                                                                                <button type="button" class="button" id="nxa-custprov-cancel" hidden><?php esc_html_e( 'Annulla', 'nexus-news-ai' ); ?></button>
+                                                                        </p>
+                                                                        <p class="description nxa-prov-status" id="nxa-custprov-status" aria-live="polite"></p>
+                                                                </div>
+                                                                <p class="nxa-prov-actions">
+                                                                        <button type="button" class="button button-secondary" id="nxa-custprov-add">+ <?php esc_html_e( 'Aggiungi provider personalizzato', 'nexus-news-ai' ); ?></button>
+                                                                </p>
+                                                        </td>
+                                                </tr>
                                                 <tr>
                                                         <th scope="row"><?php esc_html_e( 'Endpoint su IP privati/localhost', 'nexus-news-ai' ); ?></th>
                                                         <td>
@@ -615,6 +698,81 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
   .nxa-prov-status--err {
     color: var(--nxa-err-text);
     font-weight: 600;
+  }
+  /* F2b (v1.1.10): provider personalizzati — lista righe + form add/edit.
+     SOLO classi .nxa-custprov-*; nessun colore fisso: tutto via token del
+     design system (tema chiaro di default, scuro via body.nexus-theme-dark). */
+  .nxa-custprov-list {
+    margin: 0 0 10px;
+  }
+  .nxa-custprov-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--nxa-border);
+  }
+  .nxa-custprov-row:first-child {
+    border-top: 0;
+  }
+  .nxa-custprov-label {
+    font-weight: 600;
+  }
+  .nxa-custprov-url {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--nxa-muted);
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+  }
+  .nxa-custprov-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--nxa-border);
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .nxa-custprov-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .nxa-custprov-row .nxa-prov-status {
+    flex-basis: 100%;
+    margin: 0;
+  }
+  .nxa-custprov-confirm {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    font-weight: 600;
+    color: var(--nxa-err-text);
+  }
+  .nxa-custprov-form {
+    border: 1px solid var(--nxa-border);
+    border-radius: 6px;
+    background: var(--nxa-surface-2);
+    padding: 4px 14px 10px;
+    margin: 0 0 10px;
+    max-width: 640px;
+  }
+  .nxa-custprov-form p {
+    margin: 10px 0 0;
+  }
+  .nxa-custprov-form label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
   }
 </style>
 <script>

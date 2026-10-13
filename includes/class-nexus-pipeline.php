@@ -77,6 +77,23 @@
  *   - json_mode sulle fasi che leggono oggetti JSON + time budget per articolo
  *     (filtro nexus_pipeline_phase_budget, default 90s, interruzione con grazia).
  *
+ * v1.1.10 — Full-content + output AI pulito (WP3+WP7):
+ *   - COLLECT (FASE 1b): se l'item reale matchato porta il full-content
+ *     estratto dalla pagina (campo additivo 'full_content' = 1 di
+ *     Nexus_Sources, fonti redazione full=1), il candidato nasce col TESTO
+ *     COMPLETO della fonte (clip 8000) invece del solo estratto RSS.
+ *   - EVALUATE: con contenuto full (>1500 caratteri) attività 'full_content'
+ *     (info) una sola volta per articolo (marcatore transient 24h).
+ *   - REWRITE (WP7): prima del salvataggio l'output AI passa da
+ *     Nexus_Utils::clean_ai_content — pulizia ESTETICA/STRUTTURALE (fence
+ *     markdown, tag escapati, markdown→HTML minimo): NON è un sanitizer di
+ *     sicurezza, la sanitizzazione resta a valle dove il contenuto viene
+ *     salvato/pubblicato (wp_kses_post in insert/update/publisher). I flag
+ *     Nexus_Utils::ai_content_quality_flags (calcolati sull'output RAW: per
+ *     contratto riportano ciò che è stato OSSERVATO, anche se già riparato)
+ *     diversi da ['ok'] loggano 'ai_output_quality' (info, una volta per
+ *     articolo).
+ *
  * CONTRATTO PUBBLICO:
  * Nexus_Pipeline::collect( $agent_id )                       → array{ok, collected, errors, article_ids, skipped?}
  * Nexus_Pipeline::evaluate( $article_id )                    → array{ok, score, error?}
@@ -242,10 +259,16 @@ class Nexus_Pipeline {
                         $source_url = (string) ( isset( $candidate['sourceUrl'] ) ? $candidate['sourceUrl'] : '' );
 
                         // Arricchisci con i fatti REALI dell'RSS (match per titolo o URL, come l'originale).
+                        // v1.1.10 (WP3): se l'item matchato ha il full-content estratto dalla
+                        // pagina (Nexus_Sources, fonte full=1), il candidato usa il testo
+                        // completo (clip 8000) al posto del solo estratto RSS.
                         if ( '' === $content && ! $evergreen ) {
                                 foreach ( $items as $item ) {
                                         if ( self::item_field( $item, 'title' ) === $title || self::item_field( $item, 'link' ) === $source_url ) {
                                                 $content = self::item_field( $item, 'description' );
+                                                if ( self::item_has_full_content( $item ) ) {
+                                                        $content = self::clip( $content, 8000 );
+                                                }
                                                 break;
                                         }
                                 }
@@ -380,6 +403,23 @@ class Nexus_Pipeline {
                         (string) $article->content,
                         $category
                 );
+
+                // v1.1.10 (WP3): il prompt di valutazione riceve già il content — nessun
+                // cambio di firma. Se il content è full (>1500 caratteri: estrazione
+                // della pagina riuscita, un estratto RSS resta tipicamente ~400) log
+                // info una sola volta per articolo (marcatore transient 24h).
+                $eval_content = (string) $article->content;
+                $content_len  = function_exists( 'mb_strlen' ) ? mb_strlen( $eval_content ) : strlen( $eval_content );
+                if ( $content_len > 1500 ) {
+                        self::log_once_article(
+                                'full_content',
+                                (int) $article_id,
+                                (int) $article->agent_id,
+                                'full_content',
+                                sprintf( 'Articolo #%d valutato col full-content della fonte (%d caratteri di testo nel prompt).', $article_id, $content_len ),
+                                'info'
+                        );
+                }
                 // v1.0.3: modello economico per lo screening (ai_model_cheap, fallback ai_model).
                 // v1.1.9: json_mode (contratto Task 4.8): parse_score legge il punteggio JSON,
                 // il fallback regex resta per le risposte numeriche.
@@ -492,7 +532,46 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                $content   = (string) $data['content'];
+                $content = (string) $data['content'];
+
+                /* ---- v1.1.10 (WP7): pulizia dell'output AI prima del salvataggio ----
+                 * Nexus_Utils::clean_ai_content è pulizia ESTETICA/STRUTTURALE (fence
+                 * markdown, tag escapati in entità, markdown→HTML minimo): NON è un
+                 * sanitizer di sicurezza. La sanitizzazione resta a VALLE, dove il
+                 * contenuto viene salvato/pubblicato (wp_kses_post in insert/update
+                 * del DB e nel publisher). Mai fatale: su input non vuoto ritorna
+                 * sempre una stringa; fallback difensivo sull'output raw.
+                 * I flag di qualità si calcolano sull'output RAW del modello (prima
+                 * della pulizia): riportano ciò che è stato OSSERVATO anche se la
+                 * pulizia lo ha già riparato (contratto Nexus_Utils v1.1.10).
+                 */
+                if ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'ai_content_quality_flags' ) ) {
+                        $raw_flags = Nexus_Utils::ai_content_quality_flags( $content );
+                        if ( ! is_array( $raw_flags ) ) {
+                                $raw_flags = array();
+                        }
+                        if ( array( 'ok' ) !== $raw_flags ) {
+                                self::log_once_article(
+                                        'ai_output_quality',
+                                        (int) $article_id,
+                                        (int) $article->agent_id,
+                                        'ai_output_quality',
+                                        sprintf(
+                                                'Output AI articolo #%d: flag %s (contenuto ripulito con Nexus_Utils::clean_ai_content prima del salvataggio).',
+                                                $article_id,
+                                                implode( ', ', $raw_flags )
+                                        ),
+                                        'info'
+                                );
+                        }
+                }
+                if ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'clean_ai_content' ) ) {
+                        $cleaned = Nexus_Utils::clean_ai_content( $content );
+                        if ( is_string( $cleaned ) && '' !== trim( $cleaned ) ) {
+                                $content = $cleaned;
+                        }
+                }
+
                 $read_time = max( 1, (int) ceil( self::word_count( $content ) / 200 ) );
 
                 Nexus_DB::update_article(
@@ -2028,6 +2107,40 @@ class Nexus_Pipeline {
                         return isset( $item->$key ) ? (string) $item->$key : '';
                 }
                 return '';
+        }
+
+        /**
+         * L'item porta il full-content estratto dalla pagina? (campo additivo
+         * 'full_content' = 1 scritto da Nexus_Sources per le fonti full=1,
+         * v1.1.10 WP3: description = testo plain della pagina, clip 6000).
+         *
+         * @param mixed $item Item fonte.
+         * @return bool
+         */
+        private static function item_has_full_content( $item ) {
+                return 1 === (int) self::item_field( $item, 'full_content' );
+        }
+
+        /**
+         * Log di attività una sola volta per articolo (marcatore transient 24h,
+         * auto-scadente): usato dai diagnostici v1.1.10 (full_content,
+         * ai_output_quality) per non inquinare il log ad ogni re-run della fase.
+         *
+         * @param string $key        Chiave log (marker diversi sullo stesso articolo).
+         * @param int    $article_id ID articolo.
+         * @param int    $agent_id   ID agente (0 = sistema).
+         * @param string $action     Azione.
+         * @param string $detail     Dettaglio.
+         * @param string $status     Stato (success|error|warning|info).
+         * @return void
+         */
+        private static function log_once_article( $key, $article_id, $agent_id, $action, $detail, $status ) {
+                $marker = 'nexus_log1_' . md5( (string) $key . '|' . (int) $article_id );
+                if ( get_transient( $marker ) ) {
+                        return;
+                }
+                set_transient( $marker, 1, DAY_IN_SECONDS );
+                self::log_phase( (int) $agent_id, $action, $detail, $status );
         }
 
         /**

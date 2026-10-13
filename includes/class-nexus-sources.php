@@ -26,6 +26,21 @@
  *   'nexus_src_fail_{md5}' (1h sliding); al 3° fallimento → transient
  *   'nexus_src_cool_{md5}' 1h → skip fetch; il successo azzera.
  *
+ * FULL-CONTENT (v1.1.10, WP3): le fonti rss/site con full=1 (chiave additiva
+ * gia' gestita dalla sanitize delle redazioni) arricchiscono gli item con il
+ * testo completo della pagina, applicato DOPO early-exit/cooldown (fonte
+ * saltata = nessun fetch extra): fetch della pagina item['link'] (timeout 12,
+ * SSRF guard come l'adapter web), guard anti-binario/SVG, estrazione
+ * Nexus_Readability + validazione titolo→contenuto (min 300 caratteri). Se
+ * tutto passa: item['description'] = testo PLAIN estratto (clip 6000, meglio
+ * dell'HTML per i prompt) e item['full_content'] = 1 (campo additivo);
+ * altrimenti l'estratto RSS resta intatto (log 'full_content_fallback' una
+ * sola volta). Cache per link: transient 'nexus_full_{md5(link)}' 6h con il
+ * testo estratto (evita il doppio fetch tra collect e fact-check); i cache
+ * hit NON consumano il budget. Limite economia: max 4 fetch reali full-content
+ * per run di fetch_for_agent (FULL_CONTENT_BUDGET), poi skip con log una
+ * sola volta. Mai fatale: ogni item degradato torna all'estratto RSS.
+ *
  * Sicurezza: le fonti 'telegram' costruiscono l'URL con host whitelist t.me e
  * canale validato [A-Za-z0-9_]; 'reddit' e 'web' validano con
  * Nexus_Tools::assert_safe_url (DNS + IP privati) o fallback http/https +
@@ -71,6 +86,37 @@ class Nexus_Sources {
         const UA = 'Mozilla/5.0 (compatible; NexusNewsAI/1.1.10)';
 
         /**
+         * TTL della cache full-content per link (6 ore, v1.1.10 WP3).
+         */
+        const FULL_CONTENT_TTL = 21600;
+
+        /**
+         * Budget: max fetch reali full-content per run di fetch_for_agent
+         * (cache hit esenti: la protezione e' sull'HTTP, non sulla lettura).
+         */
+        const FULL_CONTENT_BUDGET = 4;
+
+        /**
+         * Cap del testo estratto messo in item['description'] (testo plain,
+         * migliore dell'HTML per i prompt collect/rewrite).
+         */
+        const FULL_CONTENT_CLIP = 6000;
+
+        /**
+         * Cap del testo conservato nella cache per link (allineato al clip
+         * 20k del fact-check v1.1.9: chiusero' potra' riusarla senza refetch).
+         */
+        const FULL_CONTENT_CACHE_CLIP = 20000;
+
+        /**
+         * Budget full-content residuo per il run corrente (reset iniziale in
+         * fetch_for_agent, decrementato a ogni fetch reale).
+         *
+         * @var int
+         */
+        private static $full_budget_left = 0;
+
+        /**
          * Raccoglie gli item di TUTTE le fonti della redazione dell'agente.
          *
          * Flusso: fonti da Nexus_Redazioni::sources_for_term(term_id dell'agente)
@@ -85,6 +131,10 @@ class Nexus_Sources {
          */
         public static function fetch_for_agent( $agent, $max_items = 10 ) {
                 $max_items = max( 1, (int) $max_items );
+
+                // v1.1.10 (WP3): budget full-content di QUESTO run (max 4 fetch reali
+                // su tutte le fonti dell'agente; reset a ogni chiamata).
+                self::$full_budget_left = self::FULL_CONTENT_BUDGET;
 
                 $term_id = self::agent_term_id( $agent );
 
@@ -245,7 +295,8 @@ class Nexus_Sources {
                 }
 
                 self::mark_success( $key );
-                return $items;
+                // v1.1.10 (WP3): fonte rss full=1 → arricchimento col testo della pagina.
+                return self::maybe_full_content( $source, $items );
         }
 
         /**
@@ -297,7 +348,8 @@ class Nexus_Sources {
                 }
 
                 self::mark_success( $key );
-                return $items;
+                // v1.1.10 (WP3): fonte site full=1 → arricchimento col testo della pagina.
+                return self::maybe_full_content( $source, $items );
         }
 
         /**
@@ -1115,6 +1167,175 @@ class Nexus_Sources {
                                 'source_type' => 'web',
                         ),
                 );
+        }
+
+        /* ---------------------------------------------------------------------
+         * FULL-CONTENT (v1.1.10, WP3) — solo per le fonti rss/site con full=1
+         * ------------------------------------------------------------------- */
+
+        /**
+         * Arricchisce gli item di una fonte full=1 con il testo completo della
+         * pagina, quando la classe Nexus_Readability è disponibile.
+         *
+         * Per ogni item con link, finché c'è budget: cache transient
+         * 'nexus_full_{md5(link)}' 6h (hit → nessun fetch e nessun consumo di
+         * budget), altrimenti SSRF guard (stesso pattern dell'adapter web),
+         * fetch wp_remote_get (timeout 12, redirect 2, risposta cap 500KB),
+         * guard anti-binario/SVG, estrazione Nexus_Readability::extract() e
+         * validazione titolo→contenuto (min 300 caratteri). Se tutto passa:
+         * item['description'] = testo PLAIN estratto (clip 6000) e
+         * item['full_content'] = 1 (campo additivo, v1.1.10); altrimenti la
+         * description RSS resta intatta (log 'full_content_fallback' una sola
+         * volta ogni 12h). Ogni fetch REALE consuma 1 unità del budget per run
+         * (anche se fallisce: la protezione è sull'HTTP); finito il budget si
+         * salta con log una sola volta. Il chiamante (adapter rss/site) NON
+         * invoca questo metodo per fonti in early-exit/cooldown: lì ritorna
+         * array() prima di arrivare qui.
+         *
+         * Cache: viene conservato il testo estratto clip a 20000 caratteri
+         * (stesso clip del fact-check v1.1.9: un'eventuale integrazione
+         * futura può riusarla senza rifare il fetch della pagina).
+         *
+         * @param array $source Fonte {type,url,full?}.
+         * @param array $items  Item della fonte (shape {title,description,link,source}).
+         * @return array Item (array stesso, description eventualmente arricchita).
+         */
+        private static function maybe_full_content( $source, $items ) {
+                if ( empty( $source['full'] ) || empty( $items ) || ! is_array( $items ) ) {
+                        return $items;
+                }
+
+                if ( ! class_exists( 'Nexus_Readability' )
+                        || ! method_exists( 'Nexus_Readability', 'extract' )
+                        || ! method_exists( 'Nexus_Readability', 'validate' ) ) {
+                        self::log_once(
+                                'full_no_readability',
+                                'Full-content: Nexus_Readability non disponibile: le fonti full=1 sono servite con l\'estratto RSS.'
+                        );
+                        return $items;
+                }
+
+                foreach ( $items as $idx => $item ) {
+                        if ( ! is_array( $item ) ) {
+                                continue;
+                        }
+                        $link = esc_url_raw( trim( (string) ( isset( $item['link'] ) ? $item['link'] : '' ) ) );
+                        if ( '' === $link ) {
+                                continue;
+                        }
+
+                        // Cache 6h per link: hit → descrizione full senza fetch (budget intatto).
+                        $cache_key = 'nexus_full_' . md5( $link );
+                        $cached    = get_transient( $cache_key );
+                        if ( is_string( $cached ) && '' !== trim( $cached ) ) {
+                                $items[ $idx ]['description'] = self::clip( $cached, self::FULL_CONTENT_CLIP );
+                                $items[ $idx ]['full_content'] = 1;
+                                continue;
+                        }
+
+                        // Economia: budget del run esaurito → skip (log una sola volta).
+                        if ( self::$full_budget_left <= 0 ) {
+                                self::log_once(
+                                        'full_budget',
+                                        sprintf( 'Full-content: budget di %d fetch per run esaurito: item restanti serviti con l\'estratto RSS.', self::FULL_CONTENT_BUDGET )
+                                );
+                                break;
+                        }
+
+                        // SSRF: stesso pattern dell'adapter web (assert_safe_url o fallback validatore).
+                        if ( ! self::url_is_safe( $link ) ) {
+                                self::log_once(
+                                        'full_content_fallback',
+                                        sprintf( 'Full-content: URL item non consentito (%s): estratto RSS mantenuto.', self::clip( $link, 100 ) )
+                                );
+                                continue;
+                        }
+
+                        // Ogni fetch reale consuma il budget, anche se poi fallisce.
+                        self::$full_budget_left--;
+
+                        $res = wp_remote_get(
+                                $link,
+                                array(
+                                        'timeout'             => self::HTTP_TIMEOUT,
+                                        'redirection'         => 2,
+                                        'limit_response_size' => 524288, // 500 KB: più che sufficiente per un articolo.
+                                        'user-agent'          => self::UA,
+                                        'headers'             => array( 'Accept-Language' => 'it-IT,it;q=0.9,en;q=0.8' ),
+                                )
+                        );
+                        if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+                                self::log_once(
+                                        'full_content_fallback',
+                                        sprintf( 'Full-content: pagina non raggiungibile (%s): estratto RSS mantenuto.', self::clip( $link, 100 ) )
+                                );
+                                continue;
+                        }
+
+                        $body = (string) wp_remote_retrieve_body( $res );
+                        if ( '' === trim( $body )
+                                || ( method_exists( 'Nexus_Readability', 'is_svg_or_binary_guard' )
+                                        && ! Nexus_Readability::is_svg_or_binary_guard( $body ) ) ) {
+                                self::log_once(
+                                        'full_content_fallback',
+                                        sprintf( 'Full-content: risposta non è HTML testuale (%s): estratto RSS mantenuto.', self::clip( $link, 100 ) )
+                                );
+                                continue;
+                        }
+
+                        $extract = Nexus_Readability::extract( $body, $link );
+                        $ok      = is_array( $extract ) && ! empty( $extract['ok'] )
+                                && '' !== trim( (string) ( isset( $extract['text'] ) ? $extract['text'] : '' ) );
+
+                        if ( $ok ) {
+                                // Validazione titolo→contenuto sul HTML estratto (la classe
+                                // fa da sé il plain): min 300 caratteri di testo.
+                                $valid = Nexus_Readability::validate(
+                                        (string) ( isset( $item['title'] ) ? $item['title'] : '' ),
+                                        (string) ( isset( $extract['content'] ) ? $extract['content'] : '' ),
+                                        300
+                                );
+                                $ok = is_array( $valid ) && ! empty( $valid['ok'] );
+                        }
+
+                        if ( ! $ok ) {
+                                // Description RSS intatta: la pagina non è utilizzabile
+                                // (paywall, pagina vuota, contenuto non pertinente...).
+                                self::log_once(
+                                        'full_content_fallback',
+                                        sprintf( 'Full-content: estrazione non valida da %s: estratto RSS mantenuto.', self::clip( $link, 100 ) )
+                                );
+                                continue;
+                        }
+
+                        $text = self::clip( trim( (string) $extract['text'] ), self::FULL_CONTENT_CACHE_CLIP );
+                        set_transient( $cache_key, $text, self::FULL_CONTENT_TTL );
+
+                        $items[ $idx ]['description']  = self::clip( $text, self::FULL_CONTENT_CLIP );
+                        $items[ $idx ]['full_content'] = 1;
+                }
+
+                return $items;
+        }
+
+        /**
+         * SSRF guard condivisa per i fetch di pagine esterne (stesso pattern
+         * dell'adapter 'web'): preferisce Nexus_Tools::assert_safe_url (DNS +
+         * blocco IP privati/riservati), altrimenti fallback http/https +
+         * wp_http_validate_url.
+         *
+         * @param string $url URL da verificare.
+         * @return bool True se il fetch è consentito.
+         */
+        private static function url_is_safe( $url ) {
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'assert_safe_url' ) ) {
+                        return ! is_wp_error( Nexus_Tools::assert_safe_url( $url ) );
+                }
+
+                $scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+                return in_array( $scheme, array( 'http', 'https' ), true )
+                        && function_exists( 'wp_http_validate_url' )
+                        && (bool) wp_http_validate_url( $url );
         }
 
         /* ---------------------------------------------------------------------
