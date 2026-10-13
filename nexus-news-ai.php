@@ -56,6 +56,16 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cli.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-i18n.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-public-api.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-multisite.php';
+// v1.1.12 — pacchetti feedback/SEO (S1-S7): file nuovi, init self-registrato
+// via action 'nexus_modules_init' (nessun'altra modifica al bootstrap richiesta).
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-google-auth.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-metrics.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-learn.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-dedup.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-interlink.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-news-sitemap.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-evergreen.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-notify.php';
 require_once NEXUS_PLUGIN_DIR . 'public/class-nexus-shortcodes.php';
 
 register_activation_hook( __FILE__, array( 'Nexus_DB', 'install' ) );
@@ -119,6 +129,10 @@ function nexus_bootstrap() {
         Nexus_I18n::init();
         Nexus_Public_API::init();
         Nexus_Multisite::init();
+
+        // v1.1.12: i pacchetti S1-S7 si auto-inizializzano qui (ogni classe
+        // fa add_action('nexus_modules_init', ...) nel proprio file).
+        do_action( 'nexus_modules_init' );
 
         if ( is_admin() ) {
                 require_once NEXUS_PLUGIN_DIR . 'admin/class-nexus-admin.php';
