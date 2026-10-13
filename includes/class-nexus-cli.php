@@ -1,6 +1,6 @@
 <?php
 /**
- * Nexus CLI — comandi WP-CLI per la redazione AI (v1.0.4 "Scala & Pro").
+ * Nexus CLI — comandi WP-CLI per la redazione AI (v1.0.4 "Scala & Pro"; v1.1.9: coda resiliente).
  *
  * Contratto pubblico (CONTRATTO v1.0.4, sezione §2 T-02):
  *
@@ -16,7 +16,10 @@
  *   agents                                            — tabella agenti (con conteggio articoli)
  *   articles  [--status=...] [--agent=<id>] [--limit=20] — tabella articoli
  *   stats                                             — statistiche chiave → valore
- *   queue     stats|process|retry <id>|cancel <id>|cleanup [--days=7] — coda lavori
+ *   queue     stats|process|work|retry <id>|cancel <id>|cleanup [--days=7]|dead [--reset=<id>] — coda lavori
+ *             (v1.1.9: work = worker per supervisord/systemd, dead = lista dead letter con --reset)
+ *   cron      status                                  — eventi WP-Cron di Nexus schedulati (v1.1.9)
+ *   multilang doctor [--fix]                          — diagnostica multilingua (v1.1.9, richiede Nexus_Multilang::doctor)
  *   settings  get [chiave] | set <chiave> <valore>    — impostazioni del plugin
  *
  * Note:
@@ -284,6 +287,7 @@ class Nexus_CLI {
 
                 if ( ! empty( $result['already'] ) ) {
                         WP_CLI::success( sprintf( 'Articolo #%d già pubblicato in precedenza. %s', (int) $article->id, $message ) );
+                        return;
                 }
 
                 WP_CLI::success( sprintf( 'Articolo #%d pubblicato. %s', (int) $article->id, $message ) );
@@ -385,6 +389,7 @@ class Nexus_CLI {
 
                 if ( ! empty( $result['already'] ) ) {
                         WP_CLI::success( sprintf( 'Articolo #%d già tradotto in «%s»: traduzione esistente confermata.', (int) $article->id, $lang ) );
+                        return;
                 }
 
                 WP_CLI::success( sprintf( 'Articolo #%d tradotto in «%s».', (int) $article->id, $lang ) );
@@ -522,17 +527,20 @@ class Nexus_CLI {
         /* ========================= CODA LAVORI ========================= */
 
         /**
-         * Gestione della coda lavori (modulo Nexus_Queue, v1.0.4).
+         * Gestione della coda lavori (modulo Nexus_Queue, v1.0.4; v1.1.9 dead letter + worker).
          *
          * Sottocomandi:
-         *   stats              — tabella lavori per stato.
-         *   process            — esegue un batch di lavori in coda.
-         *   retry <id>         — rimette in coda un lavoro fallito/annullato/completato.
-         *   cancel <id>        — annulla un lavoro in attesa.
-         *   cleanup [--days=7] — elimina i lavori chiusi più vecchi di N giorni.
+         *   stats               — tabella lavori per stato (include 'dead').
+         *   process [--limit=10] — esegue un batch di lavori in coda.
+         *   work [--iterations=N] [--sleep=S] — worker continuo per supervisord/systemd
+         *                          (iterations 0 = infinito, sleep default 5s).
+         *   retry <id>          — rimette in coda un lavoro fallito/annullato/completato.
+         *   cancel <id>         — annulla un lavoro in attesa.
+         *   cleanup [--days=7]  — elimina i lavori chiusi più vecchi di N giorni.
+         *   dead [--reset=<id>] [--limit=50] — lista dead letter (o ripristina UN job).
          *
          * @subcommand queue
-         * @synopsis <azione> [<id>] [--days=<n>]
+         * @synopsis <azione> [<id>] [--days=<n>] [--limit=<n>] [--iterations=<n>] [--sleep=<s>] [--reset=<id>]
          *
          * @param array $args       Argomenti posizionali.
          * @param array $assoc_args Argomenti associativi (--chiave=valore).
@@ -543,7 +551,7 @@ class Nexus_CLI {
                 $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : '';
 
                 if ( '' === $action ) {
-                        WP_CLI::error( 'Uso: wp nexus queue stats|process|retry <id>|cancel <id>|cleanup [--days=7].' );
+                        WP_CLI::error( 'Uso: wp nexus queue stats|process|work|retry <id>|cancel <id>|cleanup [--days=7]|dead [--reset=<id>].' );
                 }
 
                 switch ( $action ) {
@@ -554,11 +562,25 @@ class Nexus_CLI {
                                         'complete'  => 'Completati',
                                         'failed'    => 'Falliti',
                                         'cancelled' => 'Annullati',
+                                        'dead'      => 'Dead letter',
                                         'total'     => 'Totale',
                                 );
 
+                                $stats = (array) Nexus_DB::job_stats();
+
+                                // v1.1.9 — dead letter: Nexus_DB::job_stats() non conosce
+                                // (ancora) lo status 'dead': lo conteggiamo qui con
+                                // count_jobs così la CLI resta onesta senza toccare db.php.
+                                if ( ! isset( $stats['dead'] ) && method_exists( 'Nexus_DB', 'count_jobs' ) ) {
+                                        try {
+                                                $stats['dead'] = (int) Nexus_DB::count_jobs( array( 'status' => 'dead' ) );
+                                        } catch ( Throwable $e ) {
+                                                $stats['dead'] = 0;
+                                        }
+                                }
+
                                 $rows = array();
-                                foreach ( (array) Nexus_DB::job_stats() as $key => $value ) {
+                                foreach ( $stats as $key => $value ) {
                                         $rows[] = array(
                                                 'Stato'  => isset( $labels[ $key ] ) ? $labels[ $key ] : (string) $key,
                                                 'Lavori' => (int) $value,
@@ -573,17 +595,101 @@ class Nexus_CLI {
                                         WP_CLI::error( 'Coda non disponibile: il modulo Nexus_Queue non è caricato.' );
                                 }
 
+                                // v1.1.9 — i job di pipeline sono lunghi (chiamate AI):
+                                // alza il limite di memoria come fa WP admin e togli il
+                                // time-limit PHP (il runner ha comunque un budget interno
+                                // 'queue_time_budget' che spezza il lavoro tra i job).
+                                if ( function_exists( 'wp_raise_memory_limit' ) ) {
+                                        wp_raise_memory_limit( 'admin' );
+                                }
+
+                                if ( function_exists( 'set_time_limit' ) ) {
+                                        @set_time_limit( 0 );
+                                }
+
+                                $limit = isset( $assoc_args['limit'] ) ? absint( $assoc_args['limit'] ) : 10;
+                                $limit = max( 1, $limit );
+
                                 try {
-                                        $batch = Nexus_Queue::run_batch();
+                                        $batch = Nexus_Queue::run_batch( $limit );
                                 } catch ( Throwable $e ) {
                                         WP_CLI::error( 'Elaborazione coda fallita: ' . $e->getMessage() );
                                 }
 
                                 $processed = isset( $batch['processed'] ) ? (int) $batch['processed'] : 0;
                                 $failed    = isset( $batch['failed'] ) ? (int) $batch['failed'] : 0;
+                                $requeued  = isset( $batch['requeued'] ) ? (int) $batch['requeued'] : 0;
 
-                                WP_CLI::success( sprintf( 'Batch elaborato: %d lavori processati, %d falliti.', $processed, $failed ) );
+                                $message = sprintf( 'Batch elaborato: %d lavori processati, %d falliti.', $processed, $failed );
+
+                                if ( $requeued > 0 ) {
+                                        // Onestà: job claimati ma non avviati per budget
+                                        // tempo/memoria — tornano disponibili subito.
+                                        $message .= sprintf( ' %d lavori rimessi in coda (budget tempo/memoria esaurito).', $requeued );
+                                }
+
+                                WP_CLI::success( $message );
                                 break;
+
+                        case 'work':
+                                if ( ! self::queue_ready( 'run_batch' ) ) {
+                                        WP_CLI::error( 'Coda non disponibile: il modulo Nexus_Queue non è caricato.' );
+                                }
+
+                                $iterations = isset( $assoc_args['iterations'] ) ? absint( $assoc_args['iterations'] ) : 0;
+                                $sleep      = isset( $assoc_args['sleep'] ) ? absint( $assoc_args['sleep'] ) : 5;
+
+                                if ( function_exists( 'wp_raise_memory_limit' ) ) {
+                                        wp_raise_memory_limit( 'admin' );
+                                }
+
+                                if ( function_exists( 'set_time_limit' ) ) {
+                                        @set_time_limit( 0 );
+                                }
+
+                                // Ctrl-C (SIGINT) e SIGTERM → uscita pulita con 0, così
+                                // supervisord/systemd vedono uno stop volontario e non
+                                // un crash. Senza estensione pcntl il segnale termina il
+                                // processo con il codice di default del sistema: nessun
+                                // danno comunque, il runner riprende i job claimati.
+                                if ( function_exists( 'pcntl_async_signals' ) && function_exists( 'pcntl_signal' ) && defined( 'SIGINT' ) && defined( 'SIGTERM' ) ) {
+                                        pcntl_async_signals( true );
+                                        pcntl_signal( SIGINT, array( __CLASS__, 'handle_work_signal' ) );
+                                        pcntl_signal( SIGTERM, array( __CLASS__, 'handle_work_signal' ) );
+                                }
+
+                                WP_CLI::log( sprintf( 'Worker coda avviato (iterazioni: %s, pausa: %d secondi). Ctrl-C per uscire.', $iterations > 0 ? (string) $iterations : 'infinito', $sleep ) );
+
+                                $done = 0;
+
+                                while ( 0 === $iterations || $done < $iterations ) {
+                                        $done++;
+
+                                        try {
+                                                $batch = Nexus_Queue::run_batch( 0 );
+                                        } catch ( Throwable $e ) {
+                                                // Un batch fallito NON deve uccidere il worker:
+                                                // loghiamo e ripartiamo alla prossima iterazione.
+                                                WP_CLI::log( '[worker] Batch fallito: ' . $e->getMessage() );
+                                                $batch = array();
+                                        }
+
+                                        $processed = isset( $batch['processed'] ) ? (int) $batch['processed'] : 0;
+                                        $failed    = isset( $batch['failed'] ) ? (int) $batch['failed'] : 0;
+                                        $requeued  = isset( $batch['requeued'] ) ? (int) $batch['requeued'] : 0;
+
+                                        WP_CLI::log( sprintf( '[worker] iterazione %d: %d eseguiti, %d falliti, %d rimessi in coda.', $done, $processed, $failed, $requeued ) );
+
+                                        // Pausa SOLO quando la coda è vuota (drain rapido se
+                                        // c'è lavoro). Minimo 1 secondo anche con --sleep=0:
+                                        // evita l'hot-loop sul DB quando non c'è nulla da fare.
+                                        if ( 0 === $processed + $failed ) {
+                                                sleep( max( 1, $sleep ) );
+                                        }
+                                }
+
+                                WP_CLI::success( sprintf( 'Worker terminato dopo %d iterazioni.', $done ) );
+                                return;
 
                         case 'retry':
                                 $job_id = self::require_job_from_args( $args, 'Uso: wp nexus queue retry <id>.' );
@@ -599,7 +705,11 @@ class Nexus_CLI {
                                 }
 
                                 if ( $retried ) {
-                                        WP_CLI::success( sprintf( 'Lavoro #%d rimesso in coda (stato: pending).', $job_id ) );
+                                        // v1.1.9 — return OBBLIGATORIO dopo il success: senza,
+                                        // l'esecuzione cade nel WP_CLI::error successivo e il
+                                        // comando esce 1 anche in caso di successo.
+                                        WP_CLI::success( sprintf( 'Lavoro #%d rimesso in coda (stato: pending, ciclo di tentativi rinnovato).', $job_id ) );
+                                        return;
                                 }
 
                                 WP_CLI::error( sprintf( 'Impossibile rimettere in coda il lavoro #%d.', $job_id ) );
@@ -619,7 +729,9 @@ class Nexus_CLI {
                                 }
 
                                 if ( $cancelled ) {
+                                        // v1.1.9 — return dopo il success (exit code corretti).
                                         WP_CLI::success( sprintf( 'Lavoro #%d annullato (stato: cancelled).', $job_id ) );
+                                        return;
                                 }
 
                                 WP_CLI::error( sprintf( 'Impossibile annullare il lavoro #%d (solo i lavori in attesa possono essere annullati).', $job_id ) );
@@ -634,9 +746,214 @@ class Nexus_CLI {
                                 WP_CLI::success( sprintf( 'Eliminati %d lavori chiusi più vecchi di %d giorni.', $deleted, $days ) );
                                 break;
 
+                        case 'dead':
+                                // v1.1.9 — dead letter: i job 'dead' sono terminali (fatal/
+                                // timeout ripetuti). Lista per analisi; --reset è l'unica
+                                // via di ripristino, riservata a un intervento manuale.
+                                if ( isset( $assoc_args['reset'] ) ) {
+                                        $job_id = absint( $assoc_args['reset'] );
+
+                                        if ( $job_id < 1 ) {
+                                                WP_CLI::error( 'Valore --reset non valido: specificare l\'ID numerico del lavoro in dead letter.' );
+                                        }
+
+                                        if ( ! self::queue_ready( 'reset_dead' ) ) {
+                                                WP_CLI::error( 'Coda non disponibile: il modulo Nexus_Queue non è caricato.' );
+                                        }
+
+                                        try {
+                                                $reset = Nexus_Queue::reset_dead( $job_id );
+                                        } catch ( Throwable $e ) {
+                                                WP_CLI::error( sprintf( 'Reset lavoro #%d fallito: %s', $job_id, $e->getMessage() ) );
+                                        }
+
+                                        if ( $reset ) {
+                                                WP_CLI::success( sprintf( 'Lavoro #%d rimesso in coda (stato: pending, attempts azzerato).', $job_id ) );
+                                                return;
+                                        }
+
+                                        WP_CLI::error( sprintf( 'Impossibile ripristinare il lavoro #%d: non è in stato «dead».', $job_id ) );
+                                        return;
+                                }
+
+                                if ( ! method_exists( 'Nexus_DB', 'jobs' ) ) {
+                                        WP_CLI::error( 'Coda non disponibile: il modulo Nexus_DB non è caricato.' );
+                                }
+
+                                $dead_limit = isset( $assoc_args['limit'] ) ? absint( $assoc_args['limit'] ) : 50;
+                                $dead_limit = max( 1, min( 500, $dead_limit ) );
+
+                                try {
+                                        $dead_items = Nexus_DB::jobs( array( 'status' => 'dead', 'limit' => $dead_limit ) );
+                                } catch ( Throwable $e ) {
+                                        WP_CLI::error( 'Lettura dead letter fallita: ' . $e->getMessage() );
+                                }
+
+                                if ( empty( $dead_items ) ) {
+                                        WP_CLI::success( 'Nessun lavoro in dead letter: coda pulita.' );
+                                        return;
+                                }
+
+                                $dead_rows = array();
+                                foreach ( (array) $dead_items as $dead_job ) {
+                                        $dead_rows[] = array(
+                                                'ID'         => (int) $dead_job->id,
+                                                'Hook'       => (string) $dead_job->hook,
+                                                'Tentativi'  => (int) $dead_job->attempts,
+                                                'Ultimo errore' => self::clip( (string) $dead_job->last_error, 60 ),
+                                                'Creato'     => (string) $dead_job->created_at,
+                                        );
+                                }
+
+                                WP_CLI::log( sprintf( 'Dead letter (%d mostrati): ripristino con «wp nexus queue dead --reset=<id>».', count( $dead_rows ) ) );
+                                \WP_CLI\Utils\format_items( 'table', $dead_rows, array( 'ID', 'Hook', 'Tentativi', 'Ultimo errore', 'Creato' ) );
+                                break;
+
                         default:
-                                WP_CLI::error( sprintf( 'Azione coda non riconosciuta: «%s». Azioni ammesse: stats, process, retry, cancel, cleanup.', $action ) );
+                                WP_CLI::error( sprintf( 'Azione coda non riconosciuta: «%s». Azioni ammesse: stats, process, work, retry, cancel, cleanup, dead.', $action ) );
                 }
+        }
+
+        /* ========================= WP-CRON ========================= */
+
+        /**
+         * Stato degli eventi WP-Cron schedulati da Nexus (v1.1.9).
+         *
+         * Sottocomandi:
+         *   status — tabella degli eventi 'nexus_*' (hook, prossima esecuzione,
+         *            ricorrenza) letti dall'array cron del sito corrente.
+         *
+         * Usa _get_cron_array() invece di wp_get_scheduled_event() PERCHÉ: mostra
+         * TUTTI gli hook nexus_* in una passata (tick, runner, autotranslate per
+         * articolo e futuri) senza conoscere a priori gli argomenti di ogni evento.
+         *
+         * @subcommand cron
+         * @synopsis <azione>
+         *
+         * @param array $args       Argomenti posizionali.
+         * @param array $assoc_args Argomenti associativi (--chiave=valore).
+         */
+        public static function cron( $args, $assoc_args ) {
+                $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : 'status';
+
+                if ( '' === $action ) {
+                        $action = 'status';
+                }
+
+                if ( 'status' !== $action ) {
+                        WP_CLI::error( sprintf( 'Azione cron non riconosciuta: «%s». Azioni ammesse: status.', $action ) );
+                }
+
+                $cron = function_exists( '_get_cron_array' ) ? _get_cron_array() : array();
+                $now  = time();
+
+                // hook => array( 'next' => timestamp, 'recurrence' => testo ).
+                $found = array();
+
+                foreach ( (array) $cron as $timestamp => $events ) {
+                        if ( ! is_array( $events ) ) {
+                                continue;
+                        }
+
+                        foreach ( $events as $hook => $hook_events ) {
+                                $hook = (string) $hook;
+
+                                // Solo eventi del plugin: prefisso condiviso da tick,
+                                // runner coda e autotranslate (nexus_*).
+                                if ( 0 !== strpos( $hook, 'nexus_' ) ) {
+                                        continue;
+                                }
+
+                                foreach ( (array) $hook_events as $data ) {
+                                        $schedule   = is_array( $data ) && isset( $data['schedule'] ) ? (string) $data['schedule'] : '';
+                                        $interval   = is_array( $data ) && isset( $data['interval'] ) ? (int) $data['interval'] : 0;
+                                        $ts         = (int) $timestamp;
+                                        $recurrence = '' !== $schedule
+                                                ? sprintf( '%s (ogni %d s)', $schedule, $interval )
+                                                : 'una tantum';
+
+                                        // Stesso hook con più istanze (autotranslate è per
+                                        // articolo): mostra la prossima esecuzione più vicina.
+                                        if ( ! isset( $found[ $hook ] ) || $ts < $found[ $hook ]['next'] ) {
+                                                $found[ $hook ] = array( 'next' => $ts, 'recurrence' => $recurrence );
+                                        }
+                                }
+                        }
+                }
+
+                if ( empty( $found ) ) {
+                        WP_CLI::log( 'Nessun evento WP-Cron di Nexus schedulato su questo sito.' );
+                        return;
+                }
+
+                uasort( $found, array( __CLASS__, 'sort_cron_events' ) );
+
+                $rows = array();
+                foreach ( $found as $hook => $info ) {
+                        $ts = (int) $info['next'];
+
+                        $next = function_exists( 'wp_date' )
+                                ? wp_date( 'Y-m-d H:i:s', $ts )
+                                : date( 'Y-m-d H:i:s', $ts );
+
+                        if ( $ts < $now ) {
+                                // Evento in ritardo: WP-Cron lo esegue alla prossima
+                                // visita/request (o al prossimo wp cron event run).
+                                $next .= sprintf( ' (in ritardo di %s)', human_time_diff( $ts, $now ) );
+                        } else {
+                                $next .= sprintf( ' (tra %s)', human_time_diff( $now, $ts ) );
+                        }
+
+                        $rows[] = array(
+                                'Hook'               => (string) $hook,
+                                'Prossima esecuzione' => $next,
+                                'Ricorrenza'         => (string) $info['recurrence'],
+                        );
+                }
+
+                \WP_CLI\Utils\format_items( 'table', $rows, array( 'Hook', 'Prossima esecuzione', 'Ricorrenza' ) );
+
+                // Coerenza con le impostazioni: avvisa se un evento atteso manca
+                // (es. enable_queue=1 ma runner non schedulato → la coda non gira).
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        return;
+                }
+
+                try {
+                        $settings = Nexus_DB::get_settings();
+                } catch ( Throwable $e ) {
+                        return;
+                }
+
+                if ( ! is_array( $settings ) ) {
+                        return;
+                }
+
+                if ( ! empty( $settings['enable_queue'] ) && ! isset( $found['nexus_queue_runner'] ) ) {
+                        WP_CLI::log( 'Attenzione: la coda è attiva ma «nexus_queue_runner» NON è schedulato — verificare le impostazioni della coda.' );
+                }
+
+                if ( ! empty( $settings['auto_collect'] ) && ! isset( $found['nexus_cron_tick'] ) ) {
+                        WP_CLI::log( 'Attenzione: la raccolta automatica è attiva ma «nexus_cron_tick» NON è schedulato — verificare le impostazioni della raccolta.' );
+                }
+        }
+
+        /**
+         * Callback di ordinamento per gli eventi cron (prossima esecuzione prima).
+         *
+         * @param array $a Evento (chiave 'next').
+         * @param array $b Evento (chiave 'next').
+         * @return int
+         */
+        private static function sort_cron_events( $a, $b ) {
+                $a_next = isset( $a['next'] ) ? (int) $a['next'] : 0;
+                $b_next = isset( $b['next'] ) ? (int) $b['next'] : 0;
+
+                if ( $a_next === $b_next ) {
+                        return 0;
+                }
+
+                return ( $a_next < $b_next ) ? -1 : 1;
         }
 
         /* ========================= IMPOSTAZIONI ========================= */
@@ -766,7 +1083,78 @@ class Nexus_CLI {
                 WP_CLI::error( sprintf( 'Azione multisite non riconosciuta: «%s». Azioni ammesse: status, install.', $action ) );
         }
 
+        /* ========================= MULTILINGUA ========================= */
+
+        /**
+         * Diagnostica/riparazione multilingua (v1.1.9).
+         *
+         * Sottocomandi:
+         *   doctor [--fix] — report sorgenti orfani/gruppi rotti/duplicati;
+         *                    con --fix applica le riparazioni.
+         *
+         * Dipende da Nexus_Multilang::doctor() implementata in parallelo da un
+         * altro agente (WP5): con method_exists diamo un errore ONESTO se la
+         * build non la contiene ancora, invece di un fatale.
+         *
+         * @subcommand multilang
+         * @synopsis <azione> [--fix]
+         *
+         * @param array $args       Argomenti posizionali.
+         * @param array $assoc_args Argomenti associativi (--chiave=valore).
+         */
+        public static function multilang( $args, $assoc_args ) {
+                $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : '';
+
+                if ( 'doctor' !== $action ) {
+                        WP_CLI::error( 'Uso: wp nexus multilang doctor [--fix].' );
+                }
+
+                if ( ! class_exists( 'Nexus_Multilang' ) || ! method_exists( 'Nexus_Multilang', 'doctor' ) ) {
+                        // Onestà: la classe c'è ma il metodo doctor arriva con la
+                        // 1.1.9 completa — non è un fatale né un problema locale.
+                        WP_CLI::error( 'Comando non disponibile in questa build: «multilang doctor» arriva con la 1.1.9 completa (metodo Nexus_Multilang::doctor non ancora presente).' );
+                }
+
+                $fix = ! empty( $assoc_args['fix'] );
+
+                try {
+                        $result = Nexus_Multilang::doctor( $fix );
+                } catch ( Throwable $e ) {
+                        WP_CLI::error( 'Diagnostica multilingua fallita: ' . $e->getMessage() );
+                }
+
+                $report = is_array( $result ) && isset( $result['report'] ) ? (array) $result['report'] : array();
+                $fixed  = is_array( $result ) && isset( $result['fixed'] ) ? (int) $result['fixed'] : 0;
+
+                if ( empty( $report ) ) {
+                        WP_CLI::log( 'Nessuna segnalazione dalla diagnostica multilingua.' );
+                }
+
+                foreach ( $report as $line ) {
+                        WP_CLI::log( ' - ' . (string) $line );
+                }
+
+                if ( $fix ) {
+                        WP_CLI::success( sprintf( 'Diagnostica multilingua completata con --fix: %d interventi eseguiti.', $fixed ) );
+                        return;
+                }
+
+                WP_CLI::success( sprintf( 'Diagnostica multilingua completata (%d interventi possibili; rieseguire con --fix per applicarli).', $fixed ) );
+        }
+
         /* ========================= HELPER PRIVATI ========================= */
+
+        /**
+         * Handler dei segnali per «queue work» (public: usato come callback
+         * pcntl_signal). Uscita pulita con 0: supervisord/systemd non registrano
+         * crash e riavviano il worker come da policy.
+         *
+         * @return void
+         */
+        public static function handle_work_signal() {
+                WP_CLI::log( 'Segnale di interruzione ricevuto: arresto del worker della coda.' );
+                exit( 0 );
+        }
 
         /**
          * Sottocomando interno: wp nexus settings get [chiave].

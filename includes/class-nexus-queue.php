@@ -29,7 +29,11 @@
  *
  * Nexus_Queue::dispatch( $hook, $args = array(), $opts = array() )
  *   enable_queue=1 → Nexus_DB::insert_job($hook,$args,$opts) e ritorna
- *     array('queued'=>true,'job_id'=>int,'executed'=>false,'result'=>null,'error'=>'')
+ *     array('queued'=>true,'job_id'=>int,'executed'=>false,'result'=>null,'error'=>'',
+ *           'duplicate'=>false)
+ *   v1.1.9: $opts['unique'] (bool) — se true il job NON viene inserito quando
+ *     esiste già un job pending/running con lo stesso hook (dedup per hook);
+ *     in quel caso ritorna queued=false + duplicate=true (nessun errore).
  *   enable_queue=0 → esegue SUBITO l'handler se registrato (try/catch Throwable):
  *     array('queued'=>false,'job_id'=>0,'executed'=>bool,'result'=>mixed,'error'=>string)
  *   handler sconosciuto e enable_queue=0 → error 'handler_non_registrato'
@@ -39,10 +43,18 @@
  *   $limit<=0 → setting queue_batch_size (min 1). Nexus_DB::claim_jobs($limit),
  *   per ogni job risolve l'handler dal filtro 'nexus_job_handlers' ed esegue con
  *   call_user_func_array (try/catch Throwable). Successo → status 'complete';
- *   eccezione → attempts+1: se attempts < max_attempts → status 'pending' con
- *   scheduled_at = now + backoff (60 * 2^attempts, cap 3600) e last_error;
- *   altrimenti status 'failed'. Handler mancante → status 'failed' con
- *   last_error 'handler_non_registrato'. Ritorna array('processed'=>int,'failed'=>int).
+ *   eccezione → bump_job_failure (attempts+1 ATOMICO, guardia status='running'):
+ *   se attempts < max_attempts → status 'pending' con scheduled_at = now +
+ *   backoff (60 * 2^attempts, cap 3600) e last_error; altrimenti status
+ *   'failed'. Se il bump ritorna 0 il job è stato ripreso da un altro runner:
+ *   nessuna scrittura (evita sovrascritture). Handler mancante → status
+ *   'failed' con last_error 'handler_non_registrato'.
+ *   v1.1.9 — budget tempo (setting 'queue_time_budget', default 25s, filtro
+ *   'nexus_queue_time_budget') e guardia memoria (80% del memory_limit): le
+ *   verifiche avvengono SOLO tra un job e l'altro (mai a metà esecuzione) e i
+ *   job già claimati ma non avviati tornano 'pending' con claim_token azzerato
+ *   (break graceful, nessun job orfano in 'running').
+ *   Ritorna array('processed'=>int,'failed'=>int,'requeued'=>int).
  *   Manutenzione: ogni 20 batch (o 1 volta su 20) → cleanup_jobs(7) + requeue_stale(30).
  *
  * Nexus_Queue::handle_runner()
@@ -50,17 +62,32 @@
  *   processed+failed > 0, scrive 1 attività 'queue' (max 1 log per batch).
  *
  * Nexus_Queue::retry( $job_id )
- *   Lavoro con status failed|cancelled|complete → status 'pending', scheduled_at
- *   adesso, started_at/completed_at svuotati (stringa vuota: Nexus_DB::update_job
- *   non gestisce NULL), last_error ''. Attempts INVARIATI. Ritorna bool.
+ *   Lavoro con status failed|cancelled|complete (NON 'dead': quella è la via
+ *   d'uscita dedicata reset_dead) → status 'pending', scheduled_at adesso,
+ *   started_at/completed_at svuotati (stringa vuota: Nexus_DB::update_job non
+ *   gestisce NULL), last_error '' e claim_token ''. v1.1.9: max_attempts viene
+ *   RICALCOLATO come max_attempts += attempts (decisione documentata nel
+ *   metodo: preserva lo storico dei fallimenti e ripristina un ciclo completo
+ *   di tentativi con backoff pieno). Anti-TOCTOU: update + verifica post con
+ *   get_job. Ritorna bool.
  *
  * Nexus_Queue::cancel( $job_id )
- *   Solo status 'pending' → status 'cancelled' + completed_at adesso. Ritorna bool.
+ *   Solo status 'pending' → status 'cancelled' + completed_at adesso +
+ *   claim_token ''. Anti-TOCTOU: update + verifica post con get_job. Ritorna bool.
+ *
+ * Nexus_Queue::reset_dead( $job_id )  [v1.1.9]
+ *   Unica via d'uscita dai 'dead': status 'pending', attempts azzerato,
+ *   claim_token/started_at/completed_at/last_error svuotati, scheduled_at adesso.
+ *   Solo per intervento manuale (wp nexus queue dead --reset=<id>). Ritorna bool.
  *
  * Nexus_Queue::requeue_stale( $minutes = 30 )
- *   Lavori 'running' con started_at più vecchio di N minuti → status 'pending',
- *   last_error 'timeout: esecuzione interrotta'. Query diretta preparata su
- *   Nexus_DB::tables()['jobs']. Ritorna int (righe).
+ *   v1.1.9 — DEAD LETTER: per ogni job 'running' bloccato da più di N minuti
+ *   chiama Nexus_DB::bump_job_failure (attempts+1 atomico con guardia
+ *   status='running'); se attempts >= max_attempts → status 'dead' +
+ *   completed_at (terminale, NON riprocessabile dalla coda normale), altrimenti
+ *   status 'pending' con scheduled_at = now e claim_token azzerato. Elabora
+ *   al massimo 100 job per passata (i successivi al giro dopo). Log attività
+ *   'error' quando ci sono dead letter. Ritorna int (job gestiti).
  *
  * Nexus_Queue::deactivate()
  *   Deattivazione: wp_clear_scheduled_hook('nexus_queue_runner') + requeue_stale(30)
@@ -117,6 +144,30 @@ class Nexus_Queue {
          * Ogni quanti batch eseguire la manutenzione (pulizia + requeue stale).
          */
         const MAINTENANCE_EVERY = 20;
+
+        /**
+         * Lavori 'running' più vecchi di così (minuti) sono considerati bloccati.
+         */
+        const STALE_MINUTES = 30;
+
+        /**
+         * Budget tempo di DEFAULT per un batch, in secondi (usato se il setting
+         * 'queue_time_budget' non è impostato). Protegge da batch che saturano
+         * la finestra utile del runner WP-Cron o del worker CLI.
+         */
+        const DEFAULT_TIME_BUDGET = 25;
+
+        /**
+         * Soglia di memoria: oltre questa FRAZIONE del memory_limit il batch
+         * si ferma in modo graceful tra un job e l'altro (0.8 = 80%).
+         */
+        const MEMORY_THRESHOLD = 0.8;
+
+        /**
+         * Massimo numero di job stale elaborati per singola passata di
+         * requeue_stale (protezione da backlog enormi in una sola request).
+         */
+        const STALE_MAX_PER_PASS = 100;
 
         /**
          * Handler registrati (hook logico => callable), incluso i core di init().
@@ -274,16 +325,18 @@ class Nexus_Queue {
          *
          * @param string $hook Hook logico (es. 'pipeline_cron_tick').
          * @param array  $args Argomenti passati all'handler (serializzati in coda).
-         * @param array  $opts Opzioni coda: priority (int), delay (secondi), max_attempts (int).
-         * @return array array('queued','job_id','executed','result','error').
+         * @param array  $opts Opzioni coda: priority (int), delay (secondi),
+         *                     max_attempts (int), unique (bool: dedup per hook).
+         * @return array array('queued','job_id','executed','result','error','duplicate').
          */
         public static function dispatch( $hook, $args = array(), $opts = array() ) {
                 $out = array(
-                        'queued'   => false,
-                        'job_id'   => 0,
-                        'executed' => false,
-                        'result'   => null,
-                        'error'    => '',
+                        'queued'    => false,
+                        'job_id'    => 0,
+                        'executed'  => false,
+                        'result'    => null,
+                        'error'     => '',
+                        'duplicate' => false,
                 );
 
                 $settings = self::settings();
@@ -292,6 +345,35 @@ class Nexus_Queue {
                         if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'insert_job' ) ) {
                                 $out['error'] = 'nexus_db_non_disponibile';
                                 return $out;
+                        }
+
+                        // v1.1.9 — job unici per hook: con unique=true non accodare
+                        // un nuovo job se ne esiste già uno pending/running con lo
+                        // stesso hook (es. ogni tick WP-Cron accoderebbe un nuovo
+                        // 'pipeline_cron_tick' anche se quello precedente è ancora
+                        // in attesa → run_full in parallelo e costi AI doppi).
+                        // RAZZA RESIDUA DOCUMENTATA: due processi possono superare
+                        // questo check nello stesso istante e inserire DUE job;
+                        // chiuderebbe un INSERT ... SELECT condizionale o un UNIQUE
+                        // su (hook, status) in db.php (vietato in questo task). La
+                        // race richiede millisecondi esatti e l'effetto è solo un
+                        // job ridondante (gestito dal claim atomico): accettabile.
+                        if ( ! empty( $opts['unique'] ) && method_exists( 'Nexus_DB', 'count_jobs' ) ) {
+                                $hook_key = sanitize_key( (string) $hook );
+
+                                try {
+                                        $same = (int) Nexus_DB::count_jobs( array( 'status' => 'pending', 'hook' => $hook_key ) )
+                                                + (int) Nexus_DB::count_jobs( array( 'status' => 'running', 'hook' => $hook_key ) );
+                                } catch ( Throwable $e ) {
+                                        // In caso di errore DB conviene accodare comunque:
+                                        // un job duplicato è meglio di un tick perso.
+                                        $same = 0;
+                                }
+
+                                if ( $same > 0 ) {
+                                        $out['duplicate'] = true;
+                                        return $out;
+                                }
                         }
 
                         try {
@@ -329,15 +411,27 @@ class Nexus_Queue {
          * Esegue un batch di lavori in coda: claim atomico, esecuzione handler,
          * retry con backoff esponenziale e manutenzione periodica.
          *
+         * v1.1.9 — runner resiliente:
+         * - budget tempo per batch (setting 'queue_time_budget', filtro
+         *   'nexus_queue_time_budget', default DEFAULT_TIME_BUDGET secondi);
+         * - guardia memoria (memory_get_usage(true) > MEMORY_THRESHOLD * memory_limit);
+         * - entrambe le verifiche avvengono SOLO TRA un job e l'altro: interrompere
+         *   un job a metà lascerebbe 'running' un job orfano fino a requeue_stale.
+         *   I job claimati ma non avviati tornano 'pending' con claim_token
+         *   azzerato (chi rimanda in pending DEVE azzerare il claim_token, v.
+         *   contratto claim_jobs): il prossimo runner li riprende subito.
+         *
          * @param int $limit Numero massimo di lavori (0 = setting queue_batch_size).
-         * @return array array('processed'=>int,'failed'=>int).
+         * @return array array('processed'=>int,'failed'=>int,'requeued'=>int).
          */
         public static function run_batch( $limit = 0 ) {
                 $processed = 0;
                 $failed    = 0;
+                $requeued  = 0;
+                $empty     = array( 'processed' => 0, 'failed' => 0, 'requeued' => 0 );
 
                 if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'claim_jobs' ) ) {
-                        return array( 'processed' => $processed, 'failed' => $failed );
+                        return $empty;
                 }
 
                 $limit = absint( $limit );
@@ -351,13 +445,27 @@ class Nexus_Queue {
                         $jobs = Nexus_DB::claim_jobs( $limit );
                 } catch ( Throwable $e ) {
                         self::debug_log( 'claim_jobs fallito: ' . $e->getMessage() );
-                        return array( 'processed' => $processed, 'failed' => $failed );
+                        return $empty;
                 }
+
+                // Budget tempo e soglia memoria: risolti UNA volta per batch.
+                $budget    = self::time_budget();
+                $started   = microtime( true );
+                $mem_limit = self::memory_limit_bytes();
+                $leftover  = array();
 
                 foreach ( (array) $jobs as $job ) {
                         $job_id = isset( $job->id ) ? absint( $job->id ) : 0;
 
                         if ( $job_id <= 0 ) {
+                                continue;
+                        }
+
+                        // --- Guardie graceful (solo tra un job e l'altro) ---
+                        if ( ( microtime( true ) - $started ) >= $budget || self::memory_exhausted( $mem_limit ) ) {
+                                // Il job non è stato ancora avviato: torniamo 'pending'
+                                // dopo il loop (claim_token azzerato = nessun orfano).
+                                $leftover[] = $job_id;
                                 continue;
                         }
 
@@ -369,14 +477,13 @@ class Nexus_Queue {
                                         'status'       => 'failed',
                                         'last_error'   => 'handler_non_registrato',
                                         'completed_at' => current_time( 'mysql' ),
+                                        'claim_token'  => '',
                                 ) );
                                 $failed++;
                                 continue;
                         }
 
-                        $attempts = isset( $job->attempts ) ? ( (int) $job->attempts + 1 ) : 1;
-                        $max      = isset( $job->max_attempts ) ? max( 1, (int) $job->max_attempts ) : 3;
-                        $args     = array();
+                        $args = array();
                         if ( isset( $job->args ) && is_string( $job->args ) && '' !== $job->args ) {
                                 $decoded = json_decode( $job->args, true );
                                 if ( is_array( $decoded ) ) {
@@ -387,41 +494,201 @@ class Nexus_Queue {
                         try {
                                 call_user_func_array( $callable, array_values( $args ) );
 
+                                // La riga è stata claimata da QUESTO runner (claim_token
+                                // dedicato): qui la scrittura diretta di attempts è sicura.
+                                $attempts = isset( $job->attempts ) ? ( (int) $job->attempts + 1 ) : 1;
+
                                 self::update_job_safe( $job_id, array(
                                         'status'       => 'complete',
                                         'attempts'     => $attempts,
                                         'last_error'   => '',
                                         'completed_at' => current_time( 'mysql' ),
+                                        'claim_token'  => '',
                                 ) );
                                 $processed++;
                         } catch ( Throwable $e ) {
-                                $message = self::clip( $e->getMessage() );
+                                $outcome = self::fail_job( $job_id, $job, self::clip( $e->getMessage() ) );
 
-                                if ( $attempts < $max ) {
-                                        // Retry con backoff esponenziale: 60 * 2^attempts, cap 1 ora.
-                                        $backoff = (int) min( self::MAX_BACKOFF, 60 * pow( 2, $attempts ) );
-
-                                        self::update_job_safe( $job_id, array(
-                                                'status'       => 'pending',
-                                                'attempts'     => $attempts,
-                                                'scheduled_at' => gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) + $backoff ),
-                                                'last_error'   => $message,
-                                        ) );
-                                } else {
-                                        self::update_job_safe( $job_id, array(
-                                                'status'       => 'failed',
-                                                'attempts'     => $attempts,
-                                                'last_error'   => $message,
-                                                'completed_at' => current_time( 'mysql' ),
-                                        ) );
+                                if ( 'pending' === $outcome ) {
+                                        // Ritentativo schedulato: non è (ancora) un fallimento.
+                                } elseif ( 'failed' === $outcome ) {
                                         $failed++;
                                 }
+                                // 'stolen': un altro runner ha già ripreso il job
+                                // (bump_job_failure = 0) → nessuna scrittura, il job
+                                // non è né nostro né fallito: non lo contiamo.
                         }
                 }
 
+                // I job claimati ma non avviati (budget/memoria) tornano disponibili
+                // SUBITO: senza questo resterebbero 'running' orfani per 30 minuti.
+                $requeued = self::requeue_unclaimed( $leftover );
+
                 self::maybe_maintenance();
 
-                return array( 'processed' => $processed, 'failed' => $failed );
+                return array( 'processed' => $processed, 'failed' => $failed, 'requeued' => $requeued );
+        }
+
+        /**
+         * Gestisce il fallimento di un job (v1.1.9): incremento ATOMICO dei
+         * tentativi con Nexus_DB::bump_job_failure (guardia status='running'
+         * inclusa, contratto db.php #2) e poi backoff o fallimento definitivo.
+         *
+         * @param int    $job_id  ID del job.
+         * @param object $job     Riga job claimata (per max_attempts).
+         * @param string $message Messaggio d'errore (già troncato).
+         * @return string 'pending'|'failed'|'stolen'.
+         */
+        private static function fail_job( $job_id, $job, $message ) {
+                $max = isset( $job->max_attempts ) ? max( 1, (int) $job->max_attempts ) : 3;
+
+                // bump_job_failure ritorna il nuovo attempts, 0 se il job NON era
+                // più 'running' sotto di noi (già ripreso da un altro runner): in
+                // quel caso NON scriviamo nulla di stato (evitiamo sovrascritture).
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'bump_job_failure' ) ) {
+                        return 'stolen';
+                }
+
+                try {
+                        $attempts = (int) Nexus_DB::bump_job_failure( $job_id, $message );
+                } catch ( Throwable $e ) {
+                        self::debug_log( 'bump_job_failure fallito: ' . $e->getMessage() );
+                        return 'stolen';
+                }
+
+                if ( $attempts <= 0 ) {
+                        return 'stolen';
+                }
+
+                if ( $attempts < $max ) {
+                        // Retry con backoff esponenziale: 60 * 2^attempts, cap 1 ora.
+                        // NOTA: attempts NON si riscrive qui — l'incremento atomico
+                        // è già avvenuto in bump_job_failure.
+                        $backoff = (int) min( self::MAX_BACKOFF, 60 * pow( 2, $attempts ) );
+
+                        self::update_job_safe( $job_id, array(
+                                'status'       => 'pending',
+                                'scheduled_at' => gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) + $backoff ),
+                                'last_error'   => $message,
+                                'claim_token'  => '',
+                        ) );
+
+                        return 'pending';
+                }
+
+                self::update_job_safe( $job_id, array(
+                        'status'       => 'failed',
+                        'last_error'   => $message,
+                        'completed_at' => current_time( 'mysql' ),
+                        'claim_token'  => '',
+                ) );
+
+                return 'failed';
+        }
+
+        /**
+         * Rimette in 'pending' i job claimati ma NON avviati perché il budget
+         * tempo/memoria è esaurito prima del loro turno (break graceful).
+         * NON tocca attempts: il job non ha fallito, ha solo aspettato.
+         *
+         * @param array $job_ids ID dei job claimati non avviati.
+         * @return int Numero di job effettivamente rimessi in coda.
+         */
+        private static function requeue_unclaimed( $job_ids ) {
+                $count = 0;
+
+                foreach ( (array) $job_ids as $job_id ) {
+                        $job_id = absint( $job_id );
+
+                        if ( $job_id <= 0 ) {
+                                continue;
+                        }
+
+                        $ok = self::update_job_safe( $job_id, array(
+                                'status'       => 'pending',
+                                'scheduled_at' => current_time( 'mysql' ),
+                                'started_at'   => '',
+                                'claim_token'  => '',
+                        ) );
+
+                        if ( $ok ) {
+                                $count++;
+                        }
+                }
+
+                if ( $count > 0 ) {
+                        self::debug_log( sprintf( 'Budget tempo/memoria esaurito: %d job claimati rimessi in coda.', $count ) );
+                }
+
+                return $count;
+        }
+
+        /**
+         * Budget tempo (secondi) per un singolo batch: setting 'queue_time_budget'
+         * se presente e positivo, altrimenti filtro 'nexus_queue_time_budget',
+         * altrimenti il default di classe. Valori <= 0 del filtro → default
+         * (mai 0: significherebbe batch infiniti).
+         *
+         * @return int
+         */
+        private static function time_budget() {
+                $settings = self::settings();
+                $budget   = isset( $settings['queue_time_budget'] ) ? absint( $settings['queue_time_budget'] ) : 0;
+
+                if ( $budget <= 0 ) {
+                        $budget = (int) apply_filters( 'nexus_queue_time_budget', self::DEFAULT_TIME_BUDGET );
+                }
+
+                if ( $budget <= 0 ) {
+                        $budget = self::DEFAULT_TIME_BUDGET;
+                }
+
+                return $budget;
+        }
+
+        /**
+         * Guardia memoria: true se memory_get_usage(true) supera la soglia
+         * (MEMORY_THRESHOLD) del memory_limit configurato in php.ini.
+         * Con memory_limit = -1 (illimitato) la guardia è disattivata: il solo
+         * budget tempo resta la protezione.
+         *
+         * @param int $limit_bytes Limite in byte (0 = illimitato/sconosciuto).
+         * @return bool
+         */
+        private static function memory_exhausted( $limit_bytes ) {
+                if ( $limit_bytes <= 0 ) {
+                        return false;
+                }
+
+                return memory_get_usage( true ) > ( $limit_bytes * self::MEMORY_THRESHOLD );
+        }
+
+        /**
+         * Converte il memory_limit di php.ini (es. '256M', '1G', '512K', '-1')
+         * in byte. Ritorna 0 per illimitato o valori non leggibili (guardia
+         * disattivata: meglio un batch senza guardia che uno sempre interrotto).
+         *
+         * @return int
+         */
+        private static function memory_limit_bytes() {
+                $raw = trim( (string) ini_get( 'memory_limit' ) );
+
+                if ( '' === $raw || '-1' === $raw ) {
+                        return 0;
+                }
+
+                $value = (int) $raw;
+                $unit  = strtolower( substr( $raw, -1 ) );
+
+                if ( 'g' === $unit ) {
+                        $value *= 1024 * 1024 * 1024;
+                } elseif ( 'm' === $unit ) {
+                        $value *= 1024 * 1024;
+                } elseif ( 'k' === $unit ) {
+                        $value *= 1024;
+                }
+
+                return $value;
         }
 
         /**
@@ -465,7 +732,7 @@ class Nexus_Queue {
                         if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'cleanup_jobs' ) ) {
                                 Nexus_DB::cleanup_jobs( self::CLEANUP_DAYS );
                         }
-                        self::requeue_stale( 30 );
+                        self::requeue_stale( self::STALE_MINUTES );
                 } catch ( Throwable $e ) {
                         self::debug_log( 'Manutenzione coda fallita: ' . $e->getMessage() );
                 }
@@ -475,8 +742,21 @@ class Nexus_Queue {
 
         /**
          * Rimette in coda un lavoro terminato (failed|cancelled|complete).
-         * Attempts invariati; started_at/completed_at/last_error vengono svuotati
-         * con stringa vuota (Nexus_DB::update_job non gestisce NULL).
+         *
+         * v1.1.9 — decisione su attempts (punto 8 del piano):
+         * max_attempts += attempts, attempts INVARIATO. PERCHÉ: un job fallito a
+         * fine ciclo ha attempts == max_attempts; rimetterlo pending senza toccare
+         * nulla lo farebbe rifallire AL PRIMO tentativo (niente backoff, niente
+         * spazio retry). Azzerare attempts cancellerebbe lo storico dei fallimenti
+         * (last_error resta ma i contatori della dashboard mentirebbero). Con
+         * max_attempts += attempts il retry umano dà un CICLO COMPLETO di tentativi
+         * con backoff pieno (60*2^attempts) e lo storico resta intatto.
+         * 'dead' è volutamente ESCLUSO: i dead letter si ripristinano SOLO con
+         * reset_dead (scelta esplicita e consapevole, non un retry qualunque).
+         *
+         * Anti-TOCTOU (update_job non supporta WHERE condizionale): lettura →
+         * update → verifica post con get_job. Se lo status è cambiato nel frattempo
+         * si logga onestamente e si ritorna false.
          *
          * @param int $job_id ID del lavoro.
          * @return bool
@@ -494,19 +774,32 @@ class Nexus_Queue {
                         return false;
                 }
 
+                $attempts = isset( $job->attempts ) ? (int) $job->attempts : 0;
+                $max      = isset( $job->max_attempts ) ? (int) $job->max_attempts : 0;
+
                 $ok = self::update_job_safe( $job_id, array(
                         'status'       => 'pending',
                         'scheduled_at' => current_time( 'mysql' ),
                         'started_at'   => '',
                         'completed_at' => '',
                         'last_error'   => '',
+                        'claim_token'  => '',
+                        'max_attempts' => max( 1, $max + $attempts ),
                 ) );
 
-                return (bool) $ok;
+                return self::verify_transition( $job_id, $ok, 'pending', sprintf( 'Retry job #%d: stato cambiato durante l\'operazione, retry annullato.', absint( $job_id ) ) );
         }
 
         /**
          * Annulla un lavoro: solo se è ancora in attesa ('pending').
+         *
+         * Anti-TOCTOU: il rischio reale è che un runner claimi il job (→'running')
+         * fra la nostra lettura e la nostra scrittura, e che la nostra UPDATE
+         * sovrascriva il claim. update_job non ammette WHERE condizionale (db.php
+         * vietato in questo task): si minimizza la finestra (check immediatamente
+         * prima della scrittura) e si verifica DOPO con get_job; se lo status non
+         * è quello atteso si logga onestamente 'operazione annullata'. La chiusura
+         * totale della race richiede un UPDATE condizionale in db.php (v1.2).
          *
          * @param int $job_id ID del lavoro.
          * @return bool
@@ -525,22 +818,72 @@ class Nexus_Queue {
                 $ok = self::update_job_safe( $job_id, array(
                         'status'       => 'cancelled',
                         'completed_at' => current_time( 'mysql' ),
+                        'claim_token'  => '',
                 ) );
 
-                return (bool) $ok;
+                return self::verify_transition( $job_id, $ok, 'cancelled', sprintf( 'Cancel job #%d: job già in esecuzione o stato cambiato, operazione annullata.', absint( $job_id ) ) );
+        }
+
+        /**
+         * Ripristina un lavoro in DEAD LETTER ('dead', v1.1.9): unica via d'uscita
+         * prevista per gli status 'dead', riservata a un intervento manuale
+         * (wp nexus queue dead --reset=<id>). Azzera attempts (il conteggio vecchio
+         * non ha più senso dopo l'analisi umana) e claim_token, ripulisce i
+         * timestamp e riprogramma a adesso.
+         *
+         * @param int $job_id ID del lavoro.
+         * @return bool
+         */
+        public static function reset_dead( $job_id ) {
+                $job = self::get_job_safe( $job_id );
+
+                if ( null === $job ) {
+                        return false;
+                }
+
+                if ( ! isset( $job->status ) || 'dead' !== (string) $job->status ) {
+                        return false;
+                }
+
+                $ok = self::update_job_safe( $job_id, array(
+                        'status'       => 'pending',
+                        'attempts'     => 0,
+                        'scheduled_at' => current_time( 'mysql' ),
+                        'started_at'   => '',
+                        'completed_at' => '',
+                        'last_error'   => '',
+                        'claim_token'  => '',
+                ) );
+
+                return self::verify_transition( $job_id, $ok, 'pending', sprintf( 'Reset dead job #%d: stato cambiato durante l\'operazione, reset annullato.', absint( $job_id ) ) );
         }
 
         /**
          * Rimette in coda i lavori 'running' bloccati (started_at più vecchio di
          * N minuti, tipicamente per timeout o crash durante l'esecuzione).
          *
+         * v1.1.9 — DEAD LETTER (fix del loop infinito): la vecchia UPDATE massiva
+         * riportava i job in 'pending' SENZA incrementare attempts, così un job
+         * morto per fatal/timeout tornava in coda all'infinito. Ora per ogni job:
+         * 1. bump_job_failure (attempts+1 ATOMICO con guardia status='running') —
+         *    se ritorna 0 il job è stato ripreso da un altro runner: skip;
+         * 2. attempts >= max_attempts → status 'dead' + completed_at (terminale,
+         *    NON riprocessabile dalla coda normale; via d'uscita solo reset_dead);
+         * 3. altrimenti → status 'pending', scheduled_at = now, claim_token = ''.
+         *
+         * Per-job invece che UPDATE massiva PERCHÉ: il destino (dead vs pending)
+         * dipende da attempts/max_attempts di ogni riga e il bump atomico è l'unica
+         * scrittura attempts sicura in concorrenza. Un job il cui update successivo
+         * al bump fallisse resterebbe 'running' con il nuovo attempts: verrebbe
+         * ripreso dalla prossima passata (log onesto in debug_log).
+         *
          * @param int $minutes Età massima in minuti dell'esecuzione (default 30).
-         * @return int Numero di lavori rimessi in coda.
+         * @return int Numero di lavori gestiti (rimessi in coda + dead letter).
          */
         public static function requeue_stale( $minutes = 30 ) {
                 global $wpdb;
 
-                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) || ! method_exists( 'Nexus_DB', 'bump_job_failure' ) ) {
                         return 0;
                 }
 
@@ -549,20 +892,91 @@ class Nexus_Queue {
                 $now     = current_time( 'mysql' );
                 $cutoff  = gmdate( 'Y-m-d H:i:s', strtotime( $now ) - $minutes * 60 );
 
-                $updated = $wpdb->query( $wpdb->prepare(
-                        "UPDATE {$table} SET status = 'pending', last_error = %s, scheduled_at = %s, updated_at = %s
-                                WHERE status = 'running' AND started_at IS NOT NULL AND started_at <> '' AND started_at < %s",
-                        'timeout: esecuzione interrotta',
-                        $now,
-                        $now,
-                        $cutoff
+                // Solo gli ID: il destino di ogni riga si decide per-job (bump +
+                // dead letter). Cap per passata per non impalare una request su
+                // backlog enormi: la manutenzione gira spesso, il resto al giro dopo.
+                $ids = $wpdb->get_col( $wpdb->prepare(
+                        "SELECT id FROM {$table}
+                                WHERE status = 'running' AND started_at IS NOT NULL AND started_at <> '' AND started_at < %s
+                                ORDER BY id ASC LIMIT %d",
+                        $cutoff,
+                        self::STALE_MAX_PER_PASS
                 ) );
 
-                if ( $updated ) {
-                        self::debug_log( sprintf( 'Requeue stale: %d lavori rimessi in coda (> %d min).', $updated, $minutes ) );
+                $requeued = 0;
+                $dead     = 0;
+
+                foreach ( (array) $ids as $job_id ) {
+                        $job_id = absint( $job_id );
+
+                        if ( $job_id <= 0 ) {
+                                continue;
+                        }
+
+                        $job = self::get_job_safe( $job_id );
+
+                        if ( null === $job ) {
+                                continue;
+                        }
+
+                        $max = isset( $job->max_attempts ) ? max( 1, (int) $job->max_attempts ) : 3;
+
+                        // bump atomico + guardia di stato: 0 = un altro runner è già
+                        // intervenuto sul job → non lo tocchiamo.
+                        try {
+                                $attempts = (int) Nexus_DB::bump_job_failure( $job_id, sprintf( 'timeout: job bloccato >%dmin', $minutes ) );
+                        } catch ( Throwable $e ) {
+                                self::debug_log( 'requeue_stale: bump_job_failure fallito sul job #' . $job_id . ': ' . $e->getMessage() );
+                                continue;
+                        }
+
+                        if ( $attempts <= 0 ) {
+                                continue;
+                        }
+
+                        if ( $attempts >= $max ) {
+                                // DEAD LETTER: status terminale,completed_at chiuso.
+                                $ok = self::update_job_safe( $job_id, array(
+                                        'status'       => 'dead',
+                                        'completed_at' => $now,
+                                        'started_at'   => '',
+                                        'claim_token'  => '',
+                                ) );
+
+                                if ( $ok ) {
+                                        $dead++;
+                                } else {
+                                        self::debug_log( 'requeue_stale: impossibile marcare dead il job #' . $job_id . ' (riprossima alla prossima passata).' );
+                                }
+
+                                continue;
+                        }
+
+                        $ok = self::update_job_safe( $job_id, array(
+                                'status'       => 'pending',
+                                'scheduled_at' => $now,
+                                'started_at'   => '',
+                                'claim_token'  => '',
+                        ) );
+
+                        if ( $ok ) {
+                                $requeued++;
+                        } else {
+                                self::debug_log( 'requeue_stale: impossibile rimettere in coda il job #' . $job_id . ' (riprossima alla prossima passata).' );
+                        }
                 }
 
-                return (int) $updated;
+                if ( $dead > 0 ) {
+                        // I dead letter sono eventi degni di attenzione umana: log attività
+                        // in 'error' così compaiono nella dashboard, non solo nel debug.
+                        self::log_activity( sprintf( 'Dead letter: %d lavori bloccati (> %d min) marcati come dead.', $dead, $minutes ), 'error' );
+                }
+
+                if ( $requeued + $dead > 0 ) {
+                        self::debug_log( sprintf( 'Requeue stale: %d lavori rimessi in coda, %d in dead letter (> %d min).', $requeued, $dead, $minutes ) );
+                }
+
+                return $requeued + $dead;
         }
 
         /**
@@ -575,7 +989,7 @@ class Nexus_Queue {
                 wp_clear_scheduled_hook( self::HOOK_RUNNER );
 
                 try {
-                        self::requeue_stale( 30 );
+                        self::requeue_stale( self::STALE_MINUTES );
                 } catch ( Throwable $e ) {
                         self::debug_log( 'Deattivazione coda: requeue_stale fallito: ' . $e->getMessage() );
                 }
@@ -646,6 +1060,37 @@ class Nexus_Queue {
                 }
 
                 return (bool) $ok;
+        }
+
+        /**
+         * Verifica post-update anti-TOCTOU per le transizioni di stato manuali
+         * (retry/cancel/reset_dead): update_job non supporta WHERE condizionale,
+         * quindi dopo la scrittura si rilegge il job con get_job. Se la scrittura
+         * è fallita o lo status non è quello atteso (un concorrente è passato di
+         * lì) si logga onestamente e l'operazione risulta non eseguita.
+         *
+         * @param int    $job_id       ID del lavoro.
+         * @param bool   $ok           Esito grezzo di update_job_safe.
+         * @param string $expected     Status atteso dopo la scrittura.
+         * @param string $fail_message Messaggio onesto da registrare in debug_log.
+         * @return bool
+         */
+        private static function verify_transition( $job_id, $ok, $expected, $fail_message ) {
+                $job_id = absint( $job_id );
+
+                if ( ! $ok ) {
+                        return false;
+                }
+
+                $after = self::get_job_safe( $job_id );
+
+                if ( null === $after || $expected !== (string) $after->status ) {
+                        self::debug_log( $fail_message );
+
+                        return false;
+                }
+
+                return true;
         }
 
         /**

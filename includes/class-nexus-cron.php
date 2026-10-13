@@ -6,7 +6,9 @@
  * Nexus_Cron::init()               — registra schedule 'nexus_interval', handler tick e sync su update settings
  * Nexus_Cron::sync_schedule()      — allinea l'evento 'nexus_cron_tick' a settings (auto_collect / collect_interval)
  * Nexus_Cron::handle_tick()        — handler dell'evento: con la coda attiva (v1.0.4) accoda
- *                                    'pipeline_cron_tick', altrimenti lancia Nexus_Pipeline::cron_tick()
+ *                                    'pipeline_cron_tick' con unique=true (v1.1.9: job unici per
+ *                                    hook, zero accumulo se il tick precedente è ancora in coda),
+ *                                    altrimenti lancia Nexus_Pipeline::cron_tick()
  * Nexus_Cron::on_settings_updated()— hook update_option_nexus_settings: reschedule se cambiano auto_collect/collect_interval
  * Nexus_Cron::deactivate()         — static, chiamato da register_deactivation_hook nel bootstrap
  *                                    (v1.0.4: deattiva anche la coda Nexus_Queue)
@@ -128,8 +130,20 @@ class Nexus_Cron {
                         && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
                         $nexus_settings = Nexus_DB::get_settings();
                         if ( ! empty( $nexus_settings['enable_queue'] ) ) {
-                                Nexus_Queue::dispatch( 'pipeline_cron_tick' );
-                                self::debug_log( 'Tick accodato alla coda lavori.' );
+                                // v1.1.9 — unique=true (job unici per hook): senza dedup,
+                                // ogni tick accodava un nuovo 'pipeline_cron_tick' anche
+                                // se il precedente era ancora pending/running → più
+                                // run_full in parallelo e costi AI duplicati. Se il job
+                                // esiste già il dispatch ritorna duplicate=true e qui
+                                // non si inserisce nulla (zero accumulo in coda).
+                                $out = Nexus_Queue::dispatch( 'pipeline_cron_tick', array(), array( 'unique' => true ) );
+
+                                if ( is_array( $out ) && ! empty( $out['duplicate'] ) ) {
+                                        self::debug_log( 'Tick già presente in coda: dispatch saltato (unique).' );
+                                } else {
+                                        self::debug_log( 'Tick accodato alla coda lavori.' );
+                                }
+
                                 return;
                         }
                 }
