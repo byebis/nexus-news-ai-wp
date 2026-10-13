@@ -512,7 +512,7 @@ function nexus_i18n_extra_dict() {
             'Se attivo, gli articoli pubblicati possono essere tradotti con l\'AI nelle lingue configurate.' => 'If enabled, published articles can be translated with AI into the configured languages.',
             'Se attivo, i lettori possono iscriversi con lo shortcode [nexus_subscribe] e il digest settimanale viene inviato via email.' => 'If enabled, readers can subscribe with the [nexus_subscribe] shortcode and the weekly digest is sent by email.',
             'Se attivo, i permalink dei nuovi post vengono inviati ai motori che supportano il protocollo IndexNow.' => 'If enabled, permalinks of new posts are sent to engines that support the IndexNow protocol.',
-            'Se attivo, i post Nexus ricevono meta description, Open Graph e dati strutturati JSON-LD (compatibile con Yoast e RankMath).' => 'If enabled, Nexus posts get a meta description, Open Graph tags and JSON-LD structured data (compatible with Yoast and RankMath).',
+            'Se attivo, i post Nexus ricevono meta description, Open Graph e dati strutturati JSON-LD (compatibile con Yoast e RankMath).' => 'If enabled, Nexus posts get a meta description, Open Graph tags and JSON-LD structured markup (compatible with Yoast and RankMath).',
             'Se attivo, il feed del sito viene notificato agli hub WebSub a ogni pubblicazione.' => 'If enabled, the site feed is pinged to WebSub hubs on every publish.',
             'Se attivo, l\'introduzione del digest settimanale viene scritta dall\'AI (elenco titoli e link comunque incluso).' => 'If enabled, the weekly digest introduction is written by AI (the list of titles and links is included anyway).',
             'Se attivo, title e description SEO vengono generati con l\'AI; in caso contrario usano titolo e riassunto dell\'articolo.' => 'If enabled, the SEO title and description are generated with AI; otherwise they use the article title and summary.',
@@ -727,7 +727,7 @@ function nexus_i18n_extra_dict() {
             'Ogni agente può scegliere provider e modello nella pagina Agenti; senza chiave qui il provider non è selezionabile. Il provider globale (sopra) resta il fallback.' => 'Each agent can choose provider and model on the Agents page; without a key here the provider cannot be selected. The global provider (above) remains the fallback.',
             'Organizza la testata in redazioni gerarchiche: una redazione madre può contenere sub-redazioni (es. Sport → Calcio, Basket, F1) e ogni redazione ha i suoi agenti assegnati. Ogni redazione ha anche un archivio pubblico con il tema attivo.' => 'Organize the masthead into hierarchical desks: a parent desk can contain sub-desks (e.g. Sport → Calcio, Basket, F1) and every desk has its own assigned agents. Each desk also has a public archive with the active theme.',
             'Permalink Nexus:' => 'Nexus permalink:',
-            'Più agenti' => 'Multiple agents',
+            'Più agenti' => 'More agents',
             'Polylang è attivo: le associazioni tra lingue usano Polylang.' => 'Polylang is active: language associations use Polylang.',
             'Post WP ↗' => 'WP post ↗',
             'Provider AI per agente' => 'Per-agent AI provider',
@@ -983,14 +983,14 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Il provider ha risposto con errore HTTP ' => 'The provider responded with HTTP error ',
             'Il provider non ha restituito un elenco di modelli riconoscibile.' => 'The provider did not return a recognizable list of models.',
             'Il registry dei provider AI non è disponibile: verifica che il plugin sia aggiornato.' => 'The AI provider registry is unavailable: make sure the plugin is up to date.',
-            'Il salvataggio della chiave per questo agente arriva con un prossimo aggiornamento: attualmente viene usata la chiave di ricerca globale (impostazioni → Strumenti).' => 'Saving a key for this agent will come in a future update: currently the global search key is used (settings → Tools).',
+            'Il salvataggio della chiave per questo agente arriva con un prossimo aggiornamento: attualmente viene usata la chiave di ricerca globale (impostazioni → Strumenti).' => 'Saving a key for this agent will arrive in a future update: currently the global search key is used (settings → Tools).',
             'Login web OAuth non disponibile per questo provider: usa la chiave API manuale.' => 'OAuth web login unavailable for this provider: use the manual API key.',
             'Mai mostrata in chiaro. Su modifica, vuota = nessun cambio della chiave salvata.' => 'Never shown in plain text. When editing, empty = no change to the saved key.',
             'Nessun adapter disponibile per questo tipo di fonte.' => 'No adapter available for this source type.',
             'Nessun provider personalizzato: aggiungine uno per usare qualsiasi servizio compatibile OpenAI (Together, Fireworks, Perplexity, Cerebras, LM Studio, vLLM…).' => 'No custom providers: add one to use any OpenAI-compatible service (Together, Fireworks, Perplexity, Cerebras, LM Studio, vLLM…).',
             'Ollama locale (127.0.0.1:11434): il rilevamento funziona se WordPress gira sulla stessa macchina di Ollama (o su Ollama esposto in LAN con l’opzione qui sotto).' => 'Local Ollama (127.0.0.1:11434): detection works if WordPress runs on the same machine as Ollama (or on Ollama exposed on the LAN with the option below).',
             'Ottieni chiave' => 'Get key',
-            'Parametri OAuth mancanti (state o code): riavvia il login da Impostazioni AI.' => 'Missing OAuth parameters (state or code): restart the login from AI Settings.',
+            'Parametri OAuth mancanti (state o code): riavvia il login da Impostazioni AI.' => 'Missing OAuth parameters (state/code): restart the login from AI Settings.',
             'Preset (precompila i campi)' => 'Preset (pre-fills the fields)',
             'Provider AI sconosciuto.' => 'Unknown AI provider.',
             'Provider AI sconosciuto: ' => 'Unknown AI provider: ',
@@ -1140,7 +1140,7 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
              * messaggi di errore, note e log utente (i messaggi con variabili
              * sono in nexus_i18n_extra_patterns()). */
             'Troppe revisioni concatenate in questa richiesta: interrotto per prevenire loop.' => 'Too many chained revisions in this request: stopped to prevent a loop.',
-            'Layer dati Nexus_DB non disponibile.' => 'Nexus_DB data layer unavailable.',
+            'Layer dati Nexus_DB non disponibile.' => 'Nexus_DB database layer unavailable.',
             'Articolo non trovato.' => 'Article not found.',
             'Capo redattore non attivo nelle impostazioni.' => 'Editor-in-chief not enabled in the settings.',
             'Nessun capo redattore disponibile per questa categoria/redazione.' => 'No editor-in-chief available for this category/desk.',
@@ -1205,7 +1205,7 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Provider personalizzato salvato: ora è selezionabile dagli agenti.' => 'Custom provider saved: agents can now select it.',
             'Redazione' => 'Desk',
             'Rimuovere la chiave salvata per questo provider? Gli agenti non potranno più usarlo finché non la riconfiguri o ti riconnetti.' => 'Remove the saved key for this provider? Agents will not be able to use it until you reconfigure it or sign in again.',
-            'Ritorno dal login incompleto (state o code mancanti): riavvia la connessione da Impostazioni AI.' => 'Incomplete login return (missing state or code): restart the connection from AI Settings.',
+            'Ritorno dal login incompleto (state o code mancanti): riavvia la connessione da Impostazioni AI.' => 'Incomplete login return (missing state/code): restart the connection from AI Settings.',
             'Salvo le fonti RSS…' => 'Saving RSS sources…',
             'Scollegamento' => 'Disconnect',
             'Scollegamento non riuscito' => 'Disconnect failed',
@@ -1240,7 +1240,7 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'l\'immagine generata non è in un formato riconosciuto' => 'The generated image is not in a recognized format',
             'L\'articolo non ha un post WordPress nativo: pubblica o migra l\'articolo prima.' => 'The article has no native WordPress post: publish or migrate the article first.',
             'L\'articolo è già in questa lingua.' => 'The article is already in this language.',
-            'Layer dati Nexus_DB non disponibile: traduzione impossibile.' => 'Nexus_DB data layer unavailable: translation impossible.',
+            'Layer dati Nexus_DB non disponibile: traduzione impossibile.' => 'Nexus_DB database layer unavailable: translation impossible.',
             'Lingua richiesta mancante o non valida.' => 'Missing or invalid requested language.',
             'pixabay: nessuna keyword utilizzabile (titolo e categoria vuoti o composti solo da stopwords)' => 'pixabay: no usable keyword (title and category empty or made of stopwords only)',
             'pixabay: risposta API non valida' => 'pixabay: invalid API response',
@@ -1269,13 +1269,13 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Base URL del provider AI non valida: sono ammessi solo http e https.' => 'Invalid AI provider base URL: only http and https are allowed.',
             'Chiave API AI non configurata: imposta la chiave API (ai_api_key) nelle impostazioni del plugin Nexus News AI.' => 'AI API key not configured: set the API key (ai_api_key) in the Nexus News AI plugin settings.',
             'Codice OAuth mancante o non valido: riavvia il login da Impostazioni AI.' => 'Missing or invalid OAuth code: restart the login from AI Settings.',
-            'Dati del provider personalizzato mancanti o non validi.' => 'Custom provider data missing or invalid.',
+            'Dati del provider personalizzato mancanti o non validi.' => 'Custom provider info missing or invalid.',
             'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l’endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).' => 'AI endpoints on private IPs/localhost are not allowed: enable the “Allow AI endpoints on private IPs/localhost” option in the settings if the endpoint is your local server (LM Studio, vLLM, Ollama on LAN).',
             'Etichetta del provider mancante: dai un nome riconoscibile (es. “Together”).' => 'Missing provider label: give it a recognizable name (e.g. “Together”).',
             'Full-content: Nexus_Readability non disponibile: le fonti full=1 sono servite con l\'estratto RSS.' => 'Full-content: Nexus_Readability unavailable: full=1 sources are served with the RSS excerpt.',
             'Generazione dell’identificativo non riuscita: riprova.' => 'Could not generate the identifier: try again.',
-            'Il layer dati Nexus_DB non è disponibile: chiave non salvata.' => 'The Nexus_DB data layer is unavailable: key not saved.',
-            'Il layer dati Nexus_DB non è disponibile: il plugin Nexus News AI non è caricato correttamente.' => 'The Nexus_DB data layer is unavailable: the Nexus News AI plugin is not loaded correctly.',
+            'Il layer dati Nexus_DB non è disponibile: chiave non salvata.' => 'The Nexus_DB database layer is unavailable: key not saved.',
+            'Il layer dati Nexus_DB non è disponibile: il plugin Nexus News AI non è caricato correttamente.' => 'The Nexus_DB database layer is unavailable: the Nexus News AI plugin is not loaded correctly.',
             'Il login web OAuth non è disponibile per questo provider: inserisci la chiave API manualmente.' => 'OAuth web login is not available for this provider: enter the API key manually.',
             'Impossibile preparare la richiesta per il modello AI (encoding JSON fallito).' => 'Unable to prepare the AI model request (JSON encoding failed).',
             'La risposta del servizio AI non è un JSON valido.' => 'The AI service response is not valid JSON.',
@@ -1303,8 +1303,8 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             '✗ Inserisci prima il valore della fonte.' => '✗ Enter the source value first.',
             '… provo la fonte' => '… testing the source',
             '@canale o URL del canale' => '@channel or channel URL',
-            '[Nexus News AI] Dati admin non disponibili: diagnostica AI non inizializzata.' => '[Nexus News AI] Admin data unavailable: AI diagnostics not initialized.',
-            '[Nexus News AI] Dati admin non disponibili: vista Strumenti non inizializzata.' => '[Nexus News AI] Admin data unavailable: Tools view not initialized.',
+            '[Nexus News AI] Dati admin non disponibili: diagnostica AI non inizializzata.' => '[Nexus News AI] Admin info unavailable: AI diagnostics not initialized.',
+            '[Nexus News AI] Dati admin non disponibili: vista Strumenti non inizializzata.' => '[Nexus News AI] Admin info unavailable: Tools view not initialized.',
             '[Nexus News AI] NexusAdminData non disponibile: vista Coda Lavori non inizializzata.' => '[Nexus News AI] NexusAdminData unavailable: Jobs queue view not initialized.',
             'Access token OAuth 1.0a dell’account che pubblica (mascherato).' => 'OAuth 1.0a access token of the publishing account (masked).',
             'Access token secret OAuth 1.0a dell’account (mascherato).' => 'OAuth 1.0a access token secret of the account (masked).',
@@ -1383,6 +1383,33 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Webhook Discord non valido' => 'Invalid Discord webhook',
             'X non configurato' => 'X not configured',
 
+        /* v1.1.11 (R4-9) — chiusura residui: voci esatte per frammenti standalone,
+         * formati sprintf grezzi e messaggi con placeholder (%d/%s/%1$d) che i
+         * pattern con (\d+) non catturano nel censimento. */
+            ' agente creato.' => ' agent created.',
+            ' agenti creati.' => ' agents created.',
+            ' vuoto.' => ' empty.',
+            'AI: traduzione incompleta, segmento ' => 'AI: incomplete translation, segment ',
+            'Articolo #%d "%s" %s dal revisore.' => 'Article #%d "%s" %s by the reviewer.',
+            'Articolo #%d lasciato in stato bozza (auto_rewrite disabilitato).' => 'Article #%d left in draft status (auto_rewrite disabled).',
+            'Avvio completato con errori: %1$d di %2$d agenti hanno riportato problemi.' => 'Start completed with errors: %1$d of %2$d agents reported problems.',
+            'Cancel job #%d: job già in esecuzione o stato cambiato, operazione annullata.' => 'Cancel job #%d: job already running or status changed, operation cancelled.',
+            'Capo redattore: %s (articolo #%d)' => 'Editor-in-chief: %s (article #%d)',
+            'Capo redattore: articolo #%d approvato%s.' => 'Editor-in-chief: article #%d approved%s.',
+            'Capo redattore: articolo #%d in stato approved (modulo di pubblicazione non disponibile).' => 'Editor-in-chief: article #%d in approved status (publish module unavailable).',
+            'Capo redattore: articolo #%d visto%s. In attesa di approvazione umana.' => 'Editor-in-chief: article #%d reviewed%s. Awaiting human approval.',
+            'Digest inviato a %d destinatari' => 'Digest sent to %d recipients',
+            'Errore di connessione: ' => 'Connection error: ',
+            'Errore imprevisto: ' => 'Unexpected error: ',
+            'Inviato in chat ' => 'Sent to chat ',
+            'L\'articolo #%d non è pubblicabile nello stato attuale (%s): serve lo stato "approved".' => 'Article #%d cannot be published in its current status (%s): the "approved" status is required.',
+            'Lettura pagina: ' => 'Page read: ',
+            'Reset dead job #%d: stato cambiato durante l\'operazione, reset annullato.' => 'Reset dead job #%d: status changed during the operation, reset cancelled.',
+            'Retry job #%d: stato cambiato durante l\'operazione, retry annullato.' => 'Retry job #%d: status changed during the operation, retry cancelled.',
+            ' modelli: affina la ricerca.</span>' => ' models: refine your search.</span>',
+            'il server MCP ha risposto con un errore JSON-RPC' => 'the MCP server returned a JSON-RPC error',
+            'requeue_stale: impossibile marcare dead il job #' => 'requeue_stale: could not mark job #',
+            'requeue_stale: impossibile rimettere in coda il job #' => 'requeue_stale: could not re-enqueue job #',
         );
 }
 
@@ -3146,6 +3173,370 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Eccezione: (.+)$',
             'tpl' => 'Exception: $1',
+        ),
+
+        /* v1.1.11 (R4-9) — chiusura residui: pattern senza gruppi per i frammenti
+         * concatenati (prefissi/suffissi di messaggi compositi in includes/ e
+         * admin.js); la catena i18n li applica in sequenza, max 4 giri. */
+        array(
+            're'  => 'vedi post ↗',
+            'tpl' => 'view post ↗',
+        ),
+        array(
+            're'  => 'Test non riuscito \(',
+            'tpl' => 'Test failed (',
+        ),
+        array(
+            're'  => '\)\. Esito dello strumento:',
+            'tpl' => '). Tool output:',
+        ),
+        array(
+            're'  => 'Provider AI non disponibile: ',
+            'tpl' => 'AI provider unavailable: ',
+        ),
+        array(
+            're'  => 'Risposta servita dalla prompt cache \(TTL 12h, modello ',
+            'tpl' => 'Response served from the prompt cache (12h TTL, model ',
+        ),
+        array(
+            're'  => '\): nessuna chiamata API effettuata\.',
+            'tpl' => '): no API call performed.',
+        ),
+        array(
+            're'  => 'Rate limit AI attivo per il provider ',
+            'tpl' => 'AI rate limit active for provider ',
+        ),
+        array(
+            're'  => ': riprova tra circa un minuto \(cooldown automatico\)\.',
+            'tpl' => ': try again in about a minute (automatic cooldown).',
+        ),
+        array(
+            're'  => ': cooldown automatico di 60s dopo 429 consecutivi\.',
+            'tpl' => ': automatic 60s cooldown after 429 consecutive responses.',
+        ),
+        array(
+            're'  => 'Provider primario non disponibile \(',
+            'tpl' => 'Primary provider unavailable (',
+        ),
+        array(
+            're'  => '\): ritenta con il provider di fallback\.',
+            'tpl' => '): retrying with the fallback provider.',
+        ),
+        array(
+            're'  => 'Chiave API non valida o non autorizzata \(HTTP ',
+            'tpl' => 'Invalid or unauthorized API key (HTTP ',
+        ),
+        array(
+            're'  => '\)\. Verifica ai_api_key nelle impostazioni del plugin\.',
+            'tpl' => '). Check the ai_api_key setting in the plugin settings.',
+        ),
+        array(
+            're'  => 'Il servizio AI ha risposto con errore HTTP ',
+            'tpl' => 'The AI service responded with HTTP error ',
+        ),
+        array(
+            're'  => 'Risposta del modello ',
+            'tpl' => 'Response from model ',
+        ),
+        array(
+            're'  => ' troncata per max_tokens \(finish_reason=length\): aumento max_tokens se il problema persiste\.',
+            'tpl' => ' truncated for max_tokens (finish_reason=length): increase max_tokens if the problem persists.',
+        ),
+        array(
+            're'  => 'Il modello AI \(',
+            'tpl' => 'The AI model (',
+        ),
+        array(
+            're'  => '\) ha restituito una risposta vuota\.',
+            'tpl' => ') returned an empty response.',
+        ),
+        array(
+            're'  => 'Errore di connessione al servizio AI: ',
+            'tpl' => 'Connection error to the AI service: ',
+        ),
+        array(
+            're'  => 'Prezzo non in mappa per il modello ',
+            'tpl' => 'Price not found in map for model ',
+        ),
+        array(
+            're'  => ': usata la stima generica \(0\.50/1\.50 USD per 1M token\)\.',
+            'tpl' => ': using the generic estimate (0.50/1.50 USD per 1M tokens).',
+        ),
+        array(
+            're'  => 'revisione articolo #',
+            'tpl' => 'article revision #',
+        ),
+        array(
+            're'  => ' Nota del capo redattore: ',
+            'tpl' => ' Note from the editor-in-chief: ',
+        ),
+        array(
+            're'  => 'Raccolta automatica schedulata \(intervallo ',
+            'tpl' => 'Automatic collection scheduled (interval ',
+        ),
+        array(
+            're'  => 'Raccolta automatica rischedulata con nuovo intervallo ',
+            'tpl' => 'Automatic collection rescheduled with new interval ',
+        ),
+        array(
+            're'  => 'Errore durante cron tick: ',
+            'tpl' => 'Error during cron tick: ',
+        ),
+        array(
+            're'  => 'Errore fatale durante cron tick: ',
+            'tpl' => 'Fatal error during cron tick: ',
+        ),
+        array(
+            're'  => 'generazione AI \(modello ',
+            'tpl' => 'AI generation (model ',
+        ),
+        array(
+            're'  => 'generazione AI fallita \(',
+            'tpl' => 'AI generation failed (',
+        ),
+        array(
+            're'  => 'image_url scartata dal gate qualità: larghezza ',
+            'tpl' => 'image_url rejected by the quality gate: width ',
+        ),
+        array(
+            're'  => 'px sotto il minimo di ',
+            'tpl' => 'px below the minimum of ',
+        ),
+        array(
+            're'  => 'image_url non utilizzabile \(',
+            'tpl' => 'image_url not usable (',
+        ),
+        array(
+            're'  => 'pixabay scartata dal gate qualità: larghezza reale ',
+            'tpl' => 'pixabay rejected by the quality gate: actual width ',
+        ),
+        array(
+            're'  => 'immagine Pixabay \(query "',
+            'tpl' => 'Pixabay image (query "',
+        ),
+        array(
+            're'  => 'pixabay non utilizzabile \(',
+            'tpl' => 'pixabay not usable (',
+        ),
+        array(
+            're'  => 'Impossibile salvare la featured image per il post #',
+            'tpl' => 'Unable to save the featured image for post #',
+        ),
+        array(
+            're'  => 'set_post_thumbnail fallito per il post #',
+            'tpl' => 'set_post_thumbnail failed for post #',
+        ),
+        array(
+            're'  => 'errore di connessione al servizio immagini: ',
+            'tpl' => 'connection error to the image service: ',
+        ),
+        array(
+            're'  => 'il servizio immagini ha risposto con errore HTTP ',
+            'tpl' => 'the image service responded with HTTP error ',
+        ),
+        array(
+            're'  => 'download immagine generata fallito: ',
+            'tpl' => 'generated image download failed: ',
+        ),
+        array(
+            're'  => 'errore di download: ',
+            'tpl' => 'download error: ',
+        ),
+        array(
+            're'  => 'download con errore HTTP ',
+            'tpl' => 'download failed with HTTP error ',
+        ),
+        array(
+            're'  => 'pixabay: zero risultati utilizzabili per la query "',
+            'tpl' => 'pixabay: no usable results for the query "',
+        ),
+        array(
+            're'  => '" \(nessun esito o tutti sotto il gate di ',
+            'tpl' => '" (no results or all below the gate of ',
+        ),
+        array(
+            're'  => 'pixabay: tutti i risultati per la query "',
+            'tpl' => 'pixabay: all results for the query "',
+        ),
+        array(
+            're'  => '" sono già stati usati',
+            'tpl' => '" have already been used',
+        ),
+        array(
+            're'  => 'pixabay: errore di connessione all\'API \(',
+            'tpl' => 'pixabay: API connection error (',
+        ),
+        array(
+            're'  => 'pixabay: API ha risposto con errore HTTP ',
+            'tpl' => 'pixabay: API responded with HTTP error ',
+        ),
+        array(
+            're'  => 'Errore di rete verso OpenRouter durante lo scambio del codice: ',
+            'tpl' => 'Network error to OpenRouter during the code exchange: ',
+        ),
+        array(
+            're'  => 'OpenRouter ha rifiutato lo scambio del codice \(HTTP ',
+            'tpl' => 'OpenRouter rejected the code exchange (HTTP ',
+        ),
+        array(
+            're'  => '\)\. Riavvia il login da Impostazioni AI\.',
+            'tpl' => '). Restart the login from AI Settings.',
+        ),
+        array(
+            're'  => 'Manutenzione coda fallita: ',
+            'tpl' => 'Queue maintenance failed: ',
+        ),
+        array(
+            're'  => 'Deattivazione coda: requeue_stale fallito: ',
+            'tpl' => 'Queue deactivation: requeue_stale failed: ',
+        ),
+        array(
+            're'  => 'Readability: errore inatteso durante l\'estrazione \(',
+            'tpl' => 'Readability: unexpected error during extraction (',
+        ),
+        array(
+            're'  => 'Contenuto troppo corto: ',
+            'tpl' => 'Content too short: ',
+        ),
+        array(
+            're'  => ' caratteri di testo contro il minimo di ',
+            'tpl' => ' characters of text against the minimum of ',
+        ),
+        array(
+            're'  => 'ok: titolo coerente col contenuto e ',
+            'tpl' => 'ok: title consistent with the content and ',
+        ),
+        array(
+            're'  => 'Errore inatteso Discord: ',
+            'tpl' => 'Unexpected Discord error: ',
+        ),
+        array(
+            're'  => 'Errore di connessione a Discord: ',
+            'tpl' => 'Connection error to Discord: ',
+        ),
+        array(
+            're'  => 'Discord ha risposto con errore HTTP ',
+            'tpl' => 'Discord responded with HTTP error ',
+        ),
+        array(
+            're'  => 'Errore di connessione a LinkedIn: ',
+            'tpl' => 'Connection error to LinkedIn: ',
+        ),
+        array(
+            're'  => 'LinkedIn non ha restituito l\'identificativo del post \(HTTP ',
+            'tpl' => 'LinkedIn did not return the post identifier (HTTP ',
+        ),
+        array(
+            're'  => 'Errore inatteso durante la pubblicazione su LinkedIn: ',
+            'tpl' => 'Unexpected error while publishing to LinkedIn: ',
+        ),
+        array(
+            're'  => 'Errore inatteso durante l\'invio a Telegram: ',
+            'tpl' => 'Unexpected error while sending to Telegram: ',
+        ),
+        array(
+            're'  => 'Errore di connessione a Telegram: ',
+            'tpl' => 'Connection error to Telegram: ',
+        ),
+        array(
+            're'  => 'Risposta di Telegram non interpretabile \(HTTP ',
+            'tpl' => 'Telegram response not interpretable (HTTP ',
+        ),
+        array(
+            're'  => 'Errore inatteso invio X: ',
+            'tpl' => 'Unexpected error sending to X: ',
+        ),
+        array(
+            're'  => 'Errore di rete verso X: ',
+            'tpl' => 'Network error to X: ',
+        ),
+        array(
+            're'  => 'Risposta X inattesa \(HTTP 201 senza data\.id\): ',
+            'tpl' => 'Unexpected X response (HTTP 201 without data.id): ',
+        ),
+        array(
+            're'  => 'Provider di ricerca web non riconosciuto \("',
+            'tpl' => 'Web search provider not recognized ("',
+        ),
+        array(
+            're'  => '"\): valori ammessi tavily, serper, brave, none\.',
+            'tpl' => '"): allowed values are tavily, serper, brave, none.',
+        ),
+        array(
+            're'  => 'URL non valido o non ammesso \(solo http/https\): ',
+            'tpl' => 'Invalid or disallowed URL (http/https only): ',
+        ),
+        array(
+            're'  => '" non presente tra i server configurati \(impostazioni globali o strumenti personali dell\'agente\)\.',
+            'tpl' => '" not among the configured servers (global settings or the agent personal tools).',
+        ),
+        array(
+            're'  => 'URL del server MCP "',
+            'tpl' => 'MCP server URL "',
+        ),
+        array(
+            're'  => '" non valido o non ammesso \(solo http/https\): ',
+            'tpl' => '" invalid or disallowed (http/https only): ',
+        ),
+        array(
+            're'  => 'Il tool MCP "',
+            'tpl' => 'The MCP tool "',
+        ),
+        array(
+            're'  => '" ha segnalato un errore',
+            'tpl' => '" reported an error',
+        ),
+        array(
+            're'  => 'Errore interno del client MCP: ',
+            'tpl' => 'Internal MCP client error: ',
+        ),
+        array(
+            're'  => 'Inizializzazione MCP fallita: ',
+            'tpl' => 'MCP initialization failed: ',
+        ),
+        array(
+            're'  => 'Errore di connessione al server MCP: ',
+            'tpl' => 'Connection error to the MCP server: ',
+        ),
+        array(
+            're'  => 'il server MCP ha risposto con errore HTTP ',
+            'tpl' => 'the MCP server responded with HTTP error ',
+        ),
+        array(
+            're'  => 'Il modello non ha concluso entro il numero massimo di giri \(',
+            'tpl' => 'The model did not finish within the maximum number of rounds (',
+        ),
+        array(
+            're'  => '\) del ciclo strumenti\.',
+            'tpl' => ') of the tools loop.',
+        ),
+        array(
+            're'  => 'Errore interno del ciclo strumenti: ',
+            'tpl' => 'Internal error in the tools loop: ',
+        ),
+        array(
+            're'  => 'Tempo massimo per il ciclo strumenti raggiunto \(',
+            'tpl' => 'Maximum time for the tools loop reached (',
+        ),
+        array(
+            're'  => ' secondi\): esecuzione interrotta entro ',
+            'tpl' => ' seconds): execution stopped within ',
+        ),
+        array(
+            're'  => 'il server ha risposto con errore HTTP ',
+            'tpl' => 'the server responded with HTTP error ',
+        ),
+        array(
+            're'  => 'il servizio ha risposto con errore HTTP ',
+            'tpl' => 'the service responded with HTTP error ',
+        ),
+        array(
+            're'  => 'Eccezione durante la traduzione: ',
+            'tpl' => 'Exception during translation: ',
+        ),
+        array(
+            're'  => 'Traduzione saltata: budget AI esaurito \(articolo #',
+            'tpl' => 'Translation skipped: AI budget exhausted (article #',
         ),
     );
 }
