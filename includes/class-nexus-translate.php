@@ -29,7 +29,27 @@
  *                                                thumbnail), poi collega sorgente e traduzione con
  *                                                Nexus_Multilang::register_translation, assegna
  *                                                le redazioni e lancia l'hook
- *                                                nexus_translate_post_created.
+ *                                                nexus_translate_post_created (SOLO
+ *                                                alla prima creazione; su update i
+ *                                                contenuti vengono aggiornati senza
+ *                                                ri-emitere l'hook).
+ *
+ * v1.1.9 "Affidabilità traduzioni":
+ *  - Lock anti-race 'nexus_tr_lock_{article_id}_{lang}' (transient, TTL 5 min):
+ *    REST manuale e cron 'nexus_ml_autotranslate' sovrapposti NON fanno più DUE
+ *    chiamate AI. Se il lock non è acquisito l'esito è onesto ('traduzione già
+ *    in corso'); il flusso completo gira dentro il lock (con re-check della
+ *    traduzione esistente DOPO l'acquisizione) e il release avviene su OGNI
+ *    percorso d'uscita tramite try/finally in run_locked().
+ *  - Budget guard: PRIMA di ogni chiamata al modello viene verificato
+ *    Nexus_AI_Engine::budget_exceeded(); budget esaurito → traduzione saltata
+ *    con log attività onesto ed esito onesto al chiamante (tipo di ritorno
+ *    invariato: array{ok,already,error,translation} + flag additivo 'partial').
+ *  - Chunking: il content oltre MAX_CONTENT_CHARS NON è più troncato in
+ *    silenzio: viene spezzato in segmenti ≤ MAX_CHUNK_CHARS su confini di
+ *    paragrafo, tradotti in sequenza con continuità ('continua la traduzione
+ *    dal segmento precedente') e ricongiunti; cap MAX_CHUNKS segmenti (oltre:
+ *    log onesto 'contenuto parzialmente tradotto' + 'partial' => true).
  *
  * Note di integrazione:
  * - Le rotte REST sono gestite QUI (pattern Nexus_Newsletter), NON in class-nexus-rest.php.
@@ -62,9 +82,29 @@ class Nexus_Translate {
         const ROUTE_NAMESPACE = 'nexus/v1';
 
         /**
-         * Lunghezza massima (caratteri) del content originale inviato al prompt AI.
+         * Soglia (caratteri) oltre la quale il content viene spezzato in chunk:
+         * fino a questa dimensione va al modello intero, in una sola chiamata.
          */
         const MAX_CONTENT_CHARS = 8000;
+
+        /**
+         * Lunghezza massima (caratteri) di ogni chunk quando il content viene
+         * spezzato (margine sotto MAX_CONTENT_CHARS per prompt sicuri).
+         */
+        const MAX_CHUNK_CHARS = 7500;
+
+        /**
+         * Numero massimo di chunk tradotti per articolo: oltre, la traduzione
+         * resta parziale con log onesto 'contenuto parzialmente tradotto'
+         * (nessun taglio silenzioso: il limite è sempre dichiarato nell'esito).
+         */
+        const MAX_CHUNKS = 10;
+
+        /**
+         * Durata (secondi) del lock anti-race traduzioni: 5 minuti coprono la
+         * chiamata AI e il TTL rende il lock auto-guarigente anche dopo un fatal.
+         */
+        const LOCK_TTL = 300;
 
         /**
          * Mappa codice lingua → nome italiano (usato nei prompt AI).
@@ -245,6 +285,12 @@ class Nexus_Translate {
                         $payload['already'] = true;
                 }
 
+                // v1.1.9: onestà sul contenuto — true se il content supera il cap di
+                // segmenti ed è stato tradotto solo in parte (mai troncato in silenzio).
+                if ( ! empty( $result['partial'] ) ) {
+                        $payload['partial'] = true;
+                }
+
                 return rest_ensure_response( $payload );
         }
 
@@ -298,25 +344,33 @@ class Nexus_Translate {
         /**
          * Traduce un articolo nella lingua richiesta (riutilizzabile, mai fatale).
          *
-         * Flusso: guard settings/dipendenze → lingua valida → se la traduzione esiste
-         * già con contenuto ritorna already=true → UNA chiamata Nexus_AI_Engine::chat
-         * (action='translate', agent_id=0) con prompt IT che chiede ESCLUSIVAMENTE
-         * JSON {"title","summary","content"} → extract_json → validazione title →
-         * Nexus_DB::insert_translation (upsert) → ritorna la riga fresca.
+         * Flusso: guard settings/dipendenze → LOCK anti-race per articolo+lingua
+         * (lock non acquisito → esito onesto 'traduzione già in corso', ZERO
+         * chiamate AI) → re-check della traduzione esistente DENTRO il lock →
+         * budget guard PRIMA di ogni chiamata Nexus_AI_Engine::chat
+         * (action='translate', agent_id=0) con prompt IT che chiede
+         * ESCLUSIVAMENTE JSON {"title","summary","content"} → extract_json →
+         * validazione title → Nexus_DB::insert_translation (upsert) → riga fresca.
+         *
+         * Content lungo: oltre MAX_CONTENT_CHARS NON viene troncato in silenzio
+         * ma spezzato in segmenti ≤ MAX_CHUNK_CHARS su confini di paragrafo e
+         * tradotto in sequenza con continuità; oltre MAX_CHUNKS segmenti la
+         * traduzione è parziale (flag 'partial' a true + log onesto).
          *
          * Codici lingua fuori dalla mappa LANGUAGES sono ammessi: viene usato il
          * codice stesso come nome lingua nel prompt.
          *
          * @param int    $article_id ID articolo.
          * @param string $lang       Codice lingua (es. 'en', 'es', 'fr', 'de', 'pt', 'ar', 'zh', 'ja').
-         * @return array{ok:bool,already:bool,error:string,translation:object|array|null}
+         * @return array{ok:bool,already:bool,error:string,translation:object|array|null,partial:bool}
          */
         public static function translate_article( $article_id, $lang ) {
                 $out = array(
-                        'ok'         => false,
-                        'already'    => false,
-                        'error'      => '',
+                        'ok'          => false,
+                        'already'     => false,
+                        'error'       => '',
                         'translation' => null,
+                        'partial'     => false,
                 );
 
                 $article_id = absint( $article_id );
@@ -338,12 +392,125 @@ class Nexus_Translate {
                         return $out;
                 }
 
-                /* Traduzione già presente con contenuto: nessuna chiamata AI. */
+                // Lock anti-race (v1.1.9): REST manuale e cron 'nexus_ml_autotranslate'
+                // possono sovrapporsi sullo stesso articolo+lingua e fare DUE chiamate AI.
+                // Tutto il flusso d'effetto gira dentro il lock e il release avviene su
+                // OGNI percorso d'uscita (try/finally in run_locked()).
+                return self::run_locked( $article_id, $lang );
+        }
+
+        /**
+         * Esegue translate_article_locked() tenendo il lock anti-race e garantendo
+         * il release su OGNI percorso d'uscita (successo, errore, eccezione): è il
+         * "try/finally" manuale del flusso traduzioni.
+         *
+         * @param int    $article_id ID articolo.
+         * @param string $lang       Codice lingua.
+         * @return array{ok:bool,already:bool,error:string,translation:object|array|null,partial:bool}
+         */
+        private static function run_locked( $article_id, $lang ) {
+                $lock_key = self::lock_key( $article_id, $lang );
+
+                if ( ! self::acquire_lock( $lock_key ) ) {
+                        // Esito onesto: un altro flusso (REST o cron) sta già traducendo
+                        // lo stesso articolo nella stessa lingua. Nessuna seconda chiamata AI.
+                        return array(
+                                'ok'          => false,
+                                'already'     => false,
+                                'error'       => 'Traduzione già in corso per questo articolo e questa lingua: riprova più tardi.',
+                                'translation' => null,
+                                'partial'     => false,
+                        );
+                }
+
+                try {
+                        return self::translate_article_locked( $article_id, $lang );
+                } catch ( \Throwable $e ) {
+                        // Mai fatale: l'eccezione diventa esito onesto (e log) per il chiamante.
+                        $message = 'Eccezione durante la traduzione: ' . sanitize_text_field( $e->getMessage() );
+                        self::log_activity( $article_id, $lang, false, $message );
+                        return array(
+                                'ok'          => false,
+                                'already'     => false,
+                                'error'       => $message,
+                                'translation' => null,
+                                'partial'     => false,
+                        );
+                } finally {
+                        // Release garantito: anche sui return dentro try/catch e su eccezione.
+                        self::release_lock( $lock_key );
+                }
+        }
+
+        /**
+         * Chiave transient del lock anti-race per articolo+lingua.
+         *
+         * @param int    $article_id ID articolo.
+         * @param string $lang       Codice lingua.
+         * @return string
+         */
+        private static function lock_key( $article_id, $lang ) {
+                return 'nexus_tr_lock_' . absint( $article_id ) . '_' . sanitize_key( (string) $lang );
+        }
+
+        /**
+         * Acquisisce il lock: transient con TTL 5 minuti e valore timestamp.
+         * Il TTL rende il lock auto-guarigente: un fatal del flusso precedente
+         * non lascia l'articolo bloccato per sempre.
+         *
+         * @param string $lock_key Chiave del lock.
+         * @return bool True se il lock è stato acquisito.
+         */
+        private static function acquire_lock( $lock_key ) {
+                if ( ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+                        return true; // Ambiente senza transients: comportamento pre-1.1.9, mai bloccante.
+                }
+                if ( false !== get_transient( $lock_key ) ) {
+                        return false; // Lock attivo: un altro flusso sta già traducendo.
+                }
+                set_transient( $lock_key, time(), self::LOCK_TTL );
+                return true;
+        }
+
+        /**
+         * Rilascia il lock (idempotente: sicuro anche se il TTL è già scaduto).
+         *
+         * @param string $lock_key Chiave del lock.
+         * @return void
+         */
+        private static function release_lock( $lock_key ) {
+                if ( function_exists( 'delete_transient' ) ) {
+                        delete_transient( $lock_key );
+                }
+        }
+
+        /**
+         * Corpo della traduzione, eseguito DENTRO il lock (mai chiamato direttamente).
+         *
+         * Il check-then-act della traduzione esistente è ripetuto QUI: tra il
+         * rilascio del lock precedente e la nostra acquisizione un altro flusso
+         * può aver già completato la traduzione (prima il controllo era fuori da
+         * ogni protezione e la doppia chiamata AI restava possibile).
+         *
+         * @param int    $article_id ID articolo.
+         * @param string $lang       Codice lingua.
+         * @return array{ok:bool,already:bool,error:string,translation:object|array|null,partial:bool}
+         */
+        private static function translate_article_locked( $article_id, $lang ) {
+                $out = array(
+                        'ok'          => false,
+                        'already'     => false,
+                        'error'       => '',
+                        'translation' => null,
+                        'partial'     => false,
+                );
+
+                /* Re-check DENTRO il lock: il run che teneva il lock può aver già finito. */
                 if ( method_exists( 'Nexus_DB', 'get_translation' ) ) {
                         $existing = Nexus_DB::get_translation( $article_id, $lang );
                         if ( $existing && '' !== trim( (string) $existing->content ) ) {
-                                $out['ok']         = true;
-                                $out['already']    = true;
+                                $out['ok']          = true;
+                                $out['already']     = true;
                                 $out['translation'] = $existing;
                                 return $out;
                         }
@@ -358,7 +525,7 @@ class Nexus_Translate {
 
                 $title   = (string) $article->title;
                 $summary = (string) $article->summary;
-                $content = self::truncate( (string) $article->content, self::MAX_CONTENT_CHARS );
+                $content = (string) $article->content;
 
                 if ( '' === trim( $title ) && '' === trim( $content ) ) {
                         $out['error'] = sprintf( 'L\'articolo #%d non ha titolo né contenuto da tradurre.', $article_id );
@@ -374,7 +541,143 @@ class Nexus_Translate {
 
                 $lang_name = self::lang_name( $lang );
 
-                $messages = array(
+                /* Chunking (v1.1.9): nessun taglio silenzioso del content lungo. */
+                $chunks  = self::split_content_chunks( $content );
+                $total   = count( $chunks );
+                $partial = false;
+                if ( $total > self::MAX_CHUNKS ) {
+                        // Cap di segmenti: ciò che non si traduce viene DICHIARATO
+                        // ('partial' => true + log onesto), mai perso in silenzio.
+                        $chunks  = array_slice( $chunks, 0, self::MAX_CHUNKS );
+                        $partial = true;
+                }
+
+                $t_title       = '';
+                $t_summary     = '';
+                $content_parts = array();
+
+                foreach ( array_values( $chunks ) as $i => $chunk ) {
+                        /* Budget guard PRIMA di OGNI chiamata al modello (v1.1.9). */
+                        if ( self::budget_exceeded() ) {
+                                $out['error'] = ( ! empty( $content_parts ) )
+                                        ? sprintf( 'Traduzione interrotta: budget AI esaurito dopo %1$d di %2$d segmenti.', count( $content_parts ), $total )
+                                        : 'Traduzione saltata: budget AI esaurito.';
+                                // Nessun salvataggio parziale: la traduzione ripartirà
+                                // integralmente quando il budget si libera.
+                                self::log_activity(
+                                        $article_id,
+                                        $lang,
+                                        false,
+                                        'Traduzione saltata: budget AI esaurito (articolo #' . absint( $article_id ) . ', ' . sanitize_key( $lang ) . ')'
+                                );
+                                return $out;
+                        }
+
+                        $messages = ( 0 === $i )
+                                ? self::chunk_prompt_first( $lang_name, $title, $summary, $chunk )
+                                : self::chunk_prompt_next( $lang_name, $chunk );
+
+                        try {
+                                $res = Nexus_AI_Engine::chat(
+                                        $messages,
+                                        array(
+                                                'action'   => 'translate',
+                                                'agent_id' => 0,
+                                        )
+                                );
+                        } catch ( \Throwable $e ) {
+                                $res = null;
+                        }
+
+                        $parsed = self::parse_ai_json( $res );
+                        if ( empty( $parsed['ok'] ) ) {
+                                $out['error'] = (string) $parsed['error'];
+                                self::log_activity( $article_id, $lang, false );
+                                return $out;
+                        }
+
+                        $data = $parsed['data'];
+
+                        if ( 0 === $i ) {
+                                // Titolo e summary arrivano dal primo segmento (il prompt li richiede esplicitamente):
+                                // validarlo qui evita di pagare i segmenti successivi per una traduzione inutilizzabile.
+                                $t_title   = trim( (string) ( $data['title'] ?? '' ) );
+                                $t_summary = (string) ( $data['summary'] ?? '' );
+                                if ( '' === $t_title ) {
+                                        $out['error'] = 'AI: traduzione incompleta, titolo mancante.';
+                                        self::log_activity( $article_id, $lang, false );
+                                        return $out;
+                                }
+                        }
+
+                        $part = (string) ( $data['content'] ?? '' );
+                        if ( '' === trim( $part ) ) {
+                                $out['error'] = 'AI: traduzione incompleta, segmento ' . ( $i + 1 ) . ' vuoto.';
+                                self::log_activity( $article_id, $lang, false );
+                                return $out;
+                        }
+
+                        $content_parts[] = $part;
+                }
+
+                // Ricongiunzione: i segmenti portano con sé i loro separatori di paragrafo,
+                // quindi la giustapposta riproduce il testo originale senza perdite.
+                $t_content = implode( '', $content_parts );
+
+                $new_id = Nexus_DB::insert_translation(
+                        array(
+                                'article_id' => $article_id,
+                                'lang'       => $lang,
+                                'title'      => $t_title,
+                                'summary'    => $t_summary,
+                                'content'    => $t_content,
+                        )
+                );
+
+                if ( $new_id <= 0 ) {
+                        $out['error'] = 'Salvataggio della traduzione non riuscito.';
+                        self::log_activity( $article_id, $lang, false );
+                        return $out;
+                }
+
+                $row = method_exists( 'Nexus_DB', 'get_translation' ) ? Nexus_DB::get_translation( $article_id, $lang ) : null;
+
+                /* Log onesto: se ci si è fermati al cap di segmenti lo si dichiara. */
+                if ( $partial ) {
+                        self::log_activity(
+                                $article_id,
+                                $lang,
+                                true,
+                                sprintf(
+                                        'Traduzione %1$s articolo #%2$d completata ma contenuto parzialmente tradotto (limite di %3$d segmenti).',
+                                        sanitize_key( $lang ),
+                                        absint( $article_id ),
+                                        self::MAX_CHUNKS
+                                )
+                        );
+                } else {
+                        self::log_activity( $article_id, $lang, true );
+                }
+
+                $out['ok']          = true;
+                $out['already']     = false;
+                $out['partial']     = $partial;
+                $out['translation'] = $row ? $row : null;
+
+                return $out;
+        }
+
+        /**
+         * Prompt del primo segmento (o dell'unico): chiede titolo, summary e content.
+         *
+         * @param string $lang_name Nome lingua per il prompt.
+         * @param string $title     Titolo originale.
+         * @param string $summary   Summary originale.
+         * @param string $chunk     Segmento di content da tradurre.
+         * @return array Messaggi per Nexus_AI_Engine::chat.
+         */
+        private static function chunk_prompt_first( $lang_name, $title, $summary, $chunk ) {
+                return array(
                         array(
                                 'role'    => 'system',
                                 'content' => 'Sei un traduttore editoriale professionale di Nexus News AI. Rispondi SOLO con JSON valido {"title": "...", "summary": "...", "content": "..."}, senza testo aggiuntivo né blocco markdown.',
@@ -389,28 +692,54 @@ class Nexus_Translate {
                                         $lang_name,
                                         $title,
                                         $summary,
-                                        $content
+                                        $chunk
                                 ),
                         ),
                 );
+        }
 
-                try {
-                        $res = Nexus_AI_Engine::chat(
-                                $messages,
-                                array(
-                                        'action'   => 'translate',
-                                        'agent_id' => 0,
-                                )
-                        );
-                } catch ( \Throwable $e ) {
-                        $res = null;
-                }
+        /**
+         * Prompt dei segmenti successivi: continua la traduzione dal segmento
+         * precedente e ritorna SOLO il content del segmento (titolo e summary sono
+         * già quelli del primo: meno token, zero ripetizioni).
+         *
+         * @param string $lang_name Nome lingua per il prompt.
+         * @param string $chunk     Segmento successivo da tradurre.
+         * @return array Messaggi per Nexus_AI_Engine::chat.
+         */
+        private static function chunk_prompt_next( $lang_name, $chunk ) {
+                return array(
+                        array(
+                                'role'    => 'system',
+                                'content' => 'Sei un traduttore editoriale professionale di Nexus News AI. Rispondi SOLO con JSON valido {"content": "..."}, senza testo aggiuntivo né blocco markdown.',
+                        ),
+                        array(
+                                'role'    => 'user',
+                                'content' => sprintf(
+                                        'Continua la traduzione in %1$s del medesimo articolo dal segmento precedente: il testo qui sotto è il segmento successivo. Prosegui con continuità (tono e terminologia del segmento precedente), mantieni la struttura HTML se presente, NON tradurre nomi propri/marchi e NON ripetere la traduzione già fatta. Ritorna ESCLUSIVAMENTE JSON {"content": "..."} con SOLO la traduzione di QUESTO segmento.' . "\n\n" .
+                                        'Segmento successivo:' . "\n%2\$s",
+                                        $lang_name,
+                                        $chunk
+                                ),
+                        ),
+                );
+        }
 
+        /**
+         * Normalizza la risposta AI: ok=false con errore onesto se la chiamata
+         * fallisce o il JSON non è riparabile (pattern condiviso da tutti i chunk).
+         *
+         * @param mixed $res Risposta Nexus_AI_Engine::chat.
+         * @return array{ok:bool,error:string,data:array}
+         */
+        private static function parse_ai_json( $res ) {
                 if ( ! is_array( $res ) || empty( $res['ok'] ) ) {
-                        $ai_error     = ( is_array( $res ) && isset( $res['error'] ) ) ? trim( (string) $res['error'] ) : '';
-                        $out['error'] = '' !== $ai_error ? 'AI: ' . $ai_error : 'AI: chiamata di traduzione non riuscita.';
-                        self::log_activity( $article_id, $lang, false );
-                        return $out;
+                        $ai_error = ( is_array( $res ) && isset( $res['error'] ) ) ? trim( (string) $res['error'] ) : '';
+                        return array(
+                                'ok'    => false,
+                                'error' => '' !== $ai_error ? 'AI: ' . $ai_error : 'AI: chiamata di traduzione non riuscita.',
+                                'data'  => array(),
+                        );
                 }
 
                 $data = null;
@@ -419,42 +748,138 @@ class Nexus_Translate {
                 }
 
                 if ( ! is_array( $data ) ) {
-                        $out['error'] = 'AI: risposta non valida, JSON atteso non ricevuto.';
-                        self::log_activity( $article_id, $lang, false );
-                        return $out;
+                        return array(
+                                'ok'    => false,
+                                'error' => 'AI: risposta non valida, JSON atteso non ricevuto.',
+                                'data'  => array(),
+                        );
                 }
 
-                $t_title = trim( (string) ( $data['title'] ?? '' ) );
-                if ( '' === $t_title ) {
-                        $out['error'] = 'AI: traduzione incompleta, titolo mancante.';
-                        self::log_activity( $article_id, $lang, false );
-                        return $out;
+                return array( 'ok' => true, 'error' => '', 'data' => $data );
+        }
+
+        /**
+         * Budget guard del flusso traduzioni (v1.1.9): delega a
+         * Nexus_AI_Engine::budget_exceeded() senza mai fatale; un errore del
+         * controllo NON blocca la traduzione (stessa scelta della pipeline).
+         *
+         * @return bool True se il budget mensile AI è esaurito.
+         */
+        private static function budget_exceeded() {
+                if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'budget_exceeded' ) ) {
+                        return false;
+                }
+                try {
+                        return (bool) Nexus_AI_Engine::budget_exceeded();
+                } catch ( \Throwable $e ) {
+                        return false;
+                }
+        }
+
+        /**
+         * Spezza il content in segmenti per la traduzione: nessun taglio silenzioso.
+         *
+         * Sotto MAX_CONTENT_CHARS il content va al modello intero (comportamento
+         * precedente). Oltre, si spezza in segmenti ≤ MAX_CHUNK_CHARS sui confini
+         * di paragrafo (</p> o doppio newline), mantenendo i separatori così i
+         * segmenti ricongiunti riproducono il testo originale senza perdite.
+         *
+         * @param string $content Content originale.
+         * @return string[] Segmenti nell'ordine originale.
+         */
+        private static function split_content_chunks( $content ) {
+                $content = (string) $content;
+                if ( self::str_len( $content ) <= self::MAX_CONTENT_CHARS ) {
+                        return array( $content );
                 }
 
-                $new_id = Nexus_DB::insert_translation(
-                        array(
-                                'article_id' => $article_id,
-                                'lang'       => $lang,
-                                'title'      => $t_title,
-                                'summary'    => (string) ( $data['summary'] ?? '' ),
-                                'content'    => (string) ( $data['content'] ?? '' ),
-                        )
-                );
-
-                if ( $new_id <= 0 ) {
-                        $out['error'] = 'Salvataggio della traduzione non riuscito.';
-                        self::log_activity( $article_id, $lang, false );
-                        return $out;
+                // Paragrafi con i loro separatori: con PREG_SPLIT_DELIM_CAPTURE il risultato
+                // alterna [testo, separatore, testo, separatore, ...].
+                $pieces     = preg_split( '/(<\/p>|\r\n\r\n|\n\n)/', $content, -1, PREG_SPLIT_DELIM_CAPTURE );
+                $paragraphs = array();
+                $buf        = '';
+                foreach ( (array) $pieces as $idx => $piece ) {
+                        $buf .= (string) $piece;
+                        if ( 1 === ( $idx % 2 ) ) {
+                                $paragraphs[] = $buf;
+                                $buf          = '';
+                        }
+                }
+                if ( '' !== $buf ) {
+                        $paragraphs[] = $buf;
                 }
 
-                $row = method_exists( 'Nexus_DB', 'get_translation' ) ? Nexus_DB::get_translation( $article_id, $lang ) : null;
+                $chunks = array();
+                $cur    = '';
+                foreach ( $paragraphs as $p ) {
+                        if ( self::str_len( $p ) > self::MAX_CHUNK_CHARS ) {
+                                // Paragrafo più grande di un chunk: flush e spezzatura dura
+                                // (preferendo confini di parola, mai a metà tag aperto).
+                                if ( '' !== trim( $cur ) ) {
+                                        $chunks[] = $cur;
+                                        $cur      = '';
+                                }
+                                foreach ( self::hard_split( $p, self::MAX_CHUNK_CHARS ) as $piece ) {
+                                        $chunks[] = $piece;
+                                }
+                                continue;
+                        }
+                        if ( '' !== $cur && self::str_len( $cur . $p ) > self::MAX_CHUNK_CHARS ) {
+                                $chunks[] = $cur;
+                                $cur      = '';
+                        }
+                        $cur .= $p;
+                }
+                if ( '' !== trim( $cur ) ) {
+                        $chunks[] = $cur;
+                }
 
-                self::log_activity( $article_id, $lang, true );
+                // Rete di sicurezza: se la spezzatura non produce nulla, l'intero content
+                // va al modello come segmento unico (MAI troncato in silenzio).
+                if ( empty( $chunks ) ) {
+                        return array( $content );
+                }
 
-                $out['ok']         = true;
-                $out['already']    = false;
-                $out['translation'] = $row ? $row : null;
+                return $chunks;
+        }
 
+        /**
+         * Spezzatura dura di un testo oltre il limite (paragrafo gigantesco):
+         * taglia preferendo confini di parola e mai a metà tag HTML aperto.
+         *
+         * @param string $text Testo da spezzare.
+         * @param int    $max  Lunghezza massima di ogni pezzo.
+         * @return string[]
+         */
+        private static function hard_split( $text, $max ) {
+                $out = array();
+                while ( self::str_len( $text ) > $max ) {
+                        $piece = self::str_substr( $text, 0, $max );
+
+                        // Preferisci tagliare all'ultimo spazio: confini di parola, non a metà.
+                        $sp = function_exists( 'mb_strrpos' ) ? mb_strrpos( $piece, ' ' ) : strrpos( $piece, ' ' );
+                        if ( is_int( $sp ) && $sp > (int) ( $max * 0.5 ) ) {
+                                $piece = self::str_substr( $piece, 0, $sp + 1 );
+                        }
+
+                        // Non lasciare un tag aperto a cavallo dei segmenti: se l'ultimo '<'
+                        // non è stato chiuso, arretra il taglio prima del tag.
+                        $lt = function_exists( 'mb_strrpos' ) ? mb_strrpos( $piece, '<' ) : strrpos( $piece, '<' );
+                        $gt = function_exists( 'mb_strrpos' ) ? mb_strrpos( $piece, '>' ) : strrpos( $piece, '>' );
+                        if ( is_int( $lt ) && ( ! is_int( $gt ) || $gt < $lt ) ) {
+                                $piece = self::str_substr( $piece, 0, $lt );
+                        }
+
+                        if ( '' === trim( $piece ) ) {
+                                $piece = self::str_substr( $text, 0, $max );
+                        }
+
+                        $out[] = $piece;
+                        $text  = self::str_substr( $text, self::str_len( $piece ) );
+                }
+                if ( '' !== trim( $text ) ) {
+                        $out[] = $text;
+                }
                 return $out;
         }
 
@@ -500,14 +925,19 @@ class Nexus_Translate {
         /**
          * Traduce un articolo e lo pubblica come POST WordPress nativo (v1.1.2).
          *
-         * Il contenuto passa SEMPRE da translate_article (una chiamata AI sola,
-         * upsert su wp_nexus_translations: storico e costi restano tracciati);
-         * il risultato diventa un post nativo (post type 'post') con titolo, slug,
-         * contenuto, estratto, autore bot, categoria e tag dell'articolo, collegato
-         * al sorgente con Nexus_Multilang::register_translation. Se il post della
-         * lingua richiesta esiste gia' viene aggiornato (already=true, stato
-         * invariato) senza duplicare nulla. Con Polylang o WPML attivi l'associazione
-         * usa le loro API ufficiali: zero lavoro extra.
+         * Il contenuto passa SEMPRE da translate_article (che dalla v1.1.9 applica
+         * lock anti-race, budget guard e chunking; upsert su wp_nexus_translations:
+         * storico e costi restano tracciati); il risultato diventa un post nativo
+         * (post type 'post') con titolo, slug, contenuto, estratto, autore bot,
+         * categoria e tag dell'articolo, collegato al sorgente con
+         * Nexus_Multilang::register_translation. Se il post della lingua richiesta
+         * esiste gia' viene aggiornato (already=true, stato invariato) senza
+         * duplicare nulla. Con Polylang o WPML attivi l'associazione usa le loro
+         * API ufficiali: zero lavoro extra.
+         *
+         * v1.1.9: l'hook nexus_translate_post_created scatta SOLO quando il post
+         * tradotto e' NUOVAMENTE creato; su update i contenuti vengono aggiornati
+         * senza ri-emitere l'hook (evita ping/notifiche duplicate a ogni run cron).
          *
          * @param int    $article_id ID articolo Nexus.
          * @param string $lang       Codice lingua della traduzione (es. 'en').
@@ -703,8 +1133,13 @@ class Nexus_Translate {
                         }
                 }
 
-                // Passo 9: hook per integrazioni (SEO, ping, cache, notifiche).
-                do_action( 'nexus_translate_post_created', $post_id, $source_post_id, $lang );
+                // Passo 9: hook per integrazioni (SEO, ping, cache, notifiche) SOLO su
+                // creazione reale (v1.1.9): su update il post esiste già e i consumatori
+                // non devono ri-scattare (prima l'hook arrivava anche a traduzione
+                // aggiornata, con ping/notifiche duplicate a ogni run cron).
+                if ( ! $already ) {
+                        do_action( 'nexus_translate_post_created', $post_id, $source_post_id, $lang );
+                }
 
                 // Passo 10: log attivita' con esito.
                 self::log_activity( $article_id, $lang, true );
@@ -757,35 +1192,52 @@ class Nexus_Translate {
         }
 
         /**
-         * Tronca una stringa a N caratteri senza dipendere da mbstring.
+         * Lunghezza stringa senza dipendere da mbstring.
          *
-         * @param string $text      Testo di partenza.
-         * @param int    $max_chars Numero massimo di caratteri.
+         * @param string $text Testo.
+         * @return int
+         */
+        private static function str_len( $text ) {
+                return function_exists( 'mb_strlen' ) ? (int) mb_strlen( (string) $text ) : strlen( (string) $text );
+        }
+
+        /**
+         * Substring senza dipendere da mbstring (l $length è opzionale).
+         *
+         * @param string   $text   Testo.
+         * @param int      $start  Offset di partenza.
+         * @param int|null $length Lunghezza (null = fino alla fine).
          * @return string
          */
-        private static function truncate( $text, $max_chars ) {
-                $text = (string) $text;
+        private static function str_substr( $text, $start, $length = null ) {
                 if ( function_exists( 'mb_substr' ) ) {
-                        return (string) mb_substr( $text, 0, (int) $max_chars );
+                        return null === $length
+                                ? (string) mb_substr( (string) $text, (int) $start )
+                                : (string) mb_substr( (string) $text, (int) $start, (int) $length );
                 }
-                return (string) substr( $text, 0, (int) $max_chars );
+                return null === $length
+                        ? (string) substr( (string) $text, (int) $start )
+                        : (string) substr( (string) $text, (int) $start, (int) $length );
         }
 
         /**
          * Log attività best-effort su Nexus_DB::insert_activity: mai fatale, mai bloccante.
          *
-         * @param int    $article_id ID articolo.
-         * @param string $lang       Codice lingua.
-         * @param bool   $success    Esito della traduzione.
+         * @param int         $article_id ID articolo.
+         * @param string      $lang       Codice lingua.
+         * @param bool        $success    Esito della traduzione.
+         * @param string|null $message    Messaggio personalizzato (budget esaurito, contenuto
+         *                                parziale, eccezione...): null = messaggio standard.
          * @return void
          */
-        private static function log_activity( $article_id, $lang, $success ) {
+        private static function log_activity( $article_id, $lang, $success, $message = null ) {
                 try {
                         if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                $default = sprintf( 'Traduzione %1$s articolo #%2$d', sanitize_key( (string) $lang ), absint( $article_id ) );
                                 Nexus_DB::insert_activity(
                                         0,
                                         'translate',
-                                        sprintf( 'Traduzione %1$s articolo #%2$d', sanitize_key( (string) $lang ), absint( $article_id ) ),
+                                        ( null !== $message && '' !== (string) $message ) ? (string) $message : $default,
                                         $success ? 'success' : 'error'
                                 );
                         }

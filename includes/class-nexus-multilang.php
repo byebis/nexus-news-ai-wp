@@ -27,6 +27,8 @@
  *  group_of_post(), translations_of(), post_for_lang()
  *  register_translation( $post_id, $lang, $source_post_id )
  *  stats_counts()  — articoli pubblicati per lingua (dashboard)
+ *  doctor( $fix = false ) — v1.1.9: diagnostica/riparazione collegamenti multilingua
+ *    (ritorna array( 'report' => string[], 'fixed' => int ); ZERO distruttività senza $fix).
  *
  * CONVENZIONI: nessun fatal se i plugin di lingua mancano o cambiano API;
  * le chiamate degradano al driver 'nexus' o a valori vuoti onesti.
@@ -273,6 +275,42 @@ class Nexus_Multilang {
                 update_post_meta( $post_id, self::META_LANG, $lang );
         }
 
+        /**
+         * Lingua RAW di un post: il codice assegnato DAVVERO, senza fallback a
+         * default_lang() come fa lang_of_post(). Serve al doctor per distinguere
+         * "post senza lingua" (anomalia) da "lingua default del sito" (regolare).
+         *
+         * @param int $post_id Post ID.
+         * @return string Codice lingua o '' se non assegnata.
+         */
+        private static function raw_lang_of_post( $post_id ) {
+                $post_id = absint( $post_id );
+                if ( $post_id < 1 ) {
+                        return '';
+                }
+
+                $d = self::driver();
+
+                if ( 'polylang' === $d && function_exists( 'pll_get_post_language' ) ) {
+                        $lang = pll_get_post_language( $post_id, 'slug' );
+                        return ( is_string( $lang ) && '' !== $lang ) ? sanitize_key( $lang ) : '';
+                }
+
+                if ( 'wpml' === $d ) {
+                        $details = apply_filters( 'wpml_element_language_details', null, array(
+                                'element_id'   => $post_id,
+                                'element_type' => 'post_post',
+                        ) );
+                        if ( $details && ! empty( $details->language_code ) ) {
+                                return sanitize_key( (string) $details->language_code );
+                        }
+                        return '';
+                }
+
+                $meta = get_post_meta( $post_id, self::META_LANG, true );
+                return is_string( $meta ) ? sanitize_key( trim( $meta ) ) : '';
+        }
+
         /* ========================= GRUPPI DI TRADUZIONE ========================= */
 
         /**
@@ -426,11 +464,31 @@ class Nexus_Multilang {
                 $d = self::driver();
 
                 if ( 'polylang' === $d && function_exists( 'pll_save_post_translations' ) && function_exists( 'pll_get_post_translations' ) ) {
+                        // Il sorgente senza lingua Polylang (tipico dei post creati via wp_insert_post)
+                        // produceva un gruppo SENZA sorgente: pll_get_post_translations() tornava vuoto,
+                        // il run successivo non trovava la traduzione e creava un post duplicato.
+                        // Fix v1.1.9: al sorgente viene assegnata la lingua default del sito PRIMA
+                        // di costruire il gruppo, così compare sempre nella mappa delle traduzioni.
+                        $source_lang = self::raw_lang_of_post( $source_post_id );
+                        if ( '' === $source_lang ) {
+                                $source_lang = self::default_lang();
+                                pll_set_post_language( $source_post_id, $source_lang );
+                        }
+
                         pll_set_post_language( $post_id, $lang );
+
                         $tr = pll_get_post_translations( $source_post_id );
                         $tr = is_array( $tr ) ? $tr : array();
-                        $tr[ $lang ] = $post_id;
+                        // Il sorgente va SEMPRE nel gruppo, con la sua lingua (default se sconosciuta):
+                        // pll_save_post_translations() sovrascrive il gruppo, non aggiungerlo qui
+                        // riaprirebbe la stessa anomalia dei duplicati.
+                        $tr[ $source_lang ] = $source_post_id;
+                        $tr[ $lang ]        = $post_id;
                         pll_save_post_translations( $tr );
+
+                        // Traccia il gruppo anche sui meta interni (query veloci, doctor, report):
+                        // fino alla v1.1.9 questa sincronizzazione esisteva solo nel ramo WPML.
+                        self::sync_internal_group( $post_id, $source_post_id );
                         return true;
                 }
 
@@ -461,10 +519,11 @@ class Nexus_Multilang {
                 if ( '' === $group ) {
                         $group = self::new_group_key( $source_post_id );
                         update_post_meta( $source_post_id, self::META_GROUP, $group );
-                        if ( '' === self::lang_of_post( $source_post_id ) ) {
-                                // Il sorgente resta senza meta lingua: la lingua corrente del sito
-                                // e' la sua lingua di fatto, ma non la imponiamo in scrittura.
-                        }
+                }
+                // Il sorgente senza lingua esplicita distorce stats_counts() e i gruppi:
+                // gli assegniamo la lingua default del sito (idempotente, mai distruttivo).
+                if ( '' === self::raw_lang_of_post( $source_post_id ) ) {
+                        self::set_lang_of_post( $source_post_id, self::default_lang() );
                 }
                 update_post_meta( $post_id, self::META_GROUP, $group );
                 update_post_meta( $post_id, self::META_SOURCE, $source_post_id );
@@ -560,5 +619,231 @@ class Nexus_Multilang {
                 }
 
                 return $out;
+        }
+
+        /* ========================= DIAGNOSTICA (v1.1.9) ========================= */
+
+        /**
+         * Doctor multilingua: diagnostica e (su richiesta) riparazione dei
+         * collegamenti di traduzione. ZERO distruttività senza $fix esplicito.
+         *
+         * Controlli:
+         *  (a) sorgenti Nexus senza lingua assegnata → report; con $fix la lingua
+         *      default del sito viene assegnata (stessa anomalia che generava gruppi
+         *      Polylang senza sorgente e post duplicati);
+         *  (b) gruppi senza sorgente o incompleti (interni e, con Polylang/WPML,
+         *      anche officiali) → report; con $fix il gruppo viene ricostruito col
+         *      sorgente (meta interno + associazione ufficiale via register_translation);
+         *  (c) traduzioni duplicate per stessa lingua e stesso articolo → SOLO
+         *      rilevazione, anche con $fix (nessuna cancellazione automatica: quale
+         *      copia tenere è una decisione editoriale, non meccanica);
+         *  (d) collegamenti interni rotti (meta sorgente che punta a un post
+         *      inesistente) → report; con $fix il meta rotto viene rimosso.
+         *
+         * Firma pensata per il comando WP-CLI `wp nexus multilang doctor [--fix]`
+         * (aggiunto da D1 con guard method_exists): mai fatale, mai bloccante.
+         *
+         * @param bool $fix True per applicare le riparazioni sicure.
+         * @return array{report:string[],fixed:int} Righe di report testuali + numero riparazioni applicate.
+         */
+        public static function doctor( $fix = false ) {
+                $report = array();
+                $fixed  = 0;
+                $fix    = (bool) $fix;
+                $driver = self::driver();
+
+                $report[] = sprintf(
+                        'Doctor multilingua Nexus — driver: %1$s — modalità: %2$s.',
+                        $driver,
+                        $fix ? 'riparazione' : 'sola lettura'
+                );
+
+                /* Tutti i post collegati come traduzioni Nexus (meta sorgente). */
+                $linked_ids = function_exists( 'get_posts' )
+                        ? get_posts( array(
+                                'post_type'        => 'post',
+                                'post_status'      => 'any',
+                                'meta_key'         => self::META_SOURCE,
+                                'numberposts'      => 1000,
+                                'orderby'          => 'ID',
+                                'order'            => 'ASC',
+                                'fields'           => 'ids',
+                                'suppress_filters' => false,
+                        ) )
+                        : array();
+                $linked_ids = array_map( 'absint', (array) $linked_ids );
+
+                /* (d) Collegamenti rotti + raccolta sorgenti distinti. */
+                $sources = array();
+                foreach ( $linked_ids as $pid ) {
+                        $source_id = absint( get_post_meta( $pid, self::META_SOURCE, true ) );
+                        if ( $source_id < 1 ) {
+                                continue;
+                        }
+                        $sources[ $source_id ] = true;
+
+                        if ( ! get_post( $source_id ) ) {
+                                $report[] = sprintf( 'Rotto: la traduzione #%1$d punta al sorgente #%2$d che non esiste (meta %3$s).', $pid, $source_id, self::META_SOURCE );
+                                if ( $fix ) {
+                                        // Solo il meta rotto viene rimosso: il post traduzione resta intatto.
+                                        delete_post_meta( $pid, self::META_SOURCE );
+                                        $fixed++;
+                                        $report[] = sprintf( 'Riparato: meta sorgente rotto rimosso dalla traduzione #%d.', $pid );
+                                }
+                        }
+                }
+
+                /* (a) Sorgenti senza lingua assegnata. */
+                foreach ( array_keys( $sources ) as $source_id ) {
+                        if ( ! get_post( $source_id ) ) {
+                                // Sorgente inesistente: già segnalato in (d), qui si evita il doppio report.
+                                continue;
+                        }
+                        if ( '' === self::raw_lang_of_post( $source_id ) ) {
+                                $report[] = sprintf( 'Sorgente #%1$d senza lingua assegnata (tipico dei post creati via wp_insert_post).', $source_id );
+                                if ( $fix ) {
+                                        self::set_lang_of_post( $source_id, self::default_lang() );
+                                        $fixed++;
+                                        $report[] = sprintf( 'Riparato: lingua "%1$s" assegnata al sorgente #%2$d.', self::default_lang(), $source_id );
+                                }
+                        }
+                }
+
+                /* Traduzioni senza lingua: solo rilevazione, la lingua vera non è deducibile in sicurezza. */
+                foreach ( $linked_ids as $pid ) {
+                        if ( '' === self::raw_lang_of_post( $pid ) ) {
+                                $report[] = sprintf( 'Attenzione: la traduzione #%1$d non ha lingua assegnata (intervento manuale richiesto).', $pid );
+                        }
+                }
+
+                /* Gruppi interni incompleti: membri con sorgente dichiarato fuori dal gruppo. */
+                $group_ids = function_exists( 'get_posts' )
+                        ? get_posts( array(
+                                'post_type'        => 'post',
+                                'post_status'      => 'any',
+                                'meta_key'         => self::META_GROUP,
+                                'numberposts'      => 1000,
+                                'orderby'          => 'ID',
+                                'order'            => 'ASC',
+                                'fields'           => 'ids',
+                                'suppress_filters' => false,
+                        ) )
+                        : array();
+
+                $groups = array();
+                foreach ( (array) $group_ids as $pid ) {
+                        $g = self::group_of_post( absint( $pid ) );
+                        if ( '' !== $g ) {
+                                $groups[ $g ][] = absint( $pid );
+                        }
+                }
+
+                foreach ( $groups as $g => $members ) {
+                        $members = array_values( array_unique( $members ) );
+
+                        // Sorgente dichiarato: il primo membro che porta il meta sorgente.
+                        $declared_source = 0;
+                        foreach ( $members as $m ) {
+                                $sid = absint( get_post_meta( $m, self::META_SOURCE, true ) );
+                                if ( $sid > 0 ) {
+                                        $declared_source = $sid;
+                                        break;
+                                }
+                        }
+
+                        if ( $declared_source > 0 && get_post( $declared_source ) && ! in_array( $declared_source, $members, true ) ) {
+                                $report[] = sprintf( 'Gruppo incompleto "%1$s": il sorgente #%2$d non è tra i membri (%3$d membri).', $g, $declared_source, count( $members ) );
+                                if ( $fix ) {
+                                        // Ricostruzione col sorgente: meta gruppo sul sorgente + lingua se assente.
+                                        update_post_meta( $declared_source, self::META_GROUP, $g );
+                                        if ( '' === self::raw_lang_of_post( $declared_source ) ) {
+                                                self::set_lang_of_post( $declared_source, self::default_lang() );
+                                        }
+                                        $fixed++;
+                                        $report[] = sprintf( 'Riparato: sorgente #%1$d reinserito nel gruppo "%2$s".', $declared_source, $g );
+                                }
+                        }
+
+                        /* (c) Duplicati per stessa lingua nello stesso gruppo: SOLO rilevazione. */
+                        $seen_langs = array();
+                        foreach ( $members as $m ) {
+                                $l = self::raw_lang_of_post( $m );
+                                if ( '' === $l ) {
+                                        continue;
+                                }
+                                if ( isset( $seen_langs[ $l ] ) ) {
+                                        $report[] = sprintf( 'Duplicato: nel gruppo "%1$s" due post (%2$d e %3$d) sono in lingua "%4$s" (nessuna cancellazione automatica: scelta editoriale).', $g, $seen_langs[ $l ], $m, $l );
+                                } else {
+                                        $seen_langs[ $l ] = $m;
+                                }
+                        }
+                }
+
+                /* (b) Con Polylang/WPML: il gruppo UFFICIALE deve contenere sorgente e traduzione. */
+                if ( 'polylang' === $driver || 'wpml' === $driver ) {
+                        foreach ( $linked_ids as $pid ) {
+                                $source_id = absint( get_post_meta( $pid, self::META_SOURCE, true ) );
+                                if ( $source_id < 1 || ! get_post( $source_id ) || ! get_post( $pid ) ) {
+                                        continue;
+                                }
+
+                                $map       = self::translations_of( $source_id );
+                                $map_ids   = array_map( 'absint', array_values( (array) $map ) );
+                                $problems  = array();
+                                if ( ! in_array( $source_id, $map_ids, true ) ) {
+                                        $problems[] = sprintf( 'sorgente #%d assente dal gruppo', $source_id );
+                                }
+                                if ( ! in_array( $pid, $map_ids, true ) ) {
+                                        $problems[] = sprintf( 'traduzione #%d assente dal gruppo', $pid );
+                                }
+
+                                if ( ! empty( $problems ) ) {
+                                        $report[] = sprintf( 'Gruppo %1$s incompleto: %2$s.', ( 'polylang' === $driver ? 'Polylang' : 'WPML' ), implode( '; ', $problems ) );
+                                        if ( $fix ) {
+                                                // register_translation ricostruisce il gruppo: lingua del post,
+                                                // sorgente SEMPRE incluso e meta interni sincronizzati.
+                                                $lang_fix = self::raw_lang_of_post( $pid );
+                                                if ( '' === $lang_fix ) {
+                                                        $lang_fix = self::default_lang();
+                                                }
+                                                if ( self::register_translation( $pid, $lang_fix, $source_id ) ) {
+                                                        $fixed++;
+                                                        $report[] = sprintf( 'Riparato: gruppo ricostruito con sorgente #%1$d e traduzione #%2$d.', $source_id, $pid );
+                                                } else {
+                                                        $report[] = sprintf( 'Non riparato: ricostruzione del gruppo fallita per la traduzione #%d.', $pid );
+                                                }
+                                        }
+                                }
+                        }
+                }
+
+                /* (c) Duplicati per stessa lingua riferiti allo stesso sorgente (anche fuori gruppo). */
+                foreach ( array_keys( $sources ) as $source_id ) {
+                        if ( ! get_post( $source_id ) ) {
+                                continue;
+                        }
+                        $seen = array();
+                        foreach ( $linked_ids as $pid ) {
+                                if ( absint( get_post_meta( $pid, self::META_SOURCE, true ) ) !== $source_id ) {
+                                        continue;
+                                }
+                                $l = self::raw_lang_of_post( $pid );
+                                if ( '' === $l ) {
+                                        continue;
+                                }
+                                if ( isset( $seen[ $l ] ) ) {
+                                        $report[] = sprintf( 'Duplicato: il sorgente #%1$d ha le traduzioni #%2$d e #%3$d entrambe in lingua "%4$s" (nessuna cancellazione automatica: scelta editoriale).', $source_id, $seen[ $l ], $pid, $l );
+                                } else {
+                                        $seen[ $l ] = $pid;
+                                }
+                        }
+                }
+
+                $report[] = sprintf( 'Fine controllo: %1$d riparazione/i applicate.', $fixed );
+
+                return array(
+                        'report' => $report,
+                        'fixed'  => $fixed,
+                );
         }
 }
