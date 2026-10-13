@@ -3,7 +3,7 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.9-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.11-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 

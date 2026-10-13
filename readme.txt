@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.10.1
+Stable tag: 1.1.11
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
