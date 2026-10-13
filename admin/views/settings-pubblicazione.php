@@ -9,6 +9,15 @@
  * pagina ("Pubblicazione social" e "Distribuzione sociale") sono UNIFICATE
  * in un'unica sezione accordion data-nxa-acc="social".
  *
+ * v1.1.13 (O3): l'handler accordion storico (IIFE ES5) è RIMOSSO: si annullava
+ * con le IIFE degli altri 3 partial ed è sostituito dall'UNICO handler
+ * delegato nello script inline di admin/views/settings.php (toggle + snapshot
+ * nella stessa chiave localStorage['nxa-settings-acc-pubblicazione']). Il
+ * blocco di stile inline è stato spostato in assets/css/admin-tabs.css.
+ * Nuova riga nella sezione "Notifiche": nexus_notify_telegram_chat (testo,
+ * NON segreto — identificatore di chat, mai mascherato; whitelist REST e
+ * bridge PUT della pagina unica v1.1.13 O3).
+ *
  * v1.1.12 (S8): due nuove sezioni accordion — "Google News" e "Notifiche".
  * I name dei campi = chiavi ESATTE di Nexus_DB::default_settings() v1.1.12:
  * news_sitemap_enabled, news_sitemap_name (modulo S5), notify_webhook_url,
@@ -63,13 +72,13 @@
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]. Lo stato dei gruppi
  *   (array slug aperti) è persistito in
- *   localStorage['nxa-settings-acc-pubblicazione'] (chiave propria della
- *   pagina, JSON con try/catch) dall'IIFE ES5 in fondo al file (solo toggle
- *   accordion, nessun fetch); default senza localStorage: pannello "wp-seo"
- *   aperto, gli altri chiusi (stato renderizzato anche server-side, così
- *   senza JS la prima sezione resta leggibile). Le classi accordion sono
- *   definite nel CSS condiviso: qui solo il micro-stile della barra Salva
- *   in cima.
+ *   localStorage['nxa-settings-acc-pubblicazione'] (chiave propria del tab,
+ *   JSON con try/catch) dall'UNICO handler delegato in
+ *   admin/views/settings.php (v1.1.13 O3: nessuna IIFE locale); default
+ *   senza localStorage: pannello "wp-seo" aperto, gli altri chiusi (stato
+ *   renderizzato anche server-side, così senza JS la prima sezione resta
+ *   leggibile). Le classi accordion sono definite nel CSS condiviso
+ *   assets/css/admin-tabs.css.
  *
  * - CONTRATTO v1.1.6 ("zero mock", T-02): la lista dei canali selezionabili
  *   $social_platforms contiene SOLO i canali con integrazione reale
@@ -87,6 +96,13 @@ defined( 'ABSPATH' ) || exit;
 $settings = Nexus_DB::get_settings();
 
 $active_platforms = array_filter( array_map( 'trim', explode( ',', (string) $settings['social_platforms'] ) ) );
+
+/* v1.1.13 (O3): chat Telegram ops per le notifiche interne (contratto opzioni
+ * 1.1.13). È un'OPZIONE WP INDIPENDENTE (non chiave dell'array nexus_settings):
+ * il consumatore Nexus_Notify v1.1.13 la legge con get_option() dedicata e la
+ * whitelist PUT v1.1.13 la scrive allo stesso modo
+ * (Nexus_Rest::persist_scale_limits). NON è un segreto: testo normale. */
+$nxa_notify_chat = (string) get_option( 'nexus_notify_telegram_chat', '' );
 
 /* Canali con integrazione reale (v1.1.6): i valori sono le chiavi esatte
  * consumate da Nexus_Publisher::publish() (social_map: telegram, discord,
@@ -457,6 +473,14 @@ $social_platforms = array(
                                                                 <p class="description"><?php esc_html_e( 'Nota: se Telegram è configurato nella sezione Distribuzione social, le notifiche arrivano anche in chat.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-notify-telegram-chat"><?php esc_html_e( 'Chat Telegram ops', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <?php /* v1.1.13 (O3): chat ops per le notifiche interne della pipeline (contratto opzioni 1.1.13). NON è un segreto: testo normale, il vuoto la svuota. */ ?>
+                                                                <input type="text" name="nexus_notify_telegram_chat" id="nxa-notify-telegram-chat" value="<?php echo esc_attr( $nxa_notify_chat ); ?>" placeholder="@ops o -1001234567890" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Chat Telegram ops per le notifiche interne (vuoto = canale social attuale).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
                                         </tbody>
                                 </table>
                         </div>
@@ -467,105 +491,3 @@ $social_platforms = array(
                 </p>
         </form>
 </div>
-<style>
-  /* Barra Salva in cima (v1.1.6): solo respiro sotto l'h1, nessun colore aggiunto. */
-  .nxa-submit-top {
-    margin: 8px 0 16px;
-  }
-</style>
-<script>
-( function () {
-        'use strict';
-
-        var STORAGE_KEY = 'nxa-settings-acc-pubblicazione';
-        var DEFAULT_OPEN = 'wp-seo';
-
-        function readSavedSlugs() {
-                try {
-                        var raw = window.localStorage.getItem( STORAGE_KEY );
-                        if ( ! raw ) {
-                                return null;
-                        }
-                        var parsed = JSON.parse( raw );
-                        if ( ! Array.isArray( parsed ) ) {
-                                return null;
-                        }
-                        return parsed;
-                } catch ( err ) {
-                        return null;
-                }
-        }
-
-        function applyState( group, isOpen ) {
-                var toggle = group.querySelector( '.nxa-acc-toggle' );
-                var panel = group.querySelector( '.nxa-acc-panel' );
-                if ( ! toggle || ! panel ) {
-                        return;
-                }
-                toggle.setAttribute( 'aria-expanded', isOpen ? 'true' : 'false' );
-                if ( isOpen ) {
-                        panel.removeAttribute( 'hidden' );
-                } else {
-                        panel.setAttribute( 'hidden', 'hidden' );
-                }
-        }
-
-        function saveOpenSlugs() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                var open = [];
-                for ( var i = 0; i < groups.length; i++ ) {
-                        var toggle = groups[ i ].querySelector( '.nxa-acc-toggle' );
-                        if ( toggle && toggle.getAttribute( 'aria-expanded' ) === 'true' ) {
-                                var slug = groups[ i ].getAttribute( 'data-nxa-acc' );
-                                if ( slug ) {
-                                        open.push( slug );
-                                }
-                        }
-                }
-                try {
-                        window.localStorage.setItem( STORAGE_KEY, JSON.stringify( open ) );
-                } catch ( err ) {
-                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
-                }
-        }
-
-        function restoreState() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                if ( ! groups.length ) {
-                        return;
-                }
-                var saved = readSavedSlugs();
-                var openMap = {};
-                if ( saved ) {
-                        for ( var i = 0; i < saved.length; i++ ) {
-                                if ( typeof saved[ i ] === 'string' ) {
-                                        openMap[ saved[ i ] ] = true;
-                                }
-                        }
-                } else {
-                        openMap[ DEFAULT_OPEN ] = true;
-                }
-                for ( var j = 0; j < groups.length; j++ ) {
-                        var slug = groups[ j ].getAttribute( 'data-nxa-acc' );
-                        applyState( groups[ j ], openMap[ slug ] === true );
-                }
-        }
-
-        function onClick( ev ) {
-                var target = ev.target;
-                var toggle = target && target.closest ? target.closest( '.nxa-acc-toggle' ) : null;
-                if ( ! toggle ) {
-                        return;
-                }
-                var group = toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
-                if ( ! group ) {
-                        return;
-                }
-                applyState( group, toggle.getAttribute( 'aria-expanded' ) !== 'true' );
-                saveOpenSlugs();
-        }
-
-        restoreState();
-        document.addEventListener( 'click', onClick );
-} )();
-</script>

@@ -663,6 +663,20 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.13 (O3): stato connessioni in sola lettura per i badge del
+                // tab Sistema (solo booleani: NESSUN segreto, token o identificatore).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/settings/status',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_settings_status' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
                 /* ---------------- ADMIN: ACTIVITY / STATS ---------------- */
 
                 register_rest_route(
@@ -3587,7 +3601,16 @@ class Nexus_Rest {
                 if ( is_wp_error( $payload ) ) {
                         return $payload;
                 }
-                if ( empty( $payload ) ) {
+
+                // v1.1.13 (O3): le 7 chiavi "Limiti e scala" del contratto opzioni
+                // 1.1.13 vivono come opzioni WP indipendenti (consumatori scala/
+                // efficienza: Nexus_Dedup/Interlink/Evergreen/Notify con
+                // get_option() + filtro dev): whitelist PUT con sanitize + clamp
+                // dedicati. Contano ai fini del controllo "nessun campo" solo se
+                // il body ne contiene almeno una.
+                $scale_saved = self::persist_scale_limits( $body );
+
+                if ( empty( $payload ) && ! $scale_saved ) {
                         return self::err( 'nexus_rest_no_valid_fields', __( 'Nessuna chiave riconosciuta tra i campi inviati.', 'nexus-news-ai' ), 400 );
                 }
 
@@ -3607,6 +3630,72 @@ class Nexus_Rest {
                 // le ritorna intere): mascherate anche qui, il segreto non deve comparire
                 // in NESSUNA risposta REST.
                 return rest_ensure_response( self::mask_secret_settings( is_array( $updated ) ? $updated : array() ) );
+        }
+
+        /**
+         * GET /settings/status — stato connessioni in sola lettura (v1.1.13 O3).
+         *
+         * Alimenta i badge di stato in testa al tab Sistema ("Google", "Telegram",
+         * "Provider AI"): la risposta contiene SOLO booleani, mai valori o etichette
+         * che espongano credenziali (i token restano dove sono: nelle opzioni e
+         * nelle segreterie mascherate di GET /settings).
+         *
+         * Contratto risposta:
+         *   google_connected    → Nexus_Google_Auth::is_connected() (token OAuth
+         *                          GSC/GA4 presente e usabile; false con guardie
+         *                          class_exists/method_exists se il modulo manca);
+         *   telegram_configured → telegram_bot_token E telegram_chat_id non vuoti
+         *                          (la stessa guardia di Nexus_Social_Telegram);
+         *   ai_provider_active  → almeno una chiave AI configurata (ai_api_key o
+         *                          una prov_key_*).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_settings_status( $request ) {
+                unset( $request );
+                return rest_ensure_response( self::settings_status_flags() );
+        }
+
+        /**
+         * Booleani di stato connessioni (condivisi da badge UI e endpoint REST).
+         *
+         * @return array
+         */
+        private static function settings_status_flags() {
+                $settings = Nexus_DB::get_settings();
+
+                // Google (Search Console / GA4): modulo OAuth v1.1.12 (S1), con le
+                // stesse guardie difensive usate dalla vista Sistema.
+                $google_connected = class_exists( 'Nexus_Google_Auth' )
+                        && method_exists( 'Nexus_Google_Auth', 'is_connected' )
+                        && Nexus_Google_Auth::is_connected();
+
+                // Telegram: configurato solo con bot token E chat/canale (contratto
+                // Nexus_Social_Telegram: uno dei due vuoto = "non configurato").
+                $telegram_token = isset( $settings['telegram_bot_token'] ) ? trim( (string) $settings['telegram_bot_token'] ) : '';
+                $telegram_chat  = isset( $settings['telegram_chat_id'] ) ? trim( (string) $settings['telegram_chat_id'] ) : '';
+                $telegram_configured = ( '' !== $telegram_token && '' !== $telegram_chat );
+
+                // Provider AI: attivo se c'è la chiave globale oppure ALMENO una
+                // chiave per-provider (v1.1.4+). Solo PRESENZA, mai valori.
+                $ai_provider_active = isset( $settings['ai_api_key'] ) && '' !== trim( (string) $settings['ai_api_key'] );
+                if ( ! $ai_provider_active ) {
+                        $prov_keys = array( 'openrouter', 'openai', 'anthropic', 'google', 'groq', 'deepseek', 'mistral', 'xai', 'custom', 'ollama' );
+                        foreach ( $prov_keys as $prov_id ) {
+                                $prov_key = isset( $settings[ 'prov_key_' . $prov_id ] ) ? trim( (string) $settings[ 'prov_key_' . $prov_id ] ) : '';
+                                if ( '' !== $prov_key ) {
+                                        $ai_provider_active = true;
+                                        break;
+                                }
+                        }
+                }
+
+                return array(
+                        'google_connected'    => (bool) $google_connected,
+                        'telegram_configured' => (bool) $telegram_configured,
+                        'ai_provider_active'  => (bool) $ai_provider_active,
+                );
         }
 
         /* =========================================================================
@@ -4504,6 +4593,11 @@ class Nexus_Rest {
          * non entra in secret_settings_keys() — resta leggibile in GET /settings
          * e una stringa vuota la svuota (comportamento corretto per un valore
          * non-segreto).
+         * v1.1.13 (O3): le 7 chiavi "Limiti e scala" del contratto opzioni 1.1.13
+         * NON entrano in questa mappa (vogliono opzioni WP indipendenti, non
+         * l'array nexus_settings): sono accettate dal PUT e persistite da
+         * persist_scale_limits() (absint+clamp per le 6 numeriche,
+         * sanitize_text_field per la chat — non è un segreto).
          *
          * @param array $body Body JSON decodificato.
          * @return array|WP_Error Payload pulito (solo chiavi ammesse presenti).
@@ -4640,6 +4734,13 @@ class Nexus_Rest {
                         'evergreen_enabled'    => 'absint',
                         'evergreen_refresh_days' => 'absint',
                         'evergreen_max_posts'  => 'absint',
+                        // NOTA v1.1.13 (O3): le 7 chiavi "Limiti e scala" del
+                        // contratto opzioni 1.1.13 NON stanno in questa mappa: i
+                        // consumatori (Nexus_Dedup, Nexus_Interlink, Nexus_Evergreen,
+                        // Nexus_Notify) le leggono con get_option() INDIPENDENTI +
+                        // filtro dev omonimo, non dall'array nexus_settings. Sono
+                        // accettate dal PUT /settings e scritte come opzioni da
+                        // persist_scale_limits() (vedi metodo).
                 );
 
                 $out = array();
@@ -4793,6 +4894,11 @@ class Nexus_Rest {
                         $out['queue_max_attempts'] = min( 10, max( 1, absint( $out['queue_max_attempts'] ) ) );
                 }
 
+                // v1.1.13 (O3): le 6 numeriche "Limiti e scala" NON passano da qui —
+                // sono opzioni WP indipendenti (contratto con i consumatori scala/
+                // efficienza 1.1.13) e vengono sanificate + scritte da
+                // persist_scale_limits() chiamata in rest_settings_update.
+
                 // Chiave API pubblica (v1.1.9, D6): se fornita non vuota e NON già hex-64
                 // viene salvata come hash('sha256', valore) (esadecimale minuscolo). Un valore
                 // hex-64 fornito dall'admin è considerato GIÀ un hash (chiave passthrough).
@@ -4803,6 +4909,65 @@ class Nexus_Rest {
                 }
 
                 return $out;
+        }
+
+        /**
+         * v1.1.13 (O3) — "Limiti e scala": whitelist PUT delle 7 chiavi del
+         * contratto opzioni 1.1.13 con persistenza come OPZIONI WP INDIPENDENTI.
+         *
+         * I consumatori (Nexus_Dedup, Nexus_Interlink via Nexus_Dedup::limit_option,
+         * Nexus_Evergreen, Nexus_Notify — pacchetto scala/efficienza v1.1.13)
+         * leggono queste chiavi con get_option() dedicata + filtro dev omonimo,
+         * NON dall'array nexus_settings: per questo NON transitano dalla mappa
+         * di sanitize_settings_payload/update_settings ma vengono sanificate qui
+         * e scritte con update_option( ..., false ) (autoload off).
+         *
+         * Sanitize (contratto O3):
+         *   - 6 numeriche: absint + clamp ai min/max contrattuali (gli stessi
+         *     min/max dei campi UI nel tab Sistema). Valore vuoto/non inviato =
+         *     nessun cambiamento (il campo svuotato non azzera: per tornare al
+         *     default di versione i consumatori ricadono sul default con
+         *     get_option() e il filtro dev omonimo resta disponibile).
+         *   - nexus_notify_telegram_chat: sanitize_text_field, NON è un segreto
+         *     (identificatore di chat, mai mascherato): il valore vuoto svuota
+         *     l'opzione e i consumatori ricadono sul canale social attuale.
+         *
+         * @param array $body Body JSON grezzo del PUT /settings.
+         * @return bool True se almeno una chiave è stata processata.
+         */
+        private static function persist_scale_limits( $body ) {
+                $numbers = array(
+                        // chiave => array( min, max ) del contratto 1.1.13.
+                        'nexus_dedup_window_days'     => array( 7, 730 ),
+                        'nexus_dedup_lookup_max'      => array( 100, 5000 ),
+                        'nexus_interlink_window_days' => array( 7, 730 ),
+                        'nexus_interlink_candidates'  => array( 5, 100 ),
+                        'nexus_evergreen_max_per_run' => array( 1, 50 ),
+                        'nexus_notify_max_per_hour'   => array( 1, 60 ),
+                );
+
+                $processed = false;
+
+                foreach ( $numbers as $key => $range ) {
+                        if ( ! array_key_exists( $key, $body ) || is_array( $body[ $key ] ) || is_object( $body[ $key ] ) ) {
+                                continue;
+                        }
+                        $raw = trim( (string) $body[ $key ] );
+                        if ( '' === $raw ) {
+                                continue; // campo svuotato = nessun cambiamento.
+                        }
+                        update_option( $key, min( $range[1], max( $range[0], absint( $raw ) ) ), false );
+                        $processed = true;
+                }
+
+                if ( array_key_exists( 'nexus_notify_telegram_chat', $body )
+                        && ! is_array( $body['nexus_notify_telegram_chat'] )
+                        && ! is_object( $body['nexus_notify_telegram_chat'] ) ) {
+                        update_option( 'nexus_notify_telegram_chat', sanitize_text_field( (string) $body['nexus_notify_telegram_chat'] ), false );
+                        $processed = true;
+                }
+
+                return $processed;
         }
 
         /* =========================================================================

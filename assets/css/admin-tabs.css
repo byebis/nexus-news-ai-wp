@@ -4,16 +4,31 @@
  * v1.1.11 (R2): le 4 pagine Impostazioni (contenuti|ai|pubblicazione|sistema)
  * diventano UNA sola pagina con navigazione a tab (vista admin/views/settings.php).
  *
+ * v1.1.13 (O3): il foglio diventa il CSS UNICO della pagina Impostazioni:
+ * accoglie gli stili inline estratti dai 4 partial (barra Salva in cima,
+ * multilingua .nxa-ml-*, wizard provider .nxa-prov-*, provider personalizzati
+ * .nxa-custprov-*, stato Google .nxa-gsc-*) e aggiunge i componenti O3:
+ *   - dirty-guard "modifiche non salvate" (indicatore sul tab .nxa-settab-dirty
+ *     + banner inline nel pannello .nxa-settab-dirtybanner);
+ *   - sub-tab interni del tab AI (.nxa-subtab-*, stesso linguaggio dei tab
+ *     principali, più piccoli);
+ *   - fila badge stato connessioni del tab Sistema (.nxa-status-*).
+ *
  * Contratto di stile: SOLO token var(--nxa-*) del design system (admin/css/
  * nexus-admin.css, sezioni 1 + token estesi). Nessun colore hardcoded: il tema
  * scuro (body.nexus-theme-dark, filtro admin_body_class) viene ereditato
  * automaticamente, come per i componenti flottanti. Selettori prefissati
- * nxa-settab- per zero collisioni con il core e con il resto del plugin.
+ * nxa-settab- / nxa-subtab- / nxa-status- per zero collisioni con il core e
+ * con il resto del plugin. Mobile: breakpoint WP 782px e 600px.
  *
  * Indice:
- *   1. Barra tab (underline attivo, hairline, hover, focus-visible)
- *   2. Pannelli (uno solo visibile: hidden = display:none)
+ *   1. Barra tab principali (underline attivo, hairline, hover, focus-visible)
+ *   2. Pannelli tab (uno solo visibile: hidden = display:none)
  *   3. Neutralizzazione del wrap annidato dei partial (la "scatola" resta UNA)
+ *   4. Dirty-guard "modifiche non salvate" (indicatore tab + banner pannello)
+ *   5. Sub-tab interni del tab AI (Provider | Generazione | Moduli AI)
+ *   6. Badge stato connessioni (tab Sistema)
+ *   7. Stili estratti dai partial (submit-top, multilingua, provider, custprov, Google)
  */
 
 /* -------------------------------------------------------------------------
@@ -122,4 +137,411 @@
 
 .nxa-settab-panels h1 {
   display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Dirty-guard "modifiche non salvate" (v1.1.13 O3)
+ *
+ * L'indicatore (span.nxa-settab-dirty) è renderizzato server-side dentro
+ * ogni tab e resta nascosto finché lo script non aggiunge .is-dirty al tab.
+ * Il banner (.nxa-settab-dirtybanner) è il primo figlio di ogni pannello:
+ * hidden finché il tab non è dirty, con bottone "Salva ora" (submit della
+ * form viaggiante). Solo token warn: light e dark ereditati.
+ * ---------------------------------------------------------------------- */
+.nxa-settab-dirty {
+  display: none;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--nxa-warn-line);
+  border-radius: 999px;
+  background: var(--nxa-warn-bg);
+  color: var(--nxa-warn-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.nxa-settab-tab.is-dirty .nxa-settab-dirty {
+  display: inline-block;
+}
+
+/* Mobile stretto: solo il pallino, il testo "non salvato" esce. */
+@media (max-width: 600px) {
+  .nxa-settab-dirty {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    margin-left: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--nxa-warn-text);
+  }
+
+  .nxa-settab-dirty .nxa-settab-dirty-text {
+    display: none;
+  }
+}
+
+.nxa-settab-dirtybanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nxa-space-3);
+  margin: 0 0 var(--nxa-space-4);
+  padding: var(--nxa-space-2) var(--nxa-space-3);
+  border: 1px solid var(--nxa-warn-line);
+  border-left-width: 4px;
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-warn-bg);
+  color: var(--nxa-warn-text);
+}
+
+.nxa-settab-dirtybanner[hidden] {
+  display: none !important;
+}
+
+.nxa-settab-dirtybanner-text {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.nxa-settab-dirtybanner .nxa-settab-dirtybanner-save {
+  flex: 0 0 auto;
+}
+
+/* -------------------------------------------------------------------------
+ * 5. Sub-tab interni del tab AI (v1.1.13 O3)
+ *
+ * Stesso linguaggio dei tab principali, più piccoli: underline attivo saldato
+ * alla hairline, roving tabindex gestito dallo script inline del partial.
+ * I bottoni hanno type="button": nessun submit della form.
+ * ---------------------------------------------------------------------- */
+.nxa-subtabs {
+  margin: 0 0 var(--nxa-space-4);
+}
+
+.nxa-subtab-bar {
+  margin: 0 0 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+}
+
+.nxa-subtab-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--nxa-space-1);
+  margin: 0;
+  padding: 0 var(--nxa-space-2);
+}
+
+.nxa-subtab-tab {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin: 0 0 -1px;
+  padding: var(--nxa-space-2) var(--nxa-space-3) calc( var(--nxa-space-2) + 2px );
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nxa-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.nxa-subtab-tab:hover {
+  color: var(--nxa-link);
+}
+
+.nxa-subtab-tab:focus {
+  outline: none;
+}
+
+.nxa-subtab-tab:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: -2px;
+  border-radius: var(--nxa-radius-sm);
+}
+
+.nxa-subtab-tab.is-active {
+  color: var(--nxa-heading);
+  border-bottom-color: var(--nxa-accent-1);
+}
+
+.nxa-subtab-panel {
+  padding-top: var(--nxa-space-4);
+}
+
+/* OBBLIGATORIA: stesso principio di .nxa-settab-panel[hidden]. */
+.nxa-subtab-panel[hidden] {
+  display: none !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 6. Badge stato connessioni (tab Sistema, v1.1.13 O3)
+ *
+ * Fila in testa al tab, fuori dalla form. Solo etichette: NESSUN segreto.
+ * Entrambe le value (ok/off) sono nel markup: lo script togglea solo la
+ * classe --ok/--off sul badge, il CSS mostra la value giusta.
+ * ---------------------------------------------------------------------- */
+.nxa-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nxa-space-2);
+  margin: var(--nxa-space-3) 0 var(--nxa-space-1);
+}
+
+.nxa-status-row-label {
+  color: var(--nxa-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nxa-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--nxa-border);
+  border-radius: 999px;
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.nxa-status-badge-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--nxa-border);
+}
+
+.nxa-status-badge--ok {
+  border-color: var(--nxa-ok-line);
+  background: var(--nxa-ok-bg);
+  color: var(--nxa-ok-text);
+}
+
+.nxa-status-badge--ok .nxa-status-badge-dot {
+  background: var(--nxa-ok-text);
+}
+
+.nxa-status-badge-value--ok,
+.nxa-status-badge-value--off {
+  display: none;
+}
+
+.nxa-status-badge--ok .nxa-status-badge-value--ok {
+  display: inline;
+}
+
+.nxa-status-badge--off .nxa-status-badge-value--off {
+  display: inline;
+}
+
+@media (max-width: 600px) {
+  .nxa-status-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 7. Stili estratti dai partial (v1.1.13 O3)
+ *
+ * Prima in <style> inline in fondo a ciascun partial: stessi selettori,
+ * stessi token, nessuna duplicazione di palette (il dark theme è già
+ * gestito dai token). Riuniti qui per un solo foglio.
+ * ---------------------------------------------------------------------- */
+
+/* Barra Salva in cima (v1.1.6): solo respiro sotto l'h1, nessun colore. */
+.nxa-submit-top {
+  margin: 8px 0 16px;
+}
+
+/* Sub-sezione "Multilingua — post tradotti nativi" (v1.1.2): SOLO classi
+ * prefisso .nxa-ml-. */
+.nxa-ml-head th {
+  padding-top: 26px;
+  font-weight: 600;
+}
+
+.nxa-ml-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-text-body);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* WP10 (v1.1.10): wizard provider — SOLO classi locali .nxa-prov-*. */
+.nxa-prov-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.nxa-prov-dot--on {
+  background: var(--nxa-ok-text);
+  box-shadow: 0 0 0 3px var(--nxa-ok-bg);
+}
+
+.nxa-prov-dot--off {
+  background: var(--nxa-border);
+}
+
+.nxa-prov-actions {
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.nxa-prov-actions .button-link {
+  text-decoration: none;
+}
+
+.nxa-prov-status {
+  margin: 4px 0 0;
+}
+
+.nxa-prov-status--ok {
+  color: var(--nxa-ok-text);
+  font-weight: 600;
+}
+
+.nxa-prov-status--err {
+  color: var(--nxa-err-text);
+  font-weight: 600;
+}
+
+/* F2b (v1.1.10): provider personalizzati — lista righe + form add/edit. */
+.nxa-custprov-list {
+  margin: 0 0 10px;
+}
+
+.nxa-custprov-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--nxa-border);
+}
+
+.nxa-custprov-row:first-child {
+  border-top: 0;
+}
+
+.nxa-custprov-label {
+  font-weight: 600;
+}
+
+.nxa-custprov-url {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--nxa-muted);
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+}
+
+.nxa-custprov-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-text-body);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.nxa-custprov-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.nxa-custprov-row .nxa-prov-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.nxa-custprov-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-weight: 600;
+  color: var(--nxa-err-text);
+}
+
+.nxa-custprov-form {
+  border: 1px solid var(--nxa-border);
+  border-radius: 6px;
+  background: var(--nxa-surface-2);
+  padding: 4px 14px 10px;
+  margin: 0 0 10px;
+  max-width: 640px;
+}
+
+.nxa-custprov-form p {
+  margin: 10px 0 0;
+}
+
+.nxa-custprov-form label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* S8 (v1.1.12): stato connessione Google — badge inline + azione. */
+.nxa-gsc-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
+.nxa-gsc-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-ok-line);
+  background: var(--nxa-ok-bg);
+  color: var(--nxa-ok-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
 }

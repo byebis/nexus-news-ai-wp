@@ -7,19 +7,31 @@
  * chief, tools, intelligence) e raccoglie la seconda parte della vecchia
  * settings.php (rimossa in v1.1.6).
  *
+ * v1.1.13 (O3): la vista entra nella pagina unica a tab come partial e le sue
+ * 7 sezioni accordion vengono organizzate in 3 SUB-TAB interni (pattern ARIA
+ * tabs identico al tab principale, roving tabindex + frecce, hash
+ * #nxa-sub-<slug> condivisibile):
+ *   - "Provider"     → gruppi accordion ai + providers (incluse le
+ *                      sub-sezioni provider personalizzati e wizard OAuth);
+ *   - "Generazione"  → gruppi chief + tools + intelligence;
+ *   - "Moduli AI"    → gruppi dedup + learning.
+ * TUTTI i campi e le chiavi esistenti restano IDENTICI (nessun name/id
+ * toccato): i sub-tab sono solo contenitori. L'handler accordion storico
+ * (IIFE ES5) è RIMOSSO: il toggle è gestito dall'UNICO handler delegato
+ * nello script inline di admin/views/settings.php (v1.1.13 O3). Il blocco di
+ * stile inline è stato spostato in assets/css/admin-tabs.css (stessi
+ * selettori, token var(--nxa-*) invariati, dark theme via body.nexus-theme-dark).
+ *
  * v1.1.12 (S8): due nuove sezioni accordion — "Dedup semantico" e "Learning
  * (redazione che impara)". I name dei campi = chiavi ESATTE di
  * Nexus_DB::default_settings() v1.1.12: dedup_similar_enabled,
  * dedup_similar_threshold, learn_enabled, learn_window_days (moduli S3/S2).
- * I due gruppi nuovi nascono chiusi (aria-expanded="false" + hidden) e seguono
- * lo stesso contratto localStorage/IIFE degli altri: nessuno script aggiuntivo.
+ * I due gruppi nuovi nascono chiusi (aria-expanded="false" + hidden) e
+ * seguono lo stesso contratto localStorage degli altri.
  * DEBITO INTEGRAZIONE (S8): i name nuovi non sono ancora negli array di
  * collectSettings() in admin.js né nella whitelist REST (file fuori perimetro
  * S8): il markup segue già il contratto, il salvataggio effettivo arriva con
  * l'estensione del glue (stesso percorso di global_rss_sources in 1.1.11).
- *
- * I campi sono PRECOMPILATI server-side con Nexus_DB::get_settings()
- * (value / checked / selected): la pagina è già corretta prima che admin.js risponda.
  *
  * CONTRATTO FISSO CON admin.js (non rinominare id e name):
  * - div.wrap.nexus-admin con data-page="settings" INVARIATO: il boot di
@@ -123,12 +135,12 @@
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]. Lo stato dei gruppi
  *   (array slug aperti) è persistito in localStorage['nxa-settings-acc-ai']
- *   (chiave propria della pagina, JSON con try/catch) dall'IIFE ES5 in fondo
- *   al file (solo toggle accordion, nessun fetch); default senza localStorage:
- *   pannello "ai" aperto, gli altri chiusi (stato renderizzato anche
- *   server-side, così senza JS la prima sezione resta leggibile). Le classi
- *   accordion sono definite nel CSS condiviso: qui solo il micro-stile della
- *   barra Salva in cima e delle classi locali .nxa-ml- (v1.1.2).
+ *   (chiave propria del tab, JSON con try/catch) dall'UNICO handler delegato
+ *   in admin/views/settings.php (v1.1.13 O3: nessuna IIFE locale); default
+ *   senza localStorage: pannello "ai" aperto, gli altri chiusi (stato
+ *   renderizzato anche server-side, così senza JS la prima sezione resta
+ *   leggibile). Le classi accordion e sub-tab sono definite nel CSS condiviso
+ *   assets/css/admin-tabs.css (nessuno stile inline nella vista).
  *
  * @package Nexus_News_AI
  */
@@ -243,6 +255,17 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                 <p class="submit nxa-submit-top">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>
                 </p>
+
+                <?php /* v1.1.13 (O3): sub-tab interni del tab AI — 3 gruppi, 7 sezioni accordion. Pattern ARIA tabs come il tab principale (script inline in fondo alla vista); i BOTTONI sono type="button" (mai submit della form). Hash #nxa-sub-<slug> condivisibile. */ ?>
+                <div class="nxa-subtabs" data-nxa-subtabs>
+                        <div class="nxa-subtab-bar">
+                                <div class="nxa-subtab-list" role="tablist" aria-label="<?php esc_attr_e( 'Sezioni AI', 'nexus-news-ai' ); ?>">
+                                        <button type="button" class="nxa-subtab-tab is-active" role="tab" id="nxa-subtab-tab-provider" aria-selected="true" aria-controls="nxa-subtab-panel-provider" tabindex="0" data-nxa-subtab="provider"><?php esc_html_e( 'Provider', 'nexus-news-ai' ); ?></button>
+                                        <button type="button" class="nxa-subtab-tab" role="tab" id="nxa-subtab-tab-generazione" aria-selected="false" aria-controls="nxa-subtab-panel-generazione" tabindex="-1" data-nxa-subtab="generazione"><?php esc_html_e( 'Generazione', 'nexus-news-ai' ); ?></button>
+                                        <button type="button" class="nxa-subtab-tab" role="tab" id="nxa-subtab-tab-moduli" aria-selected="false" aria-controls="nxa-subtab-panel-moduli" tabindex="-1" data-nxa-subtab="moduli"><?php esc_html_e( 'Moduli AI', 'nexus-news-ai' ); ?></button>
+                                </div>
+                        </div>
+                        <div class="nxa-subtab-panel" role="tabpanel" id="nxa-subtab-panel-provider" aria-labelledby="nxa-subtab-tab-provider" data-nxa-subtab-panel="provider">
 
                 <section class="nxa-acc" data-nxa-acc="ai">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="true" aria-controls="nxa-acc-panel-ai">
@@ -423,6 +446,9 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                 </table>
                         </div>
                 </section>
+
+                        </div>
+                        <div class="nxa-subtab-panel" role="tabpanel" id="nxa-subtab-panel-generazione" aria-labelledby="nxa-subtab-tab-generazione" data-nxa-subtab-panel="generazione" hidden>
 
                 <section class="nxa-acc" data-nxa-acc="chief">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-chief">
@@ -664,6 +690,9 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                         </div>
                 </section>
 
+                        </div>
+                        <div class="nxa-subtab-panel" role="tabpanel" id="nxa-subtab-panel-moduli" aria-labelledby="nxa-subtab-tab-moduli" data-nxa-subtab-panel="moduli" hidden>
+
                 <section class="nxa-acc" data-nxa-acc="dedup">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-dedup">
                                 <span class="nxa-acc-label"><?php esc_html_e( 'Dedup semantico', 'nexus-news-ai' ); ?></span>
@@ -726,243 +755,153 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                         </div>
                 </section>
 
+                        </div>
+                </div>
+
                 <p class="submit">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>
                 </p>
         </form>
 </div>
-<style>
-  /* Barra Salva in cima (v1.1.6): solo respiro sotto l'h1, nessun colore aggiunto. */
-  .nxa-submit-top {
-    margin: 8px 0 16px;
-  }
-  /* Stile locale della sub-sezione "Multilingua — post tradotti nativi"
-     (v1.1.2): SOLO classi prefisso .nxa-ml- : nessun colore fisso, tutto via
-     token del design system (tema chiaro di default, scuro via
-     body.nexus-theme-dark). */
-  .nxa-ml-head th {
-    padding-top: 26px;
-    font-weight: 600;
-  }
-  .nxa-ml-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    border: 1px solid var(--nxa-border);
-    background: var(--nxa-surface-2);
-    color: var(--nxa-text-body);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.6;
-  }
-  /* WP10 (v1.1.10): wizard provider — SOLO classi locali .nxa-prov-*; nessun
-     colore fisso: tutto via token del design system (tema chiaro di default,
-     scuro via body.nexus-theme-dark). */
-  .nxa-prov-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    margin-left: 6px;
-    border-radius: 50%;
-    vertical-align: middle;
-  }
-  .nxa-prov-dot--on {
-    background: var(--nxa-ok-text);
-    box-shadow: 0 0 0 3px var(--nxa-ok-bg);
-  }
-  .nxa-prov-dot--off {
-    background: var(--nxa-border);
-  }
-  .nxa-prov-actions {
-    margin: 6px 0 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-  }
-  .nxa-prov-actions .button-link {
-    text-decoration: none;
-  }
-  .nxa-prov-status {
-    margin: 4px 0 0;
-  }
-  .nxa-prov-status--ok {
-    color: var(--nxa-ok-text);
-    font-weight: 600;
-  }
-  .nxa-prov-status--err {
-    color: var(--nxa-err-text);
-    font-weight: 600;
-  }
-  /* F2b (v1.1.10): provider personalizzati — lista righe + form add/edit.
-     SOLO classi .nxa-custprov-*; nessun colore fisso: tutto via token del
-     design system (tema chiaro di default, scuro via body.nexus-theme-dark). */
-  .nxa-custprov-list {
-    margin: 0 0 10px;
-  }
-  .nxa-custprov-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 0;
-    border-top: 1px solid var(--nxa-border);
-  }
-  .nxa-custprov-row:first-child {
-    border-top: 0;
-  }
-  .nxa-custprov-label {
-    font-weight: 600;
-  }
-  .nxa-custprov-url {
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--nxa-muted);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 12px;
-  }
-  .nxa-custprov-badge {
-    display: inline-block;
-    padding: 1px 8px;
-    border-radius: 999px;
-    border: 1px solid var(--nxa-border);
-    background: var(--nxa-surface-2);
-    color: var(--nxa-text-body);
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1.6;
-    white-space: nowrap;
-  }
-  .nxa-custprov-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-  }
-  .nxa-custprov-row .nxa-prov-status {
-    flex-basis: 100%;
-    margin: 0;
-  }
-  .nxa-custprov-confirm {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-    font-weight: 600;
-    color: var(--nxa-err-text);
-  }
-  .nxa-custprov-form {
-    border: 1px solid var(--nxa-border);
-    border-radius: 6px;
-    background: var(--nxa-surface-2);
-    padding: 4px 14px 10px;
-    margin: 0 0 10px;
-    max-width: 640px;
-  }
-  .nxa-custprov-form p {
-    margin: 10px 0 0;
-  }
-  .nxa-custprov-form label {
-    display: block;
-    font-weight: 600;
-    margin-bottom: 2px;
-  }
-</style>
 <script>
 ( function () {
         'use strict';
 
-        var STORAGE_KEY = 'nxa-settings-acc-ai';
-        var DEFAULT_OPEN = 'ai';
+        var HASH_PREFIX = '#nxa-sub-';
+        var SLUGS = [ 'provider', 'generazione', 'moduli' ];
 
-        function readSavedSlugs() {
-                try {
-                        var raw = window.localStorage.getItem( STORAGE_KEY );
-                        if ( ! raw ) {
-                                return null;
-                        }
-                        var parsed = JSON.parse( raw );
-                        if ( ! Array.isArray( parsed ) ) {
-                                return null;
-                        }
-                        return parsed;
-                } catch ( err ) {
-                        return null;
+        var wrap = document.querySelector( '[data-nxa-subtabs]' );
+        if ( ! wrap ) {
+                return;
+        }
+
+        var tablist = wrap.querySelector( '.nxa-subtab-list' );
+        var tabs = {};
+        var panels = {};
+        var active = 'provider'; /* default server-side: primo sub-pannello visibile. */
+
+        var i;
+        var tabEls = wrap.querySelectorAll( '.nxa-subtab-tab' );
+        for ( i = 0; i < tabEls.length; i++ ) {
+                var tslug = tabEls[ i ].getAttribute( 'data-nxa-subtab' );
+                if ( tslug ) {
+                        tabs[ tslug ] = tabEls[ i ];
+                }
+        }
+        var panelEls = wrap.querySelectorAll( '.nxa-subtab-panel' );
+        for ( i = 0; i < panelEls.length; i++ ) {
+                var pslug = panelEls[ i ].getAttribute( 'data-nxa-subtab-panel' );
+                if ( pslug ) {
+                        panels[ pslug ] = panelEls[ i ];
                 }
         }
 
-        function applyState( group, isOpen ) {
-                var toggle = group.querySelector( '.nxa-acc-toggle' );
-                var panel = group.querySelector( '.nxa-acc-panel' );
-                if ( ! toggle || ! panel ) {
-                        return;
-                }
-                toggle.setAttribute( 'aria-expanded', isOpen ? 'true' : 'false' );
-                if ( isOpen ) {
-                        panel.removeAttribute( 'hidden' );
-                } else {
-                        panel.setAttribute( 'hidden', 'hidden' );
-                }
-        }
-
-        function saveOpenSlugs() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                var open = [];
-                for ( var i = 0; i < groups.length; i++ ) {
-                        var toggle = groups[ i ].querySelector( '.nxa-acc-toggle' );
-                        if ( toggle && toggle.getAttribute( 'aria-expanded' ) === 'true' ) {
-                                var slug = groups[ i ].getAttribute( 'data-nxa-acc' );
-                                if ( slug ) {
-                                        open.push( slug );
+        function applySub( slug ) {
+                for ( var j = 0; j < SLUGS.length; j++ ) {
+                        var s = SLUGS[ j ];
+                        var isActive = ( s === slug );
+                        if ( panels[ s ] ) {
+                                if ( isActive ) {
+                                        panels[ s ].removeAttribute( 'hidden' );
+                                } else {
+                                        panels[ s ].setAttribute( 'hidden', 'hidden' );
+                                }
+                        }
+                        if ( tabs[ s ] ) {
+                                tabs[ s ].setAttribute( 'aria-selected', isActive ? 'true' : 'false' );
+                                tabs[ s ].setAttribute( 'tabindex', isActive ? '0' : '-1' );
+                                if ( isActive ) {
+                                        tabs[ s ].classList.add( 'is-active' );
+                                } else {
+                                        tabs[ s ].classList.remove( 'is-active' );
                                 }
                         }
                 }
+                active = slug;
+        }
+
+        function setHash( slug ) {
                 try {
-                        window.localStorage.setItem( STORAGE_KEY, JSON.stringify( open ) );
+                        window.history.replaceState(
+                                null,
+                                '',
+                                window.location.pathname + window.location.search + HASH_PREFIX + slug
+                        );
                 } catch ( err ) {
-                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
+                        /* URL non aggiornabile: la sub-tab funziona comunque. */
                 }
         }
 
-        function restoreState() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                if ( ! groups.length ) {
-                        return;
+        function slugFromHash() {
+                var hash = String( window.location.hash || '' );
+                if ( hash.indexOf( HASH_PREFIX ) !== 0 ) {
+                        return '';
                 }
-                var saved = readSavedSlugs();
-                var openMap = {};
-                if ( saved ) {
-                        for ( var i = 0; i < saved.length; i++ ) {
-                                if ( typeof saved[ i ] === 'string' ) {
-                                        openMap[ saved[ i ] ] = true;
-                                }
+                var slug = hash.substring( HASH_PREFIX.length );
+                return SLUGS.indexOf( slug ) !== -1 ? slug : '';
+        }
+
+        function focusTab( slug ) {
+                if ( tabs[ slug ] && typeof tabs[ slug ].focus === 'function' ) {
+                        tabs[ slug ].focus();
+                }
+        }
+
+        /* Hash iniziale (#nxa-sub-<slug> condivisibile): vince sul default
+         * server-side (il tab principale usa #nxa-tab-, nessuna collisione). */
+        var initial = slugFromHash();
+        if ( initial && initial !== active ) {
+                applySub( initial );
+        }
+
+        if ( tablist ) {
+                tablist.addEventListener( 'click', function ( ev ) {
+                        var tabEl = ev.target && ev.target.closest ? ev.target.closest( '.nxa-subtab-tab' ) : null;
+                        if ( ! tabEl ) {
+                                return;
                         }
-                } else {
-                        openMap[ DEFAULT_OPEN ] = true;
-                }
-                for ( var j = 0; j < groups.length; j++ ) {
-                        var slug = groups[ j ].getAttribute( 'data-nxa-acc' );
-                        applyState( groups[ j ], openMap[ slug ] === true );
-                }
+                        var slug = tabEl.getAttribute( 'data-nxa-subtab' ) || '';
+                        if ( SLUGS.indexOf( slug ) === -1 ) {
+                                return;
+                        }
+                        applySub( slug );
+                        setHash( slug );
+                } );
+
+                /* Stesso pattern ARIA tabs del tab principale: roving tabindex,
+                 * frecce/Home/End con attivazione automatica (selection follows
+                 * focus). I bottoni sono type="button": nessun submit della form. */
+                tablist.addEventListener( 'keydown', function ( ev ) {
+                        var key = String( ev.key || '' );
+                        var index = SLUGS.indexOf( active );
+                        var next = '';
+
+                        if ( 'ArrowRight' === key || 'Right' === key ) {
+                                next = SLUGS[ ( index + 1 ) % SLUGS.length ];
+                        } else if ( 'ArrowLeft' === key || 'Left' === key ) {
+                                next = SLUGS[ ( index - 1 + SLUGS.length ) % SLUGS.length ];
+                        } else if ( 'Home' === key ) {
+                                next = SLUGS[ 0 ];
+                        } else if ( 'End' === key ) {
+                                next = SLUGS[ SLUGS.length - 1 ];
+                        }
+
+                        if ( ! next ) {
+                                return;
+                        }
+                        ev.preventDefault();
+                        applySub( next );
+                        setHash( next );
+                        focusTab( next );
+                } );
         }
 
-        function onClick( ev ) {
-                var target = ev.target;
-                var toggle = target && target.closest ? target.closest( '.nxa-acc-toggle' ) : null;
-                if ( ! toggle ) {
-                        return;
+        /* Back/forward o hash modificato a mano: segue la sub-tab dell'hash. */
+        window.addEventListener( 'hashchange', function () {
+                var slug = slugFromHash();
+                if ( slug && slug !== active ) {
+                        applySub( slug );
                 }
-                var group = toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
-                if ( ! group ) {
-                        return;
-                }
-                applyState( group, toggle.getAttribute( 'aria-expanded' ) !== 'true' );
-                saveOpenSlugs();
-        }
-
-        restoreState();
-        document.addEventListener( 'click', onClick );
+        } );
 } )();
 </script>

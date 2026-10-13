@@ -30,6 +30,20 @@
  * query ?nexus_gsc_oauth=ok|err|disconnected: notice inline whitelisto con
  * sanitize_key (sola lettura, nessun nonce per un semplice messaggio di stato).
  *
+ * v1.1.13 (O3): in testa al tab (dopo la notice OAuth, fuori dalla form)
+ * fila di BADGE STATO CONNESSIONI — Google (Search Console/GA4), Telegram,
+ * Provider AI — renderizzata server-side da opzioni/Nexus_Google_Auth
+ * (solo presenza/etichette, NESSUN segreto) e aggiornabile dopo il salvataggio
+ * via GET /settings/status (endpoint di sola lettura v1.1.13, solo booleani).
+ * Nuova sezione accordion "Limiti e scala" con le 6 chiavi numeriche del
+ * contratto opzioni 1.1.13 (OPZIONI WP INDIPENDENTI lette con get_option() e
+ * default contrattuali come fallback — sono quelle che i consumatori scala/
+ * efficienza v1.1.13 usano; whitelist PUT in Nexus_Rest::persist_scale_limits).
+ * L'handler accordion
+ * storico (IIFE ES5) è RIMOSSO (UNICO handler delegato in settings.php,
+ * snapshot sulla stessa chiave localStorage['nxa-settings-acc-sistema']) e il
+ * blocco di stile inline è stato spostato in assets/css/admin-tabs.css.
+ *
  * DEBITO INTEGRAZIONE (S8): i name nuovi NON sono ancora negli array
  * simple/numbers/flags di collectSettings() in admin.js né nella whitelist
  * sanitize_settings_payload() di class-nexus-rest.php (file fuori perimetro
@@ -62,12 +76,12 @@
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]. Lo stato dei gruppi
  *   (array slug aperti) è persistito in localStorage['nxa-settings-acc-sistema']
- *   (chiave propria della pagina, JSON con try/catch) dall'IIFE ES5 in fondo
- *   al file (solo toggle accordion, nessun fetch); default senza localStorage:
- *   pannello "scala" aperto, gli altri chiusi (stato renderizzato anche
- *   server-side, così senza JS la prima sezione resta leggibile). Le classi
- *   accordion sono definite nel CSS condiviso: qui solo il micro-stile della
- *   barra Salva in cima.
+ *   (chiave propria del tab, JSON con try/catch) dall'UNICO handler delegato
+ *   in admin/views/settings.php (v1.1.13 O3: nessuna IIFE locale); default
+ *   senza localStorage: pannello "scala" aperto, gli altri chiusi (stato
+ *   renderizzato anche server-side, così senza JS la prima sezione resta
+ *   leggibile). Le classi accordion e badge sono definite nel CSS condiviso
+ *   assets/css/admin-tabs.css.
  *
  * @package Nexus_News_AI
  */
@@ -90,6 +104,41 @@ if ( ! in_array( $nxa_gsc_oauth, array( 'ok', 'err', 'disconnected' ), true ) ) 
 $evergreen_enabled      = isset( $settings['evergreen_enabled'] ) ? (int) $settings['evergreen_enabled'] : 0;
 $evergreen_refresh_days = isset( $settings['evergreen_refresh_days'] ) ? (int) $settings['evergreen_refresh_days'] : 7;
 $evergreen_max_posts    = isset( $settings['evergreen_max_posts'] ) ? (int) $settings['evergreen_max_posts'] : 1;
+
+/* v1.1.13 (O3) — "Limiti e scala": 6 chiavi numeriche del contratto opzioni
+ * 1.1.13. SONO OPZIONI WP INDIPENDENTI (non chiavi dell'array nexus_settings):
+ * i consumatori (Nexus_Dedup, Nexus_Interlink via Nexus_Dedup::limit_option,
+ * Nexus_Evergreen, Nexus_Notify — pacchetto scala/efficienza v1.1.13) le
+ * leggono con get_option() dedicata + filtro dev omonimo, e la whitelist PUT
+ * v1.1.13 le scrive allo stesso modo (Nexus_Rest::persist_scale_limits).
+ * Il fallback qui sotto è il default contrattuale: è ciò che i consumatori
+ * usano quando l'opzione è assente/vuota. */
+$nxa_limiti = array(
+        'nexus_dedup_window_days'     => (int) get_option( 'nexus_dedup_window_days', 90 ),
+        'nexus_dedup_lookup_max'      => (int) get_option( 'nexus_dedup_lookup_max', 400 ),
+        'nexus_interlink_window_days' => (int) get_option( 'nexus_interlink_window_days', 180 ),
+        'nexus_interlink_candidates'  => (int) get_option( 'nexus_interlink_candidates', 20 ),
+        'nexus_evergreen_max_per_run' => (int) get_option( 'nexus_evergreen_max_per_run', 5 ),
+        'nexus_notify_max_per_hour'   => (int) get_option( 'nexus_notify_max_per_hour', 10 ),
+);
+
+/* v1.1.13 (O3) — stato connessioni per i badge in testa al tab: SOLO booleani
+ * (stessa logica dell'endpoint GET /settings/status, settings_status_flags()). */
+$nxa_status_google   = class_exists( 'Nexus_Google_Auth' ) && method_exists( 'Nexus_Google_Auth', 'is_connected' ) && Nexus_Google_Auth::is_connected();
+$nxa_status_tg_token = isset( $settings['telegram_bot_token'] ) ? trim( (string) $settings['telegram_bot_token'] ) : '';
+$nxa_status_tg_chat  = isset( $settings['telegram_chat_id'] ) ? trim( (string) $settings['telegram_chat_id'] ) : '';
+$nxa_status_telegram = ( '' !== $nxa_status_tg_token && '' !== $nxa_status_tg_chat );
+
+$nxa_status_ai_active = isset( $settings['ai_api_key'] ) && '' !== trim( (string) $settings['ai_api_key'] );
+if ( ! $nxa_status_ai_active ) {
+        foreach ( array( 'openrouter', 'openai', 'anthropic', 'google', 'groq', 'deepseek', 'mistral', 'xai', 'custom', 'ollama' ) as $nxa_prov_id ) {
+                $nxa_prov_key = isset( $settings[ 'prov_key_' . $nxa_prov_id ] ) ? trim( (string) $settings[ 'prov_key_' . $nxa_prov_id ] ) : '';
+                if ( '' !== $nxa_prov_key ) {
+                        $nxa_status_ai_active = true;
+                        break;
+                }
+        }
+}
 ?>
 <div class="wrap nexus-admin" data-page="settings">
         <h1><?php esc_html_e( 'Impostazioni sistema', 'nexus-news-ai' ); ?></h1>
@@ -113,6 +162,33 @@ $evergreen_max_posts    = isset( $settings['evergreen_max_posts'] ) ? (int) $set
                         ?>
                 </p></div>
         <?php endif; ?>
+
+        <?php /* v1.1.13 (O3): stato connessioni in testa al tab — solo presenza/etichette,
+         * NESSUN segreto. I valori label (Connesso/Non connesso, Configurato/Mancante,
+         * Attivo/Mancante) sono ENTRAMBI nel markup: lo script della pagina unica
+         * (settings.php) aggiorna i badge dopo il salvataggio via GET /settings/status
+         * toggleando solo la classe --ok/--off, senza riscrivere testo. */ ?>
+        <div class="nxa-status-row" data-nxa-status-row>
+                <span class="nxa-status-row-label"><?php esc_html_e( 'Connessioni:', 'nexus-news-ai' ); ?></span>
+                <span class="nxa-status-badge <?php echo $nxa_status_google ? 'nxa-status-badge--ok' : 'nxa-status-badge--off'; ?>" data-nxa-status-badge="google">
+                        <span class="nxa-status-badge-dot" aria-hidden="true"></span>
+                        <span class="nxa-status-badge-name"><?php esc_html_e( 'Google:', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--ok"><?php esc_html_e( 'Connesso', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--off"><?php esc_html_e( 'Non connesso', 'nexus-news-ai' ); ?></span>
+                </span>
+                <span class="nxa-status-badge <?php echo $nxa_status_telegram ? 'nxa-status-badge--ok' : 'nxa-status-badge--off'; ?>" data-nxa-status-badge="telegram">
+                        <span class="nxa-status-badge-dot" aria-hidden="true"></span>
+                        <span class="nxa-status-badge-name"><?php esc_html_e( 'Telegram:', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--ok"><?php esc_html_e( 'Configurato', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--off"><?php esc_html_e( 'Mancante', 'nexus-news-ai' ); ?></span>
+                </span>
+                <span class="nxa-status-badge <?php echo $nxa_status_ai_active ? 'nxa-status-badge--ok' : 'nxa-status-badge--off'; ?>" data-nxa-status-badge="ai">
+                        <span class="nxa-status-badge-dot" aria-hidden="true"></span>
+                        <span class="nxa-status-badge-name"><?php esc_html_e( 'Provider AI:', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--ok"><?php esc_html_e( 'Attivo', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-status-badge-value nxa-status-badge-value--off"><?php esc_html_e( 'Mancante', 'nexus-news-ai' ); ?></span>
+                </span>
+        </div>
 
         <form id="nxa-settings-form" class="nxa-settings-form">
                 <p class="submit nxa-submit-top">
@@ -328,131 +404,64 @@ $evergreen_max_posts    = isset( $settings['evergreen_max_posts'] ) ? (int) $set
                         </div>
                 </section>
 
+                <section class="nxa-acc" data-nxa-acc="limiti">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-limiti">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Limiti e scala', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-limiti" hidden>
+                                <?php /* Sezione v1.1.13 (O3) "Limiti e scala": 6 chiavi numeriche del contratto opzioni 1.1.13 (finestre dedup/interlink, candidati, evergreen per giro, rate notifiche). Clamp server-side in Nexus_Rest::sanitize_settings_payload (stessi min/max). */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-dedup-window-days"><?php esc_html_e( 'Finestra dedup (giorni)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_dedup_window_days" id="nxa-dedup-window-days" value="<?php echo esc_attr( $nxa_limiti['nexus_dedup_window_days'] ); ?>" min="7" max="730" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Articoli degli ultimi N giorni confrontati dal dedup semantico (7-730, predefinito 90).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-dedup-lookup-max"><?php esc_html_e( 'Articoli massimi confrontati', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_dedup_lookup_max" id="nxa-dedup-lookup-max" value="<?php echo esc_attr( $nxa_limiti['nexus_dedup_lookup_max'] ); ?>" min="100" max="5000" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Quanti articoli pubblicati al massimo vengono confrontati a ogni giro (100-5000, predefinito 400).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-interlink-window-days"><?php esc_html_e( 'Finestra link interni (giorni)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_interlink_window_days" id="nxa-interlink-window-days" value="<?php echo esc_attr( $nxa_limiti['nexus_interlink_window_days'] ); ?>" min="7" max="730" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Giorni di articoli candidati come link interni (7-730, predefinito 180).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-interlink-candidates"><?php esc_html_e( 'Candidati link interni per giro', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_interlink_candidates" id="nxa-interlink-candidates" value="<?php echo esc_attr( $nxa_limiti['nexus_interlink_candidates'] ); ?>" min="5" max="100" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Quanti candidati vengono valutati a ogni giro (5-100, predefinito 20).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-evergreen-max-per-run"><?php esc_html_e( 'Evergreen per giro settimanale', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_evergreen_max_per_run" id="nxa-evergreen-max-per-run" value="<?php echo esc_attr( $nxa_limiti['nexus_evergreen_max_per_run'] ); ?>" min="1" max="50" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Quanti articoli pillar vengono rinfrescati al massimo a ogni giro settimanale (1-50, predefinito 5).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-notify-max-per-hour"><?php esc_html_e( 'Notifiche massime per ora', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="nexus_notify_max_per_hour" id="nxa-notify-max-per-hour" value="<?php echo esc_attr( $nxa_limiti['nexus_notify_max_per_hour'] ); ?>" min="1" max="60" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Limite di notifiche inviate per ora (1-60, predefinito 10).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
                 <p class="submit">
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>
                 </p>
         </form>
 </div>
-<style>
-  /* Barra Salva in cima (v1.1.6): solo respiro sotto l'h1, nessun colore aggiunto. */
-  .nxa-submit-top {
-    margin: 8px 0 16px;
-  }
-  /* S8 (v1.1.12): stato connessione Google — badge inline + azione. Nessun
-     colore fisso: solo token del design system (tema chiaro default, scuro
-     via body.nexus-theme-dark). */
-  .nxa-gsc-status {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 4px 0 0;
-  }
-  .nxa-gsc-badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--nxa-ok-line);
-    background: var(--nxa-ok-bg);
-    color: var(--nxa-ok-text);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.6;
-  }
-</style>
-<script>
-( function () {
-        'use strict';
-
-        var STORAGE_KEY = 'nxa-settings-acc-sistema';
-        var DEFAULT_OPEN = 'scala';
-
-        function readSavedSlugs() {
-                try {
-                        var raw = window.localStorage.getItem( STORAGE_KEY );
-                        if ( ! raw ) {
-                                return null;
-                        }
-                        var parsed = JSON.parse( raw );
-                        if ( ! Array.isArray( parsed ) ) {
-                                return null;
-                        }
-                        return parsed;
-                } catch ( err ) {
-                        return null;
-                }
-        }
-
-        function applyState( group, isOpen ) {
-                var toggle = group.querySelector( '.nxa-acc-toggle' );
-                var panel = group.querySelector( '.nxa-acc-panel' );
-                if ( ! toggle || ! panel ) {
-                        return;
-                }
-                toggle.setAttribute( 'aria-expanded', isOpen ? 'true' : 'false' );
-                if ( isOpen ) {
-                        panel.removeAttribute( 'hidden' );
-                } else {
-                        panel.setAttribute( 'hidden', 'hidden' );
-                }
-        }
-
-        function saveOpenSlugs() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                var open = [];
-                for ( var i = 0; i < groups.length; i++ ) {
-                        var toggle = groups[ i ].querySelector( '.nxa-acc-toggle' );
-                        if ( toggle && toggle.getAttribute( 'aria-expanded' ) === 'true' ) {
-                                var slug = groups[ i ].getAttribute( 'data-nxa-acc' );
-                                if ( slug ) {
-                                        open.push( slug );
-                                }
-                        }
-                }
-                try {
-                        window.localStorage.setItem( STORAGE_KEY, JSON.stringify( open ) );
-                } catch ( err ) {
-                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
-                }
-        }
-
-        function restoreState() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                if ( ! groups.length ) {
-                        return;
-                }
-                var saved = readSavedSlugs();
-                var openMap = {};
-                if ( saved ) {
-                        for ( var i = 0; i < saved.length; i++ ) {
-                                if ( typeof saved[ i ] === 'string' ) {
-                                        openMap[ saved[ i ] ] = true;
-                                }
-                        }
-                } else {
-                        openMap[ DEFAULT_OPEN ] = true;
-                }
-                for ( var j = 0; j < groups.length; j++ ) {
-                        var slug = groups[ j ].getAttribute( 'data-nxa-acc' );
-                        applyState( groups[ j ], openMap[ slug ] === true );
-                }
-        }
-
-        function onClick( ev ) {
-                var target = ev.target;
-                var toggle = target && target.closest ? target.closest( '.nxa-acc-toggle' ) : null;
-                if ( ! toggle ) {
-                        return;
-                }
-                var group = toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
-                if ( ! group ) {
-                        return;
-                }
-                applyState( group, toggle.getAttribute( 'aria-expanded' ) !== 'true' );
-                saveOpenSlugs();
-        }
-
-        restoreState();
-        document.addEventListener( 'click', onClick );
-} )();
-</script>

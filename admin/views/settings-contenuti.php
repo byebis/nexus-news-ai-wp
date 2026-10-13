@@ -6,10 +6,17 @@
  * la pagina del gruppo "Pipeline editoriale" (accordion: pipeline, limits) e
  * raccoglie la prima parte della vecchia settings.php (rimossa in v1.1.6).
  *
+ * v1.1.13 (O3): l'handler accordion storico (IIFE ES5) è RIMOSSO: si annullava
+ * con le IIFE degli altri 3 partial ed è sostituito dall'UNICO handler
+ * delegato nello script inline di admin/views/settings.php (toggle + snapshot
+ * nella stessa chiave localStorage['nxa-settings-acc-contenuti']). Il blocco
+ * di stile inline è stato spostato in assets/css/admin-tabs.css (stessi
+ * selettori, token var(--nxa-*) invariati, dark theme via body.nexus-theme-dark).
+ *
  * v1.1.12 (S8): nuova sezione accordion "Link interni". I name dei campi =
  * chiavi ESATTE di Nexus_DB::default_settings() v1.1.12: interlink_enabled,
  * interlink_max (modulo S4). Il gruppo nuovo nasce chiuso, stesso contratto
- * localStorage/IIFE degli altri. DEBITO INTEGRAZIONE (S8): i name nuovi non
+ * localStorage degli altri. DEBITO INTEGRAZIONE (S8): i name nuovi non
  * sono ancora negli array di collectSettings() in admin.js né nella whitelist
  * REST (file fuori perimetro S8): il markup segue già il contratto, il
  * salvataggio effettivo arriva con l'estensione del glue (stesso percorso di
@@ -43,13 +50,13 @@
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]. Lo stato dei gruppi
  *   (array slug aperti) è persistito in localStorage['nxa-settings-acc-contenuti']
- *   (chiave propria della pagina, JSON con try/catch) dall'IIFE ES5 in fondo
- *   al file (solo toggle accordion, nessun fetch); default senza localStorage:
- *   pannello "pipeline" aperto, gli altri chiusi (stato renderizzato anche
- *   server-side, così senza JS la prima sezione resta leggibile; v1.1.11 (R1):
- *   il gruppo nuovo "fonti" segue la stessa regola, chiuso di default). Le
- *   classi accordion sono definite nel CSS condiviso: qui solo il micro-stile
- *   della barra Salva in cima.
+ *   (chiave propria del tab, JSON con try/catch) dall'UNICO handler delegato
+ *   in admin/views/settings.php (v1.1.13 O3: nessuna IIFE locale); default
+ *   senza localStorage: pannello "pipeline" aperto, gli altri chiusi (stato
+ *   renderizzato anche server-side, così senza JS la prima sezione resta
+ *   leggibile; v1.1.11 (R1): il gruppo nuovo "fonti" segue la stessa regola,
+ *   chiuso di default). Le classi accordion sono definite nel CSS condiviso
+ *   assets/css/admin-tabs.css.
  *
  * @package Nexus_News_AI
  */
@@ -223,105 +230,3 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                 </p>
         </form>
 </div>
-<style>
-  /* Barra Salva in cima (v1.1.6): solo respiro sotto l'h1, nessun colore aggiunto. */
-  .nxa-submit-top {
-    margin: 8px 0 16px;
-  }
-</style>
-<script>
-( function () {
-        'use strict';
-
-        var STORAGE_KEY = 'nxa-settings-acc-contenuti';
-        var DEFAULT_OPEN = 'pipeline';
-
-        function readSavedSlugs() {
-                try {
-                        var raw = window.localStorage.getItem( STORAGE_KEY );
-                        if ( ! raw ) {
-                                return null;
-                        }
-                        var parsed = JSON.parse( raw );
-                        if ( ! Array.isArray( parsed ) ) {
-                                return null;
-                        }
-                        return parsed;
-                } catch ( err ) {
-                        return null;
-                }
-        }
-
-        function applyState( group, isOpen ) {
-                var toggle = group.querySelector( '.nxa-acc-toggle' );
-                var panel = group.querySelector( '.nxa-acc-panel' );
-                if ( ! toggle || ! panel ) {
-                        return;
-                }
-                toggle.setAttribute( 'aria-expanded', isOpen ? 'true' : 'false' );
-                if ( isOpen ) {
-                        panel.removeAttribute( 'hidden' );
-                } else {
-                        panel.setAttribute( 'hidden', 'hidden' );
-                }
-        }
-
-        function saveOpenSlugs() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                var open = [];
-                for ( var i = 0; i < groups.length; i++ ) {
-                        var toggle = groups[ i ].querySelector( '.nxa-acc-toggle' );
-                        if ( toggle && toggle.getAttribute( 'aria-expanded' ) === 'true' ) {
-                                var slug = groups[ i ].getAttribute( 'data-nxa-acc' );
-                                if ( slug ) {
-                                        open.push( slug );
-                                }
-                        }
-                }
-                try {
-                        window.localStorage.setItem( STORAGE_KEY, JSON.stringify( open ) );
-                } catch ( err ) {
-                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
-                }
-        }
-
-        function restoreState() {
-                var groups = document.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
-                if ( ! groups.length ) {
-                        return;
-                }
-                var saved = readSavedSlugs();
-                var openMap = {};
-                if ( saved ) {
-                        for ( var i = 0; i < saved.length; i++ ) {
-                                if ( typeof saved[ i ] === 'string' ) {
-                                        openMap[ saved[ i ] ] = true;
-                                }
-                        }
-                } else {
-                        openMap[ DEFAULT_OPEN ] = true;
-                }
-                for ( var j = 0; j < groups.length; j++ ) {
-                        var slug = groups[ j ].getAttribute( 'data-nxa-acc' );
-                        applyState( groups[ j ], openMap[ slug ] === true );
-                }
-        }
-
-        function onClick( ev ) {
-                var target = ev.target;
-                var toggle = target && target.closest ? target.closest( '.nxa-acc-toggle' ) : null;
-                if ( ! toggle ) {
-                        return;
-                }
-                var group = toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
-                if ( ! group ) {
-                        return;
-                }
-                applyState( group, toggle.getAttribute( 'aria-expanded' ) !== 'true' );
-                saveOpenSlugs();
-        }
-
-        restoreState();
-        document.addEventListener( 'click', onClick );
-} )();
-</script>

@@ -45,17 +45,37 @@
  * (display:none via CSS, regola .nxa-settab-panel[hidden]) e restano però
  * renderizzati server-side (nessuna chiamata aggiuntiva al cambio tab).
  *
- * RIPARAZIONE ACCORDION (v1.1.11 R2, senza toccare i partial): ogni partial
- * registra la propria IIFE accordion su document (listener click + query
- * globali). Incluse insieme, ogni click su un toggle verrebbe gestito 4
- * volte (ogni handler rilegge aria-expanded e ri-toggle → lo stato finale
- * torna a quello iniziale) e ogni restoreState() sovrascriverebbe i gruppi
- * di tutti i pannelli con la chiave localStorage della propria pagina.
- * Lo script inline di questa vista corregge: memo in capture dello stato
- * PRE-click, riapplicazione in bubble (registrato per ultimo) dello stato
- * post-UN-toggle + snapshot salvato su tutte e 4 le chiavi storiche
- * (nxa-settings-acc-*), restore iniziale per pannello dalla PROPRIA chiave
- * (filtrata sui gruppi del pannello) con fallback al default storico.
+ * ACCORDION (v1.1.13 O3, unificato): le IIFE accordion dei 4 partial sono
+ * state RIMOSE dai partial (v1.1.11 le annullavano a vicenda e questa vista
+ * le "riparava" con un layer capture/bubble). Resta UN solo handler delegato
+ * in questa vista (click su .nxa-acc-toggle dentro .nxa-settab-panels:
+ * toggle di aria-expanded/hidden + snapshot nello storage del TAB del gruppo
+ * nxa-settings-acc-<tab>) + restore iniziale per pannello dalla PROPRIA
+ * chiave (filtrata sui gruppi del pannello) con fallback al default storico.
+ * Il markup dei gruppi NON cambia: section.nxa-acc[data-nxa-acc] con
+ * button.nxa-acc-toggle[aria-expanded][aria-controls] + div.nxa-acc-panel.
+ *
+ * DIRTY-GUARD (v1.1.13 O3): la pagina salva per-tab con la form viaggiante,
+ * quindi modifiche non salvate su un tab possono perdersi cambiando tab o
+ * navigando via. Lo script traccia lo stato dirty per tab (eventi input/change
+ * delegati sui pannelli), mostra: (1) indicatore "non salvato" sui tab con
+ * modifiche (span.nxa-settab-dirty, renderizzato server-side, visibile via
+ * classe .is-dirty); (2) banner inline in testa al pannello dirty con bottone
+ * "Salva ora" (requestSubmit sulla form viaggiante); (3) beforeunload quando
+ * c'è ALMENO un tab dirty. Nessun blocco forzato: il cambio tab è sempre
+ * permesso (i campi restano nella shell con i valori editati) ma l'avviso
+ * resta visibile. Al salvataggio RIUSCITO (wrapper di fetch su PUT /settings,
+ * stesso driver admin.js) lo stato dirty del tab salvato si azzera e i badge
+ * connessioni del tab Sistema si aggiornano via GET /settings/status.
+ *
+ * BRIDGE CHIAVI 1.1.13 (O3): i 7 campi nuovi (6 numerici "Limiti e scala" nel
+ * tab Sistema + nexus_notify_telegram_chat nel tab Pubblicazione) NON sono
+ * negli array di collectSettings() in admin.js (file di altro agente) e vivono
+ * come OPZIONI WP INDIPENDENTI (contratto opzioni 1.1.13: i consumatori
+ * Nexus_Dedup/Interlink/Evergreen/Notify leggono get_option() dedicate): il
+ * wrapper di fetch li fonde nel body del PUT /settings del form submit e la
+ * whitelist REST v1.1.13 li sanifica e li persiste come opzioni
+ * (Nexus_Rest::persist_scale_limits, absint+clamp / sanitize_text_field).
  *
  * Stile: assets/css/admin-tabs.css (SOLO token var(--nxa-*): il tema dark
  * body.nexus-theme-dark viene ereditato automaticamente). Gli h1 dei partial
@@ -128,7 +148,7 @@ if ( '' === $nxa_settab_active ) {
                                         aria-selected="<?php echo $nxa_settab_is_active ? 'true' : 'false'; ?>"
                                         aria-controls="nxa-settab-panel-<?php echo esc_attr( $nxa_settab_slug ); ?>"
                                         tabindex="<?php echo $nxa_settab_is_active ? '0' : '-1'; ?>"
-                                        data-nxa-settab-tab="<?php echo esc_attr( $nxa_settab_slug ); ?>"><?php echo esc_html( $nxa_settab_label ); ?></a>
+                                        data-nxa-settab-tab="<?php echo esc_attr( $nxa_settab_slug ); ?>"><?php echo esc_html( $nxa_settab_label ); ?><span class="nxa-settab-dirty" aria-hidden="true"><span class="nxa-settab-dirty-text"><?php esc_html_e( 'non salvato', 'nexus-news-ai' ); ?></span></span></a>
                         <?php endforeach; ?>
                 </div>
         </nav>
@@ -142,6 +162,10 @@ if ( '' === $nxa_settab_active ) {
                                 tabindex="0"
                                 data-nxa-settab-panel="<?php echo esc_attr( $nxa_settab_slug ); ?>"
                                 <?php echo ( $nxa_settab_slug !== $nxa_settab_active ) ? 'hidden="hidden"' : ''; ?>>
+                                <div class="nxa-settab-dirtybanner" role="status" hidden>
+                                        <span class="nxa-settab-dirtybanner-text"><?php esc_html_e( 'Hai modifiche non salvate in questa sezione.', 'nexus-news-ai' ); ?></span>
+                                        <button type="button" class="button button-small nxa-settab-dirtybanner-save"><?php esc_html_e( 'Salva ora', 'nexus-news-ai' ); ?></button>
+                                </div>
                                 <?php
                                 $nxa_settab_file = NEXUS_PLUGIN_DIR . 'admin/views/' . $nxa_settab_view . '.php';
                                 if ( file_exists( $nxa_settab_file ) ) {
@@ -399,18 +423,16 @@ if ( '' === $nxa_settab_active ) {
         }
 
         /* ==================================================================
-         * 3. Riparazione accordion (v1.1.11 R2)
+         * 3. Accordion (v1.1.13 O3, UN solo handler delegato)
          *
-         * I 4 partial registrano ciascuno la propria IIFE accordion su document:
-         * insieme, ogni click verrebbe gestito 4 volte (stato finale = stato
-         * iniziale) e i restore iniziali si sovrascrivono a vicenda. Correzione
-         * senza toccare i partial: memo in capture dello stato PRE-click,
-         * riapplicazione in bubble (questo listener è registrato PER ULTIMO, gira
-         * dopo i 4 handler dei partial) dello stato post-UN-toggle + snapshot
-         * corretto salvato su tutte e 4 le chiavi storiche.
+         * Le 4 IIFE accordion dei partial sono state RIMOSE dai partial: si
+         * annullavano a vicenda (ogni click gestito 4 volte) e in v1.1.11
+         * richiedevano un layer di riparazione capture/bubble qui sotto.
+         * Ora resta solo questo handler su .nxa-settab-panels (markup dei
+         * gruppi INVARIATO: .nxa-acc[data-nxa-acc] + .nxa-acc-toggle +
+         * .nxa-acc-panel) e lo snapshot va nello storage DEL TAB del gruppo
+         * (chiavi storiche nxa-settings-acc-<tab>, contratto v1.1.6).
          * ================================================================== */
-
-        var pendingAcc = null;
 
         function accApply( group, isOpen ) {
                 var toggle = group.querySelector( '.nxa-acc-toggle' );
@@ -426,26 +448,27 @@ if ( '' === $nxa_settab_active ) {
                 }
         }
 
-        function accSave() {
-                var groups = root.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
+        function accSave( panelEl ) {
+                var slug = panelEl ? panelEl.getAttribute( 'data-nxa-settab-panel' ) : '';
+                var key = ( slug && ACC_KEYS[ slug ] ) ? ACC_KEYS[ slug ] : '';
+                if ( ! key ) {
+                        return;
+                }
+                var groups = panelEl.querySelectorAll( '.nxa-acc[data-nxa-acc]' );
                 var open = [];
                 for ( var i = 0; i < groups.length; i++ ) {
                         var toggle = groups[ i ].querySelector( '.nxa-acc-toggle' );
                         if ( toggle && toggle.getAttribute( 'aria-expanded' ) === 'true' ) {
-                                var slug = groups[ i ].getAttribute( 'data-nxa-acc' );
-                                if ( slug ) {
-                                        open.push( slug );
+                                var accSlug = groups[ i ].getAttribute( 'data-nxa-acc' );
+                                if ( accSlug ) {
+                                        open.push( accSlug );
                                 }
                         }
                 }
-                for ( var key in ACC_KEYS ) {
-                        if ( Object.prototype.hasOwnProperty.call( ACC_KEYS, key ) ) {
-                                try {
-                                        window.localStorage.setItem( ACC_KEYS[ key ], JSON.stringify( open ) );
-                                } catch ( err ) {
-                                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
-                                }
-                        }
+                try {
+                        window.localStorage.setItem( key, JSON.stringify( open ) );
+                } catch ( err ) {
+                        window.console.warn( '[Nexus] impossibile salvare lo stato dei gruppi impostazioni (localStorage).' );
                 }
         }
 
@@ -503,7 +526,241 @@ if ( '' === $nxa_settab_active ) {
         }
 
         /* ==================================================================
-         * 4. Avvio
+         * 4. Dirty-guard "modifiche non salvate" (v1.1.13 O3)
+         *
+         * La pagina salva per-tab (form viaggiante): modifiche su un tab non
+         * salvato si perderebbero ricaricando o navigando via. Stato dirty
+         * per tab (eventi input/change delegati sui pannelli), indicatore sul
+         * tab (span.nxa-settab-dirty + classe .is-dirty), banner inline nel
+         * pannello (bottone "Salva ora" = requestSubmit sulla form viaggiante)
+         * e beforeunload quando c'è ALMENO un tab dirty. Nessun blocco forzato.
+         * ================================================================== */
+
+        var dirty = {};
+        var saveArmed = false; /* submit della form viaggiante in volo (per il wrapper fetch). */
+        var nativeFetch = null; /* fetch nativa, memoizzata dal bridge. */
+
+        /* Chiavi 1.1.13 (O3) NON ancora negli array di collectSettings() in
+         * admin.js (file di altro agente): il bridge le fonde nel body del
+         * PUT /settings del submit. Le numeriche partono solo se compilate
+         * (il clamp finale è nella whitelist REST); la chat viaggia sempre
+         * (vuota = svuota, non è un segreto). */
+        var BRIDGE_NUMBERS = [
+                'nexus_dedup_window_days',
+                'nexus_dedup_lookup_max',
+                'nexus_interlink_window_days',
+                'nexus_interlink_candidates',
+                'nexus_evergreen_max_per_run',
+                'nexus_notify_max_per_hour'
+        ];
+        var BRIDGE_TEXT = [ 'nexus_notify_telegram_chat' ];
+
+        function anyDirty() {
+                for ( var s in dirty ) {
+                        if ( Object.prototype.hasOwnProperty.call( dirty, s ) && dirty[ s ] === true ) {
+                                return true;
+                        }
+                }
+                return false;
+        }
+
+        function renderDirty() {
+                for ( var i = 0; i < TABS.length; i++ ) {
+                        var slug = TABS[ i ];
+                        var isDirty = ( dirty[ slug ] === true );
+                        if ( tabs[ slug ] ) {
+                                if ( isDirty ) {
+                                        tabs[ slug ].classList.add( 'is-dirty' );
+                                } else {
+                                        tabs[ slug ].classList.remove( 'is-dirty' );
+                                }
+                        }
+                        if ( panels[ slug ] ) {
+                                var banner = panels[ slug ].querySelector( '.nxa-settab-dirtybanner' );
+                                if ( banner ) {
+                                        if ( isDirty ) {
+                                                banner.removeAttribute( 'hidden' );
+                                        } else {
+                                                banner.setAttribute( 'hidden', 'hidden' );
+                                        }
+                                }
+                        }
+                }
+        }
+
+        function markDirty( el ) {
+                /* Solo i campi con name (contratto settings): esclude i campi
+                 * del form provider personalizzati (senza name, salvati via
+                 * REST dedicata) e i bottoni. */
+                if ( ! el || ! el.name ) {
+                        return;
+                }
+                var panel = el.closest ? el.closest( '.nxa-settab-panel' ) : null;
+                if ( ! panel ) {
+                        return;
+                }
+                var slug = panel.getAttribute( 'data-nxa-settab-panel' );
+                if ( slug && dirty[ slug ] !== true ) {
+                        dirty[ slug ] = true;
+                        renderDirty();
+                }
+        }
+
+        function resetDirty( slug ) {
+                if ( slug && dirty[ slug ] === true ) {
+                        dirty[ slug ] = false;
+                        renderDirty();
+                }
+        }
+
+        /* ==================================================================
+         * 5. Bridge PUT /settings (v1.1.13 O3)
+         *
+         * Wrapper di window.fetch: quando passa il PUT /settings del submit
+         * della form viaggiante (admin.js), fonde nel body le chiavi 1.1.13
+         * presenti nella form attiva e, se la risposta è ok, azzera lo stato
+         * dirty del tab salvato e aggiorna i badge connessioni del tab
+         * Sistema via GET /settings/status (endpoint di sola lettura O3,
+         * solo booleani). Gli altri fetch (GET, wizard, provider) passano
+         * intatti.
+         * ================================================================== */
+
+        function collectBridgeExtras() {
+                var extras = {};
+                if ( ! boundForm ) {
+                        return extras;
+                }
+                var i;
+                var field;
+                for ( i = 0; i < BRIDGE_NUMBERS.length; i++ ) {
+                        field = boundForm.elements[ BRIDGE_NUMBERS[ i ] ];
+                        if ( field && typeof field.value !== 'undefined' && String( field.value ).trim() !== '' ) {
+                                var parsed = parseInt( field.value, 10 );
+                                if ( ! isNaN( parsed ) ) {
+                                        extras[ BRIDGE_NUMBERS[ i ] ] = parsed;
+                                }
+                        }
+                }
+                for ( i = 0; i < BRIDGE_TEXT.length; i++ ) {
+                        field = boundForm.elements[ BRIDGE_TEXT[ i ] ];
+                        if ( field && typeof field.value !== 'undefined' ) {
+                                extras[ BRIDGE_TEXT[ i ] ] = String( field.value ).trim();
+                        }
+                }
+                return extras;
+        }
+
+        function isSettingsPut( input, init ) {
+                var method = ( init && init.method ) ? String( init.method ) : ( input && input.method ? String( input.method ) : '' );
+                if ( method.toUpperCase() !== 'PUT' ) {
+                        return false;
+                }
+                var url = ( typeof input === 'string' ) ? input : ( input && input.url ? String( input.url ) : '' );
+                /* Taglia query e fragment, poi confronta la coda del path:
+                 * riconosce ".../settings" (con o senza slash finale) ma NON
+                 * ".../settings/status" (che è GET di sola lettura). */
+                var cut = url.indexOf( '?' );
+                if ( cut !== -1 ) {
+                        url = url.substring( 0, cut );
+                }
+                cut = url.indexOf( '#' );
+                if ( cut !== -1 ) {
+                        url = url.substring( 0, cut );
+                }
+                return endsWithStr( url, '/settings' ) || endsWithStr( url, '/settings/' );
+        }
+
+        function endsWithStr( str, suffix ) {
+                return str.length >= suffix.length && str.substring( str.length - suffix.length ) === suffix;
+        }
+
+        function installFetchBridge() {
+                if ( typeof window.fetch !== 'function' || window.fetch.__nxaBridge ) {
+                        return;
+                }
+                nativeFetch = window.fetch;
+                var wrapped = function ( input, init ) {
+                        var isSave = ( saveArmed && isSettingsPut( input, init ) );
+                        var savedSlug = '';
+                        if ( isSave ) {
+                                saveArmed = false;
+                                savedSlug = active;
+                        }
+                        if ( isSave && init && typeof init.body === 'string' ) {
+                                try {
+                                        var body = JSON.parse( init.body );
+                                        if ( body && typeof body === 'object' && ! Array.isArray( body ) ) {
+                                                var extras = collectBridgeExtras();
+                                                for ( var k in extras ) {
+                                                        if ( Object.prototype.hasOwnProperty.call( extras, k ) ) {
+                                                                body[ k ] = extras[ k ];
+                                                        }
+                                                }
+                                                init.body = JSON.stringify( body );
+                                        }
+                                } catch ( err ) {
+                                        /* body non-JSON: pass-through (il PUT resta quello di admin.js). */
+                                }
+                        }
+                        var promise = nativeFetch.call( window, input, init );
+                        if ( isSave ) {
+                                promise.then( function ( res ) {
+                                        if ( res && res.ok ) {
+                                                resetDirty( savedSlug );
+                                                refreshStatusBadges();
+                                        }
+                                } ).catch( function () {
+                                        /* salvataggio fallito: lo stato dirty resta visibile. */
+                                } );
+                        }
+                        return promise;
+                };
+                wrapped.__nxaBridge = true;
+                window.fetch = wrapped;
+        }
+
+        function applyStatusBadge( key, isOk ) {
+                var badge = root.querySelector( '[data-nxa-status-badge="' + key + '"]' );
+                if ( ! badge ) {
+                        return;
+                }
+                if ( isOk ) {
+                        badge.classList.add( 'nxa-status-badge--ok' );
+                        badge.classList.remove( 'nxa-status-badge--off' );
+                } else {
+                        badge.classList.add( 'nxa-status-badge--off' );
+                        badge.classList.remove( 'nxa-status-badge--ok' );
+                }
+        }
+
+        function refreshStatusBadges() {
+                var data = window.NexusAdminData;
+                if ( ! data || ! data.restUrl || ! data.nonce || ! nativeFetch ) {
+                        return;
+                }
+                var url = String( data.restUrl ).replace( /\/+$/, '' ) + '/settings/status';
+                nativeFetch.call( window, url, {
+                        headers: { 'X-WP-Nonce': data.nonce },
+                        credentials: 'same-origin'
+                } ).then( function ( res ) {
+                        if ( ! res || ! res.ok ) {
+                                return null;
+                        }
+                        return res.json();
+                } ).then( function ( body ) {
+                        if ( ! body || typeof body !== 'object' ) {
+                                return;
+                        }
+                        applyStatusBadge( 'google', body.google_connected === true );
+                        applyStatusBadge( 'telegram', body.telegram_configured === true );
+                        applyStatusBadge( 'ai', body.ai_provider_active === true );
+                } ).catch( function () {
+                        /* stato non aggiornabile: restano i valori server-side. */
+                } );
+        }
+
+        /* ==================================================================
+         * 6. Avvio
          * ================================================================== */
 
         function init() {
@@ -524,6 +781,59 @@ if ( '' === $nxa_settab_active ) {
                 }
 
                 setupForms();
+
+                /* Dirty-guard: input/change delegati in capture sui pannelli (i
+                 * campi viaggiano fra form e shell ma restano DENTRO il proprio
+                 * pannello, quindi il tab dirty è sempre risolvibile). */
+                root.addEventListener( 'input', function ( ev ) {
+                        markDirty( ev.target );
+                }, true );
+                root.addEventListener( 'change', function ( ev ) {
+                        markDirty( ev.target );
+                }, true );
+
+                /* Banner "Salva ora": submit della form viaggiante (il bottone è
+                 * fuori dalla form: requestSubmit + fallback click sul primo submit). */
+                root.addEventListener( 'click', function ( ev ) {
+                        var btn = ev.target && ev.target.closest ? ev.target.closest( '.nxa-settab-dirtybanner-save' ) : null;
+                        if ( ! btn || ! boundForm ) {
+                                return;
+                        }
+                        var panel = panelOf( btn );
+                        if ( ! panel || panel.getAttribute( 'data-nxa-settab-panel' ) !== active ) {
+                                return;
+                        }
+                        if ( typeof boundForm.requestSubmit === 'function' ) {
+                                boundForm.requestSubmit();
+                        } else {
+                                var sub = boundForm.querySelector( 'button[type="submit"], input[type="submit"]' );
+                                if ( sub ) {
+                                        sub.click();
+                                }
+                        }
+                } );
+
+                /* Submit della form viaggiante in volo: arma il bridge PUT (consumato
+                 * dalla prima PUT /settings che passa; il flag evita che PUT estranei
+                 * azzerino lo stato dirty o fondano campi estranei). */
+                document.addEventListener( 'submit', function ( ev ) {
+                        if ( ev.target === boundForm ) {
+                                saveArmed = true;
+                        }
+                }, true );
+
+                /* Navigazione via con modifiche non salvate: avviso del browser
+                 * (nessun blocco forzato, solo l'onestà del confirm nativo). */
+                window.addEventListener( 'beforeunload', function ( ev ) {
+                        if ( ! anyDirty() ) {
+                                return;
+                        }
+                        ev.preventDefault();
+                        ev.returnValue = '';
+                        return '';
+                } );
+
+                installFetchBridge();
 
                 /* Il server ha già renderizzato il tab attivo (slug storico o ?tab=).
                  * L'hash #nxa-tab-<slug> vince solo se la query non indica già un tab. */
@@ -582,29 +892,22 @@ if ( '' === $nxa_settab_active ) {
                         }
                 } );
 
-                /* Accordion: capture = memo pre-click; bubble (registrato per ultimo,
-                 * dopo le IIFE dei partial) = stato definitivo + snapshot corretto. */
-                document.addEventListener( 'click', function ( ev ) {
-                        pendingAcc = null;
+                /* Accordion (v1.1.13 O3): UN solo handler delegato sui pannelli.
+                 * Le IIFE dei partial sono state rimosse; lo snapshot va nella
+                 * chiave localStorage del TAB del gruppo cliccato. */
+                root.addEventListener( 'click', function ( ev ) {
                         var toggle = ev.target && ev.target.closest ? ev.target.closest( '.nxa-acc-toggle' ) : null;
-                        var group = toggle && toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
-                        if ( ! group || ! root.contains( group ) ) {
+                        if ( ! toggle ) {
                                 return;
                         }
-                        pendingAcc = {
-                                group: group,
-                                open: toggle.getAttribute( 'aria-expanded' ) !== 'true'
-                        };
-                }, true );
-
-                document.addEventListener( 'click', function () {
-                        if ( ! pendingAcc ) {
+                        var group = toggle.closest ? toggle.closest( '.nxa-acc' ) : null;
+                        var panel = group ? panelOf( group ) : null;
+                        if ( ! group || ! panel ) {
                                 return;
                         }
-                        accApply( pendingAcc.group, pendingAcc.open );
-                        accSave();
-                        pendingAcc = null;
-                }, false );
+                        accApply( group, toggle.getAttribute( 'aria-expanded' ) !== 'true' );
+                        accSave( panel );
+                } );
         }
 
         init();
