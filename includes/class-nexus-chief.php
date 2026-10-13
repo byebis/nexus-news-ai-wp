@@ -90,6 +90,17 @@
  *   - Nexus_Queue::dispatch per i re-dispatch, con fallback alla chiamata
  *     diretta se la coda non e' disponibile.
  *
+ * v1.1.9 (WP4 — snapshot + budget per-articolo):
+ *   - Snapshot revisioni: PRIMA di ogni sovrascrittura del testo (edit del capo
+ *     sull'approvazione e riscrittura del giro di revisione) viene salvata una
+ *     revisione (Nexus_DB::insert_article_revision, schema v2) con etichetta
+ *     "capo redattore: Nome": l'originale non resta solo nel log attività.
+ *   - Budget AI per-articolo: transient 'nexus_chief_budget_{id}' (24h) conta gli
+ *     avvii di revisione; oltre il tetto (default 30, filtro
+ *     'nexus_chief_budget_limit') hard stop con chief_status 'revisione' e nota
+ *     onesta. Il budget mensile AI esistente NON e' toccato.
+ *   - json_mode sul verdetto (risposta attesa: oggetto JSON, contratto Task 4.8).
+ *
  * @package Nexus_News_AI
  * @since   1.1.4
  */
@@ -119,6 +130,18 @@ class Nexus_Chief {
          * (insurance anti-loop oltre al cap sui giri in database).
          */
         const MAX_DEPTH = 8;
+
+        /**
+         * Prefisso del transient del budget AI per-articolo del capo (v1.1.9):
+         * conta gli avvii di revisione per un singolo articolo.
+         */
+        const BUDGET_PREFIX = 'nexus_chief_budget_';
+
+        /**
+         * Finestra del budget AI per-articolo: 24 ore (sliding: ogni revisione
+         * rinnova la finestra). A finestra scaduta il conteggio riparte da zero.
+         */
+        const BUDGET_TTL = DAY_IN_SECONDS;
 
         /**
          * Cache per-request dei capi redattori attivi (null = non ancora caricati).
@@ -521,6 +544,51 @@ class Nexus_Chief {
                         $note_precedenti
                 );
 
+                // v1.1.9 — Budget AI per-articolo del capo (transient 24h): la revisione
+                // con strumenti puo' moltiplicare le chiamate; senza tetto un articolo
+                // problematico brucia il budget mensile su un solo pezzo. Si conta ogni
+                // avvio di revisione (una sola wrap_chat puo' includere piu' call AI:
+                // contare qui e' il tetto piu' onesto senza toccare il motore). Il budget
+                // mensile esistente NON e' toccato.
+                $budget_key   = self::BUDGET_PREFIX . $article_id;
+                $budget_used  = (int) get_transient( $budget_key );
+                $budget_max   = self::chief_budget_limit( $article_id );
+
+                if ( $budget_used >= $budget_max ) {
+                        // Hard stop: chief_status 'revisione' + nota onesta. Idempotente: se la
+                        // nota e' gia' quella non si riscrive e non si rigonfia il log a ogni tick
+                        // (run_for_pending ripescarebbe l'articolo: qui costa zero, nessuna AI).
+                        $budget_note   = 'budget AI di revisione esaurito per questo articolo';
+                        $already_noted = isset( $article->chief_note ) && trim( (string) $article->chief_note ) === $budget_note;
+
+                        $out['ok']           = true;
+                        $out['skipped']      = true;
+                        $out['chief_status'] = 'revisione';
+                        $out['note']         = $budget_note;
+                        $out['message']      = 'Budget AI di revisione esaurito per questo articolo: revisione sospesa.';
+
+                        if ( ! $already_noted ) {
+                                $saved = self::save_chief_columns(
+                                        $article_id,
+                                        array(
+                                                'chief_status'      => 'revisione',
+                                                'chief_note'        => $budget_note,
+                                                'chief_agent_id'    => (int) $chief->id,
+                                                'chief_reviewed_at' => current_time( 'mysql' ),
+                                        )
+                                );
+                                if ( $saved['ok'] ) {
+                                        self::log( $agent_id, sprintf( "Capo redattore: budget AI di revisione esaurito per l'articolo #%d (%d revisioni in 24h): sospeso, serve intervento umano.", $article_id, $budget_max ), 'warning' );
+                                }
+                        }
+
+                        return $out;
+                }
+
+                // Incremento PRIMA della chiamata: contano anche i tentativi falliti/timeout
+                // (il costo API e' gia' stato pagato dal tentativo).
+                set_transient( $budget_key, $budget_used + 1, self::BUDGET_TTL );
+
                 // Contratto T-03: il capo passa da Nexus_Tools::wrap_chat (T-04) se
                 // disponibile (tool-use loop con ricerca web), altrimenti chat diretta.
                 $opts = array(
@@ -530,6 +598,9 @@ class Nexus_Chief {
                         'max_tokens'  => 3000,
                         'model'       => isset( $chief->ai_model ) ? (string) $chief->ai_model : '',
                         'provider'    => isset( $chief->ai_provider ) ? (string) $chief->ai_provider : '',
+                        // v1.1.9 (contratto Task 4.8): il verdetto e' un oggetto JSON. Opzione
+                        // opzionale: motori piu' vecchi o provider che non la supportano la ignorano.
+                        'json_mode'   => true,
                 );
 
                 if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'wrap_chat' ) ) {
@@ -611,6 +682,10 @@ class Nexus_Chief {
                         $chief_status = $has_edits ? 'modificato' : 'visto';
 
                         if ( $has_edits ) {
+                                // v1.1.9: snapshot PRIMA dell'edit (schema v2): l'originale non resta
+                                // solo nel log attività ma è ripristinabile dall'admin (revisioni).
+                                self::snapshot_revision( $article_id, $chief );
+
                                 // Il capo ha ritoccato il testo: l'originale resta SOLO nel log attivita'.
                                 $fields = array();
                                 if ( '' !== $edited_title ) {
@@ -707,6 +782,10 @@ class Nexus_Chief {
 
                                 $out['chief_status'] = 'revisione';
                                 self::log( $agent_id, sprintf( 'Capo redattore: articolo #%d in revisione (giro %d/%d). Nota al giornalista: %s', $article_id, $new_rounds, $max_rounds, self::clip( '' !== $note ? $note : 'nessuna nota', 200 ) ), 'warning' );
+
+                                // v1.1.9: snapshot PRIMA della riscrittura del giro di revisione
+                                // (la rewrite del giornalista sovrascrive title/content/summary).
+                                self::snapshot_revision( $article_id, $chief );
 
                                 // Il giornalista rigenera l'articolo: la rewrite legge gia'
                                 // l'articolo e, se chief_status e' 'revisione', allega la nota del capo.
@@ -1011,6 +1090,43 @@ class Nexus_Chief {
                 }
 
                 return array( 'ok' => true, 'error' => '' );
+        }
+
+        /**
+         * Snapshot dell'articolo PRIMA di una sovrascrittura del testo da parte
+         * del capo (edit sull'approvazione o riscrittura del giro di revisione)
+         * (v1.1.9, schema v2). Best effort: un fallimento NON blocca la revisione
+         * (l'originale resta quantomeno nel log attività, come prima della v1.1.9).
+         *
+         * @param int    $article_id ID articolo.
+         * @param object $chief      Capo redattore (per l'etichetta editor).
+         * @return void
+         */
+        private static function snapshot_revision( $article_id, $chief ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'insert_article_revision' ) ) {
+                        return; // Schema v2 non ancora applicato: snapshot non disponibile.
+                }
+
+                try {
+                        Nexus_DB::insert_article_revision(
+                                absint( $article_id ),
+                                'capo redattore: ' . self::clip( isset( $chief->name ) ? (string) $chief->name : 'AI', 100 )
+                        );
+                } catch ( Throwable $e ) {
+                        return; // Mai bloccare la revisione per lo snapshot.
+                }
+        }
+
+        /**
+         * Tetto di revisioni AI del capo per un singolo articolo in 24h (v1.1.9).
+         * Default 30, filtrabile con 'nexus_chief_budget_limit'.
+         *
+         * @param int $article_id ID articolo (passato al filtro per tetto per-articolo).
+         * @return int
+         */
+        private static function chief_budget_limit( $article_id ) {
+                $limit = (int) apply_filters( 'nexus_chief_budget_limit', 30, absint( $article_id ) );
+                return max( 1, $limit );
         }
 
         /**

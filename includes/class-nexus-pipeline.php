@@ -65,6 +65,18 @@
  *   - Fact-check post-rewrite (se enable_factcheck e fonte disponibile): punteggio e
  *     citazioni salvati sull'articolo; sotto factcheck_min_score l'articolo torna in bozza.
  *
+ * v1.1.9 — Pipeline resilience (WP4):
+ *   - Dedup ATOMICO: content_hash scritto da insert_article (schema v2, UNIQUE);
+ *     rimosso l'update post-insert: insert==0 con hash impostato = duplicato scartato.
+ *   - Resume articoli bloccati: resume_stalled() riprende le bozze ferme da oltre 6h
+ *     (UN solo batch all'inizio di cron_tick) rilanciando evaluate/rewrite.
+ *   - Guard capo redattore: in fully_autonomous non si auto-approva un articolo
+ *     che aspetta (o sta rifacendo) la revisione del capo (publish() e run_full).
+ *   - Fact-check su fonte reale: scarica source_url (cache 6h, clip 20k) invece di
+ *     verificare contro il solo riassunto collect-stage; fallback onesto sul riassunto.
+ *   - json_mode sulle fasi che leggono oggetti JSON + time budget per articolo
+ *     (filtro nexus_pipeline_phase_budget, default 90s, interruzione con grazia).
+ *
  * CONTRATTO PUBBLICO:
  * Nexus_Pipeline::collect( $agent_id )                       → array{ok, collected, errors, article_ids, skipped?}
  * Nexus_Pipeline::evaluate( $article_id )                    → array{ok, score, error?}
@@ -74,6 +86,7 @@
  * Nexus_Pipeline::publish( $article_id )                     → array{ok, logs, error?, already?, message?}
  * Nexus_Pipeline::run_full( $agent_id )                      → array{ok, collected, evaluated, rewritten, published, messages}
  * Nexus_Pipeline::cron_tick()                                → array{ok, ran, results, timestamp}
+ * Nexus_Pipeline::resume_stalled( $max_age_hours = 6, $limit = 10 ) → array{ok, resumed, skipped, messages} (v1.1.9)
  * Nexus_Pipeline::wire_run( $topic )                         → array{ok, run}
  * Nexus_Pipeline::wire_runs( $limit = 20 )                   → array
  * Nexus_Pipeline::set_runtime( $agent_id, $step, $label, $article_id = 0, $article_title = '' ) → void (v1.1.5)
@@ -242,36 +255,47 @@ class Nexus_Pipeline {
                         }
                 }
 
-                /* ---- FASE 1c: inserimento articoli in stato 'draft' (con anti-duplicato v1.0.3) ---- */
+                /* ---- FASE 1c: inserimento articoli in stato 'draft' (anti-duplicato ATOMICO v1.1.9) ---- */
                 foreach ( $kept as $candidate ) {
-                        // Anti-duplicato (v1.0.3): hash del titolo normalizzato; se esiste già un
-                        // articolo con lo stesso hash l'item viene scartato con attività 'duplicate'.
+                        // Fast-path anti-duplicato (v1.0.3): hash del titolo normalizzato; se esiste
+                        // già un articolo con lo stesso hash l'item viene scartato senza tentare
+                        // l'insert (risparmia anche l'INSERT che fallirebbe sull'UNIQUE).
                         $hash = self::title_hash( $candidate['title'] );
                         if ( '' !== $hash && method_exists( 'Nexus_DB', 'article_hash_exists' ) && Nexus_DB::article_hash_exists( $hash ) ) {
                                 self::log_phase( 0, 'duplicate', sprintf( 'Duplicato scartato: %s', self::clip( $candidate['title'], 60 ) ), 'info' );
                                 continue;
                         }
 
-                        $article_id = Nexus_DB::insert_article(
-                                array(
-                                        'title'         => $candidate['title'],
-                                        'summary'       => $candidate['summary'],
-                                        'content'       => $candidate['content'],
-                                        'category'      => $category,
-                                        'agent_id'      => (int) $agent->id,
-                                        'source_name'   => '' !== $candidate['sourceName'] ? $candidate['sourceName'] : $source_name,
-                                        'source_url'    => $candidate['sourceUrl'],
-                                        'status'        => 'draft',
-                                        'quality_score' => $candidate['score'],
-                                )
+                        // v1.1.9 (schema v2, contratto Task 4.3): l'hash viaggia DENTRO l'insert
+                        // (content_hash con UNIQUE): il vecchio check → insert → update era una
+                        // sequenza non atomica che poteva lasciare articoli mai deduplicati.
+                        // Niente più update dopo l'insert; senza hash la chiave NON viene passata.
+                        $data = array(
+                                'title'         => $candidate['title'],
+                                'summary'       => $candidate['summary'],
+                                'content'       => $candidate['content'],
+                                'category'      => $category,
+                                'agent_id'      => (int) $agent->id,
+                                'source_name'   => '' !== $candidate['sourceName'] ? $candidate['sourceName'] : $source_name,
+                                'source_url'    => $candidate['sourceUrl'],
+                                'status'        => 'draft',
+                                'quality_score' => $candidate['score'],
                         );
+                        if ( '' !== $hash ) {
+                                $data['content_hash'] = $hash;
+                        }
+
+                        $article_id = Nexus_DB::insert_article( $data );
                         if ( $article_id ) {
-                                // Persisti l'hash anti-duplicato (insert_article non ammette content_hash).
-                                if ( '' !== $hash && method_exists( 'Nexus_DB', 'update_article' ) ) {
-                                        Nexus_DB::update_article( $article_id, array( 'content_hash' => $hash ) );
-                                }
                                 $out['article_ids'][] = $article_id;
                                 $out['collected']++;
+                        } elseif ( '' !== $hash ) {
+                                // Insert fallito con hash impostato: con UNIQUE content_hash è un
+                                // duplicato (es. inserito da un tick concorrente tra il fast-path e
+                                // l'insert). Log onesto + skip: nessun dato residuo da ripulire.
+                                self::log_phase( 0, 'duplicate', sprintf( 'Duplicato scartato (hash): %s', self::clip( $candidate['title'], 60 ) ), 'info' );
+                        } else {
+                                self::log_phase( 0, 'collecting', sprintf( 'Inserimento articolo fallito: %s', self::clip( $candidate['title'], 60 ) ), 'error' );
                         }
                 }
 
@@ -330,7 +354,9 @@ class Nexus_Pipeline {
                         $category
                 );
                 // v1.0.3: modello economico per lo screening (ai_model_cheap, fallback ai_model).
-                $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id ) );
+                // v1.1.9: json_mode (contratto Task 4.8): parse_score legge il punteggio JSON,
+                // il fallback regex resta per le risposte numeriche.
+                $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -415,7 +441,8 @@ class Nexus_Pipeline {
                         );
                 }
                 // v1.0.3: modello per-agente (agents.ai_model se impostato, fallback ai_model globale).
-                $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id ) );
+                // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede già un oggetto JSON.
+                $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -532,6 +559,18 @@ class Nexus_Pipeline {
                 if ( 'approved' === $article->status ) {
                         // Percorso normale: nulla da fare qui.
                 } elseif ( 'pending_approval' === $article->status && 'fully_autonomous' === $mode ) {
+                        // v1.1.9 — Guard capo redattore: in autonomia totale NON si auto-approva
+                        // un articolo che aspetta la revisione del capo (chief_status vuoto = mai
+                        // visto; 'revisione' = giro di revisione in corso): l'auto-approvazione al
+                        // volo bypassava il controllo editoriale del capo. Con capo disattivo o
+                        // esito già presente ('visto'/'modificato') comportamento invariato.
+                        if ( self::awaiting_chief_review( $article ) ) {
+                                $out['error']   = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione non eseguita, resta in coda di revisione.', $article_id );
+                                $out['message'] = 'In attesa del capo redattore.';
+                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata, resta in coda di revisione.', $article_id ), 'info' );
+                                return $out;
+                        }
+
                         Nexus_DB::set_approval( $article_id, 'approved', 'Approvazione automatica prima della pubblicazione (modalità fully autonomous).' );
                 } else {
                         $out['error'] = sprintf( 'L\'articolo #%d non è pubblicabile nello stato attuale (%s): serve lo stato "approved".', $article_id, $article->status );
@@ -700,8 +739,17 @@ class Nexus_Pipeline {
                                 continue;
                         }
 
+                        // v1.1.9 — Time budget per articolo: le fasi AI di UN solo articolo non
+                        // devono poter occupare il tick all'infinito (un modello lento non deve
+                        // bloccare il lavoro degli altri). Superato il budget le fasi successive
+                        // si interrompono con grazia: l'articolo resta nel suo stato corrente e
+                        // i cicli successivi (resume_stalled / coda del capo) lo recuperano.
+                        $article_started_at = microtime( true );
+                        $phase_budget       = self::phase_budget( $article_id );
+
                         // FASE 2: valutazione.
-                        if ( ! empty( $settings['auto_evaluate'] ) ) {
+                        if ( ! empty( $settings['auto_evaluate'] )
+                                && self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'valutazione' ) ) {
                                 $evaluation = self::evaluate( $article_id );
                                 if ( ! empty( $evaluation['ok'] ) ) {
                                         $summary['evaluated']++;
@@ -714,7 +762,8 @@ class Nexus_Pipeline {
 
                         // FASE 3: riscrittura.
                         $rewritten_now = false;
-                        if ( ! empty( $settings['auto_rewrite'] ) ) {
+                        if ( ! empty( $settings['auto_rewrite'] )
+                                && self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'riscrittura' ) ) {
                                 $rewriting = self::rewrite( $article_id );
                                 if ( ! empty( $rewriting['ok'] ) ) {
                                         $summary['rewritten']++;
@@ -738,11 +787,22 @@ class Nexus_Pipeline {
                         }
 
                         // FASI 4-5: approvazione/pubblicazione automatiche secondo modalità e soglia.
+                        if ( ! self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'approvazione/pubblicazione' ) ) {
+                                continue;
+                        }
+
                         $threshold    = absint( isset( $settings['auto_approve_score'] ) ? $settings['auto_approve_score'] : 75 );
                         $score        = (float) $article->quality_score;
                         $is_full_auto = ( 'fully_autonomous' === $mode );
 
-                        if ( $rewritten_now && $is_full_auto && $score >= $threshold ) {
+                        // v1.1.9 — Guard capo redattore anche sull'auto-approvazione del run: la
+                        // guardia in publish() da sola non basterebbe (qui l'articolo viene PRIMA
+                        // approvato con approve() e POI pubblicato). Con il capo attivo e revisione
+                        // ancora da fare l'auto-approvazione salta: l'articolo resta in coda e lo
+                        // prende il blocco chief_dispatch in fondo al ciclo.
+                        $chief_gate = $is_full_auto && self::awaiting_chief_review( $article );
+
+                        if ( $rewritten_now && $is_full_auto && $score >= $threshold && ! $chief_gate ) {
                                 $approval = self::approve(
                                         $article_id,
                                         sprintf( 'Approvazione automatica: punteggio %.0f >= %d (modalità fully autonomous).', $score, $threshold )
@@ -760,6 +820,9 @@ class Nexus_Pipeline {
                                 } else {
                                         $summary['messages'][] = sprintf( 'Approvazione automatica articolo #%d fallita: %s', $article_id, $approval['error'] );
                                 }
+                        } elseif ( $rewritten_now && $chief_gate ) {
+                                $summary['messages'][] = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione e pubblicazione automatiche saltate.', $article_id );
+                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata (modalità fully autonomous).', $article_id ), 'info' );
                         } elseif ( $rewritten_now && $is_full_auto ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione: punteggio %.0f sotto la soglia di auto-approvazione (%d).', $article_id, $score, $threshold );
                         } elseif ( $rewritten_now && ! empty( $settings['auto_publish'] ) && 'approved' === $article->status ) {
@@ -801,6 +864,16 @@ class Nexus_Pipeline {
         public static function cron_tick() {
                 $results = array();
                 $ran     = 0;
+
+                // v1.1.9 — Resume articoli bloccati ALL'INIZIO del tick (WP4): UN solo
+                // batch per chiamata (limit interno, default 10) per non sovrapporsi al
+                // lavoro degli agenti né mandare in loop il tick. Mai fatale: il giro
+                // regolare degli agenti deve proseguire comunque.
+                try {
+                        self::resume_stalled();
+                } catch ( Throwable $e ) {
+                        self::log_phase( 0, 'rewriting', sprintf( 'Resume articoli bloccati fallito: %s', self::clip( $e->getMessage(), 300 ) ), 'error' );
+                }
 
                 foreach ( (array) Nexus_DB::agents() as $agent ) {
                         if ( 'active' !== $agent->status ) {
@@ -851,6 +924,146 @@ class Nexus_Pipeline {
                         'results'   => $results,
                         'timestamp' => current_time( 'mysql' ),
                 );
+        }
+
+        /**
+         * v1.1.9 — Resume degli articoli bloccati (WP4 "Pipeline resume").
+         *
+         * Un crash a metà tick lasciava bozze 'draft' orfane per sempre: il collect
+         * le crea, ma le fasi successive (evaluate → rewrite → fact-check) girano
+         * solo nel medesimo tick. Qui si ripescano le bozze ferme da oltre
+         * $max_age_hours e si rilanciano le fasi successive riusando evaluate() e
+         * rewrite() (il fact-check è già dentro rewrite).
+         *
+         * Selettivo per costruzione:
+         * - solo stato 'draft' (la pipeline NON usa stati intermedi tipo
+         *   'pending_evaluation'/'in_rewrite': lo stallo visibile è il draft);
+         * - solo con fonte impostata (le bozze della pipeline nascono da collect);
+         * - solo se auto_evaluate/auto_rewrite lo consentono: una bozza parcheggiata
+         *   dai toggle NON è uno stallo, non si aggira la configurazione;
+         * - escluse le bozze rimandate in draft dal fact-check (factcheck_score
+         *   valorizzato = richiesta di revisione umana, non un orfano: riprenderle
+         *   creerebbe un loop AI di riscritture ogni 6h);
+         * - esclusi gli articoli già in lavorazione (stato runtime degli agenti
+         *   e lock del capo redattore).
+         *
+         * Chiamata UNA volta per tick (da cron_tick) e al massimo $limit articoli:
+         * il resto si riprende ai tick successivi.
+         *
+         * @param int $max_age_hours Età minima dello stallo in ore (default 6).
+         * @param int $limit         Numero massimo di articoli ripresi per chiamata (default 10).
+         * @return array{ok:bool, resumed:int, skipped:int, messages:array}
+         */
+        public static function resume_stalled( $max_age_hours = 6, $limit = 10 ) {
+                $out = array(
+                        'ok'       => true,
+                        'resumed'  => 0,
+                        'skipped'  => 0,
+                        'messages' => array(),
+                );
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'articles' ) ) {
+                        return $out;
+                }
+
+                $limit         = min( 20, max( 1, absint( $limit ) ) );
+                $max_age_hours = max( 1, absint( $max_age_hours ) );
+                $threshold     = current_time( 'timestamp' ) - $max_age_hours * HOUR_IN_SECONDS;
+
+                // Solo API db esistenti (NESSUNA query diretta): i draft più vecchi per
+                // primi, i filtri di stallo/lavorazione applicati qui in PHP.
+                $rows = Nexus_DB::articles( array(
+                        'status'   => 'draft',
+                        'orderby'  => 'created_at',
+                        'order'    => 'asc',
+                        'per_page' => 100,
+                        'page'     => 1,
+                ) );
+                if ( ! is_array( $rows ) ) {
+                        return $out;
+                }
+
+                // Runtime corrente: un articolo già "in redazione" per un agente non si tocca.
+                $busy = array();
+                foreach ( self::get_runtime() as $state ) {
+                        if ( is_array( $state ) && ! empty( $state['article_id'] ) ) {
+                                $busy[ absint( $state['article_id'] ) ] = true;
+                        }
+                }
+
+                $settings      = self::settings();
+                $auto_evaluate = ! empty( $settings['auto_evaluate'] );
+                $auto_rewrite  = ! empty( $settings['auto_rewrite'] );
+
+                foreach ( $rows as $row ) {
+                        if ( $out['resumed'] >= $limit ) {
+                                break;
+                        }
+
+                        $article_id = absint( isset( $row->id ) ? $row->id : 0 );
+                        if ( $article_id < 1 || isset( $busy[ $article_id ] ) ) {
+                                continue;
+                        }
+
+                        // Lock del capo redattore (difensivo: le bozze non sono in revisione,
+                        // ma il lock esclude ogni sovrapposizione con la coda).
+                        if ( class_exists( 'Nexus_Chief' ) && get_transient( Nexus_Chief::LOCK_PREFIX . $article_id ) ) {
+                                $out['skipped']++;
+                                continue;
+                        }
+
+                        // Età dello stallo: updated_at (fallback created_at) più vecchio della soglia.
+                        $stamp_raw = isset( $row->updated_at ) && '' !== (string) $row->updated_at ? (string) $row->updated_at : (string) $row->created_at;
+                        $stamp     = strtotime( $stamp_raw );
+                        if ( ! $stamp || $stamp > $threshold ) {
+                                continue; // Ancora fresco: non è uno stallo.
+                        }
+
+                        if ( '' === trim( (string) ( isset( $row->source_name ) ? $row->source_name : '' ) ) ) {
+                                continue; // Senza fonte non è una bozza prodotta dalla pipeline.
+                        }
+
+                        if ( isset( $row->factcheck_score ) && null !== $row->factcheck_score ) {
+                                $out['skipped']++;
+                                continue; // Tornato in bozza dal fact-check: la revisione è richiesta all'umano.
+                        }
+
+                        if ( ! $auto_evaluate && ! $auto_rewrite ) {
+                                $out['skipped']++;
+                                continue; // Fasi successive disattivate: bozza parcheggiata di proposito.
+                        }
+
+                        // Log onesto del resume, PRIMA di rilanciare le fasi.
+                        self::log_phase( (int) ( isset( $row->agent_id ) ? $row->agent_id : 0 ), 'rewriting', sprintf( 'Resume dopo stallo: articolo #%d in bozza da oltre %dh: rilancio valutazione/riscrittura.', $article_id, $max_age_hours ), 'info' );
+
+                        if ( $auto_evaluate ) {
+                                $evaluation = self::evaluate( $article_id );
+                                if ( empty( $evaluation['ok'] ) ) {
+                                        $out['messages'][] = sprintf( 'Articolo #%d: valutazione fallita nel resume: %s', $article_id, (string) $evaluation['error'] );
+                                }
+                        }
+
+                        if ( $auto_rewrite ) {
+                                $rewriting = self::rewrite( $article_id );
+                                if ( ! empty( $rewriting['ok'] ) ) {
+                                        $out['resumed']++;
+                                        $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto e messo in coda di approvazione.', $article_id );
+                                } else {
+                                        // Resta in bozza: il prossimo tick tenterà di nuovo il resume.
+                                        $out['messages'][] = sprintf( 'Articolo #%d: riscrittura fallita nel resume: %s', $article_id, (string) $rewriting['error'] );
+                                }
+                        } else {
+                                // Solo valutazione attiva: la bozza è stata comunque fatta ripartire.
+                                $out['resumed']++;
+                                $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: rivalutato.', $article_id );
+                        }
+                }
+
+                if ( $out['resumed'] > 0 ) {
+                        self::log_phase( 0, 'rewriting', sprintf( 'Resume articoli bloccati: %d bozze riprese (ferme da oltre %dh).', $out['resumed'], $max_age_hours ), 'info' );
+                }
+
+                return $out;
         }
 
         /**
@@ -972,7 +1185,8 @@ class Nexus_Pipeline {
                                 $topic
                         );
                         // v1.0.3: tracking usage del wire con l'agente proponente.
-                        $res = self::chat( $prompt, 'wire', array( 'agent_id' => (int) $agent->id ) );
+                        // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede un oggetto JSON.
+                        $res = self::chat( $prompt, 'wire', array( 'agent_id' => (int) $agent->id, 'json_mode' => true ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $run['error'] = sprintf( 'Chat fallita per l\'agente %s: %s', $agent->name, self::chat_error( $res, 'motore AI non disponibile' ) );
@@ -1009,7 +1223,8 @@ class Nexus_Pipeline {
                         $angles_text
                 );
                 // v1.0.3: tracking usage della chiamata direttore (agente responsabile).
-                $res = self::chat( $director_prompt, 'wire', array( 'agent_id' => (int) $first->id ) );
+                // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede un oggetto JSON.
+                $res = self::chat( $director_prompt, 'wire', array( 'agent_id' => (int) $first->id, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $run['error'] = sprintf( 'La direzione non ha completato la fusione: %s', self::chat_error( $res, 'motore AI non disponibile' ) );
@@ -1236,7 +1451,7 @@ class Nexus_Pipeline {
          *
          * @param string $prompt Prompt completo.
          * @param string $phase  Fase logica (collect|evaluate|rewrite|wire) — usata anche come 'action'.
-         * @param array  $opts   Opzioni extra: 'model' (string), 'agent_id' (int).
+         * @param array  $opts   Opzioni extra: 'model' (string), 'agent_id' (int), 'json_mode' (bool, v1.1.9).
          * @return array{ok:bool, content:string, error:string, simulated:bool}
          */
         private static function chat( $prompt, $phase, $opts = array() ) {
@@ -1249,6 +1464,13 @@ class Nexus_Pipeline {
                 );
                 if ( isset( $opts['model'] ) && '' !== trim( (string) $opts['model'] ) ) {
                         $send['model'] = trim( (string) $opts['model'] );
+                }
+
+                // v1.1.9 (contratto Task 4.8): 'json_mode' chiede al motore una risposta in
+                // JSON dove il flusso se la aspetta. Opzionale e retrocompatibile: un motore
+                // più vecchio o un provider che non la supporta la ignora.
+                if ( ! empty( $opts['json_mode'] ) ) {
+                        $send['json_mode'] = true;
                 }
 
                 $res = Nexus_AI_Engine::chat(
@@ -1378,10 +1600,139 @@ class Nexus_Pipeline {
         }
 
         /**
+         * Scarica il testo della fonte originale per il fact-check (v1.1.9).
+         *
+         * Fetch SOLO del source_url dell'articolo (proviene da feed già validati dal
+         * collect; gli SSRF guard centrali arrivano da WP2/D2 su tools.php). Cache
+         * transient 'nexus_src_{md5url}' 6h: il fact-check gira a ogni riscrittura ma
+         * la fonte non cambia. Ritorna '' a qualunque fallimento (chiamante fa il
+         * fallback sul riassunto con log onesto).
+         *
+         * @param string $url URL della fonte.
+         * @return string Testo pulito (max 20k caratteri) o '' se non raggiungibile.
+         */
+        private static function fetch_source_text( $url ) {
+                $url = trim( (string) $url );
+                if ( '' === $url || ! function_exists( 'wp_remote_get' ) ) {
+                        return '';
+                }
+
+                // Cache 6h per URL (chiave md5 come da contratto WP4).
+                $cache_key = 'nexus_src_' . md5( $url );
+                $cached    = get_transient( $cache_key );
+                if ( is_string( $cached ) && '' !== $cached ) {
+                        return $cached;
+                }
+
+                $response = wp_remote_get(
+                        $url,
+                        array(
+                                'timeout'             => 15,
+                                'redirection'         => 2, // Evita redirect infiniti.
+                                'limit_response_size' => 512000, // 500 KB: più che sufficiente per un articolo.
+                                'user-agent'          => 'Nexus News AI/' . ( defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '1.1.9' ) . ' (WordPress; ' . home_url() . ')',
+                        )
+                );
+
+                if ( is_wp_error( $response ) ) {
+                        return '';
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+                if ( $code < 200 || $code >= 300 ) {
+                        return '';
+                }
+
+                $body = wp_remote_retrieve_body( $response );
+                if ( ! is_string( $body ) || '' === trim( $body ) ) {
+                        return '';
+                }
+
+                // Il modello verifica testo: via tag, normalizzato e clip a 20k caratteri
+                // (budget prompt: 20k coprono ampiamente il piombo della fonte).
+                $text = self::clip( wp_strip_all_tags( $body ), 20000 );
+                if ( '' === $text ) {
+                        return '';
+                }
+
+                // Solo i successi finiscono in cache: i fallimenti riprovano al giro successivo.
+                set_transient( $cache_key, $text, 6 * HOUR_IN_SECONDS );
+
+                return $text;
+        }
+
+        /**
+         * Budget di tempo per le fasi AI di un singolo articolo nel tick (v1.1.9).
+         * Default 90 secondi, filtrabile con 'nexus_pipeline_phase_budget'; valori
+         * <= 0 disattivano il limite (comportamento precedente).
+         *
+         * @param int $article_id ID articolo (passato al filtro per tetto per-articolo).
+         * @return float Secondi (0 = nessun limite).
+         */
+        private static function phase_budget( $article_id = 0 ) {
+                $budget = (float) apply_filters( 'nexus_pipeline_phase_budget', 90, absint( $article_id ) );
+                return $budget > 0 ? $budget : 0.0;
+        }
+
+        /**
+         * Guardia del time budget per articolo (v1.1.9): true se l'articolo può
+         * ancora avviare una fase AI nel tick corrente. Al superamento logga un'
+         * attività onesta e il chiamante salta le fasi rimanenti con grazia.
+         *
+         * @param int    $article_id  ID articolo.
+         * @param int    $agent_id    ID agente proprietario.
+         * @param float  $started_at  microtime(true) all'inizio delle fasi di questo articolo.
+         * @param float  $budget      Budget in secondi (0 = nessun limite).
+         * @param string $phase_label Nome della fase che si vorrebbe avviare (per il log).
+         * @return bool
+         */
+        private static function article_time_available( $article_id, $agent_id, $started_at, $budget, $phase_label ) {
+                if ( $budget <= 0 ) {
+                        return true; // Limite disattivato via filtro.
+                }
+                if ( ( microtime( true ) - (float) $started_at ) < $budget ) {
+                        return true;
+                }
+                self::log_phase( (int) $agent_id, 'budget', sprintf( 'Articolo #%d: time budget per articolo esaurito (%.0fs) prima della fase "%s": fasi successive interrotte con grazia, i cicli successivi (resume/coda) recuperano.', $article_id, $budget, $phase_label ), 'warning' );
+                return false;
+        }
+
+        /**
+         * v1.1.9 — L'articolo è in attesa della revisione del capo redattore?
+         *
+         * Vero se il capo è attivo (setting chief_enabled + almeno un capo
+         * configurato) e il chief_status dell'articolo è vuoto (mai visto) oppure
+         * 'revisione' (giro di revisione in corso). Guardie difensive: colonne
+         * chief_ assenti (schema vecchio) o errore del capo = false, cioè il
+         * comportamento precedente (nessun blocco della pubblicazione).
+         *
+         * @param object $article Articolo (riga nexus_articles).
+         * @return bool
+         */
+        private static function awaiting_chief_review( $article ) {
+                $chief_status = isset( $article->chief_status ) ? trim( (string) $article->chief_status ) : '';
+                if ( '' !== $chief_status && 'revisione' !== $chief_status ) {
+                        return false; // Esito del capo già presente ('visto'/'modificato'/'rifiutato') o colonna assente.
+                }
+
+                if ( ! class_exists( 'Nexus_Chief' ) || ! method_exists( 'Nexus_Chief', 'enabled' ) ) {
+                        return false;
+                }
+
+                try {
+                        return (bool) Nexus_Chief::enabled();
+                } catch ( Throwable $e ) {
+                        return false; // Mai bloccare la pipeline per un errore del capo.
+                }
+        }
+
+        /**
          * Fact-check del draft appena riscritto (v1.0.3), mai bloccante.
          *
-         * Attivo solo se enable_factcheck == 1 e source_summary/source_url sono
-         * disponibili (la fonte originale serve come riferimento di verifica).
+         * Attivo solo se enable_factcheck == 1 e c'è almeno un riferimento: da
+         * v1.1.9 il riferimento preferito è il TESTO della source_url (riscaricato
+         * con cache 6h, vedi fetch_source_text); se la fonte non è raggiungibile si
+         * ripiega sul riassunto del collect-stage con log onesto.
          * Flusso: factcheck_prompt → chat (modello economico, action 'factcheck') →
          * extract_json → update_article(factcheck_score, citations). Sotto
          * factcheck_min_score l'articolo torna in bozza con attività 'error';
@@ -1399,11 +1750,30 @@ class Nexus_Pipeline {
                         return; // Fact-check disattivato: flusso identico a v1.0.2.
                 }
 
-                // Fonte originale necessaria: senza riassunto fonte o URL la verifica non è significativa.
+                // Fonte originale necessaria: serve almeno un riferimento (URL da scaricare
+                // oppure il riassunto del collect-stage).
                 $source_summary = isset( $article->summary ) ? trim( (string) $article->summary ) : '';
                 $source_url     = isset( $article->source_url ) ? trim( (string) $article->source_url ) : '';
-                if ( '' === $source_summary || '' === $source_url ) {
+                if ( '' === $source_summary && '' === $source_url ) {
                         return;
+                }
+
+                // v1.1.9 — Fact-check su fonte reale: il riferimento è il TESTO della
+                // source_url riscaricato, non il riassunto del collect-stage (prodotto
+                // dalla stessa AI che ha generato il draft: verifica debole). Se la fonte
+                // non è raggiungibile si usa il riassunto con log onesto.
+                $source_reference = '';
+                if ( '' !== $source_url ) {
+                        $source_reference = self::fetch_source_text( $source_url );
+                }
+                if ( '' === $source_reference ) {
+                        if ( '' === $source_summary ) {
+                                return; // Nessun riferimento utilizzabile (né fonte né riassunto).
+                        }
+                        if ( '' !== $source_url ) {
+                                self::log_phase( (int) $agent_id, 'factcheck', sprintf( 'Fact-check articolo #%d: fonte non raggiungibile, fact-check sul riassunto.', $article_id ), 'warning' );
+                        }
+                        $source_reference = $source_summary;
                 }
 
                 // Motore senza factcheck_prompt (v1.0.2): skip silenzioso.
@@ -1428,7 +1798,7 @@ class Nexus_Pipeline {
                 $messages = Nexus_AI_Engine::factcheck_prompt(
                         (string) $current->title,
                         (string) $current->content,
-                        $source_summary,
+                        $source_reference,
                         $source_url
                 );
                 if ( ! is_array( $messages ) || empty( $messages ) ) {
@@ -1438,9 +1808,10 @@ class Nexus_Pipeline {
                 $res = Nexus_AI_Engine::chat(
                         $messages,
                         array(
-                                'model'    => self::cheap_model(),
-                                'agent_id' => (int) $agent_id,
-                                'action'   => 'factcheck',
+                                'model'     => self::cheap_model(),
+                                'agent_id'  => (int) $agent_id,
+                                'action'    => 'factcheck',
+                                'json_mode' => true, // v1.1.9 (contratto Task 4.8): la risposta attesa è un oggetto JSON.
                         )
                 );
 
