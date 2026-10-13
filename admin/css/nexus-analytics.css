@@ -16,6 +16,8 @@
  *
  * Scope: SOLO classi prefisso .nxa-an- piu' selettori scoped dentro
  * .nxa-an / .nxa-an-panel; divieto di toccare il CSS condiviso.
+ * Dalla 1.1.13.1 (task Q1): blocco in coda per la card "Insight performance"
+ * (classi .nxa-an-ins-* / .nxa-an-delta, token puri).
  * Mobile: media query 600px / 782px / hover:none / reduced-motion
  * preservate dall'estrazione. Nessun colore esadecimale: solo var(--nxa-*).
  * Enqueue: class-nexus-admin.php (handle dedicato, dipendente da
@@ -332,3 +334,71 @@
       transform: none;
     }
   }
+/* -------------------------------------------------------------------------
+ * Insight performance (1.1.13.1, task Q1) — pannello server-side con dati
+ * reali nexus_metrics (GSC/GA4). Nuove SOLO classi .nxa-an-ins-* e
+ * .nxa-an-delta: nessun selettore esistente toccato (le stat-card e la form
+ * periodo RICICLANO .nxa-an-cards/.nxa-an-card/.nxa-an-period della vista).
+ * Solo token var(--nxa-*): tema scuro body.nexus-theme-dark ereditato dal
+ * flip dei token, nessun colore esadecimale locale.
+ * ---------------------------------------------------------------------- */
+.nxa-an-ins {
+  padding: var(--nxa-space-4) var(--nxa-space-5);
+}
+.nxa-an-ins-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-3);
+  margin: 0 0 var(--nxa-space-2);
+}
+.nxa-an-ins-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--nxa-muted);
+}
+.nxa-an-ins-period {
+  margin: 0;
+}
+.nxa-an-ins-period .button {
+  margin-left: 4px;
+}
+.nxa-an-ins-note {
+  margin: 0;
+  padding: var(--nxa-space-3) 0;
+  color: var(--nxa-text-body);
+}
+.nxa-an-ins-cta {
+  margin: var(--nxa-space-2) 0 0;
+}
+.nxa-an-ins-order {
+  margin: var(--nxa-space-3) 0 0;
+}
+/* Delta di trend: erede del valore, verde se migliora, rosso se peggiora
+ * (per la posizione la semantica è già invertita lato PHP). */
+.nxa-an-delta {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--nxa-muted);
+}
+.nxa-an-delta-up,
+.nxa-an-delta-new {
+  color: var(--nxa-ok-text);
+}
+.nxa-an-delta-down {
+  color: var(--nxa-err-text);
+}
+/* Mobile: la testa della card impila meta e selettore in colonna. */
+@media (max-width: 782px) {
+  .nxa-an-ins {
+    padding: var(--nxa-space-3) var(--nxa-space-4);
+  }
+  .nxa-an-ins-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
