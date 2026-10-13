@@ -3864,7 +3864,7 @@
                 // (v1.1.5: - site_name, site_tagline — la sezione "Identità del sito" è
                 //  stata rimossa: nome e tagline sono nativi WP, il magazine li legge da
                 //  bloginfo; la whitelist REST li conserva per retrocompatibilità)
-                var simple = [ 'mode', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom', 'global_rss_sources' ]; // v1.1.11 (R1): + global_rss_sources (fonti RSS globali, una URL per riga)
+                var simple = [ 'mode', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom', 'global_rss_sources', 'gsc_oauth_client_id', 'gsc_site_url', 'ga4_property_id', 'news_sitemap_name', 'notify_events' ]; // v1.1.11 (R1): + global_rss_sources (fonti RSS globali, una URL per riga) — v1.1.12 (S8): + 5 chiavi moduli feedback (GSC/GA4, news sitemap, eventi notifiche)
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {
@@ -3875,7 +3875,7 @@
                 // numerici (v1.0.4: + scala & pro: queue_batch_size, queue_max_attempts)
                 // (v1.1.4: + chief_max_rounds, chief_id, tools_max_results,
                 //  tools_read_max_chars, tools_max_rounds, tools_timeout)
-                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd', 'queue_batch_size', 'queue_max_attempts', 'chief_max_rounds', 'chief_id', 'tools_max_results', 'tools_read_max_chars', 'tools_max_rounds', 'tools_timeout' ];
+                var numbers = [ 'collect_interval', 'max_articles_per_day', 'auto_approve_score', 'factcheck_min_score', 'monthly_budget_usd', 'queue_batch_size', 'queue_max_attempts', 'chief_max_rounds', 'chief_id', 'tools_max_results', 'tools_read_max_chars', 'tools_max_rounds', 'tools_timeout', 'dedup_similar_threshold', 'interlink_max', 'learn_window_days', 'evergreen_refresh_days', 'evergreen_max_posts' ]; // v1.1.12 (S8): + 5 numerici moduli feedback (dedup, interlink, learning, evergreen)
                 for ( i = 0; i < numbers.length; i++ ) {
                         var numField = form.elements[ numbers[ i ] ];
                         if ( numField && numField.value !== undefined && String( numField.value ).trim() !== '' ) {
@@ -3966,7 +3966,7 @@
                 // solo-se-compilata di ai_api_key (password vuota = nessun cambio).
                 // v1.1.10 (WP10/G2): aggiunta prov_key_ollama (riga presente nella
                 // pagina Impostazioni AI dal wizard provider).
-                var secretNames = [ 'prov_key_openrouter', 'prov_key_openai', 'prov_key_anthropic', 'prov_key_google', 'prov_key_groq', 'prov_key_deepseek', 'prov_key_mistral', 'prov_key_xai', 'prov_key_custom', 'prov_key_ollama', 'tools_search_key' ];
+                var secretNames = [ 'prov_key_openrouter', 'prov_key_openai', 'prov_key_anthropic', 'prov_key_google', 'prov_key_groq', 'prov_key_deepseek', 'prov_key_mistral', 'prov_key_xai', 'prov_key_custom', 'prov_key_ollama', 'tools_search_key', 'gsc_oauth_client_secret', 'notify_webhook_url' ]; // v1.1.12 (S8): + segreto OAuth Google + webhook notifiche (stesso pattern solo-se-compilata)
                 for ( i = 0; i < secretNames.length; i++ ) {
                         var secretField = form.elements[ secretNames[ i ] ];
                         if ( secretField && String( secretField.value || '' ).trim() !== '' ) {
@@ -3983,6 +3983,18 @@
                         var provFlagBoxes = qsa( 'input[name="' + providerFlags[ i ] + '"]', form );
                         if ( provFlagBoxes.length ) {
                                 payload[ providerFlags[ i ] ] = provFlagBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // checkbox moduli feedback v1.1.12 (S8): presenti → 1, assenti → 0
+                // (sync metriche GSC/GA4, news sitemap, dedup semantico, link interni,
+                // learning, evergreen — stesso pattern dei blocchi flags sopra; se i
+                // campi non sono nel markup qsa torna [] e il payload li omette)
+                var feedbackFlags = [ 'metrics_sync_enabled', 'news_sitemap_enabled', 'dedup_similar_enabled', 'interlink_enabled', 'learn_enabled', 'evergreen_enabled' ];
+                for ( i = 0; i < feedbackFlags.length; i++ ) {
+                        var fbBoxes = qsa( 'input[name="' + feedbackFlags[ i ] + '"]', form );
+                        if ( fbBoxes.length ) {
+                                payload[ feedbackFlags[ i ] ] = fbBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
                         }
                 }
 

@@ -4618,6 +4618,28 @@ class Nexus_Rest {
                         // altri segreti; il valore viene normalizzato DOPO la mappa (vedi
                         // normalize_public_api_key): non vuoto e non hex-64 → hash SHA-256.
                         'public_api_key'       => 'sanitize_text_field',
+                        // v1.1.12 (S8) — moduli "redazione che impara" (feedback/SEO/notifiche).
+                        // gsc_oauth_client_secret e notify_webhook_url sono SEGRETI: sono
+                        // anche in secret_settings_keys() (mascherati in GET/PUT) e il PUT
+                        // scarta i valori vuoti per non cancellarli per errore.
+                        'gsc_oauth_client_id'  => 'sanitize_text_field',
+                        'gsc_oauth_client_secret' => 'sanitize_text_field',
+                        'gsc_site_url'         => 'sanitize_text_field',
+                        'ga4_property_id'      => 'sanitize_text_field',
+                        'metrics_sync_enabled' => 'absint',
+                        'news_sitemap_enabled' => 'absint',
+                        'news_sitemap_name'    => 'sanitize_text_field',
+                        'dedup_similar_enabled' => 'absint',
+                        'dedup_similar_threshold' => 'absint',
+                        'interlink_enabled'    => 'absint',
+                        'interlink_max'        => 'absint',
+                        'learn_enabled'        => 'absint',
+                        'learn_window_days'    => 'absint',
+                        'notify_webhook_url'   => 'sanitize_text_field',
+                        'notify_events'        => 'sanitize_text_field',
+                        'evergreen_enabled'    => 'absint',
+                        'evergreen_refresh_days' => 'absint',
+                        'evergreen_max_posts'  => 'absint',
                 );
 
                 $out = array();

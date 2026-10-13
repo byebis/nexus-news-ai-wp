@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.11
+Stable tag: 1.1.12
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -102,6 +102,16 @@ Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua 
 
 == Changelog ==
 
+= 1.1.12 =
+* REDAZIONE CHE IMPARA — FEEDBACK LOOP GOOGLE: nuovo modulo Google OAuth 2.0 (Search Console + GA4, scopes readonly, token cifrato AES-256-CBC nell'option nexus_gsc_token, connetti/disconnetti da Impostazioni → Sistema); sync giornaliero WP-Cron che importa click, impression, posizione media e visualizzazioni per-pagina reali (GSC con attribuzione via path permalink, GA4 con filtro pagePath esatto) nella nuova tabella nexus_metrics (schema v4, una riga per post+giorno+sorgente, upsert idempotente); max 50 post per run con budget 60 secondi e log onesto (righe non attribuite contate, mai replicate).
+* REDAZIONE CHE IMPARA — LEARNING: il modulo Learning aggrega le metriche sulla finestra configurabile (default 30 giorni), costruisce un briefing (top fonti, top categorie, categorie sotto-performanti e consigli generati a regole, senza AI) e lo inietta nei prompt di raccolta e valutazione della pipeline: gli agenti preferiscono gli argomenti che portano traffico davvero. Rigenerazione giornaliera via WP-Cron + on-demand se stantio (>20 ore); tabella vuota = briefing assente, nessun dato vecchio iniettato.
+* DEDUP SEMANTICO: oltre all'hash del titolo esatto ora c'è simhash 64-bit su 4-grammi di parole (implementazione PHP puro senza estensioni, deterministica) con distanza di Hamming: i candidati troppo simili a un articolo già pubblicato (soglia configurabile, default 6 = conservativa) vengono scartati PRIMA dell'inserimento tramite il gate pre-insert della pipeline; il fingerprint di ogni articolo pubblicato viene salvato in post meta (_nexus_simhash) e la popolazione è progressiva (i post vecchi senza fingerprint vengono semplicemente saltati).
+* LINK INTERNI AUTOMATICI: dopo ogni pubblicazione il modulo Interlink cerca fino a 3 post correlati (punteggio da keyword del titolo + stessa categoria) e appende in coda un blocco «Leggi anche» con i link (mai modifiche al corpo esistente); anti-reprocess via meta (_nexus_interlinked) e solo post pubblicati.
+* GOOGLE NEWS SITEMAP: sitemap dedicata nexus-news-sitemap.xml (XML Google News 0.9) con gli articoli pubblicati nelle ultime 48 ore (max 1000), testata e lingua configurabili da Impostazioni → Pubblicazione; ping Google post-pubblicazione (timeout 3s, mai blocca), riga Sitemap nel robots.txt quando attiva, flush rewrite rules una sola volta alla transizione.
+* EVERGREEN — PILLAR REFRESH: cron settimanale che sceglie i migliori articoli pubblicati da più di N giorni (ranking da metriche reali, fallback quality_score) e li fa rigenerare dal motore AI con prompt protettivo (fatti/titolo/tono intatti, zero fatti inventati, fail = contenuto NON toccato); cap per run (default 5) e guardia anti-refresh ravvicinati via meta.
+* NOTIFICHE: webhook generico Slack-compatibile (payload {"text": …}) per gli eventi della redazione — errori pipeline, articoli in attesa del capo redattore, articoli pubblicati — con lista eventi configurabile (CSV) e rate limit 10 notifiche/ora; Telegram riutilizza le credenziali social già configurate; i fallimenti vengono loggati in attività senza mai esporre l'URL del webhook; le notifiche non possono MAI rompere la pipeline (try/catch totale).
+* UI — NUOVE SEZIONI IMPOSTAZIONI: Feedback performance (Google) ed Evergreen in Sistema, Dedup semantico e Learning in AI, Google News e Notifiche in Pubblicazione, Link interni in Contenuti; i segreti (client secret OAuth, webhook notifiche) sono mascherati in tutte le risposte REST; 61 nuove stringhe interface tradotte IT/EN.
+* SICUREZZA/ROBUSTEZZA: deattivazione pulita dei 3 nuovi cron; token Google MAI in log o risposte REST; sitemap servita con header XML e no-cache; tutti i moduli con guardie class_exists/method_exists e try/catch — nessun modulo nuovo può bloccare raccolta o pubblicazione.
 = 1.1.11 =
 * ZERO AGENTI ALL'ATTIVAZIONE: il plugin non inserisce più 7 agenti automaticamente — la redazione parte da zero e la costruisci tu col nuovo wizard «Crea la tua redazione» (o con i preset e l'editor della pagina Agenti come prima); gli agenti delle installazioni esistenti restano naturalmente intatti e ogni agente creato resta editabile e clonabile.
 * NUOVO — WIZARD «CREA LA TUA REDAZIONE»: pacchetti preset 1-click — Testata generalista (5 agenti), News veloci (3), Solo Tecnologia (1), Agenzia completa (7 agenti + capo redattore) — oppure «Preferisco crearli a mano»; opzioni per aggiungere un capo redattore AI e precaricare fonti RSS di esempio, con l'elenco visibile e modificabile PRIMA del salvataggio (nessun default applicato in silenzio); progresso in tempo reale («Creo agente 2 di 5…») e riepilogo onesto con eventuali errori. La dashboard invita «Crea la tua redazione» finché gli agenti sono zero e la pagina Agenti apre il wizard alla prima visita senza agenti.
