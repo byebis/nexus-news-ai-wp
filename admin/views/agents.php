@@ -237,8 +237,8 @@ $nxa_agent_status_labels = array(
              consumati da admin.js (T-06): click → prefill del form agente
              e apertura del modal editor, poi invio POST /agents standard.
              Emoji solo da quelle già presenti nel progetto (vedi docblock testa). -->
-        <div class="nxa-preset-bar" role="group" aria-label="Creazione rapida agenti">
-                <span class="nxa-preset-bar-label"><?php echo esc_html( 'Creazione rapida:' ); ?></span>
+        <div class="nxa-preset-bar" role="group" aria-label="<?php esc_attr_e( 'Creazione rapida agenti', 'nexus-news-ai' ); ?>">
+                <span class="nxa-preset-bar-label"><?php echo esc_html__( 'Creazione rapida:', 'nexus-news-ai' ); ?></span>
                 <button type="button" class="nxa-btn nxa-preset-btn" data-preset="tech"><?php echo esc_html( '🤖 Giornalista tech' ); ?></button>
                 <button type="button" class="nxa-btn nxa-preset-btn" data-preset="sport"><?php echo esc_html( '⚽ Giornalista sport' ); ?></button>
                 <button type="button" class="nxa-btn nxa-preset-btn" data-preset="economia"><?php echo esc_html( '📈 Giornalista economia' ); ?></button>

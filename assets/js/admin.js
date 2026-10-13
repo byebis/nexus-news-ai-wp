@@ -29,6 +29,7 @@
  * v1.1.10 (WP4/C1): modal agente — sezione "Strumenti personali (opzionali)": provider ricerca per-agente (#nxa-agent-search-provider, '' = globale, senza "none"), chiave search_key (password: inviata ma non persistente in questa wave, la scarta la whitelist REST — patch wave 4) e server MCP personali (#nxa-agent-mcp-servers, cascata con i globali: vince l'agente). Prefill al load con fallback vuoto client-side (serialize_agent non espone ancora i campi: wave 4); serializzazione search_provider/search_key/mcp_servers_text nei POST/PUT /agents.
  * v1.1.11 (R5): guardia fetch catalogo modelli — toggle models_fetch_enabled serializzato 0/1 (blocco providerFlags), flag onesti del server (fetch_disabled/stale) propagati dal resolve di fetchProviderModels, wrapper in coda al file che trasforma "fetch disattivato + nessuna cache" in un errore onesto (messaggio rosso nel picker e toast sul "Carica modelli") e status con suffissi "(fetch disattivato)" / "(cache scaduta…)".
  * v1.1.11 (R3): wizard di onboarding "Crea la tua redazione" (modal #nxa-onboarding, partial admin/views/onboarding-wizard.php incluso da agents.php): con 0 agenti la pagina Agenti apre il wizard al primo render (una volta per vista) e l'empty state porta il bottone "Apri il wizard"; pacchetti preset one-click (1/3/5 agenti o 7+capo) eseguiti come sequenza di POST /agents con progresso e riepilogo onesto, opzione capo redattore e PUT /settings {global_rss_sources} (stringa una URL per riga — contratto branch R1); la dashboard porta la card CTA con hash #nxa-onboarding.
+ * v1.1.13 (O4, feedback/audit UI): wizard NON chiudibile a run in corso (X/Annulla/ESC → toast informativo, chiusura solo a run concluso o fallito); conferme distruttive INLINE uniformi (pattern custom provider: pipeline, eliminazione agente, eliminazione redazione — zero window.confirm); focus trap + ripristino focus per #nxa-modal e #nxa-onboarding (Tab confinato, ESC coerente, opener ricordato); stringhe wizard/confirm passate da nxaT() (dizionario esatto + pattern).
  *
  * @package Nexus_News_AI
  */
@@ -705,7 +706,161 @@
                         '</div>';
         }
 
+        /* ------------------------- CONFERME INLINE ------------------------- */
+
+        /**
+         * v1.1.13 (O4): conferma distruttiva "cancellabile in riga" — stessa UX
+         * del pattern custom provider (renderCustomProviders: niente
+         * window.confirm nativo). Il bottone scatenante viene nascosto e al suo
+         * posto compare un gruppo .nxa-inline-confirm con messaggio + Sì + No;
+         * alla chiusura il bottone torna al suo posto. Una sola conferma aperta
+         * per pagina: aprirne un'altra chiude la precedente. Il messaggio è
+         * inserito come nodo TESTO (textContent): sicuro con nomi utente.
+         */
+        var inlineConfirmState = { anchor: null, box: null };
+
+        /** Chiude la conferma inline aperta e ripristina il bottone nascosto. */
+        function nxaInlineConfirmClose() {
+                var box = inlineConfirmState.box;
+                var anchor = inlineConfirmState.anchor;
+                inlineConfirmState.box = null;
+                inlineConfirmState.anchor = null;
+                if ( box && box.parentNode ) {
+                        box.parentNode.removeChild( box );
+                }
+                if ( anchor && anchor.parentNode ) {
+                        anchor.style.display = '';
+                }
+        }
+
+        /**
+         * Apre la conferma inline accanto ad `anchor` (che viene nascosto e
+         * ripristinato alla chiusura). `message` è testo puro (textContent),
+         * `yesLabel` l'etichetta del bottone di conferma, `onConfirm` la
+         * callback eseguita SOLO dopo "Sì" (la conferma è già chiusa).
+         */
+        function nxaInlineConfirmOpen( anchor, message, yesLabel, onConfirm ) {
+                if ( ! anchor || ! anchor.parentNode ) {
+                        return;
+                }
+                nxaInlineConfirmClose();
+
+                var box = document.createElement( 'span' );
+                box.className = 'nxa-inline-confirm';
+                // Stessa pelle del pattern custom provider (.nxa-custprov-confirm,
+                // definito nello style locale di settings-ai.php): qui inline perché
+                // il gruppo compare su dashboard/agenti/redazioni che non caricano
+                // quel foglio. Colori/spacing via token: dark theme intatto.
+                box.style.display = 'inline-flex';
+                box.style.flexWrap = 'wrap';
+                box.style.gap = '6px';
+                box.style.alignItems = 'center';
+                box.style.fontWeight = '600';
+                box.style.color = 'var(--nxa-err-text)';
+
+                var text = document.createElement( 'span' );
+                text.className = 'nxa-inline-confirm-msg';
+                text.textContent = String( message === null || message === undefined ? '' : message );
+
+                var yes = document.createElement( 'button' );
+                yes.type = 'button';
+                yes.className = 'button nxa-inline-confirm-yes';
+                yes.textContent = String( yesLabel || nxaT( 'Sì' ) );
+
+                var no = document.createElement( 'button' );
+                no.type = 'button';
+                no.className = 'button nxa-inline-confirm-no';
+                no.textContent = nxaT( 'No' );
+
+                var refocus = function () {
+                        nxaInlineConfirmClose();
+                        if ( anchor && typeof anchor.focus === 'function' ) {
+                                anchor.focus();
+                        }
+                };
+
+                yes.addEventListener( 'click', function () {
+                        nxaInlineConfirmClose();
+                        if ( typeof onConfirm === 'function' ) {
+                                onConfirm();
+                        }
+                } );
+                no.addEventListener( 'click', refocus );
+                box.addEventListener( 'keydown', function ( ev ) {
+                        if ( ev.key === 'Escape' ) {
+                                // ESC chiude solo la conferma, non altri handler (modali).
+                                ev.stopPropagation();
+                                refocus();
+                        }
+                } );
+
+                box.appendChild( text );
+                box.appendChild( yes );
+                box.appendChild( no );
+                anchor.parentNode.insertBefore( box, anchor.nextSibling );
+                anchor.style.display = 'none';
+                inlineConfirmState.anchor = anchor;
+                inlineConfirmState.box = box;
+                // Il focus entra nel gruppo: ESC/Tab restano usabili da tastiera.
+                yes.focus();
+        }
+
         /* ------------------------- MODAL ------------------------- */
+
+        /* v1.1.13 (O4): focus trap per le modali, senza dipendenze. All'apertura
+         * si salva document.activeElement, il Tab (e Shift+Tab) cicla SOLO tra i
+         * focusabili visibili del dialog e alla chiusura il focus torna
+         * all'elemento che l'aveva aperta. Usata da #nxa-modal (ensureModal) e
+         * dal wizard #nxa-onboarding. offsetParent === null filtra i nodi non
+         * renderizzati (passi [hidden] del wizard, display:none). */
+        var nxaModalFocusOpener = null;
+
+        /** Salva chi ha aperto la modale (chiamato SOLO mentre è nascosta). */
+        function nxaModalRememberFocus() {
+                nxaModalFocusOpener = ( document.activeElement && document.activeElement !== document.body ) ? document.activeElement : null;
+        }
+
+        /** Ripristina il focus all'elemento che aveva aperto la modale. */
+        function nxaModalRestoreFocus() {
+                var opener = nxaModalFocusOpener;
+                nxaModalFocusOpener = null;
+                if ( opener && typeof opener.focus === 'function' && ( opener.isConnected === undefined || opener.isConnected ) ) {
+                        opener.focus();
+                }
+        }
+
+        /** Confinare il Tab dentro `modal` (listener keydown condiviso). */
+        function nxaModalTrapTab( ev, modal ) {
+                if ( ev.key !== 'Tab' || ! modal ) {
+                        return;
+                }
+                var focusables = qsa(
+                        'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                        modal
+                ).filter( function ( node ) {
+                        return node.offsetParent !== null;
+                } );
+                if ( ! focusables.length ) {
+                        ev.preventDefault();
+                        return;
+                }
+                var first = focusables[ 0 ];
+                var last = focusables[ focusables.length - 1 ];
+                var active = document.activeElement;
+                if ( ! modal.contains( active ) ) {
+                        // Focus finito fuori (es. click sul backdrop): rientra nel dialog.
+                        ev.preventDefault();
+                        ( ev.shiftKey ? last : first ).focus();
+                        return;
+                }
+                if ( ev.shiftKey && active === first ) {
+                        ev.preventDefault();
+                        last.focus();
+                } else if ( ! ev.shiftKey && active === last ) {
+                        ev.preventDefault();
+                        first.focus();
+                }
+        }
 
         function ensureModal() {
                 if ( qs( '#nxa-modal' ) ) {
@@ -730,6 +885,8 @@
                         }
                 } );
                 document.addEventListener( 'keydown', function ( ev ) {
+                        // v1.1.13 (O4): Tab confinato nel dialog, ESC chiude.
+                        nxaModalTrapTab( ev, modal );
                         if ( ev.key === 'Escape' && ! modal.hidden ) {
                                 closeModal();
                         }
@@ -740,6 +897,11 @@
         function openModalBody( html ) {
                 var modal = ensureModal();
                 qs( '#nxa-modal-body', modal ).innerHTML = html;
+                // v1.1.13 (O4): chi ha aperto la modale va salvato SOLO alla prima
+                // apertura (i re-render del corpo non devono sovrascrivere l'opener).
+                if ( modal.hidden ) {
+                        nxaModalRememberFocus();
+                }
                 modal.hidden = false;
                 document.body.classList.add( 'nxa-modal-open' );
         }
@@ -750,6 +912,8 @@
                         modal.hidden = true;
                 }
                 document.body.classList.remove( 'nxa-modal-open' );
+                // v1.1.13 (O4): il focus torna a chi aveva aperto la modale.
+                nxaModalRestoreFocus();
         }
 
         /* v1.1.7: una sola delega sul modal per aprire il dettaglio dalle liste
@@ -771,9 +935,11 @@
         }
 
         /* v1.1.7: chiusura delle modali statiche delle viste ([data-nxa-close-modal],
-         * hook documentato in queue.php per #nxa-queue-modal e riutilizzabile):
-         * il bottone .nxa-modal-close delle viste non aveva nessun handler in
-         * admin.js (wiring morto). Delega globale, registrata una volta sola. */
+         * hook riutilizzabile per qualunque .nxa-modal di vista; il blocco riserva
+         * #nxa-queue-modal di queue.php è stato rimosso in 1.1.13 — admin.js usa
+         * la SUA modale #nxa-modal): il bottone .nxa-modal-close delle viste non
+         * aveva nessun handler in admin.js (wiring morto). Delega globale,
+         * registrata una volta sola. */
         var staticModalClosersBound = false;
 
         function bindStaticModalClosers() {
@@ -1461,27 +1627,34 @@
                 refreshDashboardData();
 
                 // --- Bottone pipeline completa ---
+                // v1.1.13 (O4): conferma distruttiva INLINE uniforme (stessa UX del
+                // pattern custom provider, niente window.confirm nativo). NB: dalla
+                // v1.1.6 il bottone .nxa-run-pipeline non è più nel markup della
+                // dashboard; l'handler resta per BC con eventuali viste custom.
                 qsa( '.nxa-run-pipeline' ).forEach( function ( btn ) {
                         btn.addEventListener( 'click', function () {
-                                var ok = window.confirm( 'Avviare la pipeline editoriale completa?\n\nGli agenti raccoglieranno le notizie, le valuteranno, le riscriveranno e pubblicheranno gli articoli secondo le impostazioni correnti.' );
-                                if ( ! ok ) {
-                                        return;
-                                }
-                                setBtnLoading( btn, true, 'Pipeline in corso…' );
-                                api( 'pipeline/run', { method: 'POST', body: { agent_id: 0 } } ).then( function ( payload ) {
-                                        var d = unwrap( payload ) || {};
-                                        var collected = num( pick( d, 'collected', 'collected_count' ) );
-                                        var evaluated = num( pick( d, 'evaluated', 'evaluated_count' ) );
-                                        var rewritten = num( pick( d, 'rewritten', 'rewritten_count' ) );
-                                        var published = num( pick( d, 'published', 'published_count' ) );
-                                        toast( 'Raccolte: ' + collected + ' · Valutate: ' + evaluated + ' · Riscritte: ' + rewritten + ' · Pubblicate: ' + published,
-                                                'success', 'Pipeline completata' );
-                                        return refreshDashboardData();
-                                } ).catch( function ( err ) {
-                                        apiErrorToast( err, 'Pipeline non completata' );
-                                } ).then( function () {
-                                        setBtnLoading( btn, false );
-                                } );
+                                nxaInlineConfirmOpen(
+                                        btn,
+                                        nxaT( 'Avviare la pipeline editoriale completa?\n\nGli agenti raccoglieranno le notizie, le valuteranno, le riscriveranno e pubblicheranno gli articoli secondo le impostazioni correnti.' ),
+                                        nxaT( 'Sì, avvia' ),
+                                        function () {
+                                                setBtnLoading( btn, true, nxaT( 'Pipeline in corso…' ) );
+                                                api( 'pipeline/run', { method: 'POST', body: { agent_id: 0 } } ).then( function ( payload ) {
+                                                        var d = unwrap( payload ) || {};
+                                                        var collected = num( pick( d, 'collected', 'collected_count' ) );
+                                                        var evaluated = num( pick( d, 'evaluated', 'evaluated_count' ) );
+                                                        var rewritten = num( pick( d, 'rewritten', 'rewritten_count' ) );
+                                                        var published = num( pick( d, 'published', 'published_count' ) );
+                                                        toast( 'Raccolte: ' + collected + ' · Valutate: ' + evaluated + ' · Riscritte: ' + rewritten + ' · Pubblicate: ' + published,
+                                                                'success', 'Pipeline completata' );
+                                                        return refreshDashboardData();
+                                                } ).catch( function ( err ) {
+                                                        apiErrorToast( err, 'Pipeline non completata' );
+                                                } ).then( function () {
+                                                        setBtnLoading( btn, false );
+                                                } );
+                                        }
+                                );
                         } );
                 } );
 
@@ -1622,6 +1795,8 @@
 
                         // v1.1.7: eliminazione agente (DELETE /agents/{id}). Il contenuto
                         // resta: gli articoli vengono solo scollegati dall'autore.
+                        // v1.1.13 (O4): conferma distruttiva INLINE uniforme (stessa UX
+                        // del pattern custom provider, niente window.confirm nativo).
                         grid.addEventListener( 'click', function ( ev ) {
                                 var del = ev.target.closest ? ev.target.closest( '.nxa-agent-delete' ) : null;
                                 if ( ! del || del.disabled ) {
@@ -1629,17 +1804,21 @@
                                 }
                                 var id = num( del.getAttribute( 'data-agent-id' ) );
                                 var name = del.getAttribute( 'data-name' ) || '';
-                                if ( ! window.confirm( 'Eliminare l’agente "' + name + '"? Gli articoli restano pubblicati ma senza autore assegnato.' ) ) {
-                                        return;
-                                }
-                                setBtnLoading( del, true, 'Elimino…' );
-                                api( 'agents/' + id, { method: 'DELETE' } ).then( function () {
-                                        toast( 'Agente eliminato.', 'success', 'Fatto' );
-                                        return loadAgents( true );
-                                } ).catch( function ( err ) {
-                                        apiErrorToast( err, 'Impossibile eliminare l’agente' );
-                                        setBtnLoading( del, false );
-                                } );
+                                nxaInlineConfirmOpen(
+                                        del,
+                                        nxaT( 'Eliminare l’agente "' ) + name + nxaT( '"? Gli articoli restano pubblicati ma senza autore assegnato.' ),
+                                        nxaT( 'Sì, elimina' ),
+                                        function () {
+                                                setBtnLoading( del, true, nxaT( 'Elimino…' ) );
+                                                api( 'agents/' + id, { method: 'DELETE' } ).then( function () {
+                                                        toast( nxaT( 'Agente eliminato.' ), 'success', nxaT( 'Fatto' ) );
+                                                        return loadAgents( true );
+                                                } ).catch( function ( err ) {
+                                                        apiErrorToast( err, nxaT( 'Impossibile eliminare l’agente' ) );
+                                                        setBtnLoading( del, false );
+                                                } );
+                                        }
+                                );
                         } );
 
                         // Salva modello AI dedicato (v1.0.3): POST /agents/{id}/model {model}
@@ -4992,28 +5171,32 @@
                 window.open( base + '/redazione/' + encodeURIComponent( clean ) + '/', '_blank' );
         }
 
-        /** v1.1.1: conferma nativa in italiano, poi DELETE /redazioni/{id}. */
+        /** v1.1.1: conferma INLINE in riga (v1.1.13 O4, niente window.confirm),
+         *  poi DELETE /redazioni/{id}. */
         function confirmDeleteRedazione( btn ) {
                 var id = num( btn.getAttribute( 'data-id' ) );
                 var term = redazioniTermById( id );
                 var label = term ? String( pick( term, 'name' ) || '' ) : 'ID ' + id;
-                var ok = window.confirm( nxaT( 'Eliminare la redazione “' ) + label + nxaT( '”?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' ) );
-                if ( ! ok ) {
-                        return;
-                }
-                setBtnLoading( btn, true, 'Elimino…' );
-                api( 'redazioni/' + id, { method: 'DELETE' } ).then( function ( payload ) {
-                        var data = unwrap( payload ) || {};
-                        toast( String( pick( data, 'message' ) || 'Redazione eliminata.' ), 'success', 'Redazioni' );
-                        var idField = qs( '#nxa-red-id' );
-                        if ( idField && num( idField.value ) === id ) {
-                                resetRedazioneForm(); // era in edit il termine eliminato
+                nxaInlineConfirmOpen(
+                        btn,
+                        nxaT( 'Eliminare la redazione “' ) + label + nxaT( '”?\n\nLe sub-redazioni figlie verranno riassegnate alla redazione madre. Gli articoli non vengono cancellati.' ),
+                        nxaT( 'Sì, elimina' ),
+                        function () {
+                                setBtnLoading( btn, true, nxaT( 'Elimino…' ) );
+                                api( 'redazioni/' + id, { method: 'DELETE' } ).then( function ( payload ) {
+                                        var data = unwrap( payload ) || {};
+                                        toast( String( pick( data, 'message' ) || 'Redazione eliminata.' ), 'success', 'Redazioni' );
+                                        var idField = qs( '#nxa-red-id' );
+                                        if ( idField && num( idField.value ) === id ) {
+                                                resetRedazioneForm(); // era in edit il termine eliminato
+                                        }
+                                        return loadRedazioniPage();
+                                } ).catch( function ( err ) {
+                                        apiErrorToast( err, 'Eliminazione non riuscita' );
+                                        setBtnLoading( btn, false );
+                                } );
                         }
-                        return loadRedazioniPage();
-                } ).catch( function ( err ) {
-                        apiErrorToast( err, 'Eliminazione non riuscita' );
-                        setBtnLoading( btn, false );
-                } );
+                );
         }
 
         /** v1.1.1: submit del form — id 0 crea, id maggiore aggiorna (POST). */
@@ -6019,8 +6202,8 @@
         function nxaOnboardingEmptyHtml() {
                 return '<div class="nxa-empty nxa-onboarding-empty">' +
                         '<div class="nxa-empty__icon" aria-hidden="true">🤖</div>' +
-                        '<p class="nxa-empty__title">' + esc( 'Nessun agente: crea il tuo primo giornalista con un preset o apri il wizard.' ) + '</p>' +
-                        '<p><button type="button" class="nxa-btn nxa-btn-primary nxa-onboarding-open">' + esc( 'Apri il wizard' ) + '</button></p>' +
+                        '<p class="nxa-empty__title">' + esc( nxaT( 'Nessun agente: crea il tuo primo giornalista con un preset o apri il wizard.' ) ) + '</p>' +
+                        '<p><button type="button" class="nxa-btn nxa-btn-primary nxa-onboarding-open">' + esc( nxaT( 'Apri il wizard' ) ) + '</button></p>' +
                         '</div>';
         }
 
@@ -6039,16 +6222,34 @@
                 } else {
                         nxaOnboardingReset();
                 }
+                // v1.1.13 (O4): opener salvato SOLO alla prima apertura (auto-open e
+                // riaperture da hash non devono sovrascriverlo mentre è visibile).
+                if ( modal.hidden ) {
+                        nxaModalRememberFocus();
+                }
                 modal.hidden = false;
                 document.body.style.overflow = 'hidden';
         }
 
+        /**
+         * v1.1.13 (O4): il wizard NON si chiude più a run in corso — X, Annulla,
+         * "Vedi la redazione" e ESC passano tutti da qui, e con onboardingRunning
+         * i POST /agents proseguirebbero dietro un modal chiuso (riepilogo perso).
+         * Chiusura consentita solo a run concluso o fallito. Al run in corso:
+         * toast informativo, il modal resta aperto sul passo 3.
+         */
         function nxaOnboardingClose() {
+                if ( onboardingRunning ) {
+                        toast( nxaT( 'Creazione in corso…' ), 'info', nxaT( 'Crea la tua redazione' ) );
+                        return;
+                }
                 var modal = nxaOnboardingModal();
                 if ( modal ) {
                         modal.hidden = true;
                 }
                 document.body.style.overflow = '';
+                // v1.1.13 (O4): il focus torna a chi aveva aperto il wizard.
+                nxaModalRestoreFocus();
         }
 
         /** Ripristina il wizard ai valori iniziali del partial PHP e torna al passo 1. */
@@ -6084,7 +6285,7 @@
                 }
                 var progress = qs( '#nxa-obs-progress', modal );
                 if ( progress ) {
-                        progress.textContent = 'Creo gli agenti…';
+                        progress.textContent = nxaT( 'Creo gli agenti…' );
                 }
                 nxaOnboardingShowStep( 1 );
         }
@@ -6241,7 +6442,8 @@
                         var preset = AGENT_PRESETS[ key ] || {};
                         var label  = preset.name ? String( preset.name ) : key;
                         if ( progressEl ) {
-                                progressEl.textContent = 'Creo agente ' + ( i + 1 ) + ' di ' + total + '…';
+                                // i18n: pattern dizionario 'Creo agente (\d+) di (\d+)…'.
+                                progressEl.textContent = nxaT( 'Creo agente ' + ( i + 1 ) + ' di ' + total + '…' );
                         }
                         if ( fillEl ) {
                                 fillEl.style.width = Math.round( ( i / total ) * 100 ) + '%';
@@ -6259,7 +6461,7 @@
                                         logEl.innerHTML += '<li class="is-ok">✓ ' + esc( label ) + '</li>';
                                 }
                         } ).catch( function ( err ) {
-                                var message = ( err && err.message ) ? err.message : 'Errore sconosciuto';
+                                var message = ( err && err.message ) ? err.message : nxaT( 'Errore sconosciuto' );
                                 errors.push( { name: label, message: message } );
                                 if ( logEl ) {
                                         logEl.innerHTML += '<li class="is-err">✕ ' + esc( label ) + ' — ' + esc( message ) + '</li>';
@@ -6277,7 +6479,7 @@
                                 return 'skip';
                         }
                         if ( progressEl ) {
-                                progressEl.textContent = 'Salvo le fonti RSS…';
+                                progressEl.textContent = nxaT( 'Salvo le fonti RSS…' );
                         }
                         // Contratto branch R1: global_rss_sources è una STRINGA,
                         // una URL per riga. Se la chiave non è (ancora) in whitelist
@@ -6290,12 +6492,13 @@
                 } ).then( function ( rssResult ) {
                         onboardingRunning = false;
                         if ( progressEl ) {
-                                progressEl.textContent = 'Creazione completata.';
+                                progressEl.textContent = nxaT( 'Creazione completata.' );
                         }
                         var summary = qs( '#nxa-obs-summary', modal );
                         if ( summary ) {
-                                var html = '<p class="nxa-obs-summary-head">' + esc( errors.length ? 'Creazione completata con errori.' : 'Creazione completata.' ) + '</p>';
-                                html += '<p class="nxa-obs-summary-row">Agenti creati: ' + created + ' · Errori: ' + errors.length + '</p>';
+                                var html = '<p class="nxa-obs-summary-head">' + esc( errors.length ? nxaT( 'Creazione completata con errori.' ) : nxaT( 'Creazione completata.' ) ) + '</p>';
+                                // i18n: pattern 'Agenti creati: (\d+)' + 'Errori: (\d+)' a catena.
+                                html += '<p class="nxa-obs-summary-row">' + esc( nxaT( 'Agenti creati: ' + created + ' · Errori: ' + errors.length ) ) + '</p>';
                                 if ( errors.length ) {
                                         html += '<ul class="nxa-obs-summary-errors">';
                                         for ( var i = 0; i < errors.length; i++ ) {
@@ -6304,9 +6507,9 @@
                                         html += '</ul>';
                                 }
                                 if ( wantRss && rssResult === 'ok' ) {
-                                        html += '<p class="nxa-obs-summary-row is-ok">✓ Fonti RSS salvate nelle impostazioni.</p>';
+                                        html += '<p class="nxa-obs-summary-row is-ok">✓ ' + esc( nxaT( 'Fonti RSS salvate nelle impostazioni.' ) ) + '</p>';
                                 } else if ( wantRss ) {
-                                        html += '<p class="nxa-obs-summary-row is-err">✕ Fonti RSS non salvate: ' + esc( String( rssResult || '' ).replace( /^err:/, '' ) ) + '</p>';
+                                        html += '<p class="nxa-obs-summary-row is-err">✕ ' + esc( nxaT( 'Fonti RSS non salvate: ' ) + String( rssResult || '' ).replace( /^err:/, '' ) ) + '</p>';
                                 }
                                 summary.innerHTML = html;
                         }
@@ -6314,10 +6517,11 @@
                         // pattern delle altre creazioni: loadAgents(true)).
                         loadAgents( true );
                         nxaOnboardingShowStep( 4 );
+                        // i18n: pattern 'Wizard completato: 1 agente creato.' / '(\d+) agenti creati.'.
                         var toastMsg = created > 0
-                                ? ( 'Wizard completato: ' + created + ( created === 1 ? ' agente creato.' : ' agenti creati.' ) )
-                                : 'Nessun agente creato: controlla gli errori nel riepilogo.';
-                        toast( toastMsg, created > 0 ? 'success' : 'error', 'Crea la tua redazione' );
+                                ? nxaT( 'Wizard completato: ' + created + ( created === 1 ? ' agente creato.' : ' agenti creati.' ) )
+                                : nxaT( 'Nessun agente creato: controlla gli errori nel riepilogo.' );
+                        toast( toastMsg, created > 0 ? 'success' : 'error', nxaT( 'Crea la tua redazione' ) );
                 } );
         }
 
@@ -6350,6 +6554,9 @@
                         doneBtn.addEventListener( 'click', nxaOnboardingClose );
                 }
                 document.addEventListener( 'keydown', function ( ev ) {
+                        // v1.1.13 (O4): Tab confinato nel dialog; ESC passa da
+                        // nxaOnboardingClose, che a run in corso non chiude (toast).
+                        nxaModalTrapTab( ev, modal );
                         if ( ev.key === 'Escape' && ! modal.hidden ) {
                                 nxaOnboardingClose();
                         }

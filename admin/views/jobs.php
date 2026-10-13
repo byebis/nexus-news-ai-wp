@@ -2,13 +2,16 @@
 /**
  * Vista Admin: "Coda Lavori" (pagina "jobs") — v1.0.6 "UI chiara & curata".
  *
- * SELF-CONTAINED (contratto CONTRATTO-v1.0.4.md §2 T-05; restyle token-driven
- * CONTRATTO-v1.0.6.md §2 T-04): markup + <style> inline (SOLO classi prefisso
- * .nxa-jb-, colori/raggi/ombre al 100% via token del design system §1: tema
- * chiaro default, scuro opzionale su body.nexus-theme-dark; nessun tocco a
- * admin/css/nexus-admin.css) e <script> IIFE ES2019 inline (nessun tocco ad
- * assets/js/admin.js). Tutta la logica vive qui: fetch REST, rendering,
- * azioni di riga, toast, auto-refresh.
+ * Markup + <script> IIFE ES2019 inline (contratto CONTRATTO-v1.0.4.md §2 T-05;
+ * restyle token-driven CONTRATTO-v1.0.6.md §2 T-04). v1.1.13 (O4): il blocco
+ * <style> inline è stato ESTRATTO in admin/css/nexus-jobs.css e viene
+ * enqueuato SOLO su questa pagina da admin/class-nexus-admin.php
+ * (enqueue_assets → hook "nexus-jobs", dipendenza nexus-admin-css, ver
+ * NEXUS_VERSION; SOLO classi prefisso .nxa-jb-, colori/raggi/ombre al 100%
+ * via token del design system §1: tema chiaro default, scuro opzionale su
+ * body.nexus-theme-dark). Il <script> resta inline (ha interleaving con il
+ * PHP e nessun tocco ad assets/js/admin.js). Tutta la logica vive qui:
+ * fetch REST, rendering, azioni di riga, toast, auto-refresh.
  *
  * CONTRATTO REST (rotte definite nel §2 T-06, namespace nexus/v1, perm admin):
  * - GET  {restUrl}/jobs?per_page=50[&status=pending|running|complete|failed|cancelled]
@@ -31,12 +34,20 @@
  *   [data-nxa-jb-action="retry|cancel"][data-nxa-jb-id] con listener delegato.
  * - Toast: .nxa-jb-toast (--success / --error) su body, rimosso dopo 4 secondi;
  *   colori via token del tema (leggibile su chiaro e su scuro: i token valgono
- *   su body e la variante body.nexus-theme-dark è inclusa nello style inline).
+ *   su body e la variante body.nexus-theme-dark è inclusa in
+ *   admin/css/nexus-jobs.css).
  *
  * NOTE: date formattate IT (gg/mm/aa HH:MM) da 'Y-m-d H:i:s'; errore di riga
  * troncato a 60 caratteri con testo completo nell'attributo title; empty state
  * italiano; errori di fetch con toast rosso. L'auto-refresh silenzioso non genera
  * toast ripetuti ogni 15 secondi.
+ *
+ * v1.1.13 (O4) — polling pausato a tab nascosta: l'auto-refresh 15s gira SOLO
+ * con la pagina visibile (document.hidden guard nel tick + visibilitychange
+ * che ferma/riprende l'interval, stesso pattern della live-strip dashboard in
+ * assets/js/admin.js). Al ritorno sulla pagina: ripresa immediata con una
+ * lettura silenziosa. Zero richieste in background quando l'admin è in altro
+ * tab; CSS estratto in admin/css/nexus-jobs.css (nessun selettore cambiato).
  *
  * v1.0.7 — fix overflow mobile view-level (CONTRATTO-v1.0.7.md §2 T-07): il
  * wrapper della tabella porta anche la classe condivisa .nxa-table-wrap
@@ -150,314 +161,10 @@ defined( 'ABSPATH' ) || exit;
 
 </div>
 
-<style>
-  /* Stile locale della vista Coda Lavori — v1.0.6 "UI chiara & curata".
-     SOLO classi prefisso .nxa-jb- (contratto CONTRATTO-v1.0.6.md §2 T-04):
-     nessun colore fisso, tutto via token del design system §1 (tema chiaro
-     default; il tema scuro ridefinisce i token su body.nexus-theme-dark).
-     v1.1.6 — pass "respira" sulle superfici top-level (contratto §5 T-04):
-     stat-card e wrapper tabella perdono la pila bordo+ombra+raggio e si
-     separano con whitespace e hairline; spaziatura su var(--nxa-space-1..8).
-     Il bordo di stato a sinistra delle card resta (semantica), badge e toast
-     restano layer propri. Nessun selettore rimosso. */
-  .nxa-jb-note {
-    max-width: 780px;
-    margin: var(--nxa-space-2) 0 var(--nxa-space-4);
-    color: var(--nxa-muted);
-  }
-  .nxa-jb-cards {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--nxa-space-4);
-    margin: 0 0 var(--nxa-space-4);
-  }
-  /* v1.1.6 "respira": card piatta — numero su fondo trasparente con il bordo
-   * di stato ridotto a filo di sinistra (semantica invariata); in hover solo
-   * un fondo tenue, niente traslazioni o ombre. */
-  .nxa-jb-card {
-    flex: 1 1 170px;
-    min-width: 160px;
-    padding: var(--nxa-space-3) var(--nxa-space-4);
-    background: transparent;
-    border: 0;
-    border-left: 2px solid var(--nxa-hairline);
-    border-radius: 0;
-    box-shadow: none;
-    transition: background-color 0.15s ease, border-color 0.2s ease;
-  }
-  .nxa-jb-card:hover {
-    background: var(--nxa-row-hover-bg);
-  }
-  .nxa-jb-card-value {
-    display: block;
-    font-size: 26px;
-    font-weight: 600;
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-    color: var(--nxa-text);
-  }
-  .nxa-jb-card-label {
-    display: block;
-    margin-top: 2px;
-    font-size: 12px;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--nxa-muted);
-  }
-  .nxa-jb-card--pending {
-    border-left-color: var(--nxa-muted);
-  }
-  .nxa-jb-card--pending .nxa-jb-card-value {
-    color: var(--nxa-muted);
-  }
-  .nxa-jb-card--running {
-    border-left-color: var(--nxa-warn-text);
-  }
-  .nxa-jb-card--running .nxa-jb-card-value {
-    color: var(--nxa-warn-text);
-  }
-  .nxa-jb-card--complete {
-    border-left-color: var(--nxa-ok-text);
-  }
-  .nxa-jb-card--complete .nxa-jb-card-value {
-    color: var(--nxa-ok-text);
-  }
-  .nxa-jb-card--failed {
-    border-left-color: var(--nxa-err-text);
-  }
-  .nxa-jb-card--failed .nxa-jb-card-value {
-    color: var(--nxa-err-text);
-  }
-  .nxa-jb-card--total {
-    border-left-color: var(--nxa-accent-1);
-  }
-  .nxa-jb-card--total .nxa-jb-card-value {
-    color: var(--nxa-muted);
-  }
-
-  .nxa-jb-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin: 0 0 var(--nxa-space-4);
-  }
-  .nxa-jb-auto-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-    color: var(--nxa-text-body);
-  }
-  .nxa-jb-toolbar :focus-visible,
-  .nxa-jb-table :focus-visible {
-    outline: 2px solid var(--nxa-focus);
-    outline-offset: 2px;
-  }
-
-  /* v1.1.6 "respira": il wrapper resta il contenimento scroll orizzontale
-   * delle tabelle su mobile, ma come pelle e' piatto — fondo superficie senza
-   * bordo, raggio o ombra. */
-  .nxa-jb-table-wrap {
-    overflow-x: auto;
-    margin: 0 0 var(--nxa-space-4);
-    background: var(--nxa-surface);
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .nxa-jb-table {
-    border: 0;
-    box-shadow: none;
-    font-variant-numeric: tabular-nums;
-  }
-  .nxa-jb-table thead th {
-    background: var(--nxa-surface-2);
-    color: var(--nxa-text-body);
-  }
-  .nxa-jb-table td {
-    color: var(--nxa-text-body);
-  }
-  /* v1.1.6: sul wrapper ormai piatto le righe si separano con la hairline del
-     tema (al posto del grigio di default di widefat). */
-  .nxa-jb-table th,
-  .nxa-jb-table td {
-    border-color: var(--nxa-hairline);
-  }
-  .nxa-jb-table tbody tr:nth-child(odd) {
-    background: var(--nxa-surface-2);
-  }
-  .nxa-jb-table tbody tr:hover {
-    background: var(--nxa-surface-3);
-  }
-  .nxa-jb-table code {
-    padding: 2px 6px;
-    border: 1px solid var(--nxa-border);
-    border-radius: 6px;
-    background: var(--nxa-surface-2);
-    color: var(--nxa-text-body);
-    overflow-wrap: anywhere;
-  }
-  .nxa-jb-table-wrap::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  .nxa-jb-table-wrap::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .nxa-jb-table-wrap::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: var(--nxa-border);
-  }
-  .nxa-jb-table-wrap::-webkit-scrollbar-thumb:hover {
-    background: var(--nxa-muted);
-  }
-
-  /* v1.0.7 — overflow mobile: token lunghi (hook, errori, argomenti job) vanno
-     a capo dentro le celle invece di spingere la tabella oltre il wrapper
-     scrollabile; su schermi molto stretti l'errore troncato abbandona l'ellissi
-     e si avvolge (il testo completo resta nell'attributo title). */
-  .nxa-jb-table td {
-    overflow-wrap: anywhere;
-  }
-  @media (max-width: 600px) {
-    .nxa-jb-err {
-      max-width: 100%;
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-  }
-
-  .nxa-jb-badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.6;
-    white-space: nowrap;
-  }
-  .nxa-jb-badge--pending {
-    color: var(--nxa-info-text);
-    background: var(--nxa-info-bg);
-    border-color: var(--nxa-info-line);
-  }
-  .nxa-jb-badge--running {
-    color: var(--nxa-warn-text);
-    background: var(--nxa-warn-bg);
-    border-color: var(--nxa-warn-line);
-  }
-  .nxa-jb-badge--complete {
-    color: var(--nxa-ok-text);
-    background: var(--nxa-ok-bg);
-    border-color: var(--nxa-ok-line);
-  }
-  .nxa-jb-badge--failed {
-    color: var(--nxa-err-text);
-    background: var(--nxa-err-bg);
-    border-color: var(--nxa-err-line);
-  }
-  .nxa-jb-badge--cancelled {
-    /* Annullato: famiglia neutra/muted del design system (cat = trio muted). */
-    color: var(--nxa-cat);
-    background: var(--nxa-cat-soft);
-    border-color: var(--nxa-cat-line);
-  }
-
-  .nxa-jb-err {
-    display: inline-block;
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    vertical-align: middle;
-    color: var(--nxa-err-text);
-  }
-  .nxa-jb-empty td,
-  .nxa-jb-message td {
-    padding: var(--nxa-space-5) 10px;
-    text-align: center;
-    color: var(--nxa-muted);
-  }
-  .nxa-jb-empty td {
-    font-style: italic;
-  }
-
-  .nxa-jb-act {
-    margin-right: 4px;
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-  }
-  .nxa-jb-act--cancel {
-    color: var(--nxa-err-text);
-    border-color: var(--nxa-err-line);
-  }
-  .nxa-jb-act--cancel:hover {
-    background: var(--nxa-err-bg);
-    border-color: var(--nxa-err-text);
-  }
-
-  /* Toast appeso a BODY (fuori dal pannello): i token valgono comunque
-     perche' definiti su :root e ridefiniti su body.nexus-theme-dark. */
-  .nxa-jb-toast {
-    position: fixed;
-    right: 24px;
-    bottom: 24px;
-    z-index: 99999;
-    max-width: 360px;
-    padding: 12px 16px;
-    background: var(--nxa-surface);
-    border: 1px solid var(--nxa-border);
-    border-left: 4px solid var(--nxa-ok-text);
-    border-radius: var(--nxa-radius-sm);
-    box-shadow: var(--nxa-shadow-lg);
-    color: var(--nxa-text-body);
-    font-size: 13px;
-    line-height: 1.5;
-  }
-  .nxa-jb-toast--success {
-    color: var(--nxa-ok-text);
-    border-left-color: var(--nxa-ok-text);
-  }
-  .nxa-jb-toast--error {
-    color: var(--nxa-err-text);
-    border-left-color: var(--nxa-err-text);
-  }
-
-  /* Variante esplicita tema scuro: rinforza i token per il contrasto su body
-     (superficie, bordo e ombra scuri; testo di stato nelle tinte chiare). */
-  body.nexus-theme-dark .nxa-jb-toast {
-    background: var(--nxa-surface);
-    border-color: var(--nxa-border);
-    box-shadow: var(--nxa-shadow-lg);
-    color: var(--nxa-text-body);
-  }
-  body.nexus-theme-dark .nxa-jb-toast--success {
-    color: var(--nxa-ok-text);
-    border-left-color: var(--nxa-ok-text);
-  }
-  body.nexus-theme-dark .nxa-jb-toast--error {
-    color: var(--nxa-err-text);
-    border-left-color: var(--nxa-err-text);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .nxa-jb-card,
-    .nxa-jb-act {
-      transition: none;
-    }
-    .nxa-jb-card:hover {
-      transform: none;
-    }
-  }
-
-  @media print {
-    .nxa-jb-toast {
-      display: none;
-    }
-  }
-</style>
-
+<!-- v1.1.13 (O4): il CSS di vista è stato estratto in admin/css/nexus-jobs.css
+     e viene enqueuato SOLO su questa pagina da admin/class-nexus-admin.php
+     (enqueue_assets, hook "nexus-jobs", dipendenza nexus-admin-css, ver
+     NEXUS_VERSION). Il <script> resta inline: contiene interleaving PHP. -->
 <script>
         (function () {
                 'use strict';
@@ -824,12 +531,49 @@ defined( 'ABSPATH' ) || exit;
                         load();
                 }
 
-                /* Auto-refresh ogni 15 secondi: solo con flag attivo e senza azioni in corso. */
-                window.setInterval(function () {
+                /* v1.1.13 (O4): auto-refresh ogni 15 secondi SOLO con flag attivo,
+                 * senza azioni in corso e a pagina VISIBILE. Il guard
+                 * document.hidden nel tick e visibilitychange che ferma/riprende
+                 * l'interval replicano il pattern della live-strip dashboard in
+                 * assets/js/admin.js (initLiveRedazionale): a tab nascosta zero
+                 * richieste; al ritorno ripresa immediata con lettura silenziosa. */
+                var POLL_MS = 15000;
+                var pollTimer = null;
+
+                function jbPollTick() {
+                        if (document.hidden) {
+                                return;
+                        }
                         if (autoCheckbox && autoCheckbox.checked && !busy) {
                                 load({ silent: true });
                         }
-                }, 15000);
+                }
+
+                function startPolling() {
+                        if (pollTimer) {
+                                return;
+                        }
+                        pollTimer = window.setInterval(jbPollTick, POLL_MS);
+                }
+
+                function stopPolling() {
+                        if (pollTimer) {
+                                window.clearInterval(pollTimer);
+                                pollTimer = null;
+                        }
+                }
+
+                function onVisibilityChange() {
+                        if (document.hidden) {
+                                stopPolling(); // pausa: zero richieste a tab nascosta
+                        } else {
+                                startPolling();
+                                jbPollTick(); // aggiornamento immediato al ritorno
+                        }
+                }
+
+                document.addEventListener('visibilitychange', onVisibilityChange);
+                startPolling();
                 }
 
                 /* v1.1.7: avvio differito al DOM ready quando lo script inline viene

@@ -280,6 +280,39 @@ class Nexus_Admin {
                         NEXUS_VERSION
                 );
 
+                /*
+                 * v1.1.13 (O4): fogli di stile PER VISTA, enqueuati solo sulla pagina
+                 * corrispondente (check dello slug nell'hook, stesso stile della guard
+                 * "nexus-" in testa) e SOLO se il file esiste (i fogli analytics/tools
+                 * arrivano col merge di altri agenti della release: senza file nessun
+                 * enqueue, zero 404). Ogni foglio dipende da nexus-admin-css (usa solo
+                 * i suoi token var(--nxa-*)) e porta NEXUS_VERSION come versione.
+                 */
+                if ( false !== strpos( (string) $hook, 'nexus-jobs' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-jobs.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-jobs-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-jobs.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-analytics' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-analytics.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-analytics-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-analytics.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-tools' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-tools.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-tools-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-tools.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+
                 wp_enqueue_script(
                         'nexus-admin',
                         NEXUS_PLUGIN_URL . 'assets/js/admin.js',

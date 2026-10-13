@@ -46,14 +46,20 @@
  * 3) MODALE DETTAGLIO: admin.js usa la SUA modale #nxa-modal (ensureModal,
  *    appesa a body; openArticleModal → GET /articles/{id} e riempie il
  *    corpo con chip/badge categoria e stato, titolo, meta, contenuto e
- *    log di pubblicazione). Il blocco #nxa-queue-modal qui sotto resta
- *    come hook di riserva NON consumato dall'attuale admin.js: id,
- *    ruolo dialog e data-nxa-close-modal sono già al loro posto.
+ *    log di pubblicazione). v1.1.13 (O4): il blocco di riserva
+ *    #nxa-queue-modal è stato RIMOSSO (markup morto: nessun selettore
+ *    nxa-queue-modal* consumato da admin.js — verificato con grep prima
+ *    dell’eliminazione). L’hook [data-nxa-close-modal] delegato in
+ *    admin.js (bindStaticModalClosers) resta disponibile per le modali
+ *    statiche di altre viste.
  *
- * 4) HOOK DI RISERVA (non consumati da admin.js 1.0.5, mantenuti per
- *    compatibilità con il contratto originale): #nxa-queue-count
- *    (contatore "N articoli", aria-live) e #nxa-queue-row-tpl
- *    (template volutamente vuoto: la riga è documentata al punto 2).
+ * 4) HOOK CONSUMATI / PULITI (v1.1.13, O4): #nxa-queue-count (contatore
+ *    "N articoli", aria-live) È consumato: admin.js lo popola ad ogni
+ *    caricamento lista (loadQueueList, da v1.1.7 T-C2: "1 articolo in
+ *    coda" / "N articoli in coda" — il vecchio docblock che lo dichiara
+ *    "non consumato" era obsoleto). Il template vuoto
+ *    #nxa-queue-row-tpl è stato RIMOSSO: la riga è documentata al punto 2
+ *    e viene generata da admin.js, mai dal markup statico.
  *
  * v1.0.6 — markup allineato al design system a tema chiaro: sottotitolo di
  * pagina, toolbar filtri (.nxa-toolbar), bottone .nxa-btn, placeholder
@@ -72,6 +78,13 @@
  * dei titoli/fonti è demandato al CSS condiviso di T-04. Nessun id, data-* e
  * selettore consumato da admin.js modificato; nessuno style inline nuovo.
  *
+ * v1.1.13 (O4) — sweep markup morto: rimossi <template id="nxa-queue-row-tpl">
+ * (vuoto per contratto, la riga la genera admin.js) e la modale di riserva
+ * #nxa-queue-modal (nessun riferimento in admin.js: il dettaglio apre la
+ * modale condivisa #nxa-modal). Docblock punti 3/4 riscritti: il contatore
+ * #nxa-queue-count è consumato da admin.js da v1.1.7. Zero modifiche a id,
+ * data-* e selettori consumati dal JS vivo.
+ *
  * @package Nexus_News_AI
  */
 
@@ -79,62 +92,53 @@ defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap nexus-admin" data-page="queue">
 
-	<h1><?php esc_html_e( 'Coda di approvazione', 'nexus-news-ai' ); ?></h1>
+        <h1><?php esc_html_e( 'Coda di approvazione', 'nexus-news-ai' ); ?></h1>
 
-	<p class="nxa-page-subtitle"><?php esc_html_e( 'Articoli proposti dagli agenti: valuta qualità e fonte, poi approva, rifiuta o pubblica.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'Articoli proposti dagli agenti: valuta qualità e fonte, poi approva, rifiuta o pubblica.', 'nexus-news-ai' ); ?></p>
 
-	<div class="nxa-toolbar">
-		<label class="screen-reader-text" for="nxa-queue-filter">
-			<?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
-		</label>
-		<select id="nxa-queue-filter" class="nxa-queue-filter">
-			<option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
-			<option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
-			<option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
-			<option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
-			<option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
-		</select>
+        <div class="nxa-toolbar">
+                <label class="screen-reader-text" for="nxa-queue-filter">
+                        <?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
+                </label>
+                <select id="nxa-queue-filter" class="nxa-queue-filter">
+                        <option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
+                        <option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
+                        <option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
+                        <option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
+                        <option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
+                </select>
 
-		<button type="button" class="nxa-btn nxa-queue-refresh">
-			<?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
-		</button>
+                <button type="button" class="nxa-btn nxa-queue-refresh">
+                        <?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
+                </button>
 
-		<!-- Hook fisso opzionale per il conteggio ("N articoli"), aria-live. -->
-		<span id="nxa-queue-count" class="nxa-queue-count" aria-live="polite"></span>
-	</div>
+                <!-- Hook fisso per il conteggio ("N articoli"), aria-live: è CONSUMATO
+                     da admin.js (loadQueueList, v1.1.7 T-C2 — vedi punto 4 del docblock). -->
+                <span id="nxa-queue-count" class="nxa-queue-count" aria-live="polite"></span>
+        </div>
 
-	<!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.
-	     Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
-	<div id="nxa-queue-list" class="nxa-queue-list nxa-table-wrap" aria-live="polite" aria-busy="true">
-		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?></p>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-	</div>
+        <!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.
+             Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
+        <div id="nxa-queue-list" class="nxa-queue-list nxa-table-wrap" aria-live="polite" aria-busy="true">
+                <p class="screen-reader-text"><?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?></p>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+        </div>
 
-	<?php /* Hook di riserva (contratto riga coda: punto 2 del docblock). Il template resta vuoto. */ ?>
-	<template id="nxa-queue-row-tpl"></template>
+        <!-- v1.1.13 (O4): rimossi il template nxa-queue-row-tpl (vuoto per
+             contratto: la riga la genera admin.js) e la modale di riserva
+             nxa-queue-modal (nessun riferimento in admin.js: il dettaglio
+             apre la modale condivisa nxa-modal — vedi punti 3 e 4 del
+             docblock di testa). -->
 
-	<!-- MODALE DETTAGLIO ARTICOLO (hook di riserva: la modale viva è #nxa-modal di admin.js,
-	     vedi punto 3 del docblock). Contratto selettori: id modale/corpo, data-nxa-close-modal. -->
-	<div id="nxa-queue-modal" class="nxa-modal" hidden role="dialog" aria-modal="true" aria-labelledby="nxa-queue-modal-title">
-		<button type="button" class="nxa-modal-close" data-nxa-close-modal aria-label="<?php esc_attr_e( 'Chiudi', 'nexus-news-ai' ); ?>">&times;</button>
-		<h2 id="nxa-queue-modal-title" class="screen-reader-text"><?php esc_html_e( 'Dettaglio articolo', 'nexus-news-ai' ); ?></h2>
-		<div id="nxa-queue-modal-body" class="nxa-modal-body">
-			<p class="screen-reader-text"><?php esc_html_e( 'Caricamento dettaglio…', 'nexus-news-ai' ); ?></p>
-			<div class="nxa-skeleton is-title"></div>
-			<div class="nxa-skeleton"></div>
-			<div class="nxa-skeleton is-line"></div>
-		</div>
-	</div>
-
-	<noscript>
-		<div class="nxa-empty">
-			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
-			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
-			<p><?php esc_html_e( 'La coda di approvazione richiede JavaScript per caricare gli articoli.', 'nexus-news-ai' ); ?></p>
-		</div>
-	</noscript>
+        <noscript>
+                <div class="nxa-empty">
+                        <span class="dashicons dashicons-warning" aria-hidden="true"></span>
+                        <p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+                        <p><?php esc_html_e( 'La coda di approvazione richiede JavaScript per caricare gli articoli.', 'nexus-news-ai' ); ?></p>
+                </div>
+        </noscript>
 
 </div>

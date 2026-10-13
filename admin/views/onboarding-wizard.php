@@ -77,35 +77,35 @@ $nxa_obs_sample_rss = implode(
                                         <span class="nxa-obs-emoji" aria-hidden="true">📰</span>
                                         <span class="nxa-obs-card-title"><?php esc_html_e( 'Testata generalista', 'nexus-news-ai' ); ?></span>
                                         <span class="nxa-obs-card-desc"><?php esc_html_e( 'Cinque giornalisti pronti: tecnologia, politica, economia, sport e cultura.', 'nexus-news-ai' ); ?></span>
-                                        <span class="nxa-obs-card-count"><?php echo esc_html( '5 agenti' ); ?></span>
+                                        <span class="nxa-obs-card-count"><?php echo esc_html__( '5 agenti', 'nexus-news-ai' ); ?></span>
                                 </label>
                                 <label class="nxa-obs-card">
                                         <input type="radio" name="nxa-obs-preset" value="veloci" data-presets="tech,politica,economia" data-include-chief="0" />
                                         <span class="nxa-obs-emoji" aria-hidden="true">🚀</span>
                                         <span class="nxa-obs-card-title"><?php esc_html_e( 'News veloci', 'nexus-news-ai' ); ?></span>
                                         <span class="nxa-obs-card-desc"><?php esc_html_e( 'Tre giornalisti per partire subito con l’essenziale.', 'nexus-news-ai' ); ?></span>
-                                        <span class="nxa-obs-card-count"><?php echo esc_html( '3 agenti' ); ?></span>
+                                        <span class="nxa-obs-card-count"><?php echo esc_html__( '3 agenti', 'nexus-news-ai' ); ?></span>
                                 </label>
                                 <label class="nxa-obs-card">
                                         <input type="radio" name="nxa-obs-preset" value="tech" data-presets="tech" data-include-chief="0" />
                                         <span class="nxa-obs-emoji" aria-hidden="true">🤖</span>
                                         <span class="nxa-obs-card-title"><?php esc_html_e( 'Solo Tecnologia', 'nexus-news-ai' ); ?></span>
                                         <span class="nxa-obs-card-desc"><?php esc_html_e( 'Un giornalista tech per partire dal necessario.', 'nexus-news-ai' ); ?></span>
-                                        <span class="nxa-obs-card-count"><?php echo esc_html( '1 agente' ); ?></span>
+                                        <span class="nxa-obs-card-count"><?php echo esc_html__( '1 agente', 'nexus-news-ai' ); ?></span>
                                 </label>
                                 <label class="nxa-obs-card">
                                         <input type="radio" name="nxa-obs-preset" value="agenzia" data-presets="tech,politica,economia,sport,cultura,scienza,salute,capo" data-include-chief="1" />
                                         <span class="nxa-obs-emoji" aria-hidden="true">🏛️</span>
                                         <span class="nxa-obs-card-title"><?php esc_html_e( 'Agenzia completa', 'nexus-news-ai' ); ?></span>
                                         <span class="nxa-obs-card-desc"><?php esc_html_e( 'Sette giornalisti e il capo redattore: la redazione completa.', 'nexus-news-ai' ); ?></span>
-                                        <span class="nxa-obs-card-count"><?php echo esc_html( '7 agenti + capo redattore' ); ?></span>
+                                        <span class="nxa-obs-card-count"><?php echo esc_html__( '7 agenti + capo redattore', 'nexus-news-ai' ); ?></span>
                                 </label>
                                 <label class="nxa-obs-card nxa-obs-card--manual">
                                         <input type="radio" name="nxa-obs-preset" value="manual" data-presets="" data-include-chief="0" />
                                         <span class="nxa-obs-emoji" aria-hidden="true">✍️</span>
                                         <span class="nxa-obs-card-title"><?php esc_html_e( 'Preferisco crearli a mano', 'nexus-news-ai' ); ?></span>
                                         <span class="nxa-obs-card-desc"><?php esc_html_e( 'Nessun agente ora: chiudi il wizard e usa i preset o il modal nuovo agente.', 'nexus-news-ai' ); ?></span>
-                                        <span class="nxa-obs-card-count"><?php echo esc_html( '0 agenti' ); ?></span>
+                                        <span class="nxa-obs-card-count"><?php echo esc_html__( '0 agenti', 'nexus-news-ai' ); ?></span>
                                 </label>
                         </div>
                 </div>
