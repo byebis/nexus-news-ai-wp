@@ -9,6 +9,20 @@
  * pagina ("Pubblicazione social" e "Distribuzione sociale") sono UNIFICATE
  * in un'unica sezione accordion data-nxa-acc="social".
  *
+ * v1.1.12 (S8): due nuove sezioni accordion — "Google News" e "Notifiche".
+ * I name dei campi = chiavi ESATTE di Nexus_DB::default_settings() v1.1.12:
+ * news_sitemap_enabled, news_sitemap_name (modulo S5), notify_webhook_url,
+ * notify_events (modulo S7). Il webhook segue il pattern segreti v1.1.9
+ * (type="password", value stampato esc_attr per re-invio idempotente,
+ * placeholder "•••• salvata — compila per sostituire" quando valorizzato,
+ * autocomplete="new-password"); la chiave entra nella mascheratura REST
+ * Nexus_Rest::secret_settings_keys() (v1.1.12 S8). I gruppi nuovi nascono
+ * chiusi, stesso contratto localStorage/IIFE degli altri. DEBITO
+ * INTEGRAZIONE (S8): i name nuovi non sono ancora negli array di
+ * collectSettings() in admin.js né nella whitelist REST (file fuori perimetro
+ * S8): il markup segue già il contratto, il salvataggio effettivo arriva con
+ * l'estensione del glue (stesso percorso di global_rss_sources in 1.1.11).
+ *
  * I campi sono PRECOMPILATI server-side con Nexus_DB::get_settings()
  * (value / checked / selected): la pagina è già corretta prima che admin.js risponda.
  *
@@ -380,6 +394,67 @@ $social_platforms = array(
                                                                         <?php esc_html_e( 'WebSub (PubSubHubbub)', 'nexus-news-ai' ); ?>
                                                                 </label>
                                                                 <p class="description"><?php esc_html_e( 'Se attivo, il feed del sito viene notificato agli hub WebSub a ogni pubblicazione.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="news-sitemap">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-news-sitemap">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Google News', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-news-sitemap" hidden>
+                                <?php /* Sezione v1.1.12 (S8) "Google News": sitemap dedicata (modulo S5), name = chiavi esatte default_settings v1.1.12. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Sitemap Google News', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-news-sitemap-enabled">
+                                                                        <input type="checkbox" name="news_sitemap_enabled" id="nxa-news-sitemap-enabled" value="1" <?php checked( (int) $settings['news_sitemap_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Attiva la sitemap Google News', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Se attivo, viene generata la sitemap nexus-news-sitemap.xml con gli articoli pubblicati nelle ultime 48 ore.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-news-sitemap-name"><?php esc_html_e( 'Nome della testata', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="news_sitemap_name" id="nxa-news-sitemap-name" value="<?php echo esc_attr( $settings['news_sitemap_name'] ); ?>" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Nome usato nel tag <news:name> della sitemap Google News; vuoto = nome del sito.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="notify">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-notify">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Notifiche', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-notify" hidden>
+                                <?php /* Sezione v1.1.12 (S8) "Notifiche": webhook Slack-compatibile (modulo S7), name = chiavi esatte default_settings v1.1.12. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-notify-webhook-url"><?php esc_html_e( 'Webhook notifiche', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="password" name="notify_webhook_url" id="nxa-notify-webhook-url" value="<?php echo esc_attr( $settings['notify_webhook_url'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['notify_webhook_url'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <p class="description"><?php esc_html_e( 'Webhook Slack-compatibile che riceve gli eventi della pipeline (errori, pending, pubblicazioni).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Campo mascherato: compila il campo solo per sostituire il webhook salvato (vuoto = nessun cambio).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-notify-events"><?php esc_html_e( 'Eventi notificati', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="notify_events" id="nxa-notify-events" value="<?php echo esc_attr( $settings['notify_events'] ); ?>" placeholder="error,pending,published" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Elenco separato da virgola degli eventi da notificare. Valori ammessi: error, pending, published.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Nota: se Telegram è configurato nella sezione Distribuzione social, le notifiche arrivano anche in chat.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>

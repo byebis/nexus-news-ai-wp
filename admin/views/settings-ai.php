@@ -7,6 +7,17 @@
  * chief, tools, intelligence) e raccoglie la seconda parte della vecchia
  * settings.php (rimossa in v1.1.6).
  *
+ * v1.1.12 (S8): due nuove sezioni accordion — "Dedup semantico" e "Learning
+ * (redazione che impara)". I name dei campi = chiavi ESATTE di
+ * Nexus_DB::default_settings() v1.1.12: dedup_similar_enabled,
+ * dedup_similar_threshold, learn_enabled, learn_window_days (moduli S3/S2).
+ * I due gruppi nuovi nascono chiusi (aria-expanded="false" + hidden) e seguono
+ * lo stesso contratto localStorage/IIFE degli altri: nessuno script aggiuntivo.
+ * DEBITO INTEGRAZIONE (S8): i name nuovi non sono ancora negli array di
+ * collectSettings() in admin.js né nella whitelist REST (file fuori perimetro
+ * S8): il markup segue già il contratto, il salvataggio effettivo arriva con
+ * l'estensione del glue (stesso percorso di global_rss_sources in 1.1.11).
+ *
  * I campi sono PRECOMPILATI server-side con Nexus_DB::get_settings()
  * (value / checked / selected): la pagina è già corretta prima che admin.js risponda.
  *
@@ -646,6 +657,68 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                         <th scope="row"><?php esc_html_e( 'Nota', 'nexus-news-ai' ); ?></th>
                                                         <td>
                                                                 <p class="description"><?php esc_html_e( 'I post tradotti restano contenuti nativi di WordPress: sopravvivono al plugin. Le associazioni lingua con Polylang o WPML si gestiscono dalle loro interfacce.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="dedup">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-dedup">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Dedup semantico', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-dedup" hidden>
+                                <?php /* Sezione v1.1.12 (S8) "Dedup semantico": simhash 64-bit (modulo S3), name = chiavi esatte default_settings v1.1.12. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Contenuti simili', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-dedup-similar-enabled">
+                                                                        <input type="checkbox" name="dedup_similar_enabled" id="nxa-dedup-similar-enabled" value="1" <?php checked( (int) $settings['dedup_similar_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Scarta candidati con contenuto simile', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Simhash 64-bit: i candidati raccolti con contenuto simile ad articoli già presenti vengono scartati prima della valutazione.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-dedup-similar-threshold"><?php esc_html_e( 'Soglia di somiglianza (distanza Hamming)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="dedup_similar_threshold" id="nxa-dedup-similar-threshold" value="<?php echo esc_attr( $settings['dedup_similar_threshold'] ); ?>" min="0" max="24" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Distanza Hamming massima tra due simhash (0-24); 6 = conservativo, valori più alti tollerano articoli più simili.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="learning">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-learning">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Learning (redazione che impara)', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-learning" hidden>
+                                <?php /* Sezione v1.1.12 (S8) "Learning (redazione che impara)": briefing performance nel prompt dei capi (modulo S2), name = chiavi esatte default_settings v1.1.12. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Briefing performance', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-learn-enabled">
+                                                                        <input type="checkbox" name="learn_enabled" id="nxa-learn-enabled" value="1" <?php checked( (int) $settings['learn_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Briefing performance nel prompt dei capi', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Se attivo, il briefing delle performance degli articoli pubblicati entra nel prompt dei capi redattori: la redazione impara da ciò che funziona.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-learn-window-days"><?php esc_html_e( 'Finestra di apprendimento (giorni)', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="learn_window_days" id="nxa-learn-window-days" value="<?php echo esc_attr( $settings['learn_window_days'] ); ?>" min="7" max="90" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( 'Giorni di metriche aggregati nel briefing (7-90).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>
