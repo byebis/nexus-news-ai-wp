@@ -209,6 +209,10 @@ class Nexus_DB {
                         // quando l'agente non ha fonti nella propria redazione. Vuota =
                         // nessuna raccolta RSS globale (nessun fallback predefinito).
                         'global_rss_sources'    => '',
+                        // v1.1.11 (R5): guardia opzionale fetch catalogo modelli —
+                        // 0 = GET /ai/models NON fa richieste remote ai provider
+                        // (serve solo la cache esistente; anche refresh=1 è no-op).
+                        'models_fetch_enabled' => 1,
                 );
         }
 

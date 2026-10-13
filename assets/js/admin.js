@@ -27,6 +27,7 @@
  * v1.1.5: bottoni "Avvia" (agente/redazione/testata) sul POST pipeline/run esteso con toast riepilogo e blocco .nxa-run-summary, e pannello live "In redazione ora" in dashboard (#nxa-live-strip: GET /live con polling 5s solo a pagina visibile, 404 → strip nascosta in silenzio).
  * v1.1.10 (F2b/WP11): sub-sezione "Provider personalizzati" in Impostazioni AI — CRUD REST /ai/custom-providers (chiave MAI in chiaro: solo has_key), preset 1-click Together/Fireworks/Perplexity/Cerebras/LM Studio/vLLM, delete con conferma INLINE in riga; i bottoni Test delle righe riusano il wizard WP10 (.nxa-prov-test → POST /ai/test/cust_{id}).
  * v1.1.10 (WP4/C1): modal agente — sezione "Strumenti personali (opzionali)": provider ricerca per-agente (#nxa-agent-search-provider, '' = globale, senza "none"), chiave search_key (password: inviata ma non persistente in questa wave, la scarta la whitelist REST — patch wave 4) e server MCP personali (#nxa-agent-mcp-servers, cascata con i globali: vince l'agente). Prefill al load con fallback vuoto client-side (serialize_agent non espone ancora i campi: wave 4); serializzazione search_provider/search_key/mcp_servers_text nei POST/PUT /agents.
+ * v1.1.11 (R5): guardia fetch catalogo modelli — toggle models_fetch_enabled serializzato 0/1 (blocco providerFlags), flag onesti del server (fetch_disabled/stale) propagati dal resolve di fetchProviderModels, wrapper in coda al file che trasforma "fetch disattivato + nessuna cache" in un errore onesto (messaggio rosso nel picker e toast sul "Carica modelli") e status con suffissi "(fetch disattivato)" / "(cache scaduta…)".
  *
  * @package Nexus_News_AI
  */
@@ -2411,7 +2412,11 @@
                                 }
                         }
                         mpCache[ key ] = { list: list, at: Date.now(), ttl: MP_TTL, pending: null };
-                        return { list: list, cached: !!data.cached, count: num( data.count ) || list.length };
+                        // v1.1.11 (R5): flag onesti del server propagati al caller
+                        // (fetch_disabled / stale / missing_key) — il wrapper in coda
+                        // al file li usa per gli avvisi, i picker mostrano la lista.
+                        return { list: list, cached: !!data.cached, count: num( data.count ) || list.length,
+                                fetch_disabled: !!data.fetch_disabled, stale: !!data.stale, missing_key: !!data.missing_key };
                 } ).catch( function ( err ) {
                         if ( mpCache[ key ] ) {
                                 mpCache[ key ].pending = null;
@@ -2915,7 +2920,11 @@
                 setBtnLoading( loadBtn, true, 'Carico…' );
                 return fetchProviderModels( '', !!force ).then( function ( res ) {
                         var list = res.list || [];
-                        setModelsStatus( ( num( res.count ) || list.length ) + ' modelli disponibili dal provider' + ( res.cached ? ' (cache)' : '' ) );
+                        // v1.1.11 (R5): suffisso onesto quando la lista NON viene dal
+                        // provider (fetch disattivato / cache scaduta dopo fail-open).
+                        var suffix = res.stale ? ' (cache scaduta: il provider non ha risposto)'
+                                : ( res.fetch_disabled ? ' (fetch disattivato)' : ( res.cached ? ' (cache)' : '' ) );
+                        setModelsStatus( ( num( res.count ) || list.length ) + ' modelli disponibili dal provider' + suffix );
                 } ).catch( function ( err ) {
                         apiErrorToast( err, 'Caricamento modelli fallito' );
                         var message = ( err && err.message ) ? err.message : 'Operazione non riuscita';
@@ -3959,7 +3968,9 @@
 
                 // v1.1.10 (WP10): toggle endpoint AI su IP privati/localhost (page
                 // Impostazioni AI, sezione provider): presente → 1, assente → 0.
-                var providerFlags = [ 'allow_private_providers' ];
+                // v1.1.11 (R5): anche models_fetch_enabled (guardia fetch catalogo
+                // modelli, sezione "Configurazione AI"): deselezionato → 0.
+                var providerFlags = [ 'allow_private_providers', 'models_fetch_enabled' ];
                 for ( i = 0; i < providerFlags.length; i++ ) {
                         var provFlagBoxes = qsa( 'input[name="' + providerFlags[ i ] + '"]', form );
                         if ( provFlagBoxes.length ) {
@@ -5900,6 +5911,40 @@
                                         'error', 'Nexus News AI' );
                         } );
         }
+
+        /* ==================================================================
+         * v1.1.11 (R5) — Model fetch guard
+         *
+         * Il server GET /ai/models ora porta flag onesti nel payload
+         * (fetch_disabled / stale / missing_key, guardia models_fetch_enabled):
+         * qui li rendiamo visibili SENZA toccare il rendering del picker WP12.
+         * Si estende SOLO fetchProviderModels (riassegnata in coda: i closure
+         * che la richiamano — load() dei picker e loadAiModels — risolvono il
+         * binding a call time, quindi vedono il wrapper; la logica di rendering
+         * esistente state.err / apiErrorToast / setModelsStatus fa il resto).
+         *
+         * - fetch_disabled + lista vuota → l'open del picker e il bottone
+         *   "Carica modelli" mostrano il messaggio onesto qui sotto (rosso
+         *   nello stato vuoto del picker, toast sul bottone) invece del
+         *   fuorviante "Nessun modello trovato".
+         * - fetch_disabled con cache → la lista cache passa intatta: lo status
+         *   accanto al bottone aggiunge "(fetch disattivato)" (loadAiModels).
+         * - stale → la lista scaduta (fail-open server) passa intatta: lo
+         *   status aggiunge "(cache scaduta: il provider non ha risposto)".
+         * - missing_key → errore 400 del server: i messaggi onesti esistenti
+         *   bastano, il flag resta disponibile per usi futuri.
+         * ================================================================== */
+        var r5FetchProviderModels = fetchProviderModels;
+        fetchProviderModels = function ( provider, force ) {
+                return r5FetchProviderModels( provider, force ).then( function ( res ) {
+                        if ( res && res.fetch_disabled && ( ! res.list || ! res.list.length ) ) {
+                                var err = new Error( 'Caricamento modelli disattivato dalle impostazioni: nessun catalogo in cache.' );
+                                err.nexus_r5_fetch_disabled = true;
+                                throw err;
+                        }
+                        return res;
+                } );
+        };
 
         if ( document.readyState === 'loading' ) {
                 document.addEventListener( 'DOMContentLoaded', boot );
