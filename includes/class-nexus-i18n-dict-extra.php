@@ -1214,6 +1214,53 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Test non riuscito' => 'Test failed',
             'URL di autorizzazione mancante nella risposta del server.' => 'Authorization URL missing from the server response.',
 
+            /* v1.1.11 (R4-5) — class-nexus-image.php / class-nexus-translate.php.
+             * Voci APPENDITE in coda (nessuna voce esistente modificata): note ed
+             * errori della pipeline featured image (AI, image_url, Pixabay, gate
+             * qualità, guardie SSRF/SVG/MIME) ed errori REST/activity delle
+             * traduzioni. Escluso il prompt AI verso il provider; i messaggi con
+             * variabili sono coperti dai pattern in coda a nexus_i18n_extra_patterns(). */
+            'Aggiornamento del post tradotto non riuscito.' => 'Updating the translated post failed.',
+            'Aggiornamento del post tradotto non riuscito: ambiente WordPress incompleto.' => 'Updating the translated post failed: incomplete WordPress environment.',
+            'AI: chiamata di traduzione non riuscita.' => 'AI: translation call failed.',
+            'AI: risposta non valida, JSON atteso non ricevuto.' => 'AI: invalid response, expected JSON not received.',
+            'AI: traduzione incompleta, titolo mancante.' => 'AI: incomplete translation, missing title.',
+            'AI engine non disponibile: traduzione impossibile.' => 'AI engine unavailable: translation impossible.',
+            'Articolo o lingua non validi.' => 'Invalid article or language.',
+            'chiave Pixabay (setting pixabay_key) non configurata: anello ③ disattivato' => 'Pixabay key (setting pixabay_key) not configured: ring ③ disabled',
+            'decodifica base64 dell\'immagine generata fallita' => 'Base64 decoding of the generated image failed',
+            'download: contenuto vuoto' => 'Download: empty content',
+            'generazione AI saltata (chiave API non configurata)' => 'AI generation skipped (API key not configured)',
+            'ID articolo non valido.' => 'Invalid article ID.',
+            'immagine dall\'articolo (image_url)' => 'Image from article (image_url)',
+            'il file remoto è un SVG: formato non ammesso per le immagini degli articoli' => 'The remote file is an SVG: format not allowed for article images',
+            'il file scaricato non è un\'immagine riconosciuta' => 'The downloaded file is not a recognized image',
+            'il file scaricato non è un\'immagine valida' => 'The downloaded file is not a valid image',
+            'il servizio immagini non ha restituito né b64_json né url' => 'The image service returned neither b64_json nor url',
+            'l\'immagine generata non è in un formato riconosciuto' => 'The generated image is not in a recognized format',
+            'L\'articolo non ha un post WordPress nativo: pubblica o migra l\'articolo prima.' => 'The article has no native WordPress post: publish or migrate the article first.',
+            'L\'articolo è già in questa lingua.' => 'The article is already in this language.',
+            'Layer dati Nexus_DB non disponibile: traduzione impossibile.' => 'Nexus_DB data layer unavailable: translation impossible.',
+            'Lingua richiesta mancante o non valida.' => 'Missing or invalid requested language.',
+            'pixabay: nessuna keyword utilizzabile (titolo e categoria vuoti o composti solo da stopwords)' => 'pixabay: no usable keyword (title and category empty or made of stopwords only)',
+            'pixabay: risposta API non valida' => 'pixabay: invalid API response',
+            'Pubblicazione del post tradotto non riuscita.' => 'Publishing the translated post failed.',
+            'Pubblicazione del post tradotto non riuscita: ambiente WordPress incompleto.' => 'Publishing the translated post failed: incomplete WordPress environment.',
+            'risposta del servizio immagini non valida' => 'Invalid image service response',
+            'Salvataggio della traduzione non riuscito.' => 'Saving the translation failed.',
+            'Servizio multilingua non disponibile al momento.' => 'Multilingual service currently unavailable.',
+            'Servizio traduzioni non disponibile al momento.' => 'Translation service currently unavailable.',
+            'Traduzione già in corso per questo articolo e questa lingua: riprova più tardi.' => 'Translation already running for this article and language: try again later.',
+            'Traduzione non riuscita.' => 'Translation failed.',
+            'Traduzione non riuscita: titolo tradotto mancante.' => 'Translation failed: translated title missing.',
+            'Traduzione saltata: budget AI esaurito.' => 'Translation skipped: AI budget exhausted.',
+            'Traduzioni disattivate.' => 'Translations disabled.',
+            'URL immagine vuoto o non valido' => 'Image URL empty or invalid',
+            'URL non consentito: host mancante.' => 'URL not allowed: missing host.',
+            'URL non consentito: impossibile risolvere il nome host.' => 'URL not allowed: unable to resolve the host name.',
+            'URL non consentito: l\'host risolve a un indirizzo privato o riservato.' => 'URL not allowed: the host resolves to a private or reserved address.',
+            'URL non consentito: sono ammessi solo URL http/https con host valido.' => 'URL not allowed: only http/https URLs with a valid host are accepted.',
+
         );
 }
 
@@ -2546,6 +2593,123 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'riprova ricaricando la pagina\.',
             'tpl' => 'try reloading the page.',
+        ),
+
+        /* v1.1.11 (R4-5) — class-nexus-image.php / class-nexus-translate.php
+         * (messaggi composti a runtime). Pattern APPENDITI in coda. Ordine
+         * voluto: i wrapper (generazione AI fallita/p […], pixabay non
+         * utilizzabile/p […], download immagine generata fallito/p […])
+         * precedono gli errori annidati che essi avvolgono; i pattern senza $
+         * finale traducono FRAMMENTI dentro messaggi più lunghi (note pipeline
+         * featured image), quelli con $ catturano il messaggio intero
+         * (errori REST e log activity delle traduzioni). */
+        array(
+            're'  => 'generazione AI \(modello ([^)]+)\)',
+            'tpl' => 'AI generation (model $1)',
+        ),
+        array(
+            're'  => 'generazione AI fallita \((.+?)\)',
+            'tpl' => 'AI generation failed ($1)',
+        ),
+        array(
+            're'  => 'image_url scartata dal gate qualità: larghezza (\d+)px sotto il minimo di (\d+)px',
+            'tpl' => 'image_url rejected by quality gate: width $1px below the minimum of $2px',
+        ),
+        array(
+            're'  => 'image_url non utilizzabile \((.+?)\)',
+            'tpl' => 'image_url not usable ($1)',
+        ),
+        array(
+            're'  => 'pixabay scartata dal gate qualità: larghezza reale (\d+)px sotto il minimo di (\d+)px',
+            'tpl' => 'pixabay rejected by quality gate: actual width $1px below the minimum of $2px',
+        ),
+        array(
+            're'  => 'immagine Pixabay \(query "([^"]+)"\)',
+            'tpl' => 'Pixabay image (query "$1")',
+        ),
+        array(
+            're'  => 'pixabay non utilizzabile \((.+?)\)',
+            'tpl' => 'pixabay not usable ($1)',
+        ),
+        array(
+            're'  => 'Impossibile salvare la featured image per il post #(\d+) \(upload o attachment falliti; featured_source: ([a-z_]*)\)\.$',
+            'tpl' => 'Unable to save the featured image for post #$1 (upload or attachment failed; featured_source: $2).',
+        ),
+        array(
+            're'  => 'errore di connessione al servizio immagini: (.+)',
+            'tpl' => 'image service connection error: $1',
+        ),
+        array(
+            're'  => 'il servizio immagini ha risposto con errore HTTP (\d+)',
+            'tpl' => 'the image service returned HTTP error $1',
+        ),
+        array(
+            're'  => 'download immagine generata fallito: (.+)',
+            'tpl' => 'generated image download failed: $1',
+        ),
+        array(
+            're'  => 'errore di download: (.+)',
+            'tpl' => 'download error: $1',
+        ),
+        array(
+            're'  => 'download con errore HTTP (\d+)',
+            'tpl' => 'download returned HTTP error $1',
+        ),
+        array(
+            're'  => 'pixabay: zero risultati utilizzabili per la query "([^"]+)" \(nessun esito o tutti sotto il gate di (\d+)px\)',
+            'tpl' => 'pixabay: no usable results for query "$1" (no hits or all below the $2px gate)',
+        ),
+        array(
+            're'  => 'pixabay: tutti i risultati per la query "([^"]+)" sono già stati usati',
+            'tpl' => 'pixabay: all results for query "$1" have already been used',
+        ),
+        array(
+            're'  => 'pixabay: errore di connessione all\'API \((.+?)\)',
+            'tpl' => 'pixabay: API connection error ($1)',
+        ),
+        array(
+            're'  => 'pixabay: API ha risposto con errore HTTP (\d+)',
+            'tpl' => 'pixabay: API returned HTTP error $1',
+        ),
+        array(
+            're'  => 'Lingua "([^"]+)" non consentita: lingue attive (.+)\.$',
+            'tpl' => 'Language "$1" not allowed: active languages $2.',
+        ),
+        array(
+            're'  => 'Eccezione durante la traduzione: (.+)$',
+            'tpl' => 'Exception during translation: $1',
+        ),
+        array(
+            're'  => 'L\'articolo #(\d+) non ha titolo né contenuto da tradurre\.$',
+            'tpl' => 'Article #$1 has neither title nor content to translate.',
+        ),
+        array(
+            're'  => 'Traduzione interrotta: budget AI esaurito dopo (\d+) di (\d+) segmenti\.$',
+            'tpl' => 'Translation stopped: AI budget exhausted after $1 of $2 segments.',
+        ),
+        array(
+            're'  => 'Traduzione saltata: budget AI esaurito \(articolo #(\d+), ([a-z0-9_-]+)\)$',
+            'tpl' => 'Translation skipped: AI budget exhausted (article #$1, $2)',
+        ),
+        array(
+            're'  => 'AI: traduzione incompleta, segmento (\d+) vuoto\.$',
+            'tpl' => 'AI: incomplete translation, segment $1 is empty.',
+        ),
+        array(
+            're'  => 'Traduzione ([a-z0-9_-]+) articolo #(\d+) completata ma contenuto parzialmente tradotto \(limite di (\d+) segmenti\)\.$',
+            'tpl' => 'Translation $1 of article #$2 completed but content partially translated (limit of $3 segments).',
+        ),
+        array(
+            're'  => 'Aggiornamento del post tradotto non riuscito: (.+)$',
+            'tpl' => 'Updating the translated post failed: $1',
+        ),
+        array(
+            're'  => 'Pubblicazione del post tradotto non riuscita: (.+)$',
+            'tpl' => 'Publishing the translated post failed: $1',
+        ),
+        array(
+            're'  => 'Traduzione ([a-z0-9_-]+) articolo #(\d+)$',
+            'tpl' => 'Translation $1 of article #$2',
         ),
     );
 }
