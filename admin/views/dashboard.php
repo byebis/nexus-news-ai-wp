@@ -83,8 +83,9 @@
  *
  * v1.1.5 — Contratto "Respira" (T-04): nella toolbar arriva il bottone
  * "Avvia testata" (classe nxa-btn-run, data-run-testata="1") che avvia
- * l'intera testata con POST pipeline/run {agent_id:0} dopo window.confirm in
- * italiano ("Avviare l'intera testata? Verranno avviati N agenti."); dentro
+ * l'intera testata con POST pipeline/run {agent_id:0} dopo conferma inline in
+ * admin.js (v1.1.13.1 Q2, niente window.confirm nativo: "Avviare l'intera
+ * testata? Verranno avviati N agenti."); dentro
  * la sezione nxa-section-activity il contenitore vuoto #nxa-live-strip ospita
  * il pannello live "In redazione ora" renderizzato da admin.js (GET /live +
  * polling 5 secondi solo con la pagina visibile; endpoint assente → strip
@@ -228,8 +229,8 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
 
         <div class="nxa-toolbar">
                 <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
-                     (sezione AVVII MIRATI): window.confirm con il numero di agenti già
-                     caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).
+                     (sezione AVVII MIRATI): conferma inline (v1.1.13.1 Q2) con il numero
+                     di agenti già caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).
                      v1.1.6: il vecchio bottone "Esegui pipeline completa" è stato RIMOSSO
                      (duplicava la stessa azione su due bottoni distinti). -->
                 <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia testata', 'nexus-news-ai' ); ?></button>

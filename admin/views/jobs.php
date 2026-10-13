@@ -29,7 +29,7 @@
  * - Stat-card numeriche: #nxa-jb-stat-pending / #nxa-jb-stat-running /
  *   #nxa-jb-stat-complete / #nxa-jb-stat-failed / #nxa-jb-stat-total.
  * - Toolbar: #nxa-jb-status (filtro stato, valore vuoto = tutti), #nxa-jb-process,
- *   #nxa-jb-cleanup (con window.confirm), #nxa-jb-auto (auto-refresh 15s).
+ *   #nxa-jb-cleanup (con conferma inline, v1.1.13.1 Q2), #nxa-jb-auto (auto-refresh 15s).
  * - Tabella: tbody#nxa-jb-rows riempito da JS; azioni per riga tramite
  *   [data-nxa-jb-action="retry|cancel"][data-nxa-jb-id] con listener delegato.
  * - Toast: .nxa-jb-toast (--success / --error) su body, rimosso dopo 4 secondi;
@@ -447,6 +447,26 @@ defined( 'ABSPATH' ) || exit;
                         });
                 }
 
+                /* v1.1.13.1 (Q2): conferma INLINE uniforme — riusa l'helper di
+                 * admin.js via il ponte pubblico window.NexusAdminUi (UNA sola
+                 * implementazione del pattern in tutta l'admin, una conferma
+                 * aperta per pagina). admin.js gira sempre su questa pagina
+                 * (stessa guardia NexusAdminData di questa IIFE): se il ponte
+                 * manca lo stato è degradato — l'azione NON parte e resta un
+                 * warn in console, mai un dialogo nativo fuori pattern.
+                 * Messaggi/etichette restano in italiano: vengono tradotti in EN
+                 * dall'observer di i18n.js (testi esatti o pattern già nel dict). */
+                function confirmInline(btn, message, yesLabel, onYes) {
+                        var ui = window.NexusAdminUi;
+                        if (ui && typeof ui.inlineConfirmOpen === 'function') {
+                                ui.inlineConfirmOpen(btn, message, yesLabel, onYes);
+                                return;
+                        }
+                        if (window.console && window.console.warn) {
+                                window.console.warn('[Nexus News AI] Ponte conferme inline (NexusAdminUi) non disponibile: azione annullata.');
+                        }
+                }
+
                 /* Click delegato sulle azioni di riga (Riprova / Annulla). */
                 function onRowsClick(event) {
                         var target = event.target;
@@ -469,13 +489,14 @@ defined( 'ABSPATH' ) || exit;
                                         toast('Lavoro #' + id + ' rimesso in coda', 'success');
                                 });
                         } else if (action === 'cancel') {
-                                if (!window.confirm('Annullare il lavoro #' + id + '?')) {
-                                        return;
-                                }
-                                runAction(btn, function () {
-                                        return api('/jobs/' + id + '/cancel', { method: 'POST' });
-                                }, function () {
-                                        toast('Lavoro #' + id + ' annullato', 'success');
+                                /* v1.1.13.1 (Q2): conferma inline (ponte admin.js) al
+                                 * posto del window.confirm nativo; stessa richiesta POST. */
+                                confirmInline(btn, 'Annullare il lavoro #' + id + '?', 'Sì', function () {
+                                        runAction(btn, function () {
+                                                return api('/jobs/' + id + '/cancel', { method: 'POST' });
+                                        }, function () {
+                                                toast('Lavoro #' + id + ' annullato', 'success');
+                                        });
                                 });
                         }
                 }
@@ -496,14 +517,15 @@ defined( 'ABSPATH' ) || exit;
                 /* Pulizia: elimina complete/failed/cancelled più vecchi di 7 giorni. */
                 if (cleanupBtn) {
                         cleanupBtn.addEventListener('click', function () {
-                                if (!window.confirm('Eliminare i lavori completati, falliti o annullati più vecchi di 7 giorni?')) {
-                                        return;
-                                }
-                                runAction(cleanupBtn, function () {
-                                        return api('/jobs/cleanup', { method: 'POST', body: JSON.stringify({ days: 7 }) });
-                                }, function (data) {
-                                        var deleted = data && data.deleted !== undefined ? parseInt(data.deleted, 10) || 0 : 0;
-                                        toast('Eliminati ' + deleted + ' lavori', 'success');
+                                /* v1.1.13.1 (Q2): conferma inline (ponte admin.js) al
+                                 * posto del window.confirm nativo; stessa richiesta POST. */
+                                confirmInline(cleanupBtn, 'Eliminare i lavori completati, falliti o annullati più vecchi di 7 giorni?', 'Sì, elimina', function () {
+                                        runAction(cleanupBtn, function () {
+                                                return api('/jobs/cleanup', { method: 'POST', body: JSON.stringify({ days: 7 }) });
+                                        }, function (data) {
+                                                var deleted = data && data.deleted !== undefined ? parseInt(data.deleted, 10) || 0 : 0;
+                                                toast('Eliminati ' + deleted + ' lavori', 'success');
+                                        });
                                 });
                         });
                 }

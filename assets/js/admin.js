@@ -30,6 +30,7 @@
  * v1.1.11 (R5): guardia fetch catalogo modelli — toggle models_fetch_enabled serializzato 0/1 (blocco providerFlags), flag onesti del server (fetch_disabled/stale) propagati dal resolve di fetchProviderModels, wrapper in coda al file che trasforma "fetch disattivato + nessuna cache" in un errore onesto (messaggio rosso nel picker e toast sul "Carica modelli") e status con suffissi "(fetch disattivato)" / "(cache scaduta…)".
  * v1.1.11 (R3): wizard di onboarding "Crea la tua redazione" (modal #nxa-onboarding, partial admin/views/onboarding-wizard.php incluso da agents.php): con 0 agenti la pagina Agenti apre il wizard al primo render (una volta per vista) e l'empty state porta il bottone "Apri il wizard"; pacchetti preset one-click (1/3/5 agenti o 7+capo) eseguiti come sequenza di POST /agents con progresso e riepilogo onesto, opzione capo redattore e PUT /settings {global_rss_sources} (stringa una URL per riga — contratto branch R1); la dashboard porta la card CTA con hash #nxa-onboarding.
  * v1.1.13 (O4, feedback/audit UI): wizard NON chiudibile a run in corso (X/Annulla/ESC → toast informativo, chiusura solo a run concluso o fallito); conferme distruttive INLINE uniformi (pattern custom provider: pipeline, eliminazione agente, eliminazione redazione — zero window.confirm); focus trap + ripristino focus per #nxa-modal e #nxa-onboarding (Tab confinato, ESC coerente, opener ricordato); stringhe wizard/confirm passate da nxaT() (dizionario esatto + pattern).
+ * v1.1.13.1 (Q2, ux-confirm): ULTIME window.confirm native uniformate alla conferma inline (scollega provider, re-check capo redattore, avvio testata) e ponte pubblico window.NexusAdminUi.inlineConfirmOpen/Close perché anche le viste con script inline autonomo (jobs.php) riusino la STESSA implementazione — zero dialoghi nativi nei flussi del plugin.
  *
  * @package Nexus_News_AI
  */
@@ -804,6 +805,17 @@
                 // Il focus entra nel gruppo: ESC/Tab restano usabili da tastiera.
                 yes.focus();
         }
+
+        /* v1.1.13.1 (Q2): ponte pubblico MINIMO per le viste che portano uno
+         * script inline autonomo (jobs.php, out per tools.php/nexus-tools.js al
+         * glue): le loro conferme instradano qui invece di duplicare il pattern
+         * o di restare su window.confirm — UNA sola implementazione e l'invariante
+         * "una conferma aperta per pagina" vale su tutta l'admin. Nessun altro
+         * export: il resto del pannello resta privato (IIFE). */
+        window.NexusAdminUi = {
+                inlineConfirmOpen: nxaInlineConfirmOpen,
+                inlineConfirmClose: nxaInlineConfirmClose
+        };
 
         /* ------------------------- MODAL ------------------------- */
 
@@ -3264,28 +3276,38 @@
                                 if ( ! discProvider ) {
                                         return;
                                 }
-                                if ( ! window.confirm( nxaT( 'Rimuovere la chiave salvata per questo provider? Gli agenti non potranno più usarlo finché non la riconfiguri o ti riconnetti.' ) ) ) {
-                                        return;
-                                }
-                                setBtnLoading( discBtn, true, 'Scollego…' );
-                                api( 'ai/disconnect/' + encodeURIComponent( discProvider ), { method: 'POST' } ).then( function ( payload ) {
-                                        var data = unwrap( payload ) || {};
-                                        if ( data.ok === false ) {
-                                                throw new Error( String( data.error || 'Scollegamento non riuscito' ) );
+                                // v1.1.13.1 (Q2): conferma distruttiva INLINE uniforme
+                                // (niente window.confirm nativo). NB: il bottone vive nel
+                                // pannello accordion dei provider (settings-ai.php, riga
+                                // .nxa-prov-actions), NON dentro un modal — la conferma in
+                                // riga è strutturalmente possibile e coerente col pattern
+                                // custom provider (.nxa-custprov-confirm) della stessa vista.
+                                nxaInlineConfirmOpen(
+                                        discBtn,
+                                        nxaT( 'Rimuovere la chiave salvata per questo provider? Gli agenti non potranno più usarlo finché non la riconfiguri o ti riconnetti.' ),
+                                        nxaT( 'Sì, elimina' ),
+                                        function () {
+                                                setBtnLoading( discBtn, true, 'Scollego…' );
+                                                api( 'ai/disconnect/' + encodeURIComponent( discProvider ), { method: 'POST' } ).then( function ( payload ) {
+                                                        var data = unwrap( payload ) || {};
+                                                        if ( data.ok === false ) {
+                                                                throw new Error( String( data.error || 'Scollegamento non riuscito' ) );
+                                                        }
+                                                        var field = qs( '#nxa-prov-key-' + discProvider, form );
+                                                        if ( field ) {
+                                                                field.value = '';
+                                                        }
+                                                        setProviderDot( discProvider, false );
+                                                        setProviderStatus( discProvider, '', '' );
+                                                        discBtn.setAttribute( 'hidden', 'hidden' );
+                                                        toast( 'Chiave rimossa: il provider è scollegato.', 'success', 'Scollegamento' );
+                                                } ).catch( function ( err ) {
+                                                        apiErrorToast( err, 'Scollegamento non riuscito' );
+                                                } ).then( function () {
+                                                        setBtnLoading( discBtn, false );
+                                                } );
                                         }
-                                        var field = qs( '#nxa-prov-key-' + discProvider, form );
-                                        if ( field ) {
-                                                field.value = '';
-                                        }
-                                        setProviderDot( discProvider, false );
-                                        setProviderStatus( discProvider, '', '' );
-                                        discBtn.setAttribute( 'hidden', 'hidden' );
-                                        toast( 'Chiave rimossa: il provider è scollegato.', 'success', 'Scollegamento' );
-                                } ).catch( function ( err ) {
-                                        apiErrorToast( err, 'Scollegamento non riuscito' );
-                                } ).then( function () {
-                                        setBtnLoading( discBtn, false );
-                                } );
+                                );
                         }
                 } );
         }
@@ -3770,21 +3792,34 @@
                 if ( num( id ) <= 0 ) {
                         return;
                 }
-                if ( String( chiefStatus || '' ) !== '' && ! window.confirm( nxaT( 'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' ) ) ) {
+                var send = function () {
+                        setBtnLoading( btn, true, 'Verifico…' );
+                        api( 'chief/run/' + num( id ), { method: 'POST' } ).then( function ( payload ) {
+                                var data = unwrap( payload ) || {};
+                                var outcome = chiefStatusLabel( pick( data, 'chief_status', 'chiefStatus' ) );
+                                toast( outcome ? outcome : 'Revisione capo redattore completata.', 'success', 'Capo redattore' );
+                                return typeof onDone === 'function' ? onDone() : null;
+                        } ).catch( function ( err ) {
+                                apiErrorToast( err, 'Revisione capo redattore non riuscita' );
+                                setBtnLoading( btn, false );
+                        } ).then( function () {
+                                setBtnLoading( btn, false );
+                        } );
+                };
+                // v1.1.13.1 (Q2): guardia "procedi?" NON distruttiva, ma stessa UX
+                // inline uniforme (niente window.confirm nativo). Funziona anche
+                // dentro il modal dettaglio: ESC sulla conferma fa stopPropagation
+                // e chiude solo la conferma, il modal resta aperto.
+                if ( String( chiefStatus || '' ) !== '' ) {
+                        nxaInlineConfirmOpen(
+                                btn,
+                                nxaT( 'Questo articolo è già passato dal capo redattore. Eseguire una nuova verifica?' ),
+                                nxaT( 'Sì, avvia' ),
+                                send
+                        );
                         return;
                 }
-                setBtnLoading( btn, true, 'Verifico…' );
-                api( 'chief/run/' + num( id ), { method: 'POST' } ).then( function ( payload ) {
-                        var data = unwrap( payload ) || {};
-                        var outcome = chiefStatusLabel( pick( data, 'chief_status', 'chiefStatus' ) );
-                        toast( outcome ? outcome : 'Revisione capo redattore completata.', 'success', 'Capo redattore' );
-                        return typeof onDone === 'function' ? onDone() : null;
-                } ).catch( function ( err ) {
-                        apiErrorToast( err, 'Revisione capo redattore non riuscita' );
-                        setBtnLoading( btn, false );
-                } ).then( function () {
-                        setBtnLoading( btn, false );
-                } );
+                send();
         }
 
         function currentQueueFilter() {
@@ -5405,7 +5440,8 @@
          *  - [data-run-redazione] → POST pipeline/run { redazione_id: id }
          *    (riga della pagina Redazioni: template redazioneRowHtml);
          *  - [data-run-testata]   → POST pipeline/run { agent_id: 0 }
-         *    (dashboard "Avvia testata", window.confirm con N agenti).
+         *    (dashboard "Avvia testata", conferma inline con N agenti,
+         *    v1.1.13.1 Q2: niente window.confirm nativo).
          *
          * UN SOLO listener delegato su document con guardia di binding
          * (stesso approccio della guardia redazioniBound): i bottoni vengono
@@ -5714,10 +5750,16 @@
                                         var message = count > 0
                                                 ? nxaT( 'Avviare l’intera testata? Verranno avviati ' ) + fmt( count ) + nxaT( ' agenti.' )
                                                 : nxaT( 'Avviare l’intera testata? Verranno avviati tutti gli agenti.' );
-                                        if ( ! window.confirm( message ) ) {
-                                                return;
-                                        }
-                                        runPipeline( { agent_id: 0 }, btn, 'Testata in corso…' );
+                                        // v1.1.13.1 (Q2): conferma INLINE uniforme (niente
+                                        // window.confirm nativo) — stessi testi, stessa richiesta.
+                                        nxaInlineConfirmOpen(
+                                                btn,
+                                                message,
+                                                nxaT( 'Sì, avvia' ),
+                                                function () {
+                                                        runPipeline( { agent_id: 0 }, btn, 'Testata in corso…' );
+                                                }
+                                        );
                                 } );
                         }
                 } );
