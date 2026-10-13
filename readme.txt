@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.13
+Stable tag: 1.1.13.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -101,6 +101,12 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.13.1 =
+* NUOVO — INSIGHT PERFORMANCE IN ANALYTICS: nuova card con i dati REALI di Search Console e Analytics 4 già raccolti dalla redazione — top 5 articoli per click (con impressioni, CTR, posizione media e viste), totali della finestra con trend vs periodo precedente uguale (frecce ↑↓ e delta %), selettore periodo 7/30/90 giorni che funziona anche senza JavaScript. Stati onesti: Google non connesso → CTA diretta alle Impostazioni; sync giornaliero ancora non arrivato → messaggio chiaro invece di zeri inventati; eventuali errori non rompono il resto della pagina.
+* UI — ZERO CONFERME NATIVE: uniformati al pattern «conferma inline cancellabile in riga» anche gli ultimi window.confirm del pannello (scollega provider, re-check capo redattore, avvio testata, annulla lavoro, pulizia coda, rigenerazione chiave API) con un ponte pubblico riutilizzabile (NexusAdminUi); le azioni non partono se il ponte non è disponibile, mai fallback a dialoghi nativi.
+* I18N — copertura inglese completa delle stringhe UI introdotte dalla 1.1.13 (29 voci esatte + 2 pattern correttivi: il toast di fine wizard usciva misto IT/EN per un conflitto di ordine tra pattern preesistente) e delle stringhe della card Insight; nuove etichette conferma («Sì, genera», «Sì, annulla», «Sì, verifica»).
+* CODICE — consolidate 6 copie private di helper di settings/lowercase negli altri moduli sull'helper pubblico introdotto in 1.1.13 (delega con guardie e fallback locale, comportamento identico); allineamenti rimasti documentati nel log di lavoro dove la semantica diverge.
 
 = 1.1.13 =
 * OTTIMIZZAZIONE — SICUREZZA PIPELINE: score AI non parsato (risposta illeggibile/garbage) ora vale 0 e NON è mai auto-approvato nemmeno in autonomia completa — l'articolo va in attesa di revisione umana con log onesto del motivo (prima un default 70 poteva pubblicare contenuti mai valutati davvero); anche i candidati raccolti senza punteggio nascono a 0. Mutex sul tick cron (percorso senza coda): tick sovrapposti non più raddoppiano il costo AI; resume dei draft bloccati con lock per-articolo ed esclusioni anti-starvation in SQL (i draft più recenti non restano più invisibili dietro i più vecchi non riprendibili).

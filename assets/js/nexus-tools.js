@@ -277,11 +277,20 @@
                         if (busy) {
                                 return;
                         }
-                        if (!window.confirm('Generare una nuova chiave invalida la chiave attuale?')) {
+                        /* v1.1.13.1 (glue, Q2): conferma inline via ponte NexusAdminUi
+                         * di admin.js (caricato anche sulla pagina tools) — niente
+                         * window.confirm nativo. Se il ponte manca: azione annullata
+                         * con warn in console, mai fallback a dialogo nativo. */
+                        var nxaUi = window.NexusAdminUi;
+                        if (!nxaUi || typeof nxaUi.inlineConfirmOpen !== 'function') {
+                                if (window.console && window.console.warn) {
+                                        window.console.warn('[Nexus News AI] Ponte conferme inline (NexusAdminUi) non disponibile: azione annullata.');
+                                }
                                 return;
                         }
-                        busy = true;
-                        keygenBtn.disabled = true;
+                        nxaUi.inlineConfirmOpen(keygenBtn, 'Generare una nuova chiave invalida la chiave attuale?', 'Sì, genera', function () {
+                                busy = true;
+                                keygenBtn.disabled = true;
                         api('/tools/api-key', { method: 'POST' }).then(function (data) {
                                 /* v1.1.9 (D6): la chiave in chiaro arriva UNA SOLA VOLTA nella risposta
                                    ('api_key_plain'; fallback ad 'api_key', alias storico) e viene mostrata
@@ -300,6 +309,7 @@
                         }).then(function () {
                                 busy = false;
                                 keygenBtn.disabled = false;
+                        });
                         });
                 });
         }
