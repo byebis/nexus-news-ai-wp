@@ -21,10 +21,15 @@
  *     ├── Nexus Wire              slug nexus-wire                  → admin/views/wire.php
  *     ├── Analytics               slug nexus-analytics             → admin/views/analytics.php
  *     ├── Strumenti               slug nexus-tools                 → admin/views/tools.php
- *     ├── Impostazioni contenuti  slug nexus-settings-contenuti    → admin/views/settings-contenuti.php
- *     ├── Impostazioni AI         slug nexus-settings-ai           → admin/views/settings-ai.php
- *     ├── Impostazioni pubblicazione  slug nexus-settings-pubblicazione → admin/views/settings-pubblicazione.php
- *     └── Impostazioni sistema    slug nexus-settings-sistema      → admin/views/settings-sistema.php
+ *     └── Impostazioni            slug nexus-settings              → admin/views/settings.php
+ *
+ * v1.1.11 (R2): le 4 voci Impostazioni (contenuti|ai|pubblicazione|sistema)
+ * diventano UNA sola voce "Impostazioni" (slug nexus-settings): la vista
+ * settings.php è una pagina a tab che INCLUDE i 4 partial storici
+ * (admin/views/settings-*.php) come pannelli. I 4 slug storici restano
+ * REGISTRATI (BC: URL e link esterni page=nexus-settings-* funzionanti) ma
+ * rimossi dal menu con remove_submenu_page e mappano sulla stessa vista con
+ * il rispettivo tab aperto.
  *
  * NOTA v1.1.7: la voce "Dashboard" NON è una sottopagina registrata: è la
  * voce auto-generata da add_menu_page per il top-level, rinominata in
@@ -32,13 +37,15 @@
  * produrrebbe lo stesso hook WordPress del top-level
  * ('toplevel_page_nexus-news') e la dashboard verrebbe renderizzata 2 volte.
  *
- * BC v1.1.6: lo slug storico nexus-settings resta registrato e mappato sulla
- * vista settings-contenuti (URL e link esterni con page=nexus-settings
- * continuano a funzionare) ma la voce di menu viene rimossa subito dopo la
- * registrazione (remove_submenu_page): al suo posto le 4 voci Impostazioni.
- * Le 4 pagine condividono data-page="settings" e la form
- * #nxa-settings-form: PUT /settings è parziale con whitelist, quindi ogni
- * pagina invia solo le proprie chiavi.
+ * BC v1.1.11 (R2): i 4 slug storici nexus-settings-contenuti|ai|pubblicazione|
+ * sistema restano registrati e mappati sulla vista settings (tab preimpostato)
+ * ma la voce di menu viene rimossa subito dopo la registrazione
+ * (remove_submenu_page, stesso pattern v1.1.6): nel menu resta UNA voce
+ * "Impostazioni" (slug nexus-settings). Le pagine condividono
+ * data-page="settings" e la form #nxa-settings-form: PUT /settings è parziale
+ * con whitelist, quindi ogni tab invia solo le proprie chiavi (la vista
+ * settings.php ospita i campi del tab attivo nella form bindingata da
+ * admin.js: vedi il contratto "form viaggiante" nel docblock della vista).
  *
  * @package Nexus_News_AI
  */
@@ -111,14 +118,16 @@ class Nexus_Admin {
                         'nexus-wire'      => 'wire',
                         'nexus-analytics' => 'analytics',
                         'nexus-tools'     => 'tools',
-                        // v1.1.6: le Impostazioni diventano 4 pagine (una per gruppo).
-                        'nexus-settings-contenuti'     => 'settings-contenuti',
-                        'nexus-settings-ai'            => 'settings-ai',
-                        'nexus-settings-pubblicazione' => 'settings-pubblicazione',
-                        'nexus-settings-sistema'       => 'settings-sistema',
-                        // BC v1.1.6: lo slug storico mappa sulla prima pagina
-                        // Impostazioni (URL e link esterni page=nexus-settings).
-                        'nexus-settings'               => 'settings-contenuti',
+                        // v1.1.11 (R2): le Impostazioni tornano a essere UNA pagina
+                        // (vista a tab che include i 4 partial storici).
+                        'nexus-settings'               => 'settings',
+                        // BC v1.1.11 (R2): i 4 slug storici mappano sulla stessa vista
+                        // con il rispettivo tab preimpostato (URL e link esterni
+                        // page=nexus-settings-* continuano a funzionare).
+                        'nexus-settings-contenuti'     => 'settings',
+                        'nexus-settings-ai'            => 'settings',
+                        'nexus-settings-pubblicazione' => 'settings',
+                        'nexus-settings-sistema'       => 'settings',
                 );
         }
 
@@ -155,16 +164,22 @@ class Nexus_Admin {
                         'nexus-wire'      => __( 'Nexus Wire', 'nexus-news-ai' ),
                         'nexus-analytics' => __( 'Analytics', 'nexus-news-ai' ),
                         'nexus-tools'     => __( 'Strumenti', 'nexus-news-ai' ),
-                        // v1.1.6: le Impostazioni diventano 4 sottomenu (una pagina per
-                        // gruppo, così il salvataggio non richiede di scorrere un'unica
-                        // pagina lunga; PUT /settings è parziale con whitelist).
+                        // v1.1.11 (R2): le Impostazioni tornano a essere UNA voce di
+                        // menu: la pagina nexus-settings (vista a tab settings.php)
+                        // include i 4 partial storici come pannelli; PUT /settings è
+                        // parziale con whitelist, il salvataggio resta per-tab.
+                        'nexus-settings' => __( 'Impostazioni', 'nexus-news-ai' ),
+                );
+
+                // BC v1.1.11 (R2): i 4 slug storici restano REGISTRATI (URL vecchi
+                // e link esterni page=nexus-settings-* funzionanti, ognuno mappa
+                // sulla vista a tab col proprio tab aperto) ma la voce di menu è
+                // rimossa subito dopo la registrazione (stesso pattern BC v1.1.6).
+                $bc_submenus = array(
                         'nexus-settings-contenuti'     => __( 'Impostazioni contenuti', 'nexus-news-ai' ),
                         'nexus-settings-ai'            => __( 'Impostazioni AI', 'nexus-news-ai' ),
                         'nexus-settings-pubblicazione' => __( 'Impostazioni pubblicazione', 'nexus-news-ai' ),
                         'nexus-settings-sistema'       => __( 'Impostazioni sistema', 'nexus-news-ai' ),
-                        // BC v1.1.6: lo slug storico resta registrato (URL vecchi
-                        // funzionanti) ma la voce è rimossa subito sotto.
-                        'nexus-settings'               => __( 'Impostazioni', 'nexus-news-ai' ),
                 );
 
                 foreach ( $submenus as $slug => $title ) {
@@ -176,6 +191,18 @@ class Nexus_Admin {
                                 $slug,
                                 array( __CLASS__, 'render_current_page' )
                         );
+                }
+
+                foreach ( $bc_submenus as $slug => $title ) {
+                        add_submenu_page(
+                                'nexus-news',
+                                $title, // <title> pagina.
+                                $title, // Titolo (la voce NON appare nel menu: remove sotto).
+                                'manage_options',
+                                $slug,
+                                array( __CLASS__, 'render_current_page' )
+                        );
+                        remove_submenu_page( 'nexus-news', $slug );
                 }
 
                 // v1.1.7: la voce "Dashboard" è la voce auto-generata da
@@ -191,10 +218,8 @@ class Nexus_Admin {
                         $GLOBALS['submenu']['nexus-news'][0][0] = __( 'Dashboard', 'nexus-news-ai' );
                 }
 
-                // BC v1.1.6: la voce "Impostazioni" non appare più nel menu (al suo
-                // posto le 4 voci Impostazioni); lo slug resta raggiungibile via
-                // URL page=nexus-settings e mappa sulla pagina contenuti.
-                remove_submenu_page( 'nexus-news', 'nexus-settings' );
+                // Nessuna rimozione per nexus-settings: dalla v1.1.11 (R2) è la voce
+                // "Impostazioni" VISIBILE del menu (logica BC v1.1.6 invertita).
         }
 
         /**
@@ -227,8 +252,9 @@ class Nexus_Admin {
          *   toplevel_page_nexus-news (unico hook della dashboard: il top-level
          *     non ha sottopagine con slug identico, vedi register_menu)
          *   nexus-news_page_nexus-agents|nexus-queue|nexus-activity|nexus-wire
-         *   nexus-news_page_nexus-settings-* (contenuti|ai|pubblicazione|sistema)
-         *   nexus-news_page_nexus-settings (BC v1.1.6, slug storico)
+         *   nexus-news_page_nexus-settings (v1.1.11 R2: pagina Impostazioni a tab)
+         *   nexus-news_page_nexus-settings-* (BC v1.1.11: slug storici
+         *     contenuti|ai|pubblicazione|sistema, registrati ma fuori menu)
          *
          * @param string $hook Suffix della pagina admin corrente.
          * @return void
@@ -242,6 +268,15 @@ class Nexus_Admin {
                         'nexus-admin-css',
                         NEXUS_PLUGIN_URL . 'admin/css/nexus-admin.css',
                         array(),
+                        NEXUS_VERSION
+                );
+
+                // v1.1.11 (R2): tab della pagina Impostazioni unica. Dipendente da
+                // nexus-admin-css per garantire l'ordine (usa solo i suoi token).
+                wp_enqueue_style(
+                        'nexus-admin-tabs-css',
+                        NEXUS_PLUGIN_URL . 'assets/css/admin-tabs.css',
+                        array( 'nexus-admin-css' ),
                         NEXUS_VERSION
                 );
 
