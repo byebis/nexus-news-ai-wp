@@ -2130,6 +2130,7 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Redazione "(.+)" eliminata\. Gli articoli hanno perso solo questo termine e mantengono le altre redazioni assegnate\.$',
             'tpl' => 'Desk "$1" deleted. The articles only lost this term and keep their other assigned desks.',
+        ),
 
         /* v1.1.11 (R4-2) — class-nexus-pipeline.php (log attività/fasi) */
         array(
