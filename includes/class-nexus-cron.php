@@ -8,10 +8,13 @@
  * Nexus_Cron::handle_tick()        — handler dell'evento: con la coda attiva (v1.0.4) accoda
  *                                    'pipeline_cron_tick' con unique=true (v1.1.9: job unici per
  *                                    hook, zero accumulo se il tick precedente è ancora in coda),
- *                                    altrimenti lancia Nexus_Pipeline::cron_tick()
+ *                                    altrimenti lancia Nexus_Pipeline::cron_tick() con mutex
+ *                                    transient non bloccante (v1.1.13 O1: due tick WP-Cron
+ *                                    sovrapposti non girano mai in parallelo)
  * Nexus_Cron::on_settings_updated()— hook update_option_nexus_settings: reschedule se cambiano auto_collect/collect_interval
  * Nexus_Cron::deactivate()         — static, chiamato da register_deactivation_hook nel bootstrap
- *                                    (v1.0.4: deattiva anche la coda Nexus_Queue)
+ *                                    (v1.0.4: deattiva anche la coda Nexus_Queue; v1.1.13 O1:
+ *                                    rimuove il mutex del tick)
  *
  * @package Nexus_News_AI
  */
@@ -39,6 +42,21 @@ class Nexus_Cron {
          * Ritardo iniziale prima del primo tick dopo la schedulazione (300 secondi).
          */
         const FIRST_RUN_DELAY = 300;
+
+        /**
+         * Chiave del transient-mutex del tick (v1.1.13 O1), percorso SENZA coda:
+         * presente = un tick è già in esecuzione → il tick sovrapposto salta
+         * (log debug, non bloccante). Con la coda attiva non serve: il claim del
+         * job è già atomico.
+         */
+        const TICK_LOCK = 'nexus_tick_lock';
+
+        /**
+         * TTL del mutex tick in secondi (900 = 15 min): rete di sicurezza se il
+         * processo muore prima del finally; il rilascio NORMALE avviene a fine run
+         * (try/finally), anche su eccezione.
+         */
+        const TICK_LOCK_TTL = 900;
 
         /**
          * Bootstrap modulo.
@@ -114,6 +132,10 @@ class Nexus_Cron {
          * Nexus_Pipeline è disponibile; per sicurezza si protegge comunque con
          * class_exists nel caso l'evento scatti fuori dal normale bootstrap.
          *
+         * v1.1.13 (O1): sul percorso senza coda il tick è protetto da un mutex
+         * transient (TICK_LOCK, non bloccante): un tick sovrapposto salta invece
+         * di duplicare il lavoro AI. Rilascio nel finally anche su eccezione.
+         *
          * @return void
          */
         public static function handle_tick() {
@@ -149,11 +171,27 @@ class Nexus_Cron {
                 }
 
                 try {
+                        // v1.1.13 (O1) — mutex tick non bloccante: con enable_queue=0 due
+                        // tick WP-Cron sovrapposti giravano cron_tick in parallelo
+                        // (doppio costo AI, doppie pubblicazioni). Lock presente → skip
+                        // silenzioso con log debug; il rilascio è garantito nel finally a
+                        // fine run anche su eccezione. Il percorso CON coda non è toccato
+                        // (ha già il claim atomico del job unique).
+                        if ( get_transient( self::TICK_LOCK ) ) {
+                                self::debug_log( 'Tick già in esecuzione (mutex attivo): tick saltato.' );
+                                return;
+                        }
+                        set_transient( self::TICK_LOCK, time(), self::TICK_LOCK_TTL );
+
                         Nexus_Pipeline::cron_tick();
                 } catch ( Exception $e ) {
                         self::debug_log( 'Errore durante cron tick: ' . $e->getMessage() );
                 } catch ( Throwable $e ) {
                         self::debug_log( 'Errore fatale durante cron tick: ' . $e->getMessage() );
+                } finally {
+                        // Rilascio garantito del mutex (anche su eccezione): il TTL è la
+                        // rete di sicurezza solo per crash duri del processo.
+                        delete_transient( self::TICK_LOCK );
                 }
         }
 
@@ -192,6 +230,10 @@ class Nexus_Cron {
          */
         public static function deactivate() {
                 wp_clear_scheduled_hook( self::HOOK_TICK );
+
+                // v1.1.13 (O1): nessun tick può più girare dopo la disattivazione:
+                // il mutex residuo non deve sopravvivere al plugin.
+                delete_transient( self::TICK_LOCK );
 
                 // v1.0.4 — deattiva anche la coda lavori (rimuove il runner e
                 // rimette in coda i lavori 'running' bloccati).

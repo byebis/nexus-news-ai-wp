@@ -26,12 +26,17 @@
  *   <news:language> (prefisso di get_bloginfo('language'), es. it-IT → it),
  *   <news:publication_date> (ISO 8601 da post_date_gmt via gmdate('c')),
  *   <news:title> (esc_html). Tutti i valori escapati.
- * - Ping (hook 'nexus_pipeline_after_publish'): GET a
- *   https://www.google.com/ping?sitemap={url sitemap} con timeout 3s,
- *   mai blocca la pubblicazione, log breve in activity_logs.
+ * - Ping (hook 'nexus_pipeline_after_publish'): v1.1.13 (O1) DISATTIVATO di
+ *   default — l'endpoint https://www.google.com/ping?sitemap={url} è stato
+ *   deprecato da Google (rispondeva 4xx/5xx → riga "error" in activity_logs a
+ *   ogni pubblicazione). La sitemap resta raggiungibile su
+ *   /nexus-news-sitemap.xml e dichiarata in robots.txt: la scoperta avviene via
+ *   crawl / Search Console. Riattivazione manuale (dev):
+ *   add_filter( 'nexus_news_sitemap_ping', '__return_true' ) — il codice di ping
+ *   originale resta sotto filtro, sempre try/catch, mai blocca la pubblicazione.
  *   NOTA: Nexus_Ping non espone metodi pubblici riutilizzabili per ping
  *   generici (ping_indexnow/ping_websub sono privati e specifici), quindi
- *   il ping Google e' implementato qui.
+ *   il ping Google (quando riattivato) è implementato qui.
  * - robots_txt: se abilitato aggiunge la riga "Sitemap: {url}".
  *
  * @package Nexus_News_AI
@@ -59,6 +64,10 @@ final class Nexus_News_Sitemap {
 
         /**
          * Endpoint di ping sitemap di Google (formato "?sitemap={url}").
+         *
+         * v1.1.13 (O1): endpoint DEPRECATO da Google — il ping che lo usa è
+         * disattivato di default (vedi maybe_ping_google e filtro
+         * 'nexus_news_sitemap_ping'); la costante resta per il percorso dev.
          */
         const PING_ENDPOINT = 'https://www.google.com/ping?sitemap=';
 
@@ -159,8 +168,16 @@ final class Nexus_News_Sitemap {
          * Hook 'nexus_pipeline_after_publish': ping sitemap a Google dopo la
          * pubblicazione di un articolo.
          *
-         * Comportamento: GET con timeout 3s, qualunque errore viene solo
-         * loggato (mai eccezioni propagate, mai blocco della pipeline).
+         * v1.1.13 (O1): DISATTIVATO di default. L'endpoint
+         * https://www.google.com/ping?sitemap= è deprecato da Google: a ogni
+         * pubblicazione produceva una riga "error" in activity_logs (risposta 4xx/5xx)
+         * senza alcun valore reale (la scoperta avviene via robots.txt / Search
+         * Console). Nessun log quando il ping è spento: nessun rumore, nessuna riga
+         * d'errore. Riattivazione manuale (dev):
+         * add_filter( 'nexus_news_sitemap_ping', '__return_true' ).
+         *
+         * Comportamento se riattivato: GET con timeout 3s, qualunque errore viene
+         * solo loggato (mai eccezioni propagate, mai blocco della pipeline).
          *
          * @param int    $article_id ID dell'articolo nella tabella Nexus.
          * @param object $article    Riga articolo Nexus (non usata qui).
@@ -172,6 +189,12 @@ final class Nexus_News_Sitemap {
                 // devono mai raggiungere la pipeline editoriale.
                 try {
                         if ( ! self::is_enabled() ) {
+                                return;
+                        }
+
+                        // v1.1.13 (O1): filtro dev — default false (endpoint deprecato).
+                        // Solo chi lo riattiva esplicitamente esegue la richiesta.
+                        if ( ! apply_filters( 'nexus_news_sitemap_ping', false, $article_id ) ) {
                                 return;
                         }
 

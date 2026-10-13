@@ -94,9 +94,24 @@
  *     diversi da ['ok'] loggano 'ai_output_quality' (info, una volta per
  *     articolo).
  *
+ * v1.1.13 — Ottimizzazione (audit, pacchetto O1 sicurezza/pipeline):
+ *   - SCORE AI: parse_score() NON inventa più un default 70 (né collect
+ *     evergreen né evaluate): risposta AI illeggibile = punteggio 0 +
+ *     'score_parsed' false → l'articolo NON si auto-approva MAI (qualunque
+ *     soglia): va in attesa di revisione umana con log onesto del motivo.
+ *   - RESUME STALLED: le bozze non riprendibili (senza fonte, factcheck_score
+ *     > 0) sono escluse IN SQL (niente più starvation dei draft recenti oltre
+ *     la finestra dei 100 più vecchi) e ogni articolo ripreso è protetto da
+ *     un lock transient per-articolo (nexus_resume_lock_{id}, rilascio in
+ *     finally, errore confinato al singolo articolo).
+ *   - EVENTI STRUTTURATI: log_phase() accetta una chiave macchina evento
+ *     (5° arg) che viaggia nel 5° parametro di 'nexus_pipeline_phase' come
+ *     array {action, status, event}: notify instrada sulla chiave (fallback
+ *     testuale mantenuto per BC).
+ *
  * CONTRATTO PUBBLICO:
  * Nexus_Pipeline::collect( $agent_id )                       → array{ok, collected, errors, article_ids, skipped?}
- * Nexus_Pipeline::evaluate( $article_id )                    → array{ok, score, error?}
+ * Nexus_Pipeline::evaluate( $article_id )                    → array{ok, score, score_parsed, error?}
  * Nexus_Pipeline::rewrite( $article_id )                     → array{ok, error?}
  * Nexus_Pipeline::approve( $article_id, $note = '' )         → array{ok, error?}
  * Nexus_Pipeline::reject( $article_id, $note = '' )          → array{ok, error?}
@@ -122,6 +137,20 @@ class Nexus_Pipeline {
          * Shape: array agent_id => {step, label, article_id, article_title, since}.
          */
         const RUNTIME_OPTION = 'nexus_agent_runtime';
+
+        /**
+         * Prefisso del transient di lock per-articolo del resume (v1.1.13 O1):
+         * durante il resume di una bozza il lock impedisce a un tick sovrapposto
+         * (o a un resume concorrente) di lavorare lo stesso articolo.
+         */
+        const RESUME_LOCK_PREFIX = 'nexus_resume_lock_';
+
+        /**
+         * Durata del lock per-articolo del resume in secondi (900 = 15 min):
+         * copre evaluate + rewrite + fact-check (budget per fase 90s default);
+         * il rilascio avviene comunque nel finally a fine lavorazione.
+         */
+        const RESUME_LOCK_TTL = 900;
 
         /**
          * FASE 1 — Raccolta notizie per un agente.
@@ -244,11 +273,17 @@ class Nexus_Pipeline {
                 /* ---- FASE 1b: filtra i candidati (max 2, score >= 50) ---- */
                 $kept = array();
                 foreach ( $candidates as $candidate ) {
-                        $score = 70;
+                        // v1.1.13 (O1): default 0 (era 70) — un punteggio non fornito dalla
+                        // risposta AI non deve poter auto-approvare l'articolo. L'evaluate
+                        // reale (FASE 2) sovrascrive quality_score; finché non c'è una
+                        // valutazione parsata l'auto-approvazione resta bloccata.
+                        $score = 0;
                         if ( isset( $candidate['score'] ) && is_numeric( $candidate['score'] ) ) {
                                 $score = max( 0, min( 100, (int) round( (float) $candidate['score'] ) ) );
                         }
-                        // Evergreen non ha punteggio dalla selezione: si tiene il default 70.
+                        // Evergreen non ha punteggio dalla selezione: nasce a 0, lo score
+                        // reale arriva dalla valutazione. I candidati RSS senza punteggio
+                        // (o con score < 50) vengono scartati qui.
                         if ( ! $evergreen && $score < 50 ) {
                                 continue;
                         }
@@ -382,14 +417,19 @@ class Nexus_Pipeline {
         /**
          * FASE 2 — Valutazione editoriale AI di un articolo (punteggio 0-100).
          *
+         * v1.1.13 (O1): 'score_parsed' = false quando la risposta AI non contiene
+         * un punteggio interpretabile (score salvato 0): in quel caso l'articolo
+         * NON si auto-approva mai (serve revisione umana, log onesto del motivo).
+         *
          * @param int $article_id ID articolo.
-         * @return array{ok:bool, score:int, error:string}
+         * @return array{ok:bool, score:int, score_parsed:bool, error:string}
          */
         public static function evaluate( $article_id ) {
                 $out = array(
-                        'ok'    => false,
-                        'score' => 0,
-                        'error' => '',
+                        'ok'           => false,
+                        'score'        => 0,
+                        'score_parsed' => false,
+                        'error'        => '',
                 );
 
                 $article = Nexus_DB::get_article( $article_id );
@@ -452,18 +492,33 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                $score = self::parse_score( (string) $res['content'] );
+                $parsed_score = self::parse_score( (string) $res['content'] );
+                $score        = (int) $parsed_score['score'];
                 Nexus_DB::update_article( $article_id, array( 'quality_score' => $score ) );
                 self::touch_agent( (int) $article->agent_id );
-                self::log_phase(
-                        (int) $article->agent_id,
-                        'evaluating',
-                        sprintf( 'Articolo #%d "%s" valutato: punteggio %d/100.', $article_id, self::clip( $article->title, 60 ), $score ),
-                        'success'
-                );
 
-                $out['ok']    = true;
-                $out['score'] = $score;
+                // v1.1.13 (O1): log onesto — risposta AI illeggibile = NESSUNA valutazione
+                // reale: punteggio 0 e auto-approvazione bloccata (revisione umana).
+                if ( empty( $parsed_score['parsed'] ) ) {
+                        self::log_phase(
+                                (int) $article->agent_id,
+                                'evaluating',
+                                sprintf( 'Valutazione articolo #%d: risposta AI non interpretabile, punteggio non ricavabile (0/100). Auto-approvazione bloccata: serve revisione umana.', $article_id ),
+                                'warning',
+                                'pending'
+                        );
+                } else {
+                        self::log_phase(
+                                (int) $article->agent_id,
+                                'evaluating',
+                                sprintf( 'Articolo #%d "%s" valutato: punteggio %d/100.', $article_id, self::clip( $article->title, 60 ), $score ),
+                                'success'
+                        );
+                }
+
+                $out['ok']           = true;
+                $out['score']        = $score;
+                $out['score_parsed'] = ! empty( $parsed_score['parsed'] );
                 return $out;
         }
 
@@ -699,7 +754,7 @@ class Nexus_Pipeline {
                         if ( self::awaiting_chief_review( $article ) ) {
                                 $out['error']   = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione non eseguita, resta in coda di revisione.', $article_id );
                                 $out['message'] = 'In attesa del capo redattore.';
-                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata, resta in coda di revisione.', $article_id ), 'info' );
+                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata, resta in coda di revisione.', $article_id ), 'info', 'pending' );
                                 return $out;
                         }
 
@@ -882,13 +937,23 @@ class Nexus_Pipeline {
                         $article_started_at = microtime( true );
                         $phase_budget       = self::phase_budget( $article_id );
 
+                        // v1.1.13 (O1): true SOLO se la valutazione ha prodotto un punteggio
+                        // parsato dalla risposta AI. Valutazione assente (toggle off o budget
+                        // esaurito) o risposta illeggibile → auto-approvazione bloccata sotto.
+                        $score_parsed = false;
+
                         // FASE 2: valutazione.
                         if ( ! empty( $settings['auto_evaluate'] )
                                 && self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'valutazione' ) ) {
                                 $evaluation = self::evaluate( $article_id );
                                 if ( ! empty( $evaluation['ok'] ) ) {
                                         $summary['evaluated']++;
-                                        $summary['messages'][] = sprintf( 'Articolo #%d valutato: punteggio %d/100.', $article_id, (int) $evaluation['score'] );
+                                        $score_parsed = ! empty( $evaluation['score_parsed'] );
+                                        if ( $score_parsed ) {
+                                                $summary['messages'][] = sprintf( 'Articolo #%d valutato: punteggio %d/100.', $article_id, (int) $evaluation['score'] );
+                                        } else {
+                                                $summary['messages'][] = sprintf( 'Articolo #%d: punteggio AI non interpretabile (0/100): auto-approvazione bloccata, serve revisione umana.', $article_id );
+                                        }
                                         $article = Nexus_DB::get_article( $article_id );
                                 } else {
                                         $summary['messages'][] = sprintf( 'Valutazione articolo #%d fallita: %s', $article_id, $evaluation['error'] );
@@ -935,9 +1000,13 @@ class Nexus_Pipeline {
                         // approvato con approve() e POI pubblicato). Con il capo attivo e revisione
                         // ancora da fare l'auto-approvazione salta: l'articolo resta in coda e lo
                         // prende il blocco chief_dispatch in fondo al ciclo.
+                        //
+                        // v1.1.13 (O1): senza punteggio PARSTATO ($score_parsed false: valutazione
+                        // mai eseguita o risposta AI illeggibile) l'articolo NON si auto-approva
+                        // MAI, qualunque sia la soglia: va in attesa di revisione umana.
                         $chief_gate = $is_full_auto && self::awaiting_chief_review( $article );
 
-                        if ( $rewritten_now && $is_full_auto && $score >= $threshold && ! $chief_gate ) {
+                        if ( $rewritten_now && $is_full_auto && $score_parsed && $score >= $threshold && ! $chief_gate ) {
                                 $approval = self::approve(
                                         $article_id,
                                         sprintf( 'Approvazione automatica: punteggio %.0f >= %d (modalità fully autonomous).', $score, $threshold )
@@ -957,7 +1026,12 @@ class Nexus_Pipeline {
                                 }
                         } elseif ( $rewritten_now && $chief_gate ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione e pubblicazione automatiche saltate.', $article_id );
-                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata (modalità fully autonomous).', $article_id ), 'info' );
+                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata (modalità fully autonomous).', $article_id ), 'info', 'pending' );
+                        } elseif ( $rewritten_now && $is_full_auto && ! $score_parsed ) {
+                                // v1.1.13 (O1): log onesto del motivo — nessuna valutazione reale
+                                // disponibile, l'articolo resta in coda per un revisore umano.
+                                $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione umana: punteggio AI assente o non interpretabile, auto-approvazione bloccata.', $article_id );
+                                self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d: punteggio AI assente o non interpretabile: auto-approvazione bloccata, richiesta revisione umana.', $article_id ), 'info', 'pending' );
                         } elseif ( $rewritten_now && $is_full_auto ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione: punteggio %.0f sotto la soglia di auto-approvazione (%d).', $article_id, $score, $threshold );
                         } elseif ( $rewritten_now && ! empty( $settings['auto_publish'] ) && 'approved' === $article->status ) {
@@ -1082,6 +1156,19 @@ class Nexus_Pipeline {
          * - esclusi gli articoli già in lavorazione (stato runtime degli agenti
          *   e lock del capo redattore).
          *
+         * v1.1.13 (O1) — anti-starvation: le esclusioni "non riprendibile" (senza
+         * fonte, factcheck_score > 0) stanno NELLA WHERE SQL e non più in PHP dopo
+         * la query: prima i 100 draft più vecchi, se tutti non-riprendibili,
+         * nascondevano per sempre i draft più recenti. La query diretta (già
+         * prepare'd, colonna della tabella nexus_articles via Nexus_DB::tables())
+         * sostituisce Nexus_DB::articles() che non espone questi filtri.
+         *
+         * v1.1.13 (O1) — lock per-articolo: transient 'nexus_resume_lock_{id}' con
+         * TTL RESUME_LOCK_TTL mentre l'articolo è in lavorazione; due tick
+         * sovrapposti non processano mai lo stesso articolo (lock presente → skip,
+         * si riprende al tick successivo). Rilascio garantito nel finally anche su
+         * eccezione (che ora resta confinata al singolo articolo).
+         *
          * Chiamata UNA volta per tick (da cron_tick) e al massimo $limit articoli:
          * il resto si riprende ai tick successivi.
          *
@@ -1097,7 +1184,7 @@ class Nexus_Pipeline {
                         'messages' => array(),
                 );
 
-                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'articles' ) ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
                         return $out;
                 }
 
@@ -1105,15 +1192,29 @@ class Nexus_Pipeline {
                 $max_age_hours = max( 1, absint( $max_age_hours ) );
                 $threshold     = current_time( 'timestamp' ) - $max_age_hours * HOUR_IN_SECONDS;
 
-                // Solo API db esistenti (NESSUNA query diretta): i draft più vecchi per
-                // primi, i filtri di stallo/lavorazione applicati qui in PHP.
-                $rows = Nexus_DB::articles( array(
-                        'status'   => 'draft',
-                        'orderby'  => 'created_at',
-                        'order'    => 'asc',
-                        'per_page' => 100,
-                        'page'     => 1,
-                ) );
+                /* ---- v1.1.13 (O1): solo draft RIPRENDIBILI, esclusi in SQL ----
+                 * - source_name vuoto = bozza non prodotta dalla pipeline;
+                 * - factcheck_score > 0 = tornata in bozza dal fact-check (revisione
+                 *   umana richiesta). La colonna è DECIMAL NOT NULL DEFAULT 0: con lo
+                 *   schema attuale una fact-check 0.00 è indistinguibile dal "mai
+                 *   eseguito" (edge accettato, come da audit).
+                 * Finestra di scansione invariata (100 draft più vecchi), ma ora la
+                 * finestra contiene SOLO candidati riprendibili: nessuna starvation.
+                 */
+                global $wpdb;
+                $table = Nexus_DB::tables()['articles'];
+                $rows  = $wpdb->get_results(
+                        $wpdb->prepare(
+                                "SELECT id, agent_id, title, source_name, factcheck_score, created_at, updated_at
+                                        FROM {$table}
+                                        WHERE status = 'draft'
+                                          AND source_name <> ''
+                                          AND (factcheck_score IS NULL OR factcheck_score <= 0)
+                                        ORDER BY created_at ASC
+                                        LIMIT %d",
+                                100
+                        )
+                );
                 if ( ! is_array( $rows ) ) {
                         return $out;
                 }
@@ -1147,50 +1248,77 @@ class Nexus_Pipeline {
                                 continue;
                         }
 
+                        // v1.1.13 (O1): lock per-articolo non bloccante — due tick sovrapposti
+                        // (o resume concorrenti via CLI/REST) non devono mai lavorare lo
+                        // stesso articolo: lock presente → skip, ripresa al prossimo tick.
+                        $resume_lock = self::RESUME_LOCK_PREFIX . $article_id;
+                        if ( get_transient( $resume_lock ) ) {
+                                $out['skipped']++;
+                                continue;
+                        }
+                        set_transient( $resume_lock, 1, self::RESUME_LOCK_TTL );
+
                         // Età dello stallo: updated_at (fallback created_at) più vecchio della soglia.
                         $stamp_raw = isset( $row->updated_at ) && '' !== (string) $row->updated_at ? (string) $row->updated_at : (string) $row->created_at;
                         $stamp     = strtotime( $stamp_raw );
                         if ( ! $stamp || $stamp > $threshold ) {
+                                delete_transient( $resume_lock );
                                 continue; // Ancora fresco: non è uno stallo.
                         }
 
+                        // Difensive in PHP (le stesse regole della WHERE: mai fidarsi ciecamente).
                         if ( '' === trim( (string) ( isset( $row->source_name ) ? $row->source_name : '' ) ) ) {
+                                delete_transient( $resume_lock );
                                 continue; // Senza fonte non è una bozza prodotta dalla pipeline.
                         }
 
-                        if ( isset( $row->factcheck_score ) && null !== $row->factcheck_score ) {
+                        if ( isset( $row->factcheck_score ) && (float) $row->factcheck_score > 0 ) {
+                                delete_transient( $resume_lock );
                                 $out['skipped']++;
                                 continue; // Tornato in bozza dal fact-check: la revisione è richiesta all'umano.
                         }
 
                         if ( ! $auto_evaluate && ! $auto_rewrite ) {
+                                delete_transient( $resume_lock );
                                 $out['skipped']++;
                                 continue; // Fasi successive disattivate: bozza parcheggiata di proposito.
                         }
 
-                        // Log onesto del resume, PRIMA di rilanciare le fasi.
-                        self::log_phase( (int) ( isset( $row->agent_id ) ? $row->agent_id : 0 ), 'rewriting', sprintf( 'Resume dopo stallo: articolo #%d in bozza da oltre %dh: rilancio valutazione/riscrittura.', $article_id, $max_age_hours ), 'info' );
+                        try {
+                                // Log onesto del resume, PRIMA di rilanciare le fasi.
+                                self::log_phase( (int) ( isset( $row->agent_id ) ? $row->agent_id : 0 ), 'rewriting', sprintf( 'Resume dopo stallo: articolo #%d in bozza da oltre %dh: rilancio valutazione/riscrittura.', $article_id, $max_age_hours ), 'info' );
 
-                        if ( $auto_evaluate ) {
-                                $evaluation = self::evaluate( $article_id );
-                                if ( empty( $evaluation['ok'] ) ) {
-                                        $out['messages'][] = sprintf( 'Articolo #%d: valutazione fallita nel resume: %s', $article_id, (string) $evaluation['error'] );
+                                if ( $auto_evaluate ) {
+                                        $evaluation = self::evaluate( $article_id );
+                                        if ( empty( $evaluation['ok'] ) ) {
+                                                $out['messages'][] = sprintf( 'Articolo #%d: valutazione fallita nel resume: %s', $article_id, (string) $evaluation['error'] );
+                                        }
                                 }
-                        }
 
-                        if ( $auto_rewrite ) {
-                                $rewriting = self::rewrite( $article_id );
-                                if ( ! empty( $rewriting['ok'] ) ) {
-                                        $out['resumed']++;
-                                        $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto e messo in coda di approvazione.', $article_id );
+                                if ( $auto_rewrite ) {
+                                        $rewriting = self::rewrite( $article_id );
+                                        if ( ! empty( $rewriting['ok'] ) ) {
+                                                $out['resumed']++;
+                                                $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto e messo in coda di approvazione.', $article_id );
+                                        } else {
+                                                // Resta in bozza: il prossimo tick tenterà di nuovo il resume.
+                                                $out['messages'][] = sprintf( 'Articolo #%d: riscrittura fallita nel resume: %s', $article_id, (string) $rewriting['error'] );
+                                        }
                                 } else {
-                                        // Resta in bozza: il prossimo tick tenterà di nuovo il resume.
-                                        $out['messages'][] = sprintf( 'Articolo #%d: riscrittura fallita nel resume: %s', $article_id, (string) $rewriting['error'] );
+                                        // Solo valutazione attiva: la bozza è stata comunque fatta ripartire.
+                                        $out['resumed']++;
+                                        $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: rivalutato.', $article_id );
                                 }
-                        } else {
-                                // Solo valutazione attiva: la bozza è stata comunque fatta ripartire.
-                                $out['resumed']++;
-                                $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: rivalutato.', $article_id );
+                        } catch ( Exception $e ) {
+                                // v1.1.13 (O1): l'errore resta confinato al singolo articolo
+                                // (prima abortiva l'intero batch) e il lock viene sempre rilasciato.
+                                $out['messages'][] = sprintf( 'Articolo #%d: errore nel resume: %s', $article_id, self::clip( $e->getMessage(), 200 ) );
+                        } catch ( Throwable $e ) {
+                                $out['messages'][] = sprintf( 'Articolo #%d: errore fatale nel resume: %s', $article_id, self::clip( $e->getMessage(), 200 ) );
+                        } finally {
+                                // Rilascio garantito del lock per-articolo (anche su eccezione):
+                                // il TTL RESUME_LOCK_TTL è la rete di sicurezza per crash duri.
+                                delete_transient( $resume_lock );
                         }
                 }
 
@@ -2024,8 +2152,13 @@ class Nexus_Pipeline {
         /**
          * Estrae il punteggio 0-100 dalla risposta: extract_json + fallback regex /\d+/.
          *
+         * v1.1.13 (O1): NESSUN default 70 (era il default dell'originale). Se la
+         * risposta AI è garbage/illeggibile il punteggio vale 0 e 'parsed' vale
+         * false: con un punteggio non parsato l'articolo NON si auto-approva MAI
+         * (v. run_full_agent e resume_stalled) — serve revisione umana.
+         *
          * @param string $text Risposta del modello.
-         * @return int Punteggio normalizzato 0-100 (default 70 se non ricavabile).
+         * @return array{score:int, parsed:bool} Punteggio normalizzato 0-100 (0 se non ricavabile) + flag di parsing riuscito.
          */
         private static function parse_score( $text ) {
                 $text  = (string) $text;
@@ -2059,10 +2192,19 @@ class Nexus_Pipeline {
                 }
 
                 if ( null === $score ) {
-                        $score = 70; // default dell'originale quando il modello non fornisce un punteggio.
+                        // v1.1.13 (O1): risposta illeggibile → 0 + parsed=false.
+                        // Mai un default "ottimista": un punteggio inventato auto-approva
+                        // articoli mai valutati davvero (audit v1.1.13, parse_score).
+                        return array(
+                                'score'  => 0,
+                                'parsed' => false,
+                        );
                 }
 
-                return max( 0, min( 100, $score ) );
+                return array(
+                        'score'  => max( 0, min( 100, $score ) ),
+                        'parsed' => true,
+                );
         }
 
         /**
@@ -2254,16 +2396,29 @@ class Nexus_Pipeline {
         /**
          * Log attività generico di fase.
          *
-         * @param int    $agent_id ID agente (0 = sistema).
-         * @param string $action   Azione (collecting|evaluating|rewriting|publishing|wire).
-         * @param string $detail   Dettaglio.
-         * @param string $status   Stato.
+         * v1.1.13 (O1): quinto argomento opzionale $event_key — chiave macchina
+         * dell'evento (es. 'pending') passata ai listener di 'nexus_pipeline_phase'
+         * come array strutturato {action, status, event}: Nexus_Notify instrada sulla
+         * chiave strutturata e non più sul matching testuale del messaggio (immune a
+         * cambi di testo/i18n). BC: i listener registrati con 4 argomenti continuano
+         * a funzionare; chi non passa l'evento fa uscire notify sul fallback testuale.
+         *
+         * @param int    $agent_id   ID agente (0 = sistema).
+         * @param string $action     Azione (collecting|evaluating|rewriting|publishing|wire).
+         * @param string $detail     Dettaglio.
+         * @param string $status     Stato.
+         * @param string $event_key  Evento strutturato per notify (''|error|pending|published).
          * @return void
          */
-        private static function log_phase( $agent_id, $action, $detail, $status ) {
-                // v1.1.12 (S0): evento pipeline per pacchetti esterni — le notifiche
-                // (S7) ascoltano status 'error'/'info' e instradano su webhook/Telegram.
-                do_action( 'nexus_pipeline_phase', $agent_id, $action, $detail, $status );
+        private static function log_phase( $agent_id, $action, $detail, $status, $event_key = '' ) {
+                // v1.1.13 (O1): evento pipeline per pacchetti esterni — le notifiche
+                // (S7/O1) instradano sull'evento strutturato con fallback sul testuale.
+                $meta = array(
+                        'action' => (string) $action,
+                        'status' => (string) $status,
+                        'event'  => (string) $event_key,
+                );
+                do_action( 'nexus_pipeline_phase', $agent_id, $action, $detail, $status, $meta );
                 Nexus_DB::insert_activity( $agent_id, $action, self::clip( $detail, 500 ), $status );
         }
 
