@@ -313,6 +313,32 @@ class Nexus_Admin {
                         );
                 }
 
+                /*
+                 * v1.1.13 (glue): gli script estratti dalle viste (task O5) —
+                 * analytics (grafico) e tools (export/import/keygen/test AI) —
+                 * enqueuati SOLO sulla pagina corrispondente e SOLO se il file
+                 * esiste, in footer, senza dipendenze (IIFE autonome che
+                 * completano il DOM già presente nelle viste).
+                 */
+                if ( false !== strpos( (string) $hook, 'nexus-analytics' ) && file_exists( NEXUS_PLUGIN_DIR . 'assets/js/nexus-analytics.js' ) ) {
+                        wp_enqueue_script(
+                                'nexus-analytics-js',
+                                NEXUS_PLUGIN_URL . 'assets/js/nexus-analytics.js',
+                                array(),
+                                NEXUS_VERSION,
+                                true
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-tools' ) && file_exists( NEXUS_PLUGIN_DIR . 'assets/js/nexus-tools.js' ) ) {
+                        wp_enqueue_script(
+                                'nexus-tools-js',
+                                NEXUS_PLUGIN_URL . 'assets/js/nexus-tools.js',
+                                array(),
+                                NEXUS_VERSION,
+                                true
+                        );
+                }
+
                 wp_enqueue_script(
                         'nexus-admin',
                         NEXUS_PLUGIN_URL . 'assets/js/admin.js',

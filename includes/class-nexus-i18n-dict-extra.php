@@ -197,6 +197,7 @@ function nexus_i18n_extra_dict() {
             'Crea la tua redazione' => 'Create your newsroom',
             'Creati' => 'Created',
             'Creazione completata.' => 'Creation completed.',
+            'Creazione in corso…' => 'Creation in progress…',
             'Creazione completata con errori.' => 'Creation completed with errors.',
             'Cronologia del lavoro degli agenti: raccolte, valutazioni, riscritture e pubblicazioni.' => 'History of the agents\' work: collections, evaluations, rewrites and publications.',
             'da migrare' => 'to migrate',
@@ -1473,6 +1474,7 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Soglia di somiglianza (distanza Hamming)' => 'Similarity threshold (Hamming distance)',
             'Sitemap Google News' => 'Google News sitemap',
             'Stato connessione Google' => 'Google connection status',
+            'Sì, avvia' => 'Yes, start',
             'URL esatta della property GSC (es. https://esempio.com/): deve coincidere con quella registrata in Search Console.' => 'Exact GSC property URL (e.g. https://example.com/): it must match the one registered in Search Console.',
             'Webhook notifiche' => 'Notification webhook',
             'Webhook Slack-compatibile che riceve gli eventi della pipeline (errori, pending, pubblicazioni).' => 'Slack-compatible webhook that receives pipeline events (errors, pending, publishing).',
@@ -3604,6 +3606,12 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Traduzione saltata: budget AI esaurito \(articolo #',
             'tpl' => 'Translation skipped: AI budget exhausted (article #',
+        ),
+        /* ---- v1.1.13 (O6): avviso dedup con finestra troncata (activity log,
+         * numeri già sostituiti da sprintf al momento dell'insert). ---- */
+        array(
+            're'  => 'Dedup: confronto limitato a (\d+) articoli \(finestra (\d+) gg\) — duplicati recenti oltre il limite non verificati\. Alzalo in Impostazioni → Sistema → Limiti e scala\.',
+            'tpl' => 'Dedup: comparison limited to $1 articles (window $2 days) — recent duplicates beyond the limit are not verified. Raise it in Settings → System → Scale limits.',
         ),
     );
 }

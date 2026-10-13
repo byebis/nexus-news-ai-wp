@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.12
+ * Version:     1.1.13
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.12' );
+define( 'NEXUS_VERSION', '1.1.13' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -89,6 +89,10 @@ function nexus_deactivate() {
         }
         if ( class_exists( 'Nexus_Evergreen' ) && method_exists( 'Nexus_Evergreen', 'deactivate' ) ) {
                 Nexus_Evergreen::deactivate();
+        }
+        // v1.1.13: cron retention (pulizia logs/metrics/transient) del modulo DB.
+        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'deactivate_retention' ) ) {
+                Nexus_DB::deactivate_retention();
         }
         wp_clear_scheduled_hook( 'nexus_weekly_digest' );
 }
