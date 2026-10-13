@@ -242,6 +242,11 @@ class Nexus_DB {
                         // le credenziali enable_telegram/telegram_bot_token esistenti.
                         'notify_webhook_url'      => '', // segreto-like: mascherato in GET /settings
                         'notify_events'           => 'error,pending', // csv: error,pending,published
+                        // v1.1.12 (S6) — PACCHETTO EVERGREEN (S6): refresh pillar dei migliori
+                        // articoli pubblicati da più di evergreen_refresh_days giorni.
+                        'evergreen_enabled'       => 0,
+                        'evergreen_refresh_days'  => 30,
+                        'evergreen_max_posts'     => 5,
                 );
         }
 
