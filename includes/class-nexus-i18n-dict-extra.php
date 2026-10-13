@@ -1136,6 +1136,44 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Tema mancante: specifica un argomento per il Nexus Wire.' => 'Missing topic: specify a subject for the Nexus Wire.',
             'approvazione/pubblicazione' => 'approval/publishing',
             'nessun dettaglio fornito dal modello' => 'no details provided by the model',
+            /* v1.1.11 (R4-3) — class-nexus-chief.php / class-nexus-tools.php:
+             * messaggi di errore, note e log utente (i messaggi con variabili
+             * sono in nexus_i18n_extra_patterns()). */
+            'Troppe revisioni concatenate in questa richiesta: interrotto per prevenire loop.' => 'Too many chained revisions in this request: stopped to prevent a loop.',
+            'Layer dati Nexus_DB non disponibile.' => 'Nexus_DB data layer unavailable.',
+            'Articolo non trovato.' => 'Article not found.',
+            'Capo redattore non attivo nelle impostazioni.' => 'Editor-in-chief not enabled in the settings.',
+            'Nessun capo redattore disponibile per questa categoria/redazione.' => 'No editor-in-chief available for this category/desk.',
+            'Revisione capo redattore gia\' in corso per questo articolo.' => 'Editor-in-chief review already in progress for this article.',
+            'budget AI di revisione esaurito per questo articolo' => 'review AI budget exhausted for this article',
+            'Budget AI di revisione esaurito per questo articolo: revisione sospesa.' => 'Review AI budget exhausted for this article: review suspended.',
+            'Motore AI non disponibile.' => 'AI engine unavailable.',
+            'Risposta del capo redattore non interpretabile (JSON mancante o non valido).' => 'Editor-in-chief response could not be parsed (missing or invalid JSON).',
+            'Contatore giri di revisione non persistito: revisione interrotta per prevenire loop.' => 'Review round counter not persisted: review stopped to prevent a loop.',
+            'article_id mancante o non valido.' => 'Missing or invalid article_id.',
+            'aggiornamento database fallito (colonne chief_ della v1.1.4 mancanti?)' => 'database update failed (missing chief_ columns from v1.1.4?)',
+            'Query di ricerca vuota: specifica il testo da cercare (argomento "query").' => 'Empty search query: specify the text to search (argument "query").',
+            'La ricerca web non è attiva: il provider di ricerca è impostato su "none" nelle impostazioni del plugin.' => 'Web search is not active: the search provider is set to "none" in the plugin settings.',
+            'Chiave ricerca agente non configurata: l\'agente usa un provider di ricerca personale ma non esiste una chiave utilizzabile (configura la chiave personale nel modal dell\'agente o una chiave globale nelle impostazioni del plugin).' => 'Agent search key not configured: the agent uses a personal search provider but no usable key exists (set the personal key in the agent modal or a global key in the plugin settings).',
+            'Chiave API di ricerca web mancante: compila il campo della chiave di ricerca nelle impostazioni del plugin.' => 'Missing web search API key: fill in the search key field in the plugin settings.',
+            'Brave Search: URL di richiesta non valido.' => 'Brave Search: invalid request URL.',
+            'Brave Search: la risposta non è un JSON valido.' => 'Brave Search: the response is not valid JSON.',
+            'URL mancante: specifica la pagina da leggere (argomento "url").' => 'Missing URL: specify the page to read (argument "url").',
+            'Lettura pagina: la pagina ha risposto con un corpo vuoto.' => 'Page read: the page returned an empty body.',
+            'Lettura pagina: nessun testo leggibile estratto dalla pagina.' => 'Page read: no readable text extracted from the page.',
+            'Chiamata MCP incompleta: servono il nome del server e il nome del tool.' => 'Incomplete MCP call: both the server name and the tool name are required.',
+            'Le funzioni HTTP di WordPress non sono disponibili.' => 'WordPress HTTP functions are not available.',
+            'Impossibile preparare la richiesta MCP (encoding JSON fallito).' => 'Unable to prepare the MCP request (JSON encoding failed).',
+            'La risposta del server MCP non contiene un JSON valido (neppure come righe "data:" di un event-stream).' => 'The MCP server response does not contain valid JSON (not even as "data:" lines of an event-stream).',
+            'Nessuno (solo lettura pagine e feed)' => 'None (page and feed reading only)',
+            'Il motore AI Nexus_AI_Engine non è disponibile: impossibile eseguire il ciclo strumenti.' => 'The Nexus_AI_Engine AI engine is unavailable: cannot run the tool loop.',
+            'Nessun messaggio valido da inviare al modello nel ciclo strumenti.' => 'No valid message to send to the model in the tool loop.',
+            'La chiamata al modello AI non ha restituito una risposta valida.' => 'The AI model call did not return a valid response.',
+            'Il motore AI Nexus_AI_Engine non è disponibile: il plugin Nexus News AI non è caricato correttamente.' => 'The Nexus_AI_Engine AI engine is unavailable: the Nexus News AI plugin is not loaded correctly.',
+            'La lettura di pagine web non è attiva nelle impostazioni del plugin.' => 'Web page reading is not active in the plugin settings.',
+            'Nessun elemento letto dal feed: URL non valido, feed irraggiungibile o vuoto.' => 'No items read from the feed: invalid URL, unreachable or empty feed.',
+            'Impossibile preparare il corpo della richiesta (encoding JSON fallito).' => 'Unable to prepare the request body (JSON encoding failed).',
+            'La risposta del servizio non è un JSON valido.' => 'The service response is not valid JSON.',
 
         );
 }
@@ -2304,6 +2342,149 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'nessun dettaglio fornito dal modello',
             'tpl' => 'no details provided by the model',
+        ),
+        /* v1.1.11 (R4-3) — class-nexus-chief.php / class-nexus-tools.php.
+         * Ordine: dal più specifico al più generico; le alternative (?:a|b)
+         * coprono anche lo stato già pre-tradotto dai frammenti generici. */
+        array(
+            're'  => 'Articolo in stato "([^"]+)": revisione capo redattore non necessaria\.',
+            'tpl' => 'Article in status "$1": editor-in-chief review not needed.',
+        ),
+        array(
+            're'  => 'Articolo in stato "([^"]+)": non e\' in coda di revisione\.',
+            'tpl' => 'Article in status "$1": not in the review queue.',
+        ),
+        array(
+            're'  => 'Articolo gia\' rivisto dal capo redattore \(stato: ([^)]+)\)\.',
+            'tpl' => 'Article already reviewed by the editor-in-chief (status: $1).',
+        ),
+        array(
+            're'  => 'Contatore giri di revisione non persistito: (?:revisione interrotta per prevenire loop\.|review stopped to prevent a loop\.) \(articolo #(\d+)\)',
+            'tpl' => 'Review round counter not persisted: review stopped to prevent a loop (article #$1).',
+        ),
+        array(
+            're'  => 'budget AI di revisione esaurito per l\'articolo #(\d+) \((\d+) revisioni in 24h\): sospeso, serve intervento umano\.',
+            'tpl' => 'review AI budget exhausted for article #$1 ($2 reviews in 24h): suspended, human intervention required.',
+        ),
+        array(
+            're'  => 'revisione articolo #(\d+) con (?:risposta non interpretabile|response could not be parsed)\.',
+            'tpl' => 'review of article #$1: response could not be parsed.',
+        ),
+        array(
+            're'  => 'modulo riscrittura non disponibile, (?:articolo|article) #(\d+) resta in revisione con la nota del capo\.',
+            'tpl' => 'rewrite module unavailable, article #$1 stays in review with the chief note.',
+        ),
+        array(
+            're'  => 'Nota del capo redattore: (.+)$',
+            'tpl' => 'Editor-in-chief note: $1',
+        ),
+        array(
+            're'  => 'Query articoli (?:in attesa|pending) non riuscita \(schema database non aggiornato\?\)\.',
+            'tpl' => 'Pending articles query failed (database schema not updated?).',
+        ),
+        array(
+            're'  => 'query articoli (?:in attesa|pending) fallita \(verifica l\'aggiornamento dello schema\)\.',
+            'tpl' => 'query for pending articles failed (check the schema update).',
+        ),
+        array(
+            're'  => 'Provider di ricerca web non riconosciuto \("([^"]+)"\): valori ammessi tavily, serper, brave, none\.',
+            'tpl' => 'Unrecognized web search provider ("$1"): allowed values are tavily, serper, brave, none.',
+        ),
+        array(
+            're'  => 'URL del server MCP "([^"]+)" non valido o non ammesso \(solo http/https\): (.+)$',
+            'tpl' => 'MCP server URL "$1" invalid or disallowed (http/https only): $2',
+        ),
+        array(
+            're'  => 'URL non valido o non ammesso \(solo http/https\): (.+)$',
+            'tpl' => 'Invalid or disallowed URL (http/https only): $1',
+        ),
+        array(
+            're'  => 'Server MCP "([^"]+)" non presente tra i server configurati \(impostazioni globali o strumenti personali dell\'agente\)\.',
+            'tpl' => 'MCP server "$1" not found among the configured servers (global settings or the agent\'s personal tools).',
+        ),
+        array(
+            're'  => 'Il tool MCP "([^"]+)" ha segnalato un errore: (.+)$',
+            'tpl' => 'MCP tool "$1" reported an error: $2',
+        ),
+        array(
+            're'  => 'Il tool MCP "([^"]+)" ha segnalato un errore\.',
+            'tpl' => 'MCP tool "$1" reported an error.',
+        ),
+        array(
+            're'  => 'Lettura pagina: (.+)$',
+            'tpl' => 'Page read: $1',
+        ),
+        array(
+            're'  => 'Errore interno del client MCP: (.+)$',
+            'tpl' => 'MCP client internal error: $1',
+        ),
+        array(
+            're'  => 'Inizializzazione MCP fallita: (.+)$',
+            'tpl' => 'MCP initialization failed: $1',
+        ),
+        array(
+            're'  => 'Errore di connessione al server MCP: (.+)$',
+            'tpl' => 'MCP server connection error: $1',
+        ),
+        array(
+            're'  => '[Ii]l server MCP ha risposto con errore HTTP (\d+): (.+)$',
+            'tpl' => 'The MCP server returned HTTP error $1: $2',
+        ),
+        array(
+            're'  => '[Ii]l server MCP ha risposto con errore HTTP (\d+)\.$',
+            'tpl' => 'The MCP server returned HTTP error $1.',
+        ),
+        array(
+            're'  => '[Ii]l server MCP ha risposto con un errore JSON-RPC \(codice (\d+)\): (.+)$',
+            'tpl' => 'The MCP server returned a JSON-RPC error (code $1): $2',
+        ),
+        array(
+            're'  => '[Ii]l server MCP ha risposto con un errore JSON-RPC: (.+)$',
+            'tpl' => 'The MCP server returned a JSON-RPC error: $1',
+        ),
+        array(
+            're'  => '[Ii]l server MCP ha risposto con un errore JSON-RPC\.$',
+            'tpl' => 'The MCP server returned a JSON-RPC error.',
+        ),
+        array(
+            're'  => 'Il modello non ha concluso entro il numero massimo di giri \((\d+)\) del ciclo strumenti\.',
+            'tpl' => 'The model did not finish within the maximum number of rounds ($1) of the tool loop.',
+        ),
+        array(
+            're'  => 'Tempo massimo per il ciclo strumenti raggiunto \((\d+) secondi\): esecuzione interrotta entro (\d+) giri\.',
+            'tpl' => 'Maximum time for the tool loop reached ($1 seconds): execution stopped within $2 rounds.',
+        ),
+        array(
+            're'  => 'Errore interno del ciclo strumenti: (.+)$',
+            'tpl' => 'Tool loop internal error: $1',
+        ),
+        array(
+            're'  => 'Errore di connessione: (.+)$',
+            'tpl' => 'Connection error: $1',
+        ),
+        array(
+            're'  => '[Ii]l server ha risposto con errore HTTP (\d+): (.+)$',
+            'tpl' => 'The server returned HTTP error $1: $2',
+        ),
+        array(
+            're'  => '[Ii]l server ha risposto con errore HTTP (\d+)\.$',
+            'tpl' => 'The server returned HTTP error $1.',
+        ),
+        array(
+            're'  => '[Ii]l servizio ha risposto con errore HTTP (\d+): (.+)$',
+            'tpl' => 'The service returned HTTP error $1: $2',
+        ),
+        array(
+            're'  => '[Ii]l servizio ha risposto con errore HTTP (\d+)\.$',
+            'tpl' => 'The service returned HTTP error $1.',
+        ),
+        array(
+            're'  => 'Errore imprevisto: (.+)$',
+            'tpl' => 'Unexpected error: $1',
+        ),
+        array(
+            're'  => 'Articolo #(\d+): (.+)$',
+            'tpl' => 'Article #$1: $2',
         ),
     );
 }
