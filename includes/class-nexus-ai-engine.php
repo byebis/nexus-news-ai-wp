@@ -335,6 +335,17 @@ class Nexus_AI_Engine {
                         $model = 'openai/gpt-4o-mini';
                 }
 
+                // v1.1.10 (G4, piano Parte 2): guardia SSRF sulla base_url del provider.
+                // I provider built-in pubblici passano sempre; Ollama locale è ammesso di
+                // diritto (scelta di progetto v1.1.4); qualunque altro endpoint su IP
+                // privati/loopback (es. LM Studio su LAN) richiede il toggle esplicito
+                // allow_private_providers. Fail-closed di default, decisione documentata.
+                $guard_error = self::base_url_guard_error( $base_url, $provider_id, $settings );
+                if ( '' !== $guard_error ) {
+                        $fail['error'] = $guard_error;
+                        return $fail;
+                }
+
                 // v1.1.9 — JSON mode (opt-in retrocompatibile): risposta forzata a
                 // oggetto JSON dove il provider lo supporta. Le API OpenAI-family
                 // richiedono la keyword "JSON" nel prompt: se manca ovunque, viene
@@ -395,6 +406,10 @@ class Nexus_AI_Engine {
                 // fallisce con errore NON di autenticazione, si ritenta UNA volta con
                 // le credenziali globali. Mai l'inverso, mai su 401/403 (chiavi
                 // sbagliate: un retry con altre credenziali mascherebbe il problema).
+                // v1.1.10 (G3): il filtro 'nexus_ai_provider_fallback' ora ESISTE davvero:
+                // riceve la catena (oggi un solo step globale) e può estenderla; ogni step
+                // = array( 'base_url', 'api_key', 'model' ); la catena modificata viene
+                // percorsa in ordine con lo stesso guard 401/403 e log 'ai_fallback'.
                 $auth_error = ( false !== strpos( (string) $result['error'], 'Chiave API' ) );
                 if ( empty( $result['ok'] ) && $fallback_eligible && ! $auth_error && ! ( isset( $result['http_code'] ) && 400 === (int) $result['http_code'] && $json_active ) ) {
                         $gk = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
@@ -406,19 +421,39 @@ class Nexus_AI_Engine {
                         if ( '' === $gm ) {
                                 $gm = 'openai/gpt-4o-mini';
                         }
+
+                        $fallback_chain = array();
                         if ( '' !== $gk && ( $gb !== $base_url || $gm !== $model ) ) {
-                                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
-                                        try {
-                                                Nexus_DB::insert_activity( $agent_id, 'ai_fallback', 'Provider primario non disponibile (' . $provider_id . '): ritenta con il provider globale.', 'warning' );
-                                        } catch ( Throwable $e ) {
-                                                // logging mai bloccante
+                                $fallback_chain[] = array( 'base_url' => $gb, 'api_key' => $gk, 'model' => $gm );
+                        }
+                        $fallback_chain = apply_filters( 'nexus_ai_provider_fallback', $fallback_chain, $provider_id, $model );
+                        if ( is_array( $fallback_chain ) ) {
+                                foreach ( $fallback_chain as $chain_step ) {
+                                        if ( ! empty( $result['ok'] ) ) {
+                                                break; // già risposto da uno step precedente
                                         }
-                                }
-                                $g_endpoint = untrailingslashit( $gb ) . '/chat/completions';
-                                $g_headers  = self::build_request_headers( $gk, 'bearer' );
-                                $g_body     = self::build_request_body( $gm, $normalized, $temperature, $max_tokens, false );
-                                if ( false !== $g_body ) {
-                                        $result = self::execute_request( $g_endpoint, $g_headers, $g_body, $gm, $agent_id, $action, 'global' );
+                                        if ( ! is_array( $chain_step ) ) {
+                                                continue;
+                                        }
+                                        $sk = isset( $chain_step['api_key'] ) ? trim( (string) $chain_step['api_key'] ) : '';
+                                        $sb = isset( $chain_step['base_url'] ) ? trim( (string) $chain_step['base_url'] ) : '';
+                                        $sm = isset( $chain_step['model'] ) ? trim( (string) $chain_step['model'] ) : '';
+                                        if ( '' === $sk || '' === $sb || '' === $sm ) {
+                                                continue;
+                                        }
+                                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                                try {
+                                                        Nexus_DB::insert_activity( $agent_id, 'ai_fallback', 'Provider primario non disponibile (' . $provider_id . '): ritenta con il provider di fallback.', 'warning' );
+                                                } catch ( Throwable $e ) {
+                                                        // logging mai bloccante
+                                                }
+                                        }
+                                        $g_endpoint = untrailingslashit( $sb ) . '/chat/completions';
+                                        $g_headers  = self::build_request_headers( $sk, 'bearer' );
+                                        $g_body     = self::build_request_body( $sm, $normalized, $temperature, $max_tokens, false );
+                                        if ( false !== $g_body ) {
+                                                $result = self::execute_request( $g_endpoint, $g_headers, $g_body, $sm, $agent_id, $action, 'global' );
+                                        }
                                 }
                         }
                 }
@@ -427,8 +462,108 @@ class Nexus_AI_Engine {
         }
 
         /**
-         * v1.1.9 — header della richiesta HTTP per lo schema di autenticazione
-         * risolto ('bearer' default, 'anthropic' con x-api-key + anthropic-version).
+         * v1.1.10 (G4, piano Parte 2): guardia SSRF della base_url del provider AI.
+         *
+         * Regole (fail-closed):
+         *  - solo http/https;
+         *  - host con IP privato/loopback: ammessi SOLO per il provider 'ollama'
+         *    (scelta di progetto: Ollama è locale BY DESIGN) oppure quando il toggle
+         *    esplicito allow_private_providers è attivo (LM Studio / vLLM su LAN);
+         *  - gli altri host non ricevono ulteriori controlli (endpoint pubblici).
+         *
+         * Risiduo documentato (stessa nota della guardia D2): DNS rebinding
+         * TOCTOU non coperto — servirebbe pinning IP+Host header.
+         *
+         * @param string $base_url     Base URL risolta della chiamata.
+         * @param string $provider_id  ID provider ('', 'ollama', 'custom', ...).
+         * @param array  $settings     Settings correnti.
+         * @return string '' = permesso, altrimenti messaggio d'errore.
+         */
+        private static function base_url_guard_error( $base_url, $provider_id, $settings ) {
+                $parsed = wp_parse_url( (string) $base_url );
+                if ( ! is_array( $parsed ) || empty( $parsed['host'] ) ) {
+                        return 'Base URL del provider AI non valida.';
+                }
+                $scheme = strtolower( (string) ( $parsed['scheme'] ?? '' ) );
+                if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+                        return 'Base URL del provider AI non valida: sono ammessi solo http e https.';
+                }
+                if ( 'ollama' === (string) $provider_id ) {
+                        return ''; // Ollama locale ammesso di diritto.
+                }
+                if ( ! self::host_is_private( (string) $parsed['host'] ) ) {
+                        return ''; // host pubblico: nessun limite aggiuntivo.
+                }
+                $allow_private = ! empty( $settings['allow_private_providers'] );
+                if ( $allow_private ) {
+                        return '';
+                }
+                return 'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l\u2019endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).';
+        }
+
+        /**
+         * Verifica se un host (IP letterale o hostname da risolvere) punta a IP
+         * privati/loopback/link-local. Check autonomo (stessa lista della guardia
+         * D2 in Nexus_Tools, duplicata qui per evitare dipendenze circolari con
+         * il motore AI). Fail-closed: DNS fallito o IP malformato = privato.
+         *
+         * @param string $host Hostname o IP.
+         * @return bool
+         */
+        private static function host_is_private( $host ) {
+                $host = strtolower( trim( (string) $host ) );
+                if ( '' === $host ) {
+                        return true;
+                }
+                $ip = filter_var( $host, FILTER_VALIDATE_IP ) ? $host : gethostbyname( $host );
+                if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+                        return true; // risoluzione fallita: fail-closed.
+                }
+                if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+                        // Abbassa gli IPv4-mapped (::ffff:a.b.c.d) a IPv4.
+                        if ( preg_match( '/^::ffff:(\d+\.\d+\.\d+\.\d+)$/', $ip, $m ) ) {
+                                $ip = $m[1];
+                        } else {
+                                $packed = @inet_pton( $ip );
+                                if ( false === $packed ) {
+                                        return true;
+                                }
+                                // ::1, fc00::/7, fe80::/10, ff00::/8, :: (unspecified).
+                                $head = substr( $packed, 0, 2 );
+                                if ( "\x00\x01" === $packed || "\x00\x00" === $packed ) {
+                                        return true;
+                                }
+                                if ( "\xfc" === $head[0] || "\xfe\x80" === substr( $packed, 0, 2 ) || ( ord( $head[0] ) & 0xff ) >= 0xff ) {
+                                        return true;
+                                }
+                                return false;
+                        }
+                }
+                $long = ip2long( $ip );
+                if ( false === $long ) {
+                        return true;
+                }
+                $long = sprintf( '%u', $long );
+                $cidr_match = function ( $net, $bits ) use ( $long ) {
+                        $net_long = sprintf( '%u', ip2long( $net ) );
+                        $mask     = $bits > 0 ? ( 0xffffffff << ( 32 - $bits ) ) & 0xffffffff : 0;
+                        return ( (int) $net_long & $mask ) === ( (int) $long & $mask );
+                };
+                return $cidr_match( '0.0.0.0', 8 )
+                        || $cidr_match( '10.0.0.0', 8 )
+                        || $cidr_match( '127.0.0.0', 8 )
+                        || $cidr_match( '169.254.0.0', 16 )
+                        || $cidr_match( '172.16.0.0', 12 )
+                        || $cidr_match( '192.0.0.0', 24 )
+                        || $cidr_match( '192.168.0.0', 16 )
+                        || $cidr_match( '100.64.0.0', 10 )
+                        || $cidr_match( '198.18.0.0', 15 )
+                        || $cidr_match( '224.0.0.0', 4 )
+                        || $cidr_match( '240.0.0.0', 4 );
+        }
+
+        /**
+         * Intestazioni della richiesta in base allo schema di autenticazione.
          *
          * @param string $api_key Chiave API.
          * @param string $auth    Schema di autenticazione ('bearer'|'anthropic').
@@ -1423,6 +1558,10 @@ class Nexus_AI_Engine {
                 // delle generiche (strpos matcha per substringa). v1.1.9: prezzi indicativi
                 // aggiornabili — voci nuove per DeepSeek, Grok, o3/o4, GPT-4.1, Claude 3.7/4,
                 // Gemini 2.x e Llama 3.3/3.1-8b.
+                // v1.1.10 (G3): il filtro citato dai docblock ora ESISTE davvero —
+                // apply_filters('nexus_ai_model_prices', $map, $model) permette di estendere/
+                // correggere la mappa senza toccare il plugin (i prezzi live del model
+                // picker WP12 restano la fonte preferita quando in cache).
                 $map = array(
                         'gpt-4o-mini'          => array( 0.15, 0.60 ),
                         'gpt-4.1-mini'         => array( 0.40, 1.60 ),
@@ -1452,6 +1591,8 @@ class Nexus_AI_Engine {
                 $in  = 0.50;
                 $out = 1.50;
                 $matched = false;
+
+                $map = apply_filters( 'nexus_ai_model_prices', $map, $model );
 
                 foreach ( $map as $needle => $prices ) {
                         if ( '' !== $needle && false !== strpos( $model, $needle ) ) {

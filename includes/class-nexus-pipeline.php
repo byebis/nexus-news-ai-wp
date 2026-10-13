@@ -169,7 +169,8 @@ class Nexus_Pipeline {
                         // Nessun feed disponibile → 1 analisi editoriale evergreen (nessuna pretesa di notizia in tempo reale).
                         $prompt = Nexus_AI_Engine::evergreen_prompt( $category, $personality );
                         // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
-                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id ) );
+                        // v1.1.10 (G1): l'agente passa al motore (provider per-agente reale).
+                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id, 'agent' => $agent ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $error = self::chat_error( $res, 'motore AI non disponibile' );
@@ -198,7 +199,8 @@ class Nexus_Pipeline {
 
                         $prompt = Nexus_AI_Engine::collect_prompt( $category, $personality, $items_text, $source_name );
                         // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
-                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id ) );
+                        // v1.1.10 (G1): l'agente passa al motore (provider per-agente reale).
+                        $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id, 'agent' => $agent ) );
 
                         if ( empty( $res['ok'] ) ) {
                                 $error = self::chat_error( $res, 'motore AI non disponibile' );
@@ -356,7 +358,11 @@ class Nexus_Pipeline {
                 // v1.0.3: modello economico per lo screening (ai_model_cheap, fallback ai_model).
                 // v1.1.9: json_mode (contratto Task 4.8): parse_score legge il punteggio JSON,
                 // il fallback regex resta per le risposte numeriche.
-                $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id, 'json_mode' => true ) );
+                // v1.1.10 (G1): l'agente dell'articolo passa al motore (provider per-agente reale;
+                // se il cheap model non esiste su quel provider, il fallback chain del motore
+                // riprova coi globali — stessa semantica v1.1.9, mai su 401/403).
+                $eval_agent = Nexus_DB::get_agent( (int) $article->agent_id );
+                $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id, 'agent' => $eval_agent, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -442,7 +448,10 @@ class Nexus_Pipeline {
                 }
                 // v1.0.3: modello per-agente (agents.ai_model se impostato, fallback ai_model globale).
                 // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede già un oggetto JSON.
-                $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id, 'json_mode' => true ) );
+                // v1.1.10 (G1): anche il provider per-agente viene usato davvero (prima
+                // passava solo il modello: il giornalista con provider dedicato scriveva
+                // col provider globale — gap A1-G1 del piano v1.1.10).
+                $res = self::chat( $prompt, 'rewrite', array( 'model' => self::agent_model( $agent ), 'agent_id' => (int) $article->agent_id, 'agent' => $agent, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
@@ -1464,6 +1473,14 @@ class Nexus_Pipeline {
                 );
                 if ( isset( $opts['model'] ) && '' !== trim( (string) $opts['model'] ) ) {
                         $send['model'] = trim( (string) $opts['model'] );
+                }
+
+                // v1.1.10 (G1, piano Parte 2): l'oggetto agente viene inoltrato al motore
+                // così resolve_for_agent() usa il PROVIDER per-agente (agents.ai_provider)
+                // invece di scrivere sempre col provider globale. Solo se l'agente ha
+                // davvero un provider dedicato (altrimenti percorso globale intatto).
+                if ( isset( $opts['agent'] ) && is_object( $opts['agent'] ) && ! empty( $opts['agent']->ai_provider ) ) {
+                        $send['agent'] = $opts['agent'];
                 }
 
                 // v1.1.9 (contratto Task 4.8): 'json_mode' chiede al motore una risposta in

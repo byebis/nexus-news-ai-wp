@@ -3129,7 +3129,14 @@ class Nexus_Rest {
                         'prov_key_mistral'     => 'sanitize_text_field',
                         'prov_key_xai'         => 'sanitize_text_field',
                         'prov_key_custom'      => 'sanitize_text_field',
+                        'prov_key_ollama'      => 'sanitize_text_field', // v1.1.10 (G2): ora in whitelist anche per Ollama
                         'prov_base_custom'     => 'esc_url_raw',
+                        // v1.1.10 — motore fonti multi-tipo + provider v2.
+                        'youtube_api_key'      => 'sanitize_text_field',
+                        'pixabay_key'          => 'sanitize_text_field',
+                        'reddit_client_id'     => 'sanitize_text_field',
+                        'reddit_client_secret' => 'sanitize_text_field',
+                        'allow_private_providers' => 'absint',
                         // Capo redattore AI (v1.1.4).
                         'chief_enabled'        => 'absint',
                         'chief_auto_publish'   => 'absint',
@@ -3346,6 +3353,10 @@ class Nexus_Rest {
                         'prov_key_mistral',
                         'prov_key_xai',
                         'prov_key_custom',
+                        'prov_key_ollama', // v1.1.10 (G2): omissa prima, incoerenza con la whitelist PUT
+                        'youtube_api_key',
+                        'pixabay_key',
+                        'reddit_client_secret',
                         'tools_search_key',
                         'telegram_bot_token',
                         'discord_webhook_url',
@@ -3756,6 +3767,9 @@ class Nexus_Rest {
                                 'status'      => (string) $agent->status,
                                 'personality' => (string) $agent->personality,
                                 'ai_model'    => (string) ( $agent->ai_model ?? '' ),
+                                // v1.1.10 (G6): il provider per-agente non deve più perdersi
+                                // nell'export/import (prima era solo ai_model).
+                                'ai_provider' => (string) ( $agent->ai_provider ?? '' ),
                         );
                 }
 

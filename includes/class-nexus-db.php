@@ -77,7 +77,7 @@ class Nexus_DB {
         const OPTION_SETTINGS = 'nexus_settings';
         const DB_VERSION_KEY  = 'nexus_db_version';
         const DB_REVISION_KEY = 'nexus_db_revision';
-        const DB_REVISION     = 2; // v1.1.9 — schema v2: claim_token, revisioni, unique content_hash, provider
+        const DB_REVISION     = 3; // v1.1.10 — schema v3: source_type su articoli, search/MCP per-agente
 
         /**
          * Default settings (portati da Prisma Settings model).
@@ -171,7 +171,14 @@ class Nexus_DB {
                         'prov_key_mistral'    => '',
                         'prov_key_xai'        => '',
                         'prov_key_custom'     => '',
+                        'prov_key_ollama'     => '', // v1.1.10 (G2): opzionale anche per Ollama (server protetti)
                         'prov_base_custom'    => '', // base URL del provider "custom" (compatibile OpenAI)
+                        // v1.1.10 — nuove chiavi globali del motore fonti multi-tipo e provider v2.
+                        'youtube_api_key'     => '', // YouTube Data API v3 (gratuita, quota 10k unit/giorno)
+                        'pixabay_key'         => '', // Pixabay per fallback featured image (gratuita)
+                        'reddit_client_id'    => '', // Reddit OAuth app-only (opzionale: senza = RSS nativo)
+                        'reddit_client_secret' => '', // Reddit OAuth secret (segreto)
+                        'allow_private_providers' => 0, // 1 = consenti base_url AI su IP privati/localhost (LM Studio/vLLM su LAN); Ollama è sempre ammesso
                         // v1.1.4 — Capo redattore AI: legge gli articoli in pending_approval
                         // e approva/modifica/richiede revisione/rifiuta (Nexus_Chief, T-03).
                         'chief_enabled'       => 0, // 1 = revisione capo redattore attiva
@@ -221,6 +228,9 @@ class Nexus_DB {
                                 personality TEXT NULL,
                                 ai_model VARCHAR(100) NOT NULL DEFAULT '',
                                 ai_provider VARCHAR(50) NOT NULL DEFAULT '',
+                                search_provider VARCHAR(30) NOT NULL DEFAULT '',
+                                search_key_hash CHAR(64) NOT NULL DEFAULT '',
+                                mcp_servers_text MEDIUMTEXT NULL,
                                 role VARCHAR(20) NOT NULL DEFAULT 'giornalista',
                                 chief_scope VARCHAR(20) NOT NULL DEFAULT '',
                                 chief_term_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -244,6 +254,7 @@ class Nexus_DB {
                                 agent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 source_name VARCHAR(255) NOT NULL DEFAULT '',
                                 source_url TEXT NULL,
+                                source_type VARCHAR(20) NOT NULL DEFAULT '',
                                 image_url TEXT NULL,
                                 wp_post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                                 content_hash CHAR(32) NULL DEFAULT NULL,
@@ -393,6 +404,7 @@ class Nexus_DB {
                 // nulla quando non ci sono righe da rimuovere.
                 self::cleanup_broken_rows();
                 self::migrate_schema_v2();
+                self::migrate_schema_v3();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
                 update_option( self::DB_REVISION_KEY, (string) self::DB_REVISION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
@@ -454,6 +466,52 @@ class Nexus_DB {
                 }
                 if ( ! $any ) {
                         $wpdb->query( "ALTER TABLE {$arts} ADD UNIQUE KEY content_hash (content_hash)" ); // phpcs:ignore WordPress.DB
+                }
+        }
+
+        /**
+         * Migrazione schema v3 (v1.1.10) per installazioni esistenti — idempotente.
+         *
+         * dbDelta a volte non aggiunge in modo affidabile colonne nuove su tutti
+         * i setup: qui lo si fa a mano con guardie (ogni ALTER gira solo se la
+         * colonna manca, verificata su information_schema). Colonne:
+         *
+         *  - articles.source_type: tipo della fonte che ha generato l'articolo
+         *    ('rss'|'site'|'youtube'|'telegram'|'reddit'|'search'|'mcp'|'web'|''),
+         *    per analytics e provenienza (v1.1.10 motore fonti multi-tipo).
+         *  - agents.search_provider / agents.search_key_hash / agents.mcp_servers_text:
+         *    strumenti personali per-agente (ricerca web e server MCP custom con
+         *    risoluzione a cascata agente → redazione → globale, WP4 Parte 1 /
+         *    WP10-12 Parte 2 del piano v1.1.10). La chiave di ricerca è salvata
+         *    SOLO come hash SHA-256 hex-64 (stesso contratto della public_api_key).
+         *
+         * @return void
+         */
+        private static function migrate_schema_v3() {
+                global $wpdb;
+                $t = self::tables();
+
+                $add_columns = array(
+                        $t['articles'] => array(
+                                'source_type'      => "ALTER TABLE {$t['articles']} ADD COLUMN source_type VARCHAR(20) NOT NULL DEFAULT ''",
+                        ),
+                        $t['agents'] => array(
+                                'search_provider'   => "ALTER TABLE {$t['agents']} ADD COLUMN search_provider VARCHAR(30) NOT NULL DEFAULT ''",
+                                'search_key_hash'   => "ALTER TABLE {$t['agents']} ADD COLUMN search_key_hash CHAR(64) NOT NULL DEFAULT ''",
+                                'mcp_servers_text'  => "ALTER TABLE {$t['agents']} ADD COLUMN mcp_servers_text MEDIUMTEXT NULL",
+                        ),
+                );
+
+                foreach ( $add_columns as $table => $cols ) {
+                        foreach ( $cols as $column => $sql ) {
+                                $exists = (int) $wpdb->get_var( $wpdb->prepare(
+                                        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                                        DB_NAME, $table, $column
+                                ) );
+                                if ( ! $exists ) {
+                                        $wpdb->query( $sql ); // phpcs:ignore WordPress.DB
+                                }
+                        }
                 }
         }
 
@@ -590,9 +648,16 @@ class Nexus_DB {
          * chief_scope ('' | 'global' | 'category' | 'term', valore non valido = '')
          * e chief_term_id (sempre intero).
          *
+         * v1.1.10 (schema v3): ammessi anche search_provider (sanitize_key),
+         * search_key_hash (solo hex-64: la chiave di ricerca dell'agente è
+         * salvata SOLO come hash SHA-256, mai in chiaro — stesse regole della
+         * public_api_key v1.1.9) e mcp_servers_text (sanitize_textarea_field,
+         * formato righe 'nome|url|tokenOpzionale' come il setting globale).
+         *
          * @param int   $id     Id agente.
          * @param array $fields Campi da aggiornare: name, avatar, category, description,
-         *                      status, personality, ai_model, ai_provider, role, chief_scope,
+         *                      status, personality, ai_model, ai_provider, search_provider,
+         *                      search_key_hash, mcp_servers_text, role, chief_scope,
          *                      chief_term_id, last_run, wp_user_id, term_id.
          * @return int|false
          */
@@ -600,7 +665,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'ai_provider', 'role', 'chief_scope', 'chief_term_id', 'last_run', 'wp_user_id', 'term_id' ) )
+                        array_flip( array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model', 'ai_provider', 'search_provider', 'search_key_hash', 'mcp_servers_text', 'role', 'chief_scope', 'chief_term_id', 'last_run', 'wp_user_id', 'term_id' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -608,6 +673,17 @@ class Nexus_DB {
                 // v1.1.4: sanizione colonne provider per agente + capo redattore.
                 if ( isset( $allowed['ai_provider'] ) ) {
                         $allowed['ai_provider'] = sanitize_text_field( $allowed['ai_provider'] );
+                }
+                // v1.1.10 (schema v3): strumenti personali per-agente.
+                if ( isset( $allowed['search_provider'] ) ) {
+                        $allowed['search_provider'] = sanitize_key( $allowed['search_provider'] );
+                }
+                if ( isset( $allowed['search_key_hash'] ) ) {
+                        $hk = preg_replace( '/[^a-f0-9]/', '', strtolower( (string) $allowed['search_key_hash'] ) );
+                        $allowed['search_key_hash'] = ( 64 === strlen( $hk ) ) ? $hk : '';
+                }
+                if ( isset( $allowed['mcp_servers_text'] ) ) {
+                        $allowed['mcp_servers_text'] = sanitize_textarea_field( $allowed['mcp_servers_text'] );
                 }
                 if ( isset( $allowed['role'] ) ) {
                         $allowed['role'] = in_array( $allowed['role'], array( 'giornalista', 'capo_redattore' ), true ) ? $allowed['role'] : 'giornalista';
@@ -857,6 +933,7 @@ class Nexus_DB {
                         'agent_id'      => absint( $data['agent_id'] ?? 0 ),
                         'source_name'   => sanitize_text_field( $data['source_name'] ?? '' ),
                         'source_url'    => esc_url_raw( $data['source_url'] ?? '' ),
+                        'source_type'   => sanitize_key( $data['source_type'] ?? '' ),
                         'image_url'     => esc_url_raw( $data['image_url'] ?? '' ),
                         'content_hash'  => '' !== $content_hash ? $content_hash : null,
                         'status'        => sanitize_key( $data['status'] ?? 'draft' ),
@@ -879,7 +956,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'image_url', 'wp_post_id', 'content_hash', 'factcheck_score', 'citations', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
+                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'source_type', 'image_url', 'wp_post_id', 'content_hash', 'factcheck_score', 'citations', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
                 );
                 if ( ! $allowed ) {
                         return false;

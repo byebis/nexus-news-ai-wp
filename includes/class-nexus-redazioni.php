@@ -60,6 +60,19 @@ class Nexus_Redazioni {
         const META_SOURCES = '_nexus_sources';
 
         /**
+         * Tipi di fonte ammessi (v1.1.10, motore fonti multi-tipo):
+         *  rss      = feed RSS/Atom diretto
+         *  site     = sito da cui scoprire il feed (discovery)
+         *  youtube  = YouTube Data API v3 (canale/playlist/ricerca, url = handle o query)
+         *  telegram = canale Telegram pubblico via preview web t.me/s/ (url = @canale)
+         *  reddit   = subreddit (url = r/nome; RSS nativo, OAuth opzionale)
+         *  search   = ricerca web periodica (url = parola chiave; provider da settings o agente)
+         *  mcp      = fonte servita da un tool MCP custom (url = server|tool|args_json)
+         *  web      = pagina web singola con profilo d'estrazione (url = pagina)
+         */
+        const TYPES = array( 'rss', 'site', 'youtube', 'telegram', 'reddit', 'search', 'mcp', 'web' );
+
+        /**
          * Durata del transient di discovery feed per URL sito in secondi (1 ora).
          */
         const DISCOVER_TTL = 3600;
@@ -162,9 +175,18 @@ class Nexus_Redazioni {
                                                                 'properties' => array(
                                                                         'type' => array(
                                                                                 'type' => 'string',
-                                                                                'enum' => array( 'rss', 'site' ),
+                                                                                'enum' => Nexus_Redazioni::TYPES,
                                                                         ),
                                                                         'url'  => array(
+                                                                                'type' => 'string',
+                                                                        ),
+                                                                        'query' => array(
+                                                                                'type' => 'string',
+                                                                        ),
+                                                                        'full' => array(
+                                                                                'type' => 'integer',
+                                                                        ),
+                                                                        'profile' => array(
                                                                                 'type' => 'string',
                                                                         ),
                                                                 ),
@@ -361,11 +383,15 @@ class Nexus_Redazioni {
                 foreach ( $rows as $row ) {
                         $type = 'rss';
                         $url  = '';
+                        $extra = array();
 
                         if ( is_array( $row ) ) {
                                 $raw_type = isset( $row['type'] ) ? sanitize_key( (string) $row['type'] ) : '';
-                                if ( 'site' === $raw_type ) {
-                                        $type = 'site';
+                                // v1.1.10: whitelist completa dei tipi (prima ogni tipo
+                                // non-'site' veniva degradato a 'rss' e perdeva l'informazione
+                                // al primo salvataggio — fix bloccante del piano v1.1.10).
+                                if ( '' !== $raw_type && in_array( $raw_type, self::TYPES, true ) ) {
+                                        $type = $raw_type;
                                 }
                                 $url = isset( $row['url'] ) ? (string) $row['url'] : '';
                         } else {
@@ -373,8 +399,8 @@ class Nexus_Redazioni {
                                 $parts = explode( '|', (string) $row, 2 );
                                 if ( 2 === count( $parts ) ) {
                                         $raw_type = sanitize_key( trim( $parts[0] ) );
-                                        if ( 'site' === $raw_type ) {
-                                                $type = 'site';
+                                        if ( '' !== $raw_type && in_array( $raw_type, self::TYPES, true ) ) {
+                                                $type = $raw_type;
                                         }
                                         $url = trim( $parts[1] );
                                 } else {
@@ -382,7 +408,36 @@ class Nexus_Redazioni {
                                 }
                         }
 
-                        $url = esc_url_raw( trim( $url ) );
+                        if ( is_array( $row ) ) {
+                                // v1.1.10: chiavi additive per-fonte (determinano il
+                                // comportamento degli adapter del motore multi-tipo).
+                                //  query   = parola chiave di ricerca (tipi search/youtube)
+                                //  full    = estrazione full-content Readability attiva
+                                //  profile = profilo d'estrazione JSON (selettori CSS/XPath,
+                                //            validato come JSON e salvato come stringa)
+                                if ( isset( $row['query'] ) && '' !== trim( (string) $row['query'] ) ) {
+                                        $extra['query'] = sanitize_text_field( (string) $row['query'] );
+                                }
+                                if ( isset( $row['full'] ) ) {
+                                        $extra['full'] = absint( $row['full'] ) ? 1 : 0;
+                                }
+                                if ( isset( $row['profile'] ) && '' !== trim( (string) $row['profile'] ) ) {
+                                        $profile = (string) $row['profile'];
+                                        $decoded = json_decode( $profile, true );
+                                        if ( is_array( $decoded ) ) {
+                                                $extra['profile'] = wp_json_encode( $decoded );
+                                        }
+                                }
+                        }
+
+                        // I tipi non-URL (search, mcp, telegram, youtube-canale) possono avere
+                        // "url" non-URL: qui si valida solo per i tipi URL-based.
+                        $url_based = in_array( $type, array( 'rss', 'site', 'web' ), true );
+                        if ( $url_based ) {
+                                $url = esc_url_raw( trim( $url ) );
+                        } else {
+                                $url = trim( preg_replace( '/[\x00-\x1F\x7F]/', '', (string) $url ) );
+                        }
                         if ( '' === $url ) {
                                 continue;
                         }
@@ -393,10 +448,14 @@ class Nexus_Redazioni {
                         }
                         $seen[ $key ] = true;
 
-                        $out[] = array(
+                        $item = array(
                                 'type' => $type,
                                 'url'  => $url,
                         );
+                        foreach ( $extra as $k => $v ) {
+                                $item[ $k ] = $v;
+                        }
+                        $out[] = $item;
                 }
 
                 return $out;

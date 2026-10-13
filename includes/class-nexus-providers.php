@@ -61,66 +61,123 @@ class Nexus_Providers {
          * @return array
          */
         public static function catalog() {
+                // v1.1.10 (provider v2): ogni voce aggiunge i metadati per il login web,
+                // il model picker live e la ricerca nativa del provider:
+                //   models_endpoint = URL lista modelli (cache 12h nel picker)
+                //   models_auth     = 'none' | 'bearer' | 'anthropic' | 'query_key'
+                //   key_page        = deep link alla pagina dove creare la chiave
+                //   oauth           = true se esiste provisioning chiavi via OAuth PKCE
+                //   native_search   = true se il provider espone ricerca web nativa nei tool
                 return array(
                         'openrouter' => array(
-                                'id'       => 'openrouter',
-                                'label'    => 'OpenRouter',
-                                'base_url' => 'https://openrouter.ai/api/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'openrouter',
+                                'label'           => 'OpenRouter',
+                                'base_url'        => 'https://openrouter.ai/api/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://openrouter.ai/api/v1/models',
+                                'models_auth'     => 'none', // pubblica: include pricing e context_length
+                                'key_page'        => 'https://openrouter.ai/settings/keys',
+                                'oauth'           => true, // PKCE: openrouter.ai/auth → /api/v1/auth/keys
+                                'native_search'   => false,
                         ),
                         'openai' => array(
-                                'id'       => 'openai',
-                                'label'    => 'OpenAI',
-                                'base_url' => 'https://api.openai.com/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'openai',
+                                'label'           => 'OpenAI',
+                                'base_url'        => 'https://api.openai.com/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://api.openai.com/v1/models',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => 'https://platform.openai.com/api-keys',
+                                'oauth'           => false,
+                                'native_search'   => true, // web_search_preview su /responses
                         ),
                         'anthropic' => array(
-                                'id'       => 'anthropic',
-                                'label'    => 'Anthropic',
-                                'base_url' => 'https://api.anthropic.com/v1',
-                                'auth'     => 'anthropic',
+                                'id'              => 'anthropic',
+                                'label'           => 'Anthropic',
+                                'base_url'        => 'https://api.anthropic.com/v1',
+                                'auth'            => 'anthropic',
+                                'models_endpoint' => 'https://api.anthropic.com/v1/models',
+                                'models_auth'     => 'anthropic',
+                                'key_page'        => 'https://console.anthropic.com/settings/keys',
+                                'oauth'           => false, // OAuth MCP sperimentale: stretch WP10
+                                'native_search'   => true, // web_search_20250305
                         ),
                         'google' => array(
-                                'id'       => 'google',
-                                'label'    => 'Google Gemini',
-                                'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai',
-                                'auth'     => 'bearer',
+                                'id'              => 'google',
+                                'label'           => 'Google Gemini',
+                                'base_url'        => 'https://generativelanguage.googleapis.com/v1beta/openai',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://generativelanguage.googleapis.com/v1beta/models',
+                                'models_auth'     => 'query_key',
+                                'key_page'        => 'https://aistudio.google.com/apikey',
+                                'oauth'           => false,
+                                'native_search'   => true, // google_search tool
                         ),
                         'groq' => array(
-                                'id'       => 'groq',
-                                'label'    => 'Groq',
-                                'base_url' => 'https://api.groq.com/openai/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'groq',
+                                'label'           => 'Groq',
+                                'base_url'        => 'https://api.groq.com/openai/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://api.groq.com/openai/v1/models',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => 'https://console.groq.com/keys',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                         'deepseek' => array(
-                                'id'       => 'deepseek',
-                                'label'    => 'DeepSeek',
-                                'base_url' => 'https://api.deepseek.com/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'deepseek',
+                                'label'           => 'DeepSeek',
+                                'base_url'        => 'https://api.deepseek.com/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://api.deepseek.com/models',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => 'https://platform.deepseek.com/api_keys',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                         'mistral' => array(
-                                'id'       => 'mistral',
-                                'label'    => 'Mistral',
-                                'base_url' => 'https://api.mistral.ai/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'mistral',
+                                'label'           => 'Mistral',
+                                'base_url'        => 'https://api.mistral.ai/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://api.mistral.ai/v1/models',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => 'https://console.mistral.ai/api-keys/',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                         'xai' => array(
-                                'id'       => 'xai',
-                                'label'    => 'xAI',
-                                'base_url' => 'https://api.x.ai/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'xai',
+                                'label'           => 'xAI',
+                                'base_url'        => 'https://api.x.ai/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'https://api.x.ai/v1/models',
+                                'models_auth'     => 'bearer',
+                                'key_page'        => 'https://console.x.ai',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                         'custom' => array(
-                                'id'       => 'custom',
-                                'label'    => 'Personalizzato / compatibile OpenAI',
-                                'base_url' => '', // vuota: si usa il settings prov_base_custom.
-                                'auth'     => 'bearer',
+                                'id'              => 'custom',
+                                'label'           => 'Personalizzato / compatibile OpenAI',
+                                'base_url'        => '', // vuota: si usa il settings prov_base_custom.
+                                'auth'            => 'bearer',
+                                'models_endpoint' => '', // dinamica: {prov_base_custom}/models
+                                'models_auth'     => 'bearer',
+                                'key_page'        => '',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                         'ollama' => array(
-                                'id'       => 'ollama',
-                                'label'    => 'Ollama locale',
-                                'base_url' => 'http://127.0.0.1:11434/v1',
-                                'auth'     => 'bearer',
+                                'id'              => 'ollama',
+                                'label'           => 'Ollama locale',
+                                'base_url'        => 'http://127.0.0.1:11434/v1',
+                                'auth'            => 'bearer',
+                                'models_endpoint' => 'http://127.0.0.1:11434/v1/models',
+                                'models_auth'     => 'none',
+                                'key_page'        => '',
+                                'oauth'           => false,
+                                'native_search'   => false,
                         ),
                 );
         }

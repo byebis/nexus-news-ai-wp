@@ -98,11 +98,17 @@ function nexus_uninstall_delete_bot_users() {
         // Transients cache modelli AI (v1.0.7) + voci di scadenza.
         $like_transient = $wpdb->esc_like( '_transient_nexus_ai_models_' ) . '%';
         $like_timeout   = $wpdb->esc_like( '_transient_timeout_nexus_ai_models_' ) . '%';
+        // v1.1.10: stati OAuth one-shot (WP10) + cache modelli per-provider (WP12) +
+        // stato cursori/cooldown fonti (WP2) — stesso pattern di prefisso.
+        $like_transient2 = $wpdb->esc_like( '_transient_nexus_oauth_state_' ) . '%';
+        $like_timeout2   = $wpdb->esc_like( '_transient_timeout_nexus_oauth_state_' ) . '%';
         $wpdb->query(
                 $wpdb->prepare(
-                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
                         $like_transient,
-                        $like_timeout
+                        $like_timeout,
+                        $like_transient2,
+                        $like_timeout2
                 )
         );
 }
