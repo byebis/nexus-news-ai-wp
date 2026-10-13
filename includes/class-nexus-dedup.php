@@ -1,6 +1,7 @@
 <?php
 /**
- * Nexus Dedup — dedup semantico simhash 64-bit (v1.1.12, pacchetto S3).
+ * Nexus Dedup — dedup semantico simhash 64-bit (v1.1.12, pacchetto S3;
+ * v1.1.13-wip "Ottimizzazione" — limiti configurabili + segnalazione onesta).
  *
  * COME FUNZIONA (algoritmo):
  *  - Normalizzazione: strip tag, decode entità, lowercase (mb_strtolower se
@@ -22,15 +23,48 @@
  *    decbin + substr_count su binario a 32 bit str_pad-ato a sinistra).
  *    Distanza <= dedup_similar_threshold (default 6) = contenuto simile.
  *
+ * IMPOSTAZIONI DI SCALA (v1.1.13-wip — prima hardcoded, ora opzioni):
+ *  - nexus_dedup_window_days (option WP, default 90): finestra temporale
+ *    della lookup in giorni; filtro dev omonimo 'nexus_dedup_window_days'.
+ *  - nexus_dedup_lookup_max (option WP, default 400): cap di post id per
+ *    run (UNA sola query); filtro dev omonimo 'nexus_dedup_lookup_max'.
+ *  - Lettura centralizzata in limit_option(): get_option(default) → filtro
+ *    dev → clamp [1, max]. Sono opzioni DEDICATE (non nell'array
+ *    nexus_settings): il default è la costante di versione.
+ *
+ * SEGNALAZIONE ONESTA (v1.1.13-wip): quando la lookup TOCCA IL CAP (N post
+ * con fingerprint >= lookup_max) il confronto è per costruzione troncato —
+ * gli articoli della finestra oltre il cap NON vengono confrontati e i
+ * duplicati possono passare. In quel caso UNA riga in activity log
+ * (Nexus_DB::insert_activity, action 'dedup', status 'warning') THROTTLED a
+ * 1/giorno via transient 'nexus_dedup_window_note'. MAI spam: il turno
+ * giornaliero si consuma al primo trigger anche in ambiente degradato, e
+ * deactivate() azzera il transient. Rilevazione SENZA query extra: la
+ * heuristic count($ids) >= cap (no_found_rows resta true, niente
+ * SQL_CALC_FOUND_ROWS; al limite esatto di cap post il messaggio resta
+ * veritiero: il confronto È limitato a N).
+ *
+ * METODI CONDIVISI (v1.1.13-wip — usati anche da Nexus_Interlink; entrambi
+ * i moduli sono sempre richiesti dal bootstrap, nessun ciclo di caricamento):
+ *  - Nexus_Dedup::settings_guarded()        → get_settings() con guardie
+ *  - Nexus_Dedup::limit_option()            → option + filtro dev + clamp
+ *  - Nexus_Dedup::utf8_lower()              → lowercase robusto UTF-8
+ *  - Nexus_Dedup::pipeline_post_types()     → post type pubblicati dalla pipeline
+ *  - Nexus_Dedup::resolve_article_post_id() → risoluzione post WP ↔ articolo
+ *
  * INTEGRAZIONE PIPELINE:
  *  - filtro 'nexus_pipeline_skip_item' (S0, pipeline riga ~322): un candidato
  *    il cui fingerprint è a distanza Hamming <= soglia da un post pubblicato
- *    negli ultimi 90 giorni viene scartato PRIMA dell'INSERT (il pipeline
- *    logga già lo scarto come 'duplicate').
+ *    negli ultimi nexus_dedup_window_days giorni viene scartato PRIMA
+ *    dell'INSERT (il pipeline logga già lo scarto come 'duplicate').
  *  - azione 'nexus_pipeline_after_publish' (S0, pipeline riga ~755): calcola
  *    il fingerprint dal contenuto FINALE del post WordPress pubblicato
- *    (post_id risolto come fa il publisher: prima article->wp_post_id, poi
- *    meta inverso _nexus_article_id) e lo salva in _nexus_simhash.
+ *    (post_id risolto con l'helper condiviso resolve_article_post_id) e lo
+ *    salva in _nexus_simhash. INDIPENDENTE DAL POST TYPE: la risoluzione
+ *    copre il post type del publisher (filtro 'nexus_native_post_type') E i
+ *    post type pipeline di Nexus_Native::query_post_types() (nativo +
+ *    CPT legacy 'nexus_article'), così il fingerprint arriva anche sui post
+ *    pubblicati fuori dal default.
  *
  * POST VECCHI: gli articoli pubblicati PRIMA di questa versione non hanno il
  * meta _nexus_simhash: vengono semplicemente SALTATI dalla lookup (meta_query
@@ -38,20 +72,26 @@
  * vengono pubblicati. Nessuna migrazione retroattiva richiesta.
  *
  * PERFORMANCE: la lookup del filtro fa UNA sola WP_Query (fields ids, cap
- * 400, no_found_rows) + update_meta_cache() per precaricare TUTTI i meta
- * _nexus_simhash in un colpo solo; i confronti Hamming sono in memoria e
- * get_post_meta è servito dalla cache (zero query extra nel loop).
+ * nexus_dedup_lookup_max, no_found_rows, post_type IN pipeline_post_types)
+ * + update_meta_cache() per precaricare TUTTI i meta _nexus_simhash in un
+ * colpo solo; i confronti Hamming sono in memoria e get_post_meta è servito
+ * dalla cache (zero query extra nel loop). Le query restano indicizzate
+ * (post_type + post_date_gmt, meta_key EXISTS): niente LIKE su contenuti.
+ *
+ * GUARDIA (v1.1.13-wip): i callback pipeline girano dentro try/catch
+ * Throwable — il dedup NON deve MAI rompere raccolta/pubblicazione.
  *
  * CONTRATTO PUBBLICO:
  *  - Nexus_Dedup::fingerprint( $text )  → string hex 16 char (o '' se testo vuoto)
  *  - Nexus_Dedup::hamming( $a, $b )     → int 0..64
  *  - Nexus_Dedup::maybe_skip_similar()  → callback filtro skip_item
  *  - Nexus_Dedup::store_fingerprint()   → callback azione after_publish
- *  - Nexus_Dedup::deactivate()          → no-op (uniformità con gli altri moduli)
+ *  - Nexus_Dedup::deactivate()          → azzera il throttle della segnalazione
+ *  - helper condivisi (vedi sezione METODI CONDIVISI)
  *
  * CONSUMA: Nexus_DB::get_settings() (setting dedup_similar_enabled default 1,
- * dedup_similar_threshold default 6); post type reale del publisher, filtrabile
- * con 'nexus_native_post_type' (default 'post').
+ * dedup_similar_threshold default 6); opzioni nexus_dedup_window_days e
+ * nexus_dedup_lookup_max con filtri dev omonimi.
  *
  * @package Nexus_News_AI
  */
@@ -75,14 +115,20 @@ final class Nexus_Dedup {
         const SHINGLE_WORDS = 4;
 
         /**
-         * Finestra temporale della lookup in giorni (ultimi 90 giorni).
+         * DEFAULT della finestra temporale della lookup in giorni (90).
+         *
+         * Il valore effettivo è l'option nexus_dedup_window_days (leggere
+         * SEMPRE via self::window_days(): default → filtro dev → clamp).
          *
          * @var int
          */
         const WINDOW_DAYS = 90;
 
         /**
-         * Cap della lookup: massimo 400 post id per run (UNA sola query).
+         * DEFAULT del cap della lookup: post id per run (UNA sola query).
+         *
+         * Il valore effettivo è l'option nexus_dedup_lookup_max (leggere
+         * SEMPRE via self::lookup_max(): default → filtro dev → clamp).
          *
          * @var int
          */
@@ -96,6 +142,14 @@ final class Nexus_Dedup {
         const META_KEY = '_nexus_simhash';
 
         /**
+         * Transient di throttle della segnalazione "confronto troncato"
+         * (1 segnalazione al giorno: 24h di vita, scadenza autonoma).
+         *
+         * @var string
+         */
+        const THROTTLE_TRANSIENT = 'nexus_dedup_window_note';
+
+        /**
          * Bootstrap del modulo: registra filtro e azione sulla pipeline S0.
          *
          * @return void
@@ -106,12 +160,199 @@ final class Nexus_Dedup {
         }
 
         /**
-         * Disattivazione: nessuna pulizia necessaria (i meta _nexus_simhash
-         * restano inutilizzati ma innocui; il sistema si ripopula da solo).
+         * Disattivazione: azzera il transient di throttle della segnalazione
+         * "confronto troncato", così alla riattivazione la prima esecuzione
+         * troncata può loggare subito (i meta _nexus_simhash restano inutilizzati
+         * ma innocui; il sistema si ripopola da solo).
          *
          * @return void
          */
         public static function deactivate() {
+                if ( function_exists( 'delete_transient' ) ) {
+                        delete_transient( self::THROTTLE_TRANSIENT );
+                }
+        }
+
+        /* ============ HELPER CONDIVISI (anche per Nexus_Interlink) ============ */
+
+        /**
+         * Impostazioni plugin con guardie (mai fatali se Nexus_DB manca).
+         *
+         * Versione UNICA del pattern (prima: copie private in dedup e
+         * interlink): restituisce sempre un array.
+         *
+         * @return array Impostazioni plugin (array vuoto se non disponibili).
+         */
+        public static function settings_guarded() {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        return array();
+                }
+
+                $settings = Nexus_DB::get_settings();
+
+                return is_array( $settings ) ? $settings : array();
+        }
+
+        /**
+         * Legge un limite di scala da option WP + filtro dev, con clamp.
+         *
+         * Pattern condiviso dedup/interlink (v1.1.13-wip): i limiti prima
+         * hardcoded nelle costanti sono ora opzioni dedicate:
+         *  1) get_option( $option_name, $default ) — default = costante di
+         *     versione; option assente/vuota/0 → default (config rotta);
+         *  2) filtro dev $filter_tag (il risultato del filtro è responsabilità
+         *     del dev, ma viene comunque clampato per determinismo);
+         *  3) clamp [$min, $max] — il tetto protegge memoria/DB (es. il
+         *     preload della meta cache scala col cap).
+         *
+         * @param string $option_name Nome option WP (es. 'nexus_dedup_lookup_max').
+         * @param string $filter_tag  Tag filtro dev (es. 'nexus_dedup_lookup_max').
+         * @param int    $default     Default di versione (costante della classe).
+         * @param int    $min         Minimo ammesso (>= 1).
+         * @param int    $max         Massimo ammesso (tetto di protezione).
+         * @return int Valore clampato tra $min e $max.
+         */
+        public static function limit_option( $option_name, $filter_tag, $default, $min, $max ) {
+                $default = (int) $default;
+                $min     = (int) $min;
+                $max     = (int) $max;
+
+                $value = function_exists( 'get_option' ) ? (int) get_option( $option_name, $default ) : $default;
+                if ( $value < 1 ) {
+                        $value = $default; // option assente/vuota/0: torna al default di versione.
+                }
+
+                $value = (int) apply_filters( $filter_tag, $value );
+
+                if ( $value < $min ) {
+                        $value = $min;
+                }
+                if ( $value > $max ) {
+                        $value = $max;
+                }
+
+                return $value;
+        }
+
+        /**
+         * Lowercase robusto UTF-8 (mbstring con fallback strtolower).
+         *
+         * Versione UNICA del pattern (prima: inline in normalize() e copia
+         * privata lower() in interlink).
+         *
+         * @param string $text Testo in ingresso.
+         * @return string Testo lowercase.
+         */
+        public static function utf8_lower( $text ) {
+                $text = (string) $text;
+
+                return function_exists( 'mb_strtolower' ) ? mb_strtolower( $text, 'UTF-8' ) : strtolower( $text );
+        }
+
+        /**
+         * Post type pubblicati dalla pipeline (nativo + legacy + dev filter).
+         *
+         * UNIONE di:
+         *  - il post type target del publisher (filtro 'nexus_native_post_type',
+         *     default 'post' — quello che Nexus_Publisher usa in wp_insert_post);
+         *  - i post type query di Nexus_Native::query_post_types() (nativo +
+         *     CPT legacy 'nexus_article', filtro 'nexus_native_post_types').
+         *
+         * Serve per lookup e risoluzioni indipendenti dal post type: il
+         * fingerprint/_nexus_article_id può stare su qualunque post pubblicato
+         * dalla pipeline (il default è 'post', ma un dev filter può ridirigere
+         * su un CPT; il CPT legacy 'nexus_article' esiste negli storici).
+         * Zero impatto sulle performance: meta come _nexus_simhash esistono
+         * solo sui post pipeline, quindi i tipi extra non aggiungono righe.
+         *
+         * @return array Lista post type (sanitizzati, unici, mai vuota).
+         */
+        public static function pipeline_post_types() {
+                $types = array( (string) apply_filters( 'nexus_native_post_type', 'post' ) );
+
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ) {
+                        $types = array_merge( $types, (array) Nexus_Native::query_post_types() );
+                } else {
+                        $types[] = 'nexus_article'; // stesso default di Nexus_Native.
+                }
+
+                $clean = array();
+                foreach ( $types as $type ) {
+                        $type = sanitize_key( (string) $type );
+                        if ( '' !== $type ) {
+                                $clean[] = $type;
+                        }
+                }
+
+                if ( empty( $clean ) ) {
+                        $clean = array( 'post' );
+                }
+
+                return array_values( array_unique( $clean ) );
+        }
+
+        /**
+         * Risolve il post_id WordPress di un articolo Nexus (UNICA versione,
+         * riusata da Nexus_Interlink::on_after_publish; prima c'erano DUE
+         * versioni divergenti: dedup solo-'post' con fast path, interlink
+         * multi-post-type senza fast path).
+         *
+         * Ordine:
+         *  1) fast path $article->wp_post_id (il publisher lo aggiorna PRIMA
+         *     dell'hook after_publish) + check esistenza post;
+         *  2) fallback: lookup inversa sul meta _nexus_article_id scritto dal
+         *     publisher, su pipeline_post_types() (nativo + CPT legacy) e
+         *     post_status 'any' (include publish/future/draft/pending/private,
+         *     esclude trash/auto-draft per exclude_from_search).
+         *
+         * UNA sola query nel fallback (fields ids, no_found_rows, cache meta
+         * e termini disattivate).
+         *
+         * @param int    $article_id ID articolo Nexus.
+         * @param object $article    Riga articolo Nexus (o null): se presente
+         *                            wp_post_id abilita il fast path.
+         * @return int Post WordPress o 0 se non trovato.
+         */
+        public static function resolve_article_post_id( $article_id, $article = null ) {
+                $article_id = absint( $article_id );
+                if ( $article_id <= 0 || ! class_exists( 'WP_Query' ) ) {
+                        return 0;
+                }
+
+                // 1) Percorso veloce, stesso check del publisher: wp_post_id + esistenza.
+                if ( is_object( $article ) && isset( $article->wp_post_id ) ) {
+                        $wp_post_id = absint( $article->wp_post_id );
+                        if ( $wp_post_id > 0 && get_post( $wp_post_id ) ) {
+                                return $wp_post_id;
+                        }
+                }
+
+                // 2) Fallback: meta inverso scritto dal publisher
+                //    (update_post_meta '_nexus_article_id'), tutti i post type pipeline.
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => self::pipeline_post_types(),
+                                'post_status'            => 'any',
+                                'fields'                 => 'ids',
+                                'posts_per_page'         => 1,
+                                'no_found_rows'          => true,
+                                'ignore_sticky_posts'    => true,
+                                'update_post_term_cache' => false,
+                                'update_post_meta_cache' => false,
+                                'meta_query'             => array(
+                                        array(
+                                                'key'   => '_nexus_article_id',
+                                                'value' => $article_id,
+                                        ),
+                                ),
+                        )
+                );
+
+                if ( ! empty( $query->posts ) ) {
+                        return absint( $query->posts[0] );
+                }
+
+                return 0;
         }
 
         /* ============ ALGORITMO: NORMALIZZAZIONE + SIMHASH ============ */
@@ -144,12 +385,8 @@ final class Nexus_Dedup {
                         $text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
                 }
 
-                // Lowercase con mbstring se disponibile, altrimenti strtolower.
-                if ( function_exists( 'mb_strtolower' ) ) {
-                        $text = mb_strtolower( $text, 'UTF-8' );
-                } else {
-                        $text = strtolower( $text );
-                }
+                // Lowercase robusto (helper condiviso con interlink).
+                $text = self::utf8_lower( $text );
 
                 // Solo lettere/numeri (Unicode se PCRE lo supporta, altrimenti ASCII).
                 if ( self::unicode_regex_ok() ) {
@@ -199,7 +436,7 @@ final class Nexus_Dedup {
                         return array( implode( ' ', $words ) );
                 }
 
-                $out = array();
+                $out  = array();
                 $last = $count - self::SHINGLE_WORDS;
                 for ( $i = 0; $i <= $last; $i++ ) {
                         $out[] = implode( ' ', array_slice( $words, $i, self::SHINGLE_WORDS ) );
@@ -330,15 +567,8 @@ final class Nexus_Dedup {
          * Filtro 'nexus_pipeline_skip_item': scarta i candidati simili a post
          * già pubblicati (dedup semantico simhash).
          *
-         * Ritorna $skip INTATTO quando: un filtro a priorità più alta ha già
-         * scartato, il setting dedup_similar_enabled non è 1, il candidato è
-         * privo di testo utile, la lookup non trova simili. Ritorna true SOLO
-         * quando la distanza Hamming <= dedup_similar_threshold (il pipeline
-         * logga già lo scarto come 'duplicate').
-         *
-         * PERFORMANCE: UNA sola WP_Query (fields ids, cap 400, ultimi 90 giorni,
-         * meta _nexus_simhash EXISTS) + update_meta_cache() per precaricare
-         * tutti i fingerprint in un colpo; nessuna altra query nel filtro.
+         * GUARDIA v1.1.13-wip: qualunque errore (anche un Error) degrada al
+         * ritorno $skip INTATTO — il dedup non deve MAI rompere la raccolta.
          *
          * @param bool  $skip      Esito dei filtri precedenti (true = già scartato).
          * @param array $candidate Candidato pipeline (title/summary/content/sourceName/sourceUrl/score).
@@ -347,16 +577,28 @@ final class Nexus_Dedup {
          * @return bool True per scartare il candidato, altrimenti $skip invariato.
          */
         public static function maybe_skip_similar( $skip, $candidate, $agent, $evergreen ) {
+                try {
+                        return self::skip_similar_core( $skip, $candidate );
+                } catch ( \Throwable $e ) {
+                        return $skip;
+                }
+        }
+
+        /**
+         * Corpo di maybe_skip_similar (protetto dal try/catch del callback).
+         *
+         * @param bool  $skip      Esito dei filtri precedenti.
+         * @param array $candidate Candidato pipeline.
+         * @return bool Esito del filtro.
+         */
+        private static function skip_similar_core( $skip, $candidate ) {
                 // Già scartato da un filtro precedente: nessun lavoro extra.
                 if ( $skip ) {
                         return $skip;
                 }
 
                 // Modulo disattivato dalle impostazioni: esito invariato.
-                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
-                        return $skip;
-                }
-                $settings = Nexus_DB::get_settings();
+                $settings = self::settings_guarded();
                 if ( 1 !== (int) ( isset( $settings['dedup_similar_enabled'] ) ? $settings['dedup_similar_enabled'] : 1 ) ) {
                         return $skip;
                 }
@@ -385,13 +627,20 @@ final class Nexus_Dedup {
                         $threshold = self::BITS;
                 }
 
-                // UNA sola query: id dei post pubblicati con fingerprint, ultimi 90 giorni.
+                // Limiti di scala (option + filtro dev + clamp, v1.1.13-wip).
+                $window_days = self::window_days();
+                $lookup_max  = self::lookup_max();
+
+                // UNA sola query: id dei post pipeline con fingerprint, ultimi N giorni.
+                // Tutti i post type pipeline (nativo + CPT legacy 'nexus_article'):
+                // il meta esiste solo dove la pipeline ha pubblicato, quindi i tipi
+                // extra non aggiungono righe alla scan (query indicizzata).
                 $query = new WP_Query(
                         array(
-                                'post_type'              => apply_filters( 'nexus_native_post_type', 'post' ),
+                                'post_type'              => self::pipeline_post_types(),
                                 'post_status'            => 'publish',
                                 'fields'                 => 'ids',
-                                'posts_per_page'         => self::LOOKUP_MAX,
+                                'posts_per_page'         => $lookup_max,
                                 'no_found_rows'          => true,
                                 'ignore_sticky_posts'    => true,
                                 'update_post_term_cache' => false,
@@ -405,7 +654,7 @@ final class Nexus_Dedup {
                                 'date_query'             => array(
                                         array(
                                                 'column' => 'post_date_gmt',
-                                                'after'  => gmdate( 'Y-m-d H:i:s', time() - ( self::WINDOW_DAYS * 86400 ) ),
+                                                'after'  => gmdate( 'Y-m-d H:i:s', time() - ( $window_days * DAY_IN_SECONDS ) ),
                                         ),
                                 ),
                         )
@@ -414,6 +663,14 @@ final class Nexus_Dedup {
                 $ids = $query->posts;
                 if ( empty( $ids ) ) {
                         return $skip;
+                }
+
+                // SEGNALAZIONE ONESTA (v1.1.13-wip): cap raggiunto = confronto
+                // troncato per costruzione (gli articoli della finestra oltre il
+                // cap non vengono confrontati). Heuristica a COSTO ZERO (nessun
+                // SQL_CALC_FOUND_ROWS): N trovati >= cap. Throttle 1/giorno.
+                if ( count( $ids ) >= $lookup_max ) {
+                        self::log_window_notice( count( $ids ), $window_days );
                 }
 
                 // Precarica TUTTI i meta dei post trovati con UNA query SQL;
@@ -443,8 +700,12 @@ final class Nexus_Dedup {
          * (title + excerpt + post_content, incluse eventuali trasformazioni del
          * publisher: kses, blocco citazioni, estratto da summary).
          *
-         * Guardie: senza post risolvibile o post senza testo utile esce
-         * silenzioso — la pubblicazione non deve MAI fallire per il dedup.
+         * GUARDIA v1.1.13-wip: qualunque errore (anche un Error) viene
+         * ingoiato — la pubblicazione non deve MAI fallire per il dedup.
+         *
+         * INDIPENDENTE DAL POST TYPE: la risoluzione del post passa
+         * dall'helper condiviso resolve_article_post_id (fast path wp_post_id
+         * + fallback meta _nexus_article_id su TUTTI i post type pipeline).
          *
          * @param int    $article_id ID articolo Nexus.
          * @param object $article    Riga articolo Nexus (stdClass da Nexus_DB::get_article).
@@ -452,12 +713,27 @@ final class Nexus_Dedup {
          * @return void
          */
         public static function store_fingerprint( $article_id, $article, $logs ) {
+                try {
+                        self::store_fingerprint_core( $article_id, $article );
+                } catch ( \Throwable $e ) {
+                        // Guardia: niente propagazione, la pubblicazione è già avvenuta.
+                }
+        }
+
+        /**
+         * Corpo di store_fingerprint (protetto dal try/catch del callback).
+         *
+         * @param int    $article_id ID articolo Nexus.
+         * @param object $article    Riga articolo Nexus (o null).
+         * @return void
+         */
+        private static function store_fingerprint_core( $article_id, $article ) {
                 $article_id = absint( $article_id );
                 if ( $article_id <= 0 ) {
                         return;
                 }
 
-                $post_id = self::resolve_post_id( $article_id, $article );
+                $post_id = self::resolve_article_post_id( $article_id, $article );
                 if ( $post_id <= 0 ) {
                         return; // Post non trovato: silenzioso (guard, vedi docblock).
                 }
@@ -478,52 +754,76 @@ final class Nexus_Dedup {
                 update_post_meta( $post_id, self::META_KEY, $fingerprint );
         }
 
+        /* ============ LIMITI DI SCALA + SEGNALAZIONE ONESTA ============ */
+
         /**
-         * Risolve il post_id WordPress di un articolo Nexus, come fa il
-         * publisher (v1.1.0 "Tutto nativo", meta _nexus_article_id):
-         *  1) article->wp_post_id (il publisher lo aggiorna PRIMA dell'hook);
-         *  2) fallback: lookup inversa sul meta _nexus_article_id (UNA query,
-         *     fields ids, post_status 'any' = include publish/draft/pending).
+         * Finestra temporale della lookup (giorni): option
+         * nexus_dedup_window_days (default 90) + filtro dev omonimo, clamp [1, 3650].
          *
-         * @param int    $article_id ID articolo Nexus.
-         * @param object $article    Riga articolo Nexus (o null).
-         * @return int Post WordPress o 0 se non trovato.
+         * @return int
          */
-        private static function resolve_post_id( $article_id, $article ) {
-                // Percorso veloce, stesso check del publisher: wp_post_id + esistenza post.
-                if ( is_object( $article ) && isset( $article->wp_post_id ) ) {
-                        $wp_post_id = absint( $article->wp_post_id );
-                        if ( $wp_post_id > 0 && get_post( $wp_post_id ) ) {
-                                return $wp_post_id;
-                        }
+        private static function window_days() {
+                return self::limit_option( 'nexus_dedup_window_days', 'nexus_dedup_window_days', self::WINDOW_DAYS, 1, 3650 );
+        }
+
+        /**
+         * Cap della lookup (post id per run): option
+         * nexus_dedup_lookup_max (default 400) + filtro dev omonimo, clamp
+         * [1, 10000] (il tetto protegge il preload della meta cache).
+         *
+         * @return int
+         */
+        private static function lookup_max() {
+                return self::limit_option( 'nexus_dedup_lookup_max', 'nexus_dedup_lookup_max', self::LOOKUP_MAX, 1, 10000 );
+        }
+
+        /**
+         * Segnalazione onesta "confronto troncato": UNA riga in activity log
+         * (meccanismo esistente Nexus_DB::insert_activity, action 'dedup',
+         * status 'warning') THROTTLED a 1/giorno via transient
+         * self::THROTTLE_TRANSIENT. MAI spam: il turno giornaliero si consuma
+         * al primo trigger, anche se l'insert fallisce (ambiente degradato:
+         * niente tentativi a raffica per ogni candidato); deactivate() lo azzera.
+         *
+         * @param int $compared   Post effettivamente confrontati (= cap).
+         * @param int $window_days Finestra in giorni applicata alla lookup.
+         * @return void
+         */
+        private static function log_window_notice( $compared, $window_days ) {
+                if ( ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+                        return; // Ambiente WP incompleto: silenzioso.
                 }
 
-                // Fallback: meta inverso scritto dal publisher (update_post_meta
-                // '_nexus_article_id'). 'any' esclude trash/auto-draft.
-                $query = new WP_Query(
-                        array(
-                                'post_type'              => apply_filters( 'nexus_native_post_type', 'post' ),
-                                'post_status'            => 'any',
-                                'fields'                 => 'ids',
-                                'posts_per_page'         => 1,
-                                'no_found_rows'          => true,
-                                'ignore_sticky_posts'    => true,
-                                'update_post_term_cache' => false,
-                                'update_post_meta_cache' => false,
-                                'meta_query'             => array(
-                                        array(
-                                                'key'   => '_nexus_article_id',
-                                                'value' => $article_id,
-                                        ),
-                                ),
-                        )
+                if ( get_transient( self::THROTTLE_TRANSIENT ) ) {
+                        return; // Già segnalato nelle ultime 24h.
+                }
+
+                $message = sprintf(
+                        /* translators: 1: numero articoli confrontati (cap), 2: finestra in giorni. */
+                        __( 'Dedup: confronto limitato a %1$d articoli (finestra %2$d gg) — duplicati recenti oltre il limite non verificati. Alzalo in Impostazioni → Sistema → Limiti e scala.', 'nexus-news-ai' ),
+                        (int) $compared,
+                        (int) $window_days
                 );
 
-                if ( ! empty( $query->posts ) ) {
-                        return absint( $query->posts[0] );
-                }
+                set_transient( self::THROTTLE_TRANSIENT, 1, DAY_IN_SECONDS );
 
-                return 0;
+                self::log_activity( $message, 'warning' );
+        }
+
+        /**
+         * Log attività best-effort (action 'dedup') nella tabella
+         * activity_logs di Nexus — stesso pattern di Learn e Google_Auth
+         * (guard class_exists/method_exists, mai fatale).
+         *
+         * @param string $detail Testo del log (già composto e i18n-ready).
+         * @param string $status 'info' | 'warning' | 'error' | 'success'.
+         * @return bool True se la riga è stata scritta.
+         */
+        private static function log_activity( $detail, $status ) {
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        return (bool) Nexus_DB::insert_activity( 0, 'dedup', $detail, $status );
+                }
+                return false;
         }
 }
 

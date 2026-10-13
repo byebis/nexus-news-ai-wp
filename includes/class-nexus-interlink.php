@@ -1,6 +1,7 @@
 <?php
 /**
- * Nexus Interlink — link interni automatici sui post pubblicati (v1.1.12, pacchetto S4).
+ * Nexus Interlink — link interni automatici sui post pubblicati (v1.1.12, pacchetto S4;
+ * v1.1.13-wip "Ottimizzazione" — limiti configurabili + helper condivisi col dedup).
  *
  * AGGANCIO:
  *   azione 'nexus_pipeline_after_publish' (article_id, article, logs) lanciata da
@@ -11,9 +12,11 @@
  * COSA FA:
  *   1. Se il setting interlink_enabled != 1 esce subito (default 1, vedi
  *      class-nexus-db.php).
- *   2. Risolve il post WP collegato all'articolo Nexus via meta
- *      _nexus_article_id (post nativo + CPT legacy 'nexus_article', stesso
- *      criterio di Nexus_Public_API e Nexus_Native::query_post_types).
+ *   2. Risolve il post WP collegato all'articolo Nexus con l'helper condiviso
+ *      Nexus_Dedup::resolve_article_post_id (UNICA versione da v1.1.13-wip:
+ *      fast path article->wp_post_id + fallback meta _nexus_article_id su
+ *      TUTTI i post type pipeline — post nativo + CPT legacy 'nexus_article',
+ *      stesso criterio di Nexus_Public_API e Nexus_Native::query_post_types).
  *   3. Anti-reprocess: se il post porta già il meta _nexus_interlinked esce
  *      (nessun blocco duplicato, nessun loop).
  *   4. Estrae fino a Nexus_Interlink::KEYWORDS_MAX (6) keyword dal titolo del
@@ -21,9 +24,10 @@
  *      (Nexus_Interlink::STOPWORDS). Un titolo corto degrada con grazia a
  *      meno di 4 keyword (target del contratto: 4-6).
  *   5. Candidati: WP_Query sullo STESSO post type, stato 'publish', escluso il
- *      post corrente, ultimi Nexus_Interlink::WINDOW_DAYS (180) giorni, max
- *      Nexus_Interlink::CANDIDATES_LIMIT (20) con fields 'ids' (titoli letti
- *      con get_the_title).
+ *      post corrente, ultimi nexus_interlink_window_days giorni (option WP,
+ *      default 180, filtro dev omonimo), max nexus_interlink_candidates
+ *      (option WP, default 20, filtro dev omonimo) con fields 'ids' (titoli
+ *      letti con get_the_title).
  *   6. Scoring: +Nexus_Interlink::KEYWORD_SCORE (2) per ogni keyword presente
  *      nel titolo del candidato (confronto lowercase via stripos/mb_stripos),
  *      +Nexus_Interlink::CATEGORY_SCORE (1) se condivide almeno un termine
@@ -43,14 +47,37 @@
  *      _nexus_interlink_ids = CSV degli ID linkati (scritti solo se l'update
  *      del contenuto è riuscito, così un fallimento resta riprocessabile).
  *
+ * IMPOSTAZIONI DI SCALA (v1.1.13-wip — prima hardcoded, ora opzioni):
+ *   - nexus_interlink_window_days (option WP, default 180): finestra
+ *     temporale dei candidati in giorni; filtro dev omonimo.
+ *   - nexus_interlink_candidates (option WP, default 20): cap candidati
+ *     interrogati per pubblicazione; filtro dev omonimo.
+ *   Lettura centralizzata nell'helper condiviso Nexus_Dedup::limit_option
+ *   (get_option(default) → filtro dev → clamp [1, max]): stesso pattern del
+ *   dedup (vedi class-nexus-dedup.php).
+ *
+ * HELPER CONDIVISI (v1.1.13-wip — v1.1.12 aveva copie private divergenti):
+ *   - Nexus_Dedup::settings_guarded()        → impostazioni con guardie
+ *   - Nexus_Dedup::limit_option()            → option + filtro dev + clamp
+ *   - Nexus_Dedup::utf8_lower()              → lowercase robusto UTF-8
+ *   - Nexus_Dedup::resolve_article_post_id() → risoluzione post ↔ articolo
+ *   Entrambi i moduli sono sempre richiesti dal bootstrap (nessun ciclo di
+ *   caricamento); la try/catch del callback copre comunque qualunque
+ *   caricamento parziale (mai fatale).
+ *
+ * GUARDIA (v1.1.13-wip): il callback pipeline gira dentro try/catch
+ * Throwable — la pubblicazione è già avvenuta, questo modulo non deve MAI
+ * interrompere la pipeline.
+ *
  * CONTRATTO PUBBLICO (tutti metodi statici, nessun output diretto):
  *   Nexus_Interlink::init()             → registra l'hook pipeline
  *   Nexus_Interlink::on_after_publish() → callback nexus_pipeline_after_publish
  *   Nexus_Interlink::deactivate()       → hook disattivazione (vuota, uniformità)
  *
- * Dipendenze guarded (mai fatali): Nexus_DB::get_settings(),
- * Nexus_Native::query_post_types(), funzioni WP core. Il modulo si
- * auto-inizializza su 'nexus_modules_init' (vedi fondo file e bootstrap).
+ * Dipendenze guarded (mai fatali): Nexus_DB::get_settings() (via
+ * Nexus_Dedup::settings_guarded), Nexus_Dedup (helper condivisi), funzioni WP
+ * core. Il modulo si auto-inizializza su 'nexus_modules_init' (vedi fondo file
+ * e bootstrap).
  *
  * @package Nexus_News_AI
  * @since   1.1.12
@@ -82,10 +109,21 @@ final class Nexus_Interlink {
                 'come', 'sono', 'anche', 'più', 'tra', 'dal', 'nel', 'alla', 'delle',
         );
 
-        /** Finestra temporale dei candidati (giorni indietro dalla pubblicazione). */
+        /**
+         * DEFAULT della finestra temporale dei candidati (giorni indietro
+         * dalla pubblicazione).
+         *
+         * Il valore effettivo è l'option nexus_interlink_window_days (leggere
+         * SEMPRE via self::window_days(): default → filtro dev → clamp).
+         */
         const WINDOW_DAYS = 180;
 
-        /** Numero massimo di candidati interrogati (fields 'ids'). */
+        /**
+         * DEFAULT del numero massimo di candidati interrogati (fields 'ids').
+         *
+         * Il valore effettivo è l'option nexus_interlink_candidates (leggere
+         * SEMPRE via self::candidates_limit(): default → filtro dev → clamp).
+         */
         const CANDIDATES_LIMIT = 20;
 
         /** Keyword massime estratte dal titolo (target contrattuale S4: 4-6). */
@@ -135,28 +173,54 @@ final class Nexus_Interlink {
         /**
          * Callback di 'nexus_pipeline_after_publish'.
          *
-         * Sequenza: interruttore setting → risoluzione post → anti-reprocess →
-         * keyword + candidati + append blocco + meta. Mai fatale: qualunque
-         * guardia fallisce con un ritorno silenzioso (la pubblicazione è già
-         * avvenuta, questo modulo non deve mai interrompere la pipeline).
+         * GUARDIA v1.1.13-wip: qualunque errore (anche un Error) viene
+         * ingoiato — la pubblicazione è già avvenuta, questo modulo non deve
+         * MAI interrompere la pipeline.
          *
          * @param int    $article_id ID articolo Nexus (riga wp_nexus_articles).
-         * @param object $article    Riga articolo Nexus (Nexus_DB::get_article) —
-         *                           non letta direttamente: la risoluzione passa
-         *                           dal meta _nexus_article_id del post.
-         * @param array  $logs       Log di pubblicazione per piattaforma — non
-         *                           usato in v1 (contratto della action).
+         * @param object $article    Riga articolo Nexus (Nexus_DB::get_article).
+         * @param array  $logs       Log di pubblicazione per piattaforma (non
+         *                           usato in v1, contratto della action).
          * @return void
          */
         public static function on_after_publish( $article_id, $article, $logs ) {
+                try {
+                        self::on_after_publish_core( $article_id, $article );
+                } catch ( \Throwable $e ) {
+                        // Guardia: nessuna propagazione verso la pipeline.
+                }
+        }
+
+        /**
+         * Corpo di on_after_publish (protetto dal try/catch del callback).
+         *
+         * Sequenza: helper condivisi disponibili? → interruttore setting →
+         * risoluzione post → anti-reprocess → keyword + candidati + append
+         * blocco + meta.
+         *
+         * @param int    $article_id ID articolo Nexus.
+         * @param object $article    Riga articolo Nexus (o null).
+         * @return void
+         */
+        private static function on_after_publish_core( $article_id, $article ) {
+                // Helper condivisi vivono in Nexus_Dedup (stesso file-pair O6,
+                // bootstrap richiede sempre entrambi i moduli): se per un
+                // caricamento parziale manca, esce in silenzio.
+                if ( ! class_exists( 'Nexus_Dedup' ) ) {
+                        return;
+                }
+
                 // 1) Interruttore: setting interlink_enabled (default 1).
-                $settings = self::get_settings_guarded();
+                $settings = Nexus_Dedup::settings_guarded();
                 if ( 1 !== absint( isset( $settings['interlink_enabled'] ) ? $settings['interlink_enabled'] : 0 ) ) {
                         return;
                 }
 
-                // 2) Risoluzione post WP ↔ articolo Nexus (meta _nexus_article_id).
-                $post_id = self::resolve_post_id( $article_id );
+                // 2) Risoluzione post WP ↔ articolo Nexus (helper condiviso
+                //    UNICO v1.1.13-wip: fast path wp_post_id + fallback meta
+                //    _nexus_article_id su tutti i post type pipeline, CPT
+                //    legacy 'nexus_article' incluso).
+                $post_id = Nexus_Dedup::resolve_article_post_id( $article_id, $article );
                 if ( $post_id <= 0 ) {
                         return;
                 }
@@ -215,68 +279,33 @@ final class Nexus_Interlink {
         }
 
         /**
-         * Impostazioni plugin con guardie (mai fatali se Nexus_DB manca).
+         * Finestra temporale dei candidati (giorni): option
+         * nexus_interlink_window_days (default 180) + filtro dev omonimo,
+         * clamp [1, 3650] — via helper condiviso Nexus_Dedup::limit_option.
          *
-         * @return array
+         * @return int
          */
-        private static function get_settings_guarded() {
-                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
-                        return array();
-                }
-
-                $settings = Nexus_DB::get_settings();
-
-                return is_array( $settings ) ? $settings : array();
+        private static function window_days() {
+                return Nexus_Dedup::limit_option( 'nexus_interlink_window_days', 'nexus_interlink_window_days', self::WINDOW_DAYS, 1, 3650 );
         }
 
         /**
-         * Risolve il post WP collegato all'articolo Nexus.
+         * Cap candidati interrogati per pubblicazione: option
+         * nexus_interlink_candidates (default 20) + filtro dev omonimo,
+         * clamp [1, 500] — via helper condiviso Nexus_Dedup::limit_option.
          *
-         * Il ponte post ↔ articolo è il meta _nexus_article_id scritto da
-         * Nexus_Publisher subito dopo wp_insert_post/wp_update_post. La lookup
-         * copre il post nativo E il CPT legacy 'nexus_article' (stesso
-         * criterio di Nexus_Public_API::article_rows_for_posts).
-         *
-         * @param int $article_id ID articolo Nexus.
-         * @return int Post WP ID (0 se non trovato).
+         * @return int
          */
-        private static function resolve_post_id( $article_id ) {
-                $article_id = absint( $article_id );
-                if ( $article_id <= 0 || ! class_exists( 'WP_Query' ) ) {
-                        return 0;
-                }
-
-                $post_types = array( 'post', 'nexus_article' );
-                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' ) ) {
-                        $post_types = Nexus_Native::query_post_types();
-                }
-
-                $lookup = new WP_Query(
-                        array(
-                                'post_type'              => $post_types,
-                                'post_status'            => array( 'publish', 'future', 'draft', 'pending', 'private' ),
-                                'posts_per_page'         => 1,
-                                'fields'                 => 'ids',
-                                'meta_key'               => '_nexus_article_id',
-                                'meta_value'             => $article_id,
-                                'no_found_rows'          => true,
-                                'update_post_meta_cache' => false,
-                                'update_post_term_cache' => false,
-                        )
-                );
-
-                if ( empty( $lookup->posts ) ) {
-                        return 0;
-                }
-
-                return absint( $lookup->posts[0] );
+        private static function candidates_limit() {
+                return Nexus_Dedup::limit_option( 'nexus_interlink_candidates', 'nexus_interlink_candidates', self::CANDIDATES_LIMIT, 1, 500 );
         }
 
         /**
          * Estrae le keyword dal titolo (parole > 4 caratteri, no stopword).
          *
          * Tokenizzazione su tutto ciò che NON è lettera (accentate incluse) o
-         * cifra, con lowercase robusto UTF-8. Lunghezza in CARATTERI, non byte
+         * cifra, con lowercase robusto UTF-8 (helper condiviso
+         * Nexus_Dedup::utf8_lower). Lunghezza in CARATTERI, non byte
          * ("più" vale 3). Massimo KEYWORDS_MAX parole, in ordine di comparsa,
          * senza duplicati.
          *
@@ -284,7 +313,7 @@ final class Nexus_Interlink {
          * @return array Lista keyword (lowercase), eventualmente vuota.
          */
         private static function extract_keywords( $title ) {
-                $lower = self::lower( $title );
+                $lower = Nexus_Dedup::utf8_lower( $title );
                 if ( '' === $lower ) {
                         return array();
                 }
@@ -319,10 +348,12 @@ final class Nexus_Interlink {
          * Trova e scoreggia i candidati sullo stesso post type del post corrente.
          *
          * Query: stato 'publish', escluso il post corrente, ultimi
-         * WINDOW_DAYS giorni, max CANDIDATES_LIMIT con fields 'ids'. Il cache
-         * dei termini viene tenuto attivo: wp_get_post_terms() nello scoring
-         * non aggiunge query. Ritorna SOLO candidati con punteggio > 0,
-         * ordinati per punteggio decrescente.
+         * window_days() giorni (option nexus_interlink_window_days), max
+         * candidates_limit() con fields 'ids' (option
+         * nexus_interlink_candidates). Il cache dei termini viene tenuto
+         * attivo: wp_get_post_terms() nello scoring non aggiunge query.
+         * Ritorna SOLO candidati con punteggio > 0, ordinati per punteggio
+         * decrescente.
          *
          * @param int   $post_id  Post corrente.
          * @param array $keywords Keyword estratte dal titolo del post corrente.
@@ -337,14 +368,14 @@ final class Nexus_Interlink {
 
                 // Data limite: wall-clock locale meno la finestra (stesso idiom
                 // di class-nexus-db.php: gmdate su current_time('timestamp')).
-                $since = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - ( self::WINDOW_DAYS * DAY_IN_SECONDS ) );
+                $since = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - ( self::window_days() * DAY_IN_SECONDS ) );
 
                 $query = new WP_Query(
                         array(
                                 'post_type'              => $post->post_type,
                                 'post_status'            => 'publish',
                                 'post__not_in'           => array( $post_id ),
-                                'posts_per_page'         => self::CANDIDATES_LIMIT,
+                                'posts_per_page'         => self::candidates_limit(),
                                 'fields'                 => 'ids',
                                 'no_found_rows'          => true,
                                 'update_post_meta_cache' => false,
@@ -402,7 +433,7 @@ final class Nexus_Interlink {
          */
         private static function score_candidate( $candidate_title, $keywords, $current_id, $candidate_id ) {
                 $score    = 0;
-                $haystack = self::lower( $candidate_title );
+                $haystack = Nexus_Dedup::utf8_lower( $candidate_title );
 
                 // +KEYWORD_SCORE per ogni keyword presente nel titolo (case-insensitive).
                 foreach ( $keywords as $keyword ) {
@@ -532,22 +563,10 @@ final class Nexus_Interlink {
         }
 
         /**
-         * Lowercase robusto UTF-8 (mbstring con fallback strtolower).
-         *
-         * @param string $text Testo in ingresso.
-         * @return string
-         */
-        private static function lower( $text ) {
-                $text = (string) $text;
-
-                return function_exists( 'mb_strtolower' ) ? mb_strtolower( $text, 'UTF-8' ) : strtolower( $text );
-        }
-
-        /**
          * TRUE se $needle compare in $haystack (case-insensitive).
          *
-         * Le keyword sono già lowercase (self::lower); mb_stripos gestisce le
-         * accentate UTF-8, stripos fa da fallback.
+         * Le keyword sono già lowercase (Nexus_Dedup::utf8_lower); mb_stripos
+         * gestisce le accentate UTF-8, stripos fa da fallback.
          *
          * @param string $haystack Titolo del candidato (lowercase).
          * @param string $needle   Keyword (lowercase).
