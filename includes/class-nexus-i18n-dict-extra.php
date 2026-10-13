@@ -63,6 +63,8 @@ function nexus_i18n_extra_dict() {
             '5 agenti' => '5 agents',
             '7 agenti + capo redattore' => '7 agents + chief editor',
             '1 ora fa' => '1 hour ago',
+            // v1.1.13.1 (Q3): placeholder del campo Chat Telegram ops (settings-pubblicazione.php).
+            '@ops o -1001234567890' => '@ops or -1001234567890',
             // v1.1.11 (R2): tab della pagina Impostazioni unica (settings.php).
             // 'AI' è identica in EN: la sostituzione è identità, nessun rischio
             // di corruzione strtr (chiave = traduzione).
@@ -110,7 +112,9 @@ function nexus_i18n_extra_dict() {
             'Approvazione non riuscita' => 'Approval failed',
             'Approvo…' => 'Approving…',
             'Apri il wizard' => 'Open the wizard',
+            'Articoli degli ultimi N giorni confrontati dal dedup semantico (7-730, predefinito 90).' => 'Articles from the last N days compared by the semantic dedup (7-730, default 90).',
             'Articoli massimi al giorno' => 'Max articles per day',
+            'Articoli massimi confrontati' => 'Maximum articles compared',
             'Articoli Nexus da migrare' => 'Nexus articles to migrate',
             'Articoli più visti' => 'Most viewed articles',
             'Articoli proposti dagli agenti: valuta qualità e fonte, poi approva, rifiuta o pubblica.' => 'Articles proposed by the agents: review quality and source, then approve, reject or publish.',
@@ -144,6 +148,7 @@ function nexus_i18n_extra_dict() {
             'Blog (WordPress)' => 'Blog (WordPress)',
             'Bozze' => 'Drafts',
             'Budget mensile AI (USD)' => 'Monthly AI budget (USD)',
+            'Candidati link interni per giro' => 'Internal link candidates per run',
             'Carica modelli' => 'Load models',
             'Carica un file JSON esportato da Nexus News AI per ripristinare impostazioni e agenti.' => 'Upload a JSON file exported by Nexus News AI to restore settings and agents.',
             'Caricamento agenti…' => 'Loading agents…',
@@ -158,6 +163,8 @@ function nexus_i18n_extra_dict() {
             'Carico…' => 'Loading…',
             'Categoria (vuoto = tutte)' => 'Category (empty = all)',
             'Chat ID Telegram' => 'Telegram chat ID',
+            'Chat Telegram ops' => 'Telegram ops chat',
+            'Chat Telegram ops per le notifiche interne (vuoto = canale social attuale).' => 'Telegram ops chat for internal notifications (empty = current social channel).',
             'Chiamate AI' => 'AI calls',
             'Chiaro (consigliato)' => 'Light (recommended)',
             'Chiave API AI' => 'AI API key',
@@ -186,7 +193,9 @@ function nexus_i18n_extra_dict() {
             'Conferma rifiuto' => 'Confirm rejection',
             'Confermati' => 'Confirmed',
             'Configurata' => 'Configured',
+            'Configurato' => 'Configured',
             'Configurazione AI' => 'AI configuration',
+            'Connessioni:' => 'Connections:',
             'Contenuti' => 'Content',
             'Contenuti nativi' => 'Native content',
             'Continua' => 'Next',
@@ -243,6 +252,7 @@ function nexus_i18n_extra_dict() {
             'Esporta impostazioni e agenti in un file JSON. NON include articoli, iscritti o log.' => 'Export settings and agents to a JSON file. Does NOT include articles, subscribers or logs.',
             'Eventi WP-Cron' => 'WP-Cron events',
             'Evento' => 'Event',
+            'Evergreen per giro settimanale' => 'Evergreen per weekly run',
             'Fact-check' => 'Fact-check',
             'Fact-check automatico con citazioni' => 'Automatic fact-check with quotes',
             'Fallita' => 'Failed',
@@ -255,6 +265,8 @@ function nexus_i18n_extra_dict() {
             'File JSON non valido: atteso un oggetto con le chiavi settings e agents.' => 'Invalid JSON file: an object with the settings and agents keys was expected.',
             'Filtra articoli per stato' => 'Filter articles by status',
             'Filtra lavori per stato' => 'Filter jobs by status',
+            'Finestra dedup (giorni)' => 'Dedup window (days)',
+            'Finestra link interni (giorni)' => 'Internal link window (days)',
             'Fonti RSS di esempio (una URL per riga)' => 'Sample RSS sources (one URL per line)',
             'Fonti RSS salvate nelle impostazioni.' => 'RSS sources saved in the settings.',
             'Form di iscrizione alla newsletter della redazione AI.' => 'Newsletter signup form for the AI newsroom.',
@@ -263,15 +275,21 @@ function nexus_i18n_extra_dict() {
             'Genera nuova chiave' => 'Generate new key',
             'Generare una nuova chiave invalida la chiave attuale?' => 'Generating a new key will invalidate the current key?',
             'Generata automaticamente alla prima pubblicazione.' => 'Generated automatically on first publish.',
+            'Generazione' => 'Generation',
             'Gestisci agenti' => 'Manage agents',
             'Giornalista AI' => 'AI Journalist',
+            'Giorni di articoli candidati come link interni (7-730, predefinito 180).' => 'Days of articles eligible as internal links (7-730, default 180).',
             'Gli agenti raccolgono notizie RSS reali della loro categoria, le valutano e le riscrivono con AI.' => 'The agents collect real RSS news in their category, evaluate it and rewrite it with AI.',
             'Gli agenti raccolgono notizie RSS reali della loro categoria, le valutano e le riscrivono con AI. Puoi creare, modificare e clonare gli agenti: i 7 agenti predefiniti restano modificabili.' => 'The agents collect real RSS news for their category, evaluate and rewrite it with AI. You can create, edit and clone agents: the 7 predefined agents remain editable.',
             'Gli agenti stanno scegliendo le fonti migliori…' => 'The agents are picking the best sources…',
             'Gli articoli raccolti vengono valutati automaticamente dall\'AI (qualità e pertinenza editoriale).' => 'Collected articles are automatically evaluated by the AI (quality and editorial relevance).',
             'Gli articoli riscritti vengono pubblicati automaticamente, senza attesa umana.' => 'Rewritten articles are published automatically, without human review.',
             'Gli articoli valutati vengono riscritti in stile editoriale dalla redazione AI.' => 'Evaluated articles are rewritten in editorial style by the AI newsroom.',
+            // v1.1.13.1 (Q3): badge connessioni (settings-sistema.php) — nome di servizio
+            // identico in EN: sostituzione identità, stessa scelta di 'AI'.
+            'Google:' => 'Google:',
             'Griglia degli ultimi articoli della redazione AI.' => 'Grid of the latest articles from the AI newsroom.',
+            'Hai modifiche non salvate in questa sezione.' => 'You have unsaved changes in this section.',
             'ID' => 'ID',
             'ID della chat o del canale di destinazione (es. -1001234567890).' => 'ID of the target chat or channel (e.g. -1001234567890).',
             'Identificativo del modello (es. openai/gpt-4o-mini).' => 'Model identifier (e.g. openai/gpt-4o-mini).',
@@ -350,8 +368,10 @@ function nexus_i18n_extra_dict() {
             'Lettura delle fonti in arrivo…' => 'Reading incoming sources…',
             // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
             'Lettura pagina (read)' => 'Page reading (read)',
+            'Limite di notifiche inviate per ora (1-60, predefinito 10).' => 'Maximum notifications sent per hour (1-60, default 10).',
             'Limite memoria (memory_limit)' => 'Memory limit (memory_limit)',
             'Limiti e qualità' => 'Limits and quality',
+            'Limiti e scala' => 'Scale limits',
             'Lingua dell\'interfaccia admin' => 'Admin interface language',
             'Lingua e API pubblica' => 'Language and public API',
             'Lingue di traduzione' => 'Translation languages',
@@ -384,6 +404,7 @@ function nexus_i18n_extra_dict() {
             'Modello immagini (vuoto = default)' => 'Image model (empty = default)',
             'Modifica' => 'Edit',
             'Modifica agente: ' => 'Edit agent: ',
+            'Moduli AI' => 'AI modules',
             'Mostra a quale provider è connesso il plugin e quanti modelli espone.' => 'Shows which AI provider the plugin is connected to and how many models it exposes.',
             'Mostra immagini' => 'Show images',
             'Nessun agente configurato' => 'No agents configured',
@@ -417,8 +438,11 @@ function nexus_i18n_extra_dict() {
             'Nome' => 'Name',
             'Nome del sito' => 'Site name',
             'Nome e categoria sono obbligatori.' => 'Name and category are required.',
+            'Non connesso' => 'Not connected',
             'Non impostato' => 'Not set',
+            'non salvato' => 'unsaved',
             'Nota di rifiuto (opzionale)' => 'Rejection note (optional)',
+            'Notifiche massime per ora' => 'Maximum notifications per hour',
             'Numero articoli' => 'Number of articles',
             'Numero massimo di articoli pubblicati automaticamente in un giorno.' => 'Maximum number of articles automatically published in one day.',
             'Nuova chiave API generata' => 'New API key generated',
@@ -446,6 +470,8 @@ function nexus_i18n_extra_dict() {
             'Prossima esecuzione' => 'Next run',
             // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
             'Prova la configurazione degli strumenti senza attivarli: ricerca web, lettura pagina e scoperta feed.' => 'Try the tools configuration without activating it: web search, page reading and feed discovery.',
+            'Provider' => 'Providers',
+            'Provider AI:' => 'AI provider:',
             'Pubblica' => 'Publish',
             'Pubblica post WordPress nativi' => 'Publish native WordPress posts',
             'Pubblicati' => 'Published',
@@ -463,6 +489,9 @@ function nexus_i18n_extra_dict() {
             'Punteggio fact-check AI' => 'AI fact-check score',
             'Punteggio qualità' => 'Quality score',
             'Quadrata (1024x1024)' => 'Square (1024x1024)',
+            'Quanti articoli pillar vengono rinfrescati al massimo a ogni giro settimanale (1-50, predefinito 5).' => 'How many pillar articles are refreshed at most in each weekly run (1-50, default 5).',
+            'Quanti articoli pubblicati al massimo vengono confrontati a ogni giro (100-5000, predefinito 400).' => 'How many published articles are compared at most on each run (100-5000, default 400).',
+            'Quanti candidati vengono valutati a ogni giro (5-100, predefinito 20).' => 'How many candidates are evaluated on each run (5-100, default 20).',
             // v1.1.7 (T-C): pannello "Test degli strumenti" (tools.php v1.1.7, T-B2).
             'Query o URL da testare' => 'Query or URL to test',
             'Qualità media' => 'Average quality',
@@ -494,6 +523,7 @@ function nexus_i18n_extra_dict() {
             'Salva agente' => 'Save agent',
             'Salva le impostazioni e riprova.' => 'Save the settings and try again.',
             'Salva modello' => 'Save model',
+            'Salva ora' => 'Save now',
             'Salvataggio agente fallito' => 'Agent save failed',
             'Salvataggio modello non riuscito' => 'Model save failed',
             'Salvataggio non riuscito' => 'Save failed',
@@ -524,6 +554,7 @@ function nexus_i18n_extra_dict() {
             'SEO on-page' => 'On-page SEO',
             'Serie giornaliera' => 'Daily series',
             'Sessione scaduta o permessi insufficienti: ricarica la pagina e riprova.' => 'Session expired or insufficient permissions: reload the page and try again.',
+            'Sezioni AI' => 'AI sections',
             'Sezioni impostazioni' => 'Settings sections',
             'Si è verificato un errore inatteso.' => 'An unexpected error occurred.',
             'Sistema' => 'System',
@@ -550,6 +581,8 @@ function nexus_i18n_extra_dict() {
             'Tabella' => 'Table',
             'Tabelle database' => 'Database tables',
             'Tagline del sito' => 'Site tagline',
+            // v1.1.13.1 (Q3): badge connessioni (settings-sistema.php) — nome di servizio identico in EN.
+            'Telegram:' => 'Telegram:',
             'Tema da sviluppare' => 'Topic to develop',
             'Tema da sviluppare (es. l\'impatto dell\'AI sulle notizie elettorali)' => 'Topic to develop (e.g. the impact of AI on election news)',
             'Tema del pannello' => 'Panel theme',
@@ -3612,6 +3645,24 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Dedup: confronto limitato a (\d+) articoli \(finestra (\d+) gg\) — duplicati recenti oltre il limite non verificati\. Alzalo in Impostazioni → Sistema → Limiti e scala\.',
             'tpl' => 'Dedup: comparison limited to $1 articles (window $2 days) — recent duplicates beyond the limit are not verified. Raise it in Settings → System → Scale limits.',
+        ),
+        /* ---- v1.1.13.1 (Q3): riepilogo wizard "completato" — correttivi in
+         * coda per i compositi runtime di admin.js (nxaT, toast di fine wizard).
+         * I pattern dedicati "Wizard completato: N agente/i creato/i." (v1.1.11
+         * R3) non arrivano mai a firare: i generici "([\d.,]+) agenti/agente"
+         * (v1.1.6, posizione precedente) traducono prima il solo nucleo
+         * "N agenti/agente" e la frase resta mista IT/EN ("Wizard completato:
+         * 3 agents creati."). Qui si intercetta la forma GIÀ parzialmente
+         * tradotta dai generici (append-only: non si riordinano le voci
+         * esistenti). Verificato in node: catena completa => EN intero; le
+         * frasi già in EN non matchano. ---- */
+        array(
+            're'  => 'Wizard completato: 1 agent creato\.',
+            'tpl' => 'Wizard completed: 1 agent created.',
+        ),
+        array(
+            're'  => 'Wizard completato: (\d+) agents creati\.',
+            'tpl' => 'Wizard completed: $1 agents created.',
         ),
     );
 }
