@@ -191,6 +191,8 @@ class Nexus_Pipeline {
                 if ( $evergreen ) {
                         // Nessun feed disponibile → 1 analisi editoriale evergreen (nessuna pretesa di notizia in tempo reale).
                         $prompt = Nexus_AI_Engine::evergreen_prompt( $category, $personality );
+                        // v1.1.12 (S0): hook prompt generico (S2/S6).
+                        $prompt = apply_filters( 'nexus_pipeline_prompt', $prompt, 'collect', null, $agent );
                         // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
                         // v1.1.10 (G1): l'agente passa al motore (provider per-agente reale).
                         $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id, 'agent' => $agent ) );
@@ -223,6 +225,8 @@ class Nexus_Pipeline {
                         $items_text = self::build_items_text( $items );
 
                         $prompt = Nexus_AI_Engine::collect_prompt( $category, $personality, $items_text, $source_name );
+                        // v1.1.12 (S0): hook prompt generico (S2/S6).
+                        $prompt = apply_filters( 'nexus_pipeline_prompt', $prompt, 'collect', null, $agent );
                         // v1.0.3: modello economico per lo screening + tracking usage (action/agent_id).
                         // v1.1.10 (G1): l'agente passa al motore (provider per-agente reale).
                         $res    = self::chat( $prompt, 'collect', array( 'model' => self::cheap_model(), 'agent_id' => (int) $agent->id, 'agent' => $agent ) );
@@ -309,6 +313,14 @@ class Nexus_Pipeline {
                         $hash = self::title_hash( $candidate['title'] );
                         if ( '' !== $hash && method_exists( 'Nexus_DB', 'article_hash_exists' ) && Nexus_DB::article_hash_exists( $hash ) ) {
                                 self::log_phase( 0, 'duplicate', sprintf( 'Duplicato scartato: %s', self::clip( $candidate['title'], 60 ) ), 'info' );
+                                continue;
+                        }
+
+                        // v1.1.12 (S0): gate pre-inserimento per pacchetti esterni — es.
+                        // dedup semantico (S3): un filtro che ritorna true scarta il
+                        // candidato PRIMA dell'INSERT (log attività 'duplicate').
+                        if ( apply_filters( 'nexus_pipeline_skip_item', false, $candidate, $agent, $evergreen ) ) {
+                                self::log_phase( (int) $agent->id, 'duplicate', sprintf( 'Candidato scartato da un filtro pipeline (contenuto simile): %s', self::clip( $candidate['title'], 60 ) ), 'info' );
                                 continue;
                         }
 
@@ -404,6 +416,11 @@ class Nexus_Pipeline {
                         $category
                 );
 
+                // v1.1.12 (S0): hook prompt generico — il learning loop (S2) inietta qui
+                // la guida performance; l'agente è caricato prima per i filtri.
+                $eval_agent = Nexus_DB::get_agent( (int) $article->agent_id );
+                $prompt     = apply_filters( 'nexus_pipeline_prompt', $prompt, 'evaluate', $article, $eval_agent );
+
                 // v1.1.10 (WP3): il prompt di valutazione riceve già il content — nessun
                 // cambio di firma. Se il content è full (>1500 caratteri: estrazione
                 // della pagina riuscita, un estratto RSS resta tipicamente ~400) log
@@ -426,7 +443,6 @@ class Nexus_Pipeline {
                 // v1.1.10 (G1): l'agente dell'articolo passa al motore (provider per-agente reale;
                 // se il cheap model non esiste su quel provider, il fallback chain del motore
                 // riprova coi globali — stessa semantica v1.1.9, mai su 401/403).
-                $eval_agent = Nexus_DB::get_agent( (int) $article->agent_id );
                 $res = self::chat( $prompt, 'evaluate', array( 'model' => self::cheap_model(), 'agent_id' => (int) $article->agent_id, 'agent' => $eval_agent, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
@@ -511,6 +527,9 @@ class Nexus_Pipeline {
                                 $chief_note
                         );
                 }
+                // v1.1.12 (S0): hook prompt generico — evergreen/pillar (S6) e learning
+                // loop (S2) arricchiscono qui il prompt di riscrittura.
+                $prompt = apply_filters( 'nexus_pipeline_prompt', $prompt, 'rewrite', $article, $agent );
                 // v1.0.3: modello per-agente (agents.ai_model se impostato, fallback ai_model globale).
                 // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede già un oggetto JSON.
                 // v1.1.10 (G1): anche il provider per-agente viene usato davvero (prima
@@ -731,6 +750,9 @@ class Nexus_Pipeline {
                                 sprintf( 'Articolo #%d "%s" pubblicato su: %s.', $article_id, self::clip( $article->title, 60 ), implode( ', ', $published_platforms ) ),
                                 'success'
                         );
+                        // v1.1.12 (S0): post-publish hook — internal linking (S4),
+                        // fingerprint dedup (S3), notifiche (S7) si agganciano qui.
+                        do_action( 'nexus_pipeline_after_publish', $article_id, $article, $logs );
                         $out['ok']      = true;
                         $out['message'] = sprintf( 'Pubblicato su: %s.', implode( ', ', $published_platforms ) );
                 } else {
@@ -2239,6 +2261,9 @@ class Nexus_Pipeline {
          * @return void
          */
         private static function log_phase( $agent_id, $action, $detail, $status ) {
+                // v1.1.12 (S0): evento pipeline per pacchetti esterni — le notifiche
+                // (S7) ascoltano status 'error'/'info' e instradano su webhook/Telegram.
+                do_action( 'nexus_pipeline_phase', $agent_id, $action, $detail, $status );
                 Nexus_DB::insert_activity( $agent_id, $action, self::clip( $detail, 500 ), $status );
         }
 

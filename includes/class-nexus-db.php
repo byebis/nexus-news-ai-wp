@@ -85,7 +85,7 @@ class Nexus_DB {
         const OPTION_SETTINGS = 'nexus_settings';
         const DB_VERSION_KEY  = 'nexus_db_version';
         const DB_REVISION_KEY = 'nexus_db_revision';
-        const DB_REVISION     = 3; // v1.1.10 — schema v3: source_type su articoli, search/MCP per-agente
+        const DB_REVISION     = 4; // v1.1.12 — schema v4: nexus_metrics (feedback performance GSC/GA4)
 
         /**
          * Default settings (portati da Prisma Settings model).
@@ -213,6 +213,35 @@ class Nexus_DB {
                         // 0 = GET /ai/models NON fa richieste remote ai provider
                         // (serve solo la cache esistente; anche refresh=1 è no-op).
                         'models_fetch_enabled' => 1,
+                        // v1.1.12 (S0) — PACCHETTO FEEDBACK (S1/S2): credenziali Google
+                        // OAuth (client "App web" dell'utente, come Site Kit), token
+                        // salvati cifrati in opzioni dedicate (nexus_gsc_token),
+                        // property Search Console (URL esatto della property) e GA4.
+                        'gsc_oauth_client_id'     => '',
+                        'gsc_oauth_client_secret' => '', // segreto: mascherato in GET /settings
+                        'gsc_site_url'            => '', // es. https://example.com/ (property GSC)
+                        'ga4_property_id'         => '', // es. 123456789 (solo cifre)
+                        'metrics_sync_enabled'    => 1, // sync giornaliero GSC/GA4 via WP-Cron
+                        // v1.1.12 (S0) — PACCHETTO SEO (S5): Google News sitemap.
+                        'news_sitemap_enabled'    => 0,
+                        'news_sitemap_name'       => '', // nome testata <news:name> (default: site_name)
+                        // v1.1.12 (S0) — PACCHETTO DEDUP (S3): simhash 64-bit su
+                        // 4-grammi; distanza Hamming <= soglia = contenuto simile.
+                        'dedup_similar_enabled'   => 1,
+                        'dedup_similar_threshold' => 6, // 0..24; 6 = conservativo
+                        // v1.1.12 (S0) — PACCHETTO INTERLINK (S4): link interni
+                        // automatici a post correlati dello stesso sito.
+                        'interlink_enabled'       => 1,
+                        'interlink_max'           => 3, // max link per articolo
+                        // v1.1.12 (S0) — PACCHETTO LEARNING (S2): guida performance
+                        // nel prompt del capo redattore / valutazione.
+                        'learn_enabled'           => 1,
+                        'learn_window_days'       => 30, // finestra aggregazione metriche
+                        // v1.1.12 (S0) — PACCHETTO NOTIFICHE (S7): webhook generico
+                        // (Slack-compatible) per eventi pipeline; Telegram riutilizza
+                        // le credenziali enable_telegram/telegram_bot_token esistenti.
+                        'notify_webhook_url'      => '', // segreto-like: mascherato in GET /settings
+                        'notify_events'           => 'error,pending', // csv: error,pending,published
                 );
         }
 
@@ -234,6 +263,7 @@ class Nexus_DB {
                 $transl  = $wpdb->prefix . 'nexus_translations';
                 $jobs    = $wpdb->prefix . 'nexus_jobs';
                 $revs    = $wpdb->prefix . 'nexus_article_revisions';
+                $metrics = $wpdb->prefix . 'nexus_metrics'; // v1.1.12 schema v4
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -403,6 +433,25 @@ class Nexus_DB {
                                 created_at DATETIME NOT NULL,
                                 PRIMARY KEY  (id),
                                 KEY article_id (article_id)
+                        ) {$charset};",
+                        // v1.1.12 (schema v4) — metriche performance giornaliere per post
+                        // (feedback loop): una riga per post+giorno+sorgente. 'source'
+                        // distingue il provider dei dati ('gsc' = Search Console,
+                        // 'ga4' = Google Analytics 4). Post_id = ID del post WordPress
+                        // pubblicato (articoli Nexus mappati via _nexus_article_id).
+                        "CREATE TABLE {$metrics} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                post_id BIGINT UNSIGNED NOT NULL,
+                                metric_date DATE NOT NULL,
+                                source VARCHAR(16) NOT NULL DEFAULT 'gsc',
+                                clicks INT UNSIGNED NOT NULL DEFAULT 0,
+                                impressions INT UNSIGNED NOT NULL DEFAULT 0,
+                                position DECIMAL(6,2) NOT NULL DEFAULT 0,
+                                views INT UNSIGNED NOT NULL DEFAULT 0,
+                                synced_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                UNIQUE KEY post_metric (post_id, metric_date, source),
+                                KEY metric_date (metric_date)
                         ) {$charset};",
                 );
         }
@@ -583,6 +632,7 @@ class Nexus_DB {
                         'translations'  => $wpdb->prefix . 'nexus_translations',
                         'jobs'          => $wpdb->prefix . 'nexus_jobs',
                         'revisions'     => $wpdb->prefix . 'nexus_article_revisions',
+                        'metrics'       => $wpdb->prefix . 'nexus_metrics', // v1.1.12 schema v4
                 );
         }
 
