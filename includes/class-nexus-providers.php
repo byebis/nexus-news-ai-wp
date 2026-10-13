@@ -156,6 +156,9 @@ class Nexus_Providers {
                 $provider_id = sanitize_key( (string) $provider_id );
 
                 $out = array(
+                        // v1.1.9: id risolto, usato da Nexus_AI_Engine per json_mode,
+                        // circuit breaker e fallback chain.
+                        'provider' => $provider_id,
                         'ok'       => false,
                         'base_url' => '',
                         'api_key'  => '',
