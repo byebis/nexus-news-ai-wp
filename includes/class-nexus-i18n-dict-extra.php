@@ -1214,6 +1214,43 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Test non riuscito' => 'Test failed',
             'URL di autorizzazione mancante nella risposta del server.' => 'Authorization URL missing from the server response.',
 
+            /* v1.1.11 (R4-6) — ai-engine / providers / sources: errori fissi del
+             * motore AI (Nexus_AI_Engine), risoluzione provider (Nexus_Providers:
+             * custom e login web OAuth) e log fonti (Nexus_Sources). Messaggi
+             * compositi con variabili: vedi i pattern in coda qui sotto. */
+            'Attendere qualche secondo prima di riavviare il login web (limite di frequenza).' => 'Wait a few seconds before restarting the web login (rate limit).',
+            'Base URL del provider AI non valida.' => 'Invalid AI provider base URL.',
+            'Base URL del provider AI non valida: sono ammessi solo http e https.' => 'Invalid AI provider base URL: only http and https are allowed.',
+            'Chiave API AI non configurata: imposta la chiave API (ai_api_key) nelle impostazioni del plugin Nexus News AI.' => 'AI API key not configured: set the API key (ai_api_key) in the Nexus News AI plugin settings.',
+            'Codice OAuth mancante o non valido: riavvia il login da Impostazioni AI.' => 'Missing or invalid OAuth code: restart the login from AI Settings.',
+            'Dati del provider personalizzato mancanti o non validi.' => 'Custom provider data missing or invalid.',
+            'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l’endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).' => 'AI endpoints on private IPs/localhost are not allowed: enable the “Allow AI endpoints on private IPs/localhost” option in the settings if the endpoint is your local server (LM Studio, vLLM, Ollama on LAN).',
+            'Etichetta del provider mancante: dai un nome riconoscibile (es. “Together”).' => 'Missing provider label: give it a recognizable name (e.g. “Together”).',
+            'Full-content: Nexus_Readability non disponibile: le fonti full=1 sono servite con l\'estratto RSS.' => 'Full-content: Nexus_Readability unavailable: full=1 sources are served with the RSS excerpt.',
+            'Generazione dell’identificativo non riuscita: riprova.' => 'Could not generate the identifier: try again.',
+            'Il layer dati Nexus_DB non è disponibile: chiave non salvata.' => 'The Nexus_DB data layer is unavailable: key not saved.',
+            'Il layer dati Nexus_DB non è disponibile: il plugin Nexus News AI non è caricato correttamente.' => 'The Nexus_DB data layer is unavailable: the Nexus News AI plugin is not loaded correctly.',
+            'Il login web OAuth non è disponibile per questo provider: inserisci la chiave API manualmente.' => 'OAuth web login is not available for this provider: enter the API key manually.',
+            'Impossibile preparare la richiesta per il modello AI (encoding JSON fallito).' => 'Unable to prepare the AI model request (JSON encoding failed).',
+            'La risposta del servizio AI non è un JSON valido.' => 'The AI service response is not valid JSON.',
+            'Limite di richieste verso il servizio AI raggiunto (HTTP 429). Riprova più tardi.' => 'AI service request limit reached (HTTP 429). Try again later.',
+            'MCP: Nexus_Tools::mcp_call non disponibile: fonte MCP ignorata.' => 'MCP: Nexus_Tools::mcp_call unavailable: MCP source ignored.',
+            'Nessun messaggio valido da inviare al modello AI.' => 'No valid message to send to the AI model.',
+            'Provider AI non disponibile per l\'agente.' => 'AI provider unavailable for the agent.',
+            'Provider OAuth non più valido: riavvia il login da Impostazioni AI.' => 'OAuth provider no longer valid: restart the login from AI Settings.',
+            'Provider personalizzato non trovato: forse è stato eliminato. Ricarica la pagina e riprova.' => 'Custom provider not found: it may have been deleted. Reload the page and try again.',
+            'Risposta inattesa da OpenRouter (chiave di provisioning mancante o dal formato inatteso). Riavvia il login da Impostazioni AI.' => 'Unexpected response from OpenRouter (provisioning key missing or in an unexpected format). Restart the login from AI Settings.',
+            'Salvataggio del provider personalizzato non riuscito: verifica i permessi del database.' => 'Custom provider could not be saved: check the database permissions.',
+            'Search: chiave API non impostata (setting tools_search_key): fonte ignorata.' => 'Search: API key not set (setting tools_search_key): source ignored.',
+            'Sessione OAuth legata a un altro utente: riavvia il login dalla tua sessione.' => 'OAuth session belongs to another user: restart the login from your own session.',
+            'Sessione OAuth scaduta o già usata (validità 10 minuti): riavvia il login da Impostazioni AI.' => 'OAuth session expired or already used (10-minute validity): restart the login from AI Settings.',
+            'Stato OAuth mancante o malformato: riavvia il login da Impostazioni AI.' => 'Missing or malformed OAuth state: restart the login from AI Settings.',
+            'URL base mancante o non valido: inserisci l’endpoint compatibile OpenAI (es. https://api.together.xyz/v1).' => 'Missing or invalid base URL: enter the OpenAI-compatible endpoint (e.g. https://api.together.xyz/v1).',
+            'URL del provider AI non valida.' => 'Invalid AI provider URL.',
+            'URL del provider AI non valida: sono ammessi solo http e https.' => 'Invalid AI provider URL: only http and https are allowed.',
+            'YouTube: API key non impostata (setting youtube_api_key): fonte ignorata.' => 'YouTube: API key not set (setting youtube_api_key): source ignored.',
+            'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.' => 'response_format json_object is not supported by the provider: response obtained without JSON mode.',
+
         );
 }
 
@@ -2546,6 +2583,177 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'riprova ricaricando la pagina\.',
             'tpl' => 'try reloading the page.',
+        ),
+
+        /* v1.1.11 (R4-6) — ai-engine / providers / sources. Messaggi compositi del
+         * motore AI (errori HTTP, rate limit/breaker, prompt cache, prezzi),
+         * risoluzione provider custom/OAuth e log fonti (YouTube, Telegram,
+         * Reddit, Search, MCP, Web, Full-content). Le voci di coda delle code
+         * IT già aperte dai pattern v1.1.10.1 vengono completate al giro
+         * successivo della catena i18n.js. */
+        array(
+            're'  => 'Risposta servita dalla prompt cache \(TTL 12h, modello (.+)\): nessuna chiamata API effettuata\.',
+            'tpl' => 'Response served from the prompt cache (12h TTL, model $1): no API call made.',
+        ),
+        array(
+            're'  => 'Provider AI non disponibile: (.+)\.',
+            'tpl' => 'AI provider unavailable: $1.',
+        ),
+        array(
+            're'  => 'Rate limit AI attivo per il provider (.+): riprova tra circa un minuto \(cooldown automatico\)\.',
+            'tpl' => 'AI rate limit active for provider $1: try again in about a minute (automatic cooldown).',
+        ),
+        array(
+            're'  => 'Rate limit AI attivo per il provider (.+): cooldown automatico di 60s dopo 429 consecutivi\.',
+            'tpl' => 'AI rate limit active for provider $1: automatic 60s cooldown after consecutive 429s.',
+        ),
+        array(
+            're'  => 'Provider primario non disponibile \((.+)\): ritenta con il provider di fallback\.',
+            'tpl' => 'Primary provider unavailable ($1): retrying with the fallback provider.',
+        ),
+        array(
+            're'  => 'Chiave API non valida o non autorizzata \(HTTP (\d+)\)\. Verifica ai_api_key nelle impostazioni del plugin\. Dettaglio: (.+)$',
+            'tpl' => 'Invalid or unauthorized API key (HTTP $1). Check ai_api_key in the plugin settings. Detail: $2',
+        ),
+        array(
+            're'  => 'Chiave API non valida o non autorizzata \(HTTP (\d+)\)\. Verifica ai_api_key nelle impostazioni del plugin\.',
+            'tpl' => 'Invalid or unauthorized API key (HTTP $1). Check ai_api_key in the plugin settings.',
+        ),
+        array(
+            're'  => 'Limite di richieste verso il servizio AI raggiunto \(HTTP 429\)\. Riprova più tardi\. Dettaglio: (.+)$',
+            'tpl' => 'AI service request limit reached (HTTP 429). Try again later. Detail: $1',
+        ),
+        array(
+            're'  => 'Il servizio AI ha risposto con errore HTTP (\d+): (.+)$',
+            'tpl' => 'The AI service returned HTTP error $1: $2',
+        ),
+        array(
+            're'  => 'Il servizio AI ha risposto con errore HTTP (\d+)\.',
+            'tpl' => 'The AI service returned HTTP error $1.',
+        ),
+        array(
+            're'  => 'Risposta del modello (.+) troncata per max_tokens \(finish_reason=length\): aumento max_tokens se il problema persiste\.',
+            'tpl' => 'Response from model $1 truncated due to max_tokens (finish_reason=length): increase max_tokens if the problem persists.',
+        ),
+        array(
+            're'  => 'Il modello AI \((.+)\) ha restituito una risposta vuota\.',
+            'tpl' => 'The AI model ($1) returned an empty response.',
+        ),
+        array(
+            're'  => 'Errore di connessione al servizio AI: (.+)$',
+            'tpl' => 'AI service connection error: $1',
+        ),
+        array(
+            're'  => 'Prezzo non in mappa per il modello (.+): usata la stima generica \(0\.50/1\.50 USD per 1M token\)\.',
+            'tpl' => 'Price not mapped for model $1: using the generic estimate (0.50/1.50 USD per 1M tokens).',
+        ),
+        array(
+            're'  => 'Provider personalizzato sconosciuto o eliminato \(([^)]+)\): scegli un altro provider per gli agenti che lo usavano\.',
+            'tpl' => 'Unknown or deleted custom provider ($1): choose a different provider for the agents that were using it.',
+        ),
+        array(
+            're'  => '\): scegli un altro provider per gli agenti che lo usavano\.',
+            'tpl' => '): choose a different provider for the agents that were using it.',
+        ),
+        array(
+            're'  => 'for provider personalizzato (.+)$',
+            'tpl' => 'for custom provider $1',
+        ),
+        array(
+            're'  => ': correggilo in Nexus News AI → Impostazioni → Provider AI\.',
+            'tpl' => ': fix it in Nexus News AI → Settings → Provider AI.',
+        ),
+        array(
+            're'  => ': inseriscila in Nexus News AI → Impostazioni → Provider AI\.',
+            'tpl' => ': enter it in Nexus News AI → Settings → Provider AI.',
+        ),
+        array(
+            're'  => ': impostala in Nexus News AI → Impostazioni → Provider AI\.',
+            'tpl' => ': set it in Nexus News AI → Settings → Provider AI.',
+        ),
+        array(
+            're'  => 'Errore di rete verso OpenRouter durante lo scambio del codice: (.+)$',
+            'tpl' => 'Network error toward OpenRouter during the code exchange: $1',
+        ),
+        array(
+            're'  => 'OpenRouter ha rifiutato lo scambio del codice \(HTTP (\d+): (.+)\)\. Riavvia il login da Impostazioni AI\.',
+            'tpl' => 'OpenRouter rejected the code exchange (HTTP $1: $2). Restart the login from AI Settings.',
+        ),
+        array(
+            're'  => 'OpenRouter ha rifiutato lo scambio del codice \(HTTP (\d+)\)\. Riavvia il login da Impostazioni AI\.',
+            'tpl' => 'OpenRouter rejected the code exchange (HTTP $1). Restart the login from AI Settings.',
+        ),
+        array(
+            're'  => 'Provider (.+) connesso via login web OAuth: chiave di provisioning salvata\.',
+            'tpl' => 'Provider $1 connected via the web OAuth login: provisioning key saved.',
+        ),
+        array(
+            're'  => 'Fonte tipo "(.+)" senza adapter disponibile: ignorata\.',
+            'tpl' => 'Source of type "$1" with no adapter available: ignored.',
+        ),
+        array(
+            're'  => 'YouTube: handle canale non riconosciuto da "(.+)"\.',
+            'tpl' => 'YouTube: channel handle not recognized from "$1".',
+        ),
+        array(
+            're'  => 'Telegram: canale non valido "(.+)"\.',
+            'tpl' => 'Telegram: invalid channel "$1".',
+        ),
+        array(
+            're'  => 'Reddit: subreddit non valido "(.+)"\.',
+            'tpl' => 'Reddit: invalid subreddit "$1".',
+        ),
+        array(
+            're'  => 'Search: provider "(.+)" non supportato\.',
+            'tpl' => 'Search: unsupported provider "$1".',
+        ),
+        array(
+            're'  => 'Search \((.+)\): nessun risultato per "(.+)"\.',
+            'tpl' => 'Search ($1): no results for "$2".',
+        ),
+        array(
+            're'  => 'MCP: specifica fonte non valida "(.+)"\.',
+            'tpl' => 'MCP: invalid source specification "$1".',
+        ),
+        array(
+            're'  => 'MCP ([^.]+)\.([^:]+): risposta vuota\.',
+            'tpl' => 'MCP $1.$2: empty response.',
+        ),
+        array(
+            're'  => 'Web: URL non consentito "(.+)"\.',
+            'tpl' => 'Web: URL not allowed "$1".',
+        ),
+        array(
+            're'  => 'Web: URL non valido "(.+)"\.',
+            'tpl' => 'Web: invalid URL "$1".',
+        ),
+        array(
+            're'  => 'Full-content: budget di (\d+) fetch per run esaurito: item restanti serviti con l\'estratto RSS\.',
+            'tpl' => 'Full-content: budget of $1 fetches per run exhausted: remaining items served with the RSS excerpt.',
+        ),
+        array(
+            're'  => 'Full-content: URL item non consentito \((.+)\): estratto RSS mantenuto\.',
+            'tpl' => 'Full-content: item URL not allowed ($1): RSS excerpt kept.',
+        ),
+        array(
+            're'  => 'Full-content: pagina non raggiungibile \((.+)\): estratto RSS mantenuto\.',
+            'tpl' => 'Full-content: page unreachable ($1): RSS excerpt kept.',
+        ),
+        array(
+            're'  => 'Full-content: risposta non è HTML testuale \((.+)\): estratto RSS mantenuto\.',
+            'tpl' => 'Full-content: response is not textual HTML ($1): RSS excerpt kept.',
+        ),
+        array(
+            're'  => 'Full-content: estrazione non valida da (.+): estratto RSS mantenuto\.',
+            'tpl' => 'Full-content: invalid extraction from $1: RSS excerpt kept.',
+        ),
+        array(
+            're'  => 'Fonte (.+) senza novita\' \(early-exit 6h\): skip\.',
+            'tpl' => 'Source $1 has nothing new (early-exit 6h): skipping.',
+        ),
+        array(
+            're'  => 'Fonte (.+) in cooldown 1h dopo (\d+) fallimenti consecutivi\.',
+            'tpl' => 'Source $1 in 1h cooldown after $2 consecutive failures.',
         ),
     );
 }
