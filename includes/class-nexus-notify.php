@@ -118,7 +118,8 @@ final class Nexus_Notify {
                         }
 
                         // 2) Filtro lista eventi: fuori lista si esce PRIMA di qualunque lavoro pesante.
-                        $settings = self::settings();
+                        //    v1.1.13.1 (Q4): lettura via helper condiviso Nexus_Dedup::settings_guarded().
+                        $settings = Nexus_Dedup::settings_guarded();
                         if ( ! self::event_enabled( $event, $settings ) ) {
                                 return;
                         }
@@ -153,7 +154,8 @@ final class Nexus_Notify {
                         $article_id = (int) $article_id;
 
                         // Filtro lista eventi prima di qualunque lavoro pesante.
-                        $settings = self::settings();
+                        // v1.1.13.1 (Q4): lettura via helper condiviso Nexus_Dedup::settings_guarded().
+                        $settings = Nexus_Dedup::settings_guarded();
                         if ( ! self::event_enabled( 'published', $settings ) ) {
                                 return;
                         }
@@ -608,20 +610,13 @@ final class Nexus_Notify {
 
         /* ============ HELPER ============ */
 
-        /**
-         * Legge le impostazioni plugin (default merged) con guardie anti-errore.
-         *
-         * @return array
-         */
-        private static function settings() {
-                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
-                        $settings = Nexus_DB::get_settings();
-                        if ( is_array( $settings ) ) {
-                                return $settings;
-                        }
-                }
-                return array();
-        }
+        // v1.1.13.1 (Q4): la copia privata settings() è stata eliminata; i
+        // call-site (on_pipeline_phase / on_after_publish) leggono ora da
+        // Nexus_Dedup::settings_guarded() — semantica identica (guardie
+        // class_exists/method_exists su Nexus_DB, ritorna sempre un array).
+        // Il modulo è richiesto dal bootstrap DOPO class-nexus-dedup.php e i
+        // due listener girano in try/catch \Throwable: nessun rischio di
+        // caricamento senza Nexus_Dedup.
 
         /**
          * Legge un campo dalla riga articolo (object|array) come stringa.

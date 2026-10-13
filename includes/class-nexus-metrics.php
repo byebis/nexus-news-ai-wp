@@ -1045,9 +1045,20 @@ final class Nexus_Metrics {
         /**
          * Impostazioni plugin con guardia su Nexus_DB (mai fatal se assente).
          *
+         * v1.1.13.1 (Q4): delega all'helper condiviso Nexus_Dedup::settings_guarded()
+         * (semantica identica: guardie class_exists/method_exists su Nexus_DB,
+         * ritorna sempre un array). Il modulo è richiesto dal bootstrap PRIMA di
+         * class-nexus-dedup.php: il corpo storico resta SOLO come fallback per un
+         * eventuale caricamento senza Nexus_Dedup.
+         *
          * @return array
          */
         private static function get_settings() {
+                if ( class_exists( 'Nexus_Dedup' ) && method_exists( 'Nexus_Dedup', 'settings_guarded' ) ) {
+                        return Nexus_Dedup::settings_guarded();
+                }
+
+                // Fallback locale (caricamento senza Nexus_Dedup): comportamento storico.
                 if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
                         return array();
                 }

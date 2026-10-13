@@ -1558,10 +1558,20 @@ class Nexus_Readability {
         /**
          * Lowercase UTF-8 con fallback ASCII.
          *
+         * v1.1.13.1 (Q4): delega all'helper condiviso Nexus_Dedup::utf8_lower()
+         * (semantica identica: mb_strtolower UTF-8 con fallback strtolower).
+         * Il file non è richiesto dal bootstrap principale: in caso di
+         * caricamento senza Nexus_Dedup resta il corpo locale come fallback.
+         *
          * @param string $text Testo.
          * @return string
          */
         private static function lower( $text ) {
+                if ( class_exists( 'Nexus_Dedup' ) && method_exists( 'Nexus_Dedup', 'utf8_lower' ) ) {
+                        return Nexus_Dedup::utf8_lower( $text );
+                }
+
+                // Fallback locale (caricamento senza Nexus_Dedup): comportamento storico.
                 $text = (string) $text;
                 if ( function_exists( 'mb_strtolower' ) ) {
                         return (string) mb_strtolower( $text, 'UTF-8' );
