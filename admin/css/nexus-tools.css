@@ -1,0 +1,525 @@
+/**
+ * Nexus News AI — Stili vista "Strumenti" (admin/views/tools.php)
+ *
+ * Slug plugin: nexus-news-ai
+ * Versione:    1.1.13
+ *
+ * Estratto dal blocco <style> inline della vista (1.1.13 "Ottimizzazione",
+ * task O5): selettori al byte e gia' SOLO token del tema (contratto v1.0.6
+ * §1, nessun fallback rgba da rimuovere qui): tema chiaro di default via
+ * :root, scuro opzionale via override body.nexus-theme-dark su
+ * admin/css/nexus-admin.css (enqueued su ogni pagina admin del plugin).
+ *
+ * Scope: SOLO classi prefisso .nxa-tools- + gli id contrattuali della card
+ * "Migrazione contenuti nativi" (#nxa-native-progress[hidden],
+ * #nxa-native-report[hidden]); divieto di toccare il CSS condiviso.
+ * Mobile: media query 782px / reduced-motion / print preservate.
+ * Enqueue: class-nexus-admin.php (handle dedicato, dipendente da
+ * nexus-admin-css per l'ordine di caricamento).
+ */
+  .nxa-tools-sub {
+    max-width: 780px;
+    margin: var(--nxa-space-2) 0 var(--nxa-space-5);
+    color: var(--nxa-muted);
+  }
+
+  /* v1.1.6 "respira": sezione piatta — solo il fondo superficie separa il
+     blocco dal resto della pagina; niente bordo, raggio o ombra, piu' aria
+     nel padding. */
+  .nxa-tools-section {
+    background: var(--nxa-surface);
+    border: 0;
+    border-radius: 0;
+    padding: var(--nxa-space-5) var(--nxa-space-6);
+    margin: 0 0 var(--nxa-space-5);
+    box-shadow: none;
+  }
+
+  .nxa-tools-section-title {
+    margin: 0 0 var(--nxa-space-3);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--nxa-text);
+  }
+
+  .nxa-tools-group-title {
+    margin: var(--nxa-space-5) 0 var(--nxa-space-2);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--nxa-muted);
+  }
+
+  .nxa-tools-section-title + .nxa-tools-group-title {
+    margin-top: 4px;
+  }
+
+  /* Griglia di definizione (Ambiente, Coda lavori): etichette muted a sinistra,
+     valori con cifre tabulari allineati a destra in colonna. v1.1.5 "respira":
+     dentro la card di sezione la lista non raddoppia il contenitore (niente
+     bordo, raggio o sfondo annidati); separano le righe le loro hairline. */
+  .nxa-tools-defs {
+    margin: 0 0 var(--nxa-space-2);
+  }
+
+  .nxa-tools-def {
+    display: grid;
+    grid-template-columns: minmax(220px, 340px) minmax(0, 1fr);
+    gap: 2px 16px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--nxa-border-soft);
+    transition: background-color 0.15s ease;
+  }
+
+  .nxa-tools-def:last-child {
+    border-bottom: 0;
+  }
+
+  .nxa-tools-def:hover {
+    background: var(--nxa-surface-2);
+  }
+
+  .nxa-tools-def dt {
+    margin: 0;
+    color: var(--nxa-muted);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+
+  .nxa-tools-def dd {
+    margin: 0;
+    color: var(--nxa-text);
+    font-variant-numeric: tabular-nums;
+    word-break: break-word;
+  }
+
+  /* Tabelle (Tabelle database, Eventi WP-Cron): intestazioni leggibili, righe
+     hover. v1.1.5 "respira": il wrapper resta solo come contenimento scroll
+     orizzontale su mobile e non disegna una card dentro la card di sezione
+     (niente bordo, raggio o sfondo annidati). */
+  .nxa-tools-tablewrap {
+    margin: 0 0 8px;
+    overflow: auto;
+  }
+
+  .nxa-tools-table {
+    margin: 0;
+    width: 100%;
+    border: 0;
+    background: transparent;
+  }
+
+  .nxa-tools-table th,
+  .nxa-tools-table td {
+    padding: 10px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--nxa-border-soft);
+    background: transparent;
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .nxa-tools-table tbody tr:last-child th,
+  .nxa-tools-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .nxa-tools-table td code {
+    white-space: nowrap;
+  }
+
+  .nxa-tools-table thead th {
+    border-bottom: 1px solid var(--nxa-border);
+    color: var(--nxa-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .nxa-tools-table thead th:first-child {
+    width: 340px;
+  }
+
+  .nxa-tools-table tbody tr {
+    background: transparent;
+    transition: background-color 0.15s ease;
+  }
+
+  .nxa-tools-table tbody tr:nth-child(odd) {
+    background: var(--nxa-surface-2);
+  }
+
+  .nxa-tools-table tbody tr:hover {
+    background: var(--nxa-surface-3);
+  }
+
+  .nxa-tools-desc {
+    max-width: 780px;
+    margin: 0 0 10px;
+    color: var(--nxa-muted);
+    line-height: 1.6;
+  }
+
+  .nxa-tools-warn {
+    display: inline-block;
+    margin: 0 0 var(--nxa-space-3);
+    padding: 8px 12px;
+    background: var(--nxa-warn-bg);
+    border: 1px solid var(--nxa-warn-line);
+    border-radius: var(--nxa-radius-sm);
+    color: var(--nxa-warn-text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .nxa-tools-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 var(--nxa-space-3);
+  }
+
+  .nxa-tools-key-label {
+    flex-basis: 100%;
+    color: var(--nxa-text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* Chiave API: fondello "code" leggibile su chiaro (surface-3, bordo token). */
+  .nxa-tools-key {
+    flex: 1 1 320px;
+    max-width: 560px;
+    min-width: 0;
+    padding: 9px 12px;
+    background: var(--nxa-surface-3);
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    color: var(--nxa-text);
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    box-shadow: none;
+  }
+
+  .nxa-tools-key:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+    border-color: var(--nxa-focus);
+    box-shadow: none;
+  }
+
+  /* Flash di attenzione quando si copia senza chiave (gestito dal JS). */
+  .nxa-tools-key--empty {
+    border-color: var(--nxa-warn-line);
+    outline: 2px solid var(--nxa-warn-line);
+    outline-offset: 2px;
+  }
+
+  /* Stato "copiata" del bottone Copia: token di stato ok, stabile anche in hover. */
+  .nxa-btn.nxa-tools-copybtn--done,
+  .nxa-btn.nxa-tools-copybtn--done:hover,
+  .nxa-btn.nxa-tools-copybtn--done:active {
+    color: var(--nxa-ok-text);
+    background: var(--nxa-ok-bg);
+    border-color: var(--nxa-ok-line);
+    box-shadow: none;
+  }
+
+  .nxa-tools-section code {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--nxa-surface-3);
+    border: 1px solid var(--nxa-border);
+    color: var(--nxa-text);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  code.nxa-tools-code {
+    display: block;
+    max-width: 100%;
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: var(--nxa-radius-sm);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.6;
+  }
+
+  .nxa-tools-file {
+    max-width: 100%;
+    padding: 6px 12px;
+    background: var(--nxa-surface-2);
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+
+  .nxa-tools-file::file-selector-button {
+    margin-right: 12px;
+    padding: 6px 14px;
+    border: 0;
+    border-right: 1px solid var(--nxa-border);
+    border-radius: calc(var(--nxa-radius-sm) - 3px) 0 0 calc(var(--nxa-radius-sm) - 3px);
+    background: var(--nxa-surface-3);
+    color: var(--nxa-text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .nxa-tools-file:hover::file-selector-button {
+    background: var(--nxa-border);
+  }
+
+  .nxa-tools-file:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
+
+  .nxa-tools-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.7;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .nxa-tools-badge--on {
+    color: var(--nxa-ok-text);
+    background: var(--nxa-ok-bg);
+    border-color: var(--nxa-ok-line);
+  }
+
+  .nxa-tools-badge--off {
+    color: var(--nxa-err-text);
+    background: var(--nxa-err-bg);
+    border-color: var(--nxa-err-line);
+  }
+
+  .nxa-tools-result {
+    margin: 4px 0 0;
+    padding: 10px 14px;
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .nxa-tools-result--ok {
+    border-color: var(--nxa-ok-line);
+    background: var(--nxa-ok-bg);
+    color: var(--nxa-ok-text);
+  }
+
+  .nxa-tools-result--warn {
+    border-color: var(--nxa-err-line);
+    background: var(--nxa-err-bg);
+    color: var(--nxa-err-text);
+  }
+
+  /* Test degli strumenti (v1.1.7): select + input sulla riga azioni e JSON
+     dell'esito a capo con word-break; stessi token della famiglia
+     .nxa-tools-result (chiaro default, scuro via flip variabili). */
+  .nxa-tools-test-tool {
+    min-height: 32px;
+    border-color: var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface);
+    color: var(--nxa-text);
+  }
+
+  .nxa-tools-test-tool:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
+
+  .nxa-tools-test-input {
+    flex: 1 1 260px;
+    min-width: 0;
+    min-height: 32px;
+    border-color: var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+  }
+
+  .nxa-tools-test-input:focus-visible {
+    outline: 2px solid var(--nxa-focus);
+    outline-offset: 2px;
+  }
+
+  .nxa-tools-test-json {
+    display: block;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+    overflow: auto;
+  }
+
+  /* Diagnostica AI (v1.0.7): box esito del test provider, nascosto finché vuoto.
+     Stessi token di .nxa-tools-result: chiaro default, scuro via flip variabili. */
+  .nxa-tools-ai-result {
+    margin: 4px 0 0;
+    padding: 10px 14px;
+    border: 1px solid var(--nxa-border);
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface-2);
+    color: var(--nxa-text-body);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .nxa-tools-ai-result:empty {
+    display: none;
+  }
+
+  .nxa-tools-ai-result--ok {
+    border-color: var(--nxa-ok-line);
+    background: var(--nxa-ok-bg);
+    color: var(--nxa-ok-text);
+  }
+
+  .nxa-tools-ai-result--err {
+    border-color: var(--nxa-err-line);
+    background: var(--nxa-err-bg);
+    color: var(--nxa-err-text);
+  }
+
+  .nxa-tools-ai-line {
+    margin: 0;
+  }
+
+  /* Nota cache inline dopo il conteggio: leggermente più piccola, colore ereditato. */
+  .nxa-tools-ai-cache {
+    font-size: 12px;
+  }
+
+  /* Primi 8 id modello come chip <code> (stile ereditato da .nxa-tools-section code). */
+  .nxa-tools-ai-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: var(--nxa-space-2) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .nxa-tools-ai-list li {
+    margin: 0;
+  }
+
+  .nxa-tools-ai-endpoint {
+    display: block;
+    margin: 8px 0 0;
+    font-size: 12px;
+    word-break: break-word;
+  }
+
+  /* Migrazione contenuti nativi (v1.1.0): i blocchi nascosti restano nascosti
+     anche se il foglio condiviso assegna un display a quegli id (una regola per
+     id batte lo stile UA di [hidden]; stessa lezione di .nxa-acc-panel in 1.0.7).
+     Nessun colore: solo guardia di stato, la barra vive nel foglio condiviso.
+     NOTA: la graffa di apertura sta su una riga propria perche' una riga che
+     inizia con il cancelletto viene letta come commento dal sanity checker. */
+  #nxa-native-progress[hidden],
+  #nxa-native-report[hidden]
+  {
+    display: none;
+  }
+
+  /* Toast appeso a body: figlio di body, eredita i token (chiaro e scuro). */
+  .nxa-tools-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 99999;
+    max-width: 360px;
+    padding: 12px 16px;
+    border-radius: var(--nxa-radius-sm);
+    background: var(--nxa-surface);
+    border: 1px solid var(--nxa-ok-line);
+    border-left: 4px solid var(--nxa-ok-text);
+    box-shadow: var(--nxa-shadow-lg);
+    color: var(--nxa-ok-text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .nxa-tools-toast--error {
+    border-color: var(--nxa-err-line);
+    border-left-color: var(--nxa-err-text);
+    color: var(--nxa-err-text);
+  }
+
+  /* Scrollbar discreta nei contenitori scrollabili. */
+  .nxa-tools-tablewrap::-webkit-scrollbar,
+  .nxa-tools-code::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .nxa-tools-tablewrap::-webkit-scrollbar-thumb,
+  .nxa-tools-code::-webkit-scrollbar-thumb {
+    background: var(--nxa-border);
+    border-radius: 999px;
+  }
+
+  @media (max-width: 782px) {
+    .nxa-tools-section {
+      padding: var(--nxa-space-4);
+    }
+
+    .nxa-tools-def {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+
+    .nxa-tools-table thead th:first-child {
+      width: auto;
+    }
+
+    .nxa-tools-key {
+      max-width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nxa-tools-def,
+    .nxa-tools-table tbody tr,
+    .nxa-tools-file::file-selector-button {
+      transition: none;
+    }
+  }
+
+  @media print {
+    .nxa-tools-toast {
+      display: none;
+    }
+
+    .nxa-tools-section {
+      box-shadow: none;
+    }
+  }
