@@ -195,6 +195,10 @@ class Nexus_DB {
                         'tools_max_rounds'      => 3, // giri max del tool-use loop
                         'tools_timeout'         => 15, // timeout in secondi delle richieste HTTP degli strumenti
                         'mcp_servers_text'      => '', // righe "nome|url|tokenOpzionale" (server MCP Streamable HTTP)
+                        // v1.1.11 (R5): guardia opzionale fetch catalogo modelli —
+                        // 0 = GET /ai/models NON fa richieste remote ai provider
+                        // (serve solo la cache esistente; anche refresh=1 è no-op).
+                        'models_fetch_enabled' => 1,
                 );
         }
 

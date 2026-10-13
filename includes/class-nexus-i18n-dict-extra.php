@@ -977,6 +977,16 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Valore della fonte mancante.' => 'Missing source value.',
             '— Nessun preset: compilazione manuale —' => '— No preset: fill in manually —',
 
+            /* v1.1.11 (R5) — guardia fetch catalogo modelli: voci nuove APPENDITE
+             * in coda (fuori dall'ordine alfabetico) per minimizzare i conflitti
+             * con lo sweep i18n della stessa release; chi riordina può reintegrarle. */
+            ' (cache scaduta: il provider non ha risposto)' => ' (stale cache: the provider did not respond)',
+            ' (fetch disattivato)' => ' (fetch disabled)',
+            'Caricamento modelli disattivato dalle impostazioni: nessun catalogo in cache.' => 'Model loading disabled in settings: no cached catalog.',
+            'Catalogo modelli' => 'Model catalog',
+            'Disattivalo per lavorare solo con i modelli memorizzati in cache: nessuna richiesta extra ai provider.' => 'Turn it off to work only with the models stored in the cache: no extra requests to providers.',
+            'Scarica catalogo modelli dal provider' => 'Download model catalog from the provider',
+
         );
 }
 

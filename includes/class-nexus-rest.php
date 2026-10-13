@@ -266,6 +266,9 @@ class Nexus_Rest {
                 // v1.1.10 (WP12) v2: parametri NUOVI tutti opzionali, retrocompatibile —
                 // provider (slug catalog o cust_*, vuoto = legacy globale), custom_id
                 // (DEPRECATO, alias di provider), refresh (1 = invalida la cache).
+                // v1.1.11 (R5): guardia models_fetch_enabled (0 = NESSUNA richiesta
+                // remota, solo cache) + missing_key senza chiamate remote + fail-open
+                // sulla cache scaduta (flag stale) + timeout fetch 10s.
                 register_rest_route(
                         self::NAMESPACE_URI,
                         '/ai/models',
@@ -1856,22 +1859,47 @@ class Nexus_Rest {
          *               oppure id custom 'cust_*'. Vuoto = comportamento legacy.
          * - custom_id : DEPRECATO — il provider custom si passa direttamente via
          *               provider; mantenuto come alias BC.
-         * - refresh   : 1 = invalida la cache prima della fetch.
+         * - refresh   : 1 = forza la fetch remota (salta la cache fresca).
          *
-         * Risoluzione endpoint/auth: catalog entry → models_endpoint + models_auth
-         * ('none'|'bearer'|'anthropic'|'query_key'); custom (cust_*) →
-         * {base_url}/models bearer con chiave DENTRO l'entry; chiave built-in da
-         * prov_key_{provider}. Guard: auth != 'none' e chiave vuota → errore
-         * chiaro con suggerimento di connettere prima il provider.
+         * v1.1.11 (R5) — GUARDIA FETCH MODELLI (debito 1.1.10.1): l'endpoint
+         * valuta le richieste remote in quest'ordine, con ZERO chiamate ai
+         * provider finché una guardia non lo autorizza:
          *
-         * Cache per-provider: transient 'nexus_ai_models_{md5(provider)}' 12h —
+         * 1. models_fetch_enabled == 0 → NESSUNA fetch remota (anche con
+         *    refresh=1, che diventa no-op): si serve il contenuto della cache
+         *    esistente (fresca o scaduta) con flag 'fetch_disabled' => true;
+         *    senza cache → lista vuota + stesso flag. Nota: un provider
+         *    sconosciuto o senza base_url resta un errore onesto (la
+         *    risoluzione della voce catalog precede la guardia).
+         * 2. Guardia chiave (provider con auth != 'none'): chiave assente →
+         *    errore immediato con flag 'missing_key' => true, ZERO chiamate
+         *    remote (comportamento 1.1.10, ora con flag esplicito nel data
+         *    dell'errore).
+         * 3. Cache fresca (models_cache_is_fresh, finestra logica 12h) e nessun
+         *    refresh esplicito → si serve quella, nessuna richiesta.
+         * 4. Fetch remota (timeout 10s, R5). FAIL-OPEN: se fallisce e in cache
+         *    c'è ancora un payload (scaduto) → si serve con flag 'stale' =>
+         *    true; senza cache → errore onesto come prima di R5. Per questo
+         *    refresh=1 NON cancella più il transient a monte: la fetch
+         *    riuscita lo sovrascrive, il fallimento riusa il payload come
+         *    fallback stale.
+         *
+         * Cache per-provider: transient 'nexus_ai_models_{md5(provider)}' —
          * nella chiave SOLO il provider, MAI la chiave API (chiavi diverse →
-         * stessa lista). Il ramo legacy mantiene la chiave storica md5(base_url).
+         * stessa lista). Il ramo legacy mantiene la chiave storica
+         * md5(base_url). Dalla R5 il transient vive 7 GIORNI (retention del
+         * fallback stale) e il payload porta 'fresh_until' (unix time):
+         * oltre le 12h logiche il payload è servibile solo come fail-open
+         * (flag stale) o in modalità fetch_disabled. I payload pre-R5 senza
+         * fresh_until restano freschi finché il transient non scade (12h
+         * storiche): migrazione senza cancellazioni.
          *
          * Output: {models:[{id, name?, context_length?, prompt_price?,
          * completion_price?, free?}], provider, cached, count, fetched_at} —
-         * cap 800 modelli. Ogni fetch fresh fa il merge dei prezzi nel transient
-         * 'nexus_ai_live_prices' (fonte di Nexus_AI_Engine::estimate_cost).
+         * cap 800 modelli. Flag R5 aggiuntivi nel payload (solo quando
+         * pertinenti): fetch_disabled, stale, missing_key. Ogni fetch fresh
+         * fa il merge dei prezzi nel transient 'nexus_ai_live_prices' (fonte
+         * di Nexus_AI_Engine::estimate_cost).
          */
         public static function rest_ai_models( $request ) {
                 $provider = '';
@@ -1898,31 +1926,41 @@ class Nexus_Rest {
          * base URL è OpenRouter la risposta arricchita (prezzi/contesto) arriva
          * gratis: stessa API pubblica dei modelli.
          *
-         * @param bool $refresh True per invalidare la cache.
+         * Contratto guardie R5 nel docblock di rest_ai_models().
+         *
+         * @param bool $refresh True per saltare la cache fresca e rifare la fetch.
          * @return WP_REST_Response|WP_Error
          */
         private static function rest_ai_models_global( $refresh ) {
                 $settings = Nexus_DB::get_settings();
                 $api_key  = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
                 $base_url = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
+                // v1.1.11 (R5): guardia opzionale sul fetch del catalogo modelli.
+                $fetch_enabled = isset( $settings['models_fetch_enabled'] ) ? (int) $settings['models_fetch_enabled'] : 1;
 
-                if ( '' === $api_key ) {
-                        return self::err(
-                                'nexus_rest_ai_key_missing',
-                                __( 'Chiave API AI non configurata: salva prima la chiave nelle Impostazioni.', 'nexus-news-ai' ),
-                                400
-                        );
-                }
                 if ( '' === $base_url ) {
                         $base_url = 'https://openrouter.ai/api/v1';
                 }
 
                 $transient = 'nexus_ai_models_' . md5( $base_url );
-                if ( $refresh ) {
-                        delete_transient( $transient );
+                $cached    = get_transient( $transient );
+
+                // v1.1.11 (R5): fetch disabilitato → NESSUNA richiesta remota (anche
+                // con refresh=1). Cache esistente (fresca o scaduta) + flag onesto;
+                // senza cache → lista vuota + stesso flag.
+                if ( 1 !== $fetch_enabled ) {
+                        return self::models_response_fetch_disabled( $cached, '', $base_url );
                 }
-                $cached = get_transient( $transient );
-                if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+
+                // Guardia chiave: ZERO chiamate remote se manca (flag missing_key nel data).
+                if ( '' === $api_key ) {
+                        return self::err_missing_key(
+                                'nexus_rest_ai_key_missing',
+                                __( 'Chiave API AI non configurata: salva prima la chiave nelle Impostazioni.', 'nexus-news-ai' )
+                        );
+                }
+
+                if ( ! $refresh && is_array( $cached ) && isset( $cached['models'] ) && self::models_cache_is_fresh( $cached ) ) {
                         $cached['cached'] = true;
                         return rest_ensure_response( $cached );
                 }
@@ -1930,6 +1968,12 @@ class Nexus_Rest {
                 $family = false !== strpos( $base_url, 'openrouter.ai' ) ? 'openrouter' : 'generic';
                 $result = self::fetch_models_body( untrailingslashit( $base_url ) . '/models', 'bearer', $api_key );
                 if ( is_wp_error( $result ) ) {
+                        // v1.1.11 (R5) fail-open: cache scaduta presente → servi con flag stale.
+                        if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+                                $cached['cached'] = true;
+                                $cached['stale']  = true;
+                                return rest_ensure_response( $cached );
+                        }
                         return $result;
                 }
 
@@ -1952,7 +1996,7 @@ class Nexus_Rest {
                         'count'     => count( $models ),
                         'fetched_at'=> current_time( 'mysql' ),
                 );
-                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
+                self::models_cache_store( $transient, $payload );
 
                 return rest_ensure_response( $payload );
         }
@@ -1962,8 +2006,13 @@ class Nexus_Rest {
          * Endpoint/auth dai metadati models_endpoint/models_auth della voce; per
          * i custom la voce stessa fa da fonte (bearer su {base_url}/models).
          *
+         * Contratto guardie R5 (fetch_disabled / missing_key / stale) nel
+         * docblock di rest_ai_models(). La risoluzione della voce catalog
+         * (provider sconosciuto → 404, base_url assente → 400) resta PRIMA
+         * delle guardie: è un errore di configurazione, non una fetch.
+         *
          * @param string $provider ID provider (sanitize_key già fatto dal caller).
-         * @param bool   $refresh  True per invalidare la cache per-provider.
+         * @param bool   $refresh  True per saltare la cache fresca e rifare la fetch.
          * @return WP_REST_Response|WP_Error
          */
         private static function rest_ai_models_for_provider( $provider, $refresh ) {
@@ -1979,6 +2028,8 @@ class Nexus_Rest {
                 if ( ! is_array( $settings ) ) {
                         $settings = array();
                 }
+                // v1.1.11 (R5): guardia opzionale sul fetch del catalogo modelli.
+                $fetch_enabled = isset( $settings['models_fetch_enabled'] ) ? (int) $settings['models_fetch_enabled'] : 1;
 
                 $endpoint = '';
                 $auth     = 'bearer';
@@ -2044,27 +2095,38 @@ class Nexus_Rest {
                         }
                 }
 
+                $transient = 'nexus_ai_models_' . md5( $provider );
+                $cached    = get_transient( $transient );
+
+                // v1.1.11 (R5): fetch disabilitato → NESSUNA richiesta remota (anche
+                // con refresh=1). Cache esistente (fresca o scaduta) + flag onesto;
+                // senza cache → lista vuota + stesso flag.
+                if ( 1 !== $fetch_enabled ) {
+                        return self::models_response_fetch_disabled( $cached, $provider, '' );
+                }
+
                 // Guard chiave: solo gli endpoint pubblici ('none') possono fare a meno.
+                // ZERO chiamate remote se manca (flag missing_key nel data dell'errore).
                 if ( 'none' !== $auth && '' === $api_key ) {
-                        return self::err(
+                        return self::err_missing_key(
                                 'nexus_rest_ai_models_key_missing',
-                                __( 'Chiave API mancante per il provider ' . $label . ': connetti il provider prima (Impostazioni → Provider AI) e salva la chiave, poi ricarica i modelli.', 'nexus-news-ai' ),
-                                400
+                                __( 'Chiave API mancante per il provider ' . $label . ': connetti il provider prima (Impostazioni → Provider AI) e salva la chiave, poi ricarica i modelli.', 'nexus-news-ai' )
                         );
                 }
 
-                $transient = 'nexus_ai_models_' . md5( $provider );
-                if ( $refresh ) {
-                        delete_transient( $transient );
-                }
-                $cached = get_transient( $transient );
-                if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+                if ( ! $refresh && is_array( $cached ) && isset( $cached['models'] ) && self::models_cache_is_fresh( $cached ) ) {
                         $cached['cached'] = true;
                         return rest_ensure_response( $cached );
                 }
 
                 $result = self::fetch_models_body( $endpoint, $auth, $api_key );
                 if ( is_wp_error( $result ) ) {
+                        // v1.1.11 (R5) fail-open: cache scaduta presente → servi con flag stale.
+                        if ( is_array( $cached ) && isset( $cached['models'] ) ) {
+                                $cached['cached'] = true;
+                                $cached['stale']  = true;
+                                return rest_ensure_response( $cached );
+                        }
                         return $result;
                 }
 
@@ -2086,9 +2148,92 @@ class Nexus_Rest {
                         'count'      => count( $models ),
                         'fetched_at' => current_time( 'mysql' ),
                 );
-                set_transient( $transient, $payload, 12 * HOUR_IN_SECONDS );
+                self::models_cache_store( $transient, $payload );
 
                 return rest_ensure_response( $payload );
+        }
+
+        /**
+         * v1.1.11 (R5): risposta onesta quando models_fetch_enabled == 0 —
+         * NESSUNA richiesta remota è stata fatta (né verrà fatta, refresh
+         * incluso). Con cache presente (fresca o scaduta) si serve quella
+         * con 'fetch_disabled' => true; senza cache → lista vuota + stesso
+         * flag, così la UI può mostrare l'avviso senza interpretare un
+         * errore dove non c'è.
+         *
+         * @param array|false $cached   Payload di cache (get_transient) o false.
+         * @param string      $provider Provider ('' = ramo legacy globale).
+         * @param string      $base_url Base URL (solo ramo legacy, BC v1).
+         * @return WP_REST_Response
+         */
+        private static function models_response_fetch_disabled( $cached, $provider, $base_url = '' ) {
+                if ( is_array( $cached ) && isset( $cached['models'] ) && is_array( $cached['models'] ) ) {
+                        $cached['cached']         = true;
+                        $cached['fetch_disabled'] = true;
+                        if ( ! self::models_cache_is_fresh( $cached ) ) {
+                                $cached['stale'] = true;
+                        }
+                        return rest_ensure_response( $cached );
+                }
+
+                $payload = array(
+                        'models'         => array(),
+                        'provider'       => $provider,
+                        'cached'         => false,
+                        'count'          => 0,
+                        'fetched_at'     => '',
+                        'fetch_disabled' => true,
+                );
+                if ( '' !== $base_url ) {
+                        $payload['base_url'] = $base_url; // BC ramo legacy v1.
+                }
+                return rest_ensure_response( $payload );
+        }
+
+        /**
+         * v1.1.11 (R5): il payload di cache è ancora dentro la finestra
+         * logica di freschezza (12h)? Dalla R5 il transient vive 7 giorni
+         * (retention del fallback stale) e il payload porta 'fresh_until'
+         * (unix time); i payload pre-R5 senza fresh_until sono considerati
+         * freschi finché il transient storico non scade (12h).
+         *
+         * @param array $payload Payload di cache.
+         * @return bool
+         */
+        private static function models_cache_is_fresh( $payload ) {
+                if ( empty( $payload['fresh_until'] ) || ! is_numeric( $payload['fresh_until'] ) ) {
+                        return true; // payload pre-R5: il TTL del transient fa da guardia.
+                }
+                return time() < (int) $payload['fresh_until'];
+        }
+
+        /**
+         * v1.1.11 (R5): scrittura della cache catalogo modelli. TTL transient
+         * 7 GIORNI (retention del fail-open stale), freschezza logica 12h
+         * registrata nel payload ('fresh_until', non una garanzia per la UI:
+         * il flag stale la comunica).
+         *
+         * @param string $transient Chiave transient (nella chiave mai la chiave API).
+         * @param array  $payload   Payload normalizzato (models/provider/cached/count/fetched_at).
+         * @return void
+         */
+        private static function models_cache_store( $transient, $payload ) {
+                $payload['fresh_until'] = time() + 12 * HOUR_IN_SECONDS;
+                set_transient( $transient, $payload, 7 * DAY_IN_SECONDS );
+        }
+
+        /**
+         * v1.1.11 (R5): errore "chiave API mancante" con flag 'missing_key'
+         * nel data della WP_Error: su WP 5.6+ i dati extra (diversi da
+         * 'status') vengono mergiati nel body REST della risposta, sulle
+         * versioni precedenti resta comunque il messaggio onesto.
+         *
+         * @param string $code    Codice errore REST.
+         * @param string $message Messaggio (già localizzato dal caller).
+         * @return WP_Error
+         */
+        private static function err_missing_key( $code, $message ) {
+                return new WP_Error( $code, $message, array( 'status' => 400, 'missing_key' => true ) );
         }
 
         /**
@@ -2142,7 +2287,11 @@ class Nexus_Rest {
                 $response = wp_remote_get(
                         $url,
                         array(
-                                'timeout' => 30,
+                                // v1.1.11 (R5): timeout esplicito ristretto a 10s — il
+                                // catalogo modelli è una chiamata di contorno del picker,
+                                // non deve tenere la richiesta REST appesa 30s (il
+                                // fail-open sulla cache stale copre i provider lenti).
+                                'timeout' => 10,
                                 'headers' => $headers,
                         )
                 );
@@ -4430,6 +4579,9 @@ class Nexus_Rest {
                         'reddit_client_id'     => 'sanitize_text_field',
                         'reddit_client_secret' => 'sanitize_text_field',
                         'allow_private_providers' => 'absint',
+                        // v1.1.11 (R5): guardia opzionale fetch catalogo modelli
+                        // (0 = GET /ai/models senza richieste remote ai provider).
+                        'models_fetch_enabled' => 'absint',
                         // Capo redattore AI (v1.1.4).
                         'chief_enabled'        => 'absint',
                         'chief_auto_publish'   => 'absint',

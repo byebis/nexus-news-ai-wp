@@ -98,7 +98,9 @@
  * - Toggle checkbox value="1" (enable_factcheck, enable_translations,
  *   enable_autotranslate_posts, chief_enabled, chief_auto_publish,
  *   tools_enabled, tools_read_page): admin.js li serializza 0/1 (0 quando
- *   deselezionati). Campi numerici: factcheck_min_score, monthly_budget_usd,
+ *   deselezionati). v1.1.11 (R5): anche models_fetch_enabled (guardia
+ *   fetch catalogo modelli, sezione "Configurazione AI", blocco
+ *   providerFlags di admin.js). Campi numerici: factcheck_min_score, monthly_budget_usd,
  *   chief_max_rounds, chief_id, tools_max_results, tools_read_max_chars,
  *   tools_max_rounds, tools_timeout. Campi testuali/select: ai_base_url,
  *   ai_model, ai_model_cheap, budget_action, translation_langs,
@@ -204,6 +206,10 @@ if ( ! is_array( $prov_catalog ) || empty( $prov_catalog ) ) {
 $prov_base_custom        = isset( $settings['prov_base_custom'] ) ? (string) $settings['prov_base_custom'] : '';
 $allow_private_providers = isset( $settings['allow_private_providers'] ) ? (int) $settings['allow_private_providers'] : 0;
 
+// v1.1.11 (R5): guardia opzionale fetch catalogo modelli (default 1 = attiva;
+// 0 = GET /ai/models non fa richieste remote ai provider, solo cache).
+$models_fetch_enabled = isset( $settings['models_fetch_enabled'] ) ? (int) $settings['models_fetch_enabled'] : 1;
+
 $chief_enabled         = isset( $settings['chief_enabled'] ) ? (int) $settings['chief_enabled'] : 0;
 $chief_auto_publish    = isset( $settings['chief_auto_publish'] ) ? (int) $settings['chief_auto_publish'] : 0;
 $chief_max_rounds      = isset( $settings['chief_max_rounds'] ) ? (int) $settings['chief_max_rounds'] : 2;
@@ -256,6 +262,17 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                                 <button type="button" id="nxa-ai-models-load" class="nxa-btn is-sm"><?php esc_html_e( 'Carica modelli', 'nexus-news-ai' ); ?></button>
                                                                 <span id="nxa-ai-models-status" class="nxa-ai-models-status" aria-live="polite"></span>
                                                                 <p class="description"><?php esc_html_e( "Forza l'aggiornamento della lista dal provider (invalida la cache di 12 ore). I badge del picker mostrano gratuità, contesto e prezzo per 1M token quando il provider li espone.", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <?php /* v1.1.11 (R5): guardia opzionale fetch catalogo modelli. Toggle value="1" serializzato 0/1 da admin.js (blocco providerFlags). A 0 il GET /ai/models NON fa richieste remote ai provider (nemmeno con refresh=1): serve la cache esistente (flag fetch_disabled/stale) o lista vuota. */ ?>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Catalogo modelli', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-models-fetch-enabled">
+                                                                        <input type="checkbox" name="models_fetch_enabled" id="nxa-models-fetch-enabled" value="1" <?php checked( $models_fetch_enabled, 1 ); ?> />
+                                                                        <?php esc_html_e( 'Scarica catalogo modelli dal provider', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Disattivalo per lavorare solo con i modelli memorizzati in cache: nessuna richiesta extra ai provider.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
