@@ -1,0 +1,125 @@
+/**
+ * Nexus News AI — Tab della pagina "Impostazioni" (WordPress)
+ *
+ * v1.1.11 (R2): le 4 pagine Impostazioni (contenuti|ai|pubblicazione|sistema)
+ * diventano UNA sola pagina con navigazione a tab (vista admin/views/settings.php).
+ *
+ * Contratto di stile: SOLO token var(--nxa-*) del design system (admin/css/
+ * nexus-admin.css, sezioni 1 + token estesi). Nessun colore hardcoded: il tema
+ * scuro (body.nexus-theme-dark, filtro admin_body_class) viene ereditato
+ * automaticamente, come per i componenti flottanti. Selettori prefissati
+ * nxa-settab- per zero collisioni con il core e con il resto del plugin.
+ *
+ * Indice:
+ *   1. Barra tab (underline attivo, hairline, hover, focus-visible)
+ *   2. Pannelli (uno solo visibile: hidden = display:none)
+ *   3. Neutralizzazione del wrap annidato dei partial (la "scatola" resta UNA)
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Barra tab
+ * ---------------------------------------------------------------------- */
+.nxa-settab-bar {
+  margin: var(--nxa-space-2) 0 0;
+  border-bottom: 1px solid var(--nxa-hairline);
+}
+
+.nxa-settab-list {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--nxa-space-1);
+  margin: 0;
+  padding: 0 var(--nxa-space-2);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nxa-settab-tab {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin: 0 0 -1px;
+  padding: var(--nxa-space-3) var(--nxa-space-4) calc( var(--nxa-space-3) + 2px );
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nxa-muted);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.nxa-settab-tab:hover {
+  color: var(--nxa-link);
+  text-decoration: none;
+}
+
+.nxa-settab-tab:focus {
+  outline: none;
+}
+
+.nxa-settab-tab:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: -2px;
+  border-radius: var(--nxa-radius-sm);
+}
+
+/* Tab attiva: testo pieno + underline brand che si salda alla hairline. */
+.nxa-settab-tab.is-active {
+  color: var(--nxa-heading);
+  border-bottom-color: var(--nxa-accent-1);
+}
+
+@media (max-width: 782px) {
+  .nxa-settab-tab {
+    padding: var(--nxa-space-2) var(--nxa-space-3) calc( var(--nxa-space-2) + 2px );
+    font-size: 0.9rem;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Pannelli — solo UNO visibile (render server-side di tutti)
+ * ---------------------------------------------------------------------- */
+.nxa-settab-panel {
+  padding-top: var(--nxa-space-4);
+}
+
+/* OBBLIGATORIA: il pannello inattivo esce dal layout anche se la lettura UA
+ * dell'attributo hidden venisse meno (stesso principio di .nxa-acc-panel). */
+.nxa-settab-panel[hidden] {
+  display: none !important;
+}
+
+/* Parcheggio dei campi del tab di boot (script inline della vista): contenitore
+ * tecnico sempre fuori dalla vista, non deve mai occupare spazio. */
+.nxa-settab-formhost {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Neutralizzazione del wrap annidato dei partial
+ *
+ * Ogni partial storico porta il proprio div.wrap.nexus-admin (scatola con
+ * padding/sfondo/bordo): inclusi come pannelli, la scatola resta UNA (la
+ * pagina), i pannelli diventano superfici piatte (principio "respira" v1.1.5).
+ * Gli h1 dei partial sono nascosti: il tab è già l'etichetta del gruppo e il
+ * titolo pagina è l'unico h1 della vista.
+ * ---------------------------------------------------------------------- */
+.nxa-settab-panels .wrap.nexus-admin {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.nxa-settab-panels h1 {
+  display: none;
+}

@@ -57,6 +57,10 @@ function nexus_i18n_extra_dict() {
             '1 articolo in coda' => '1 article in queue',
             '1 giorno fa' => '1 day ago',
             '1 ora fa' => '1 hour ago',
+            // v1.1.11 (R2): tab della pagina Impostazioni unica (settings.php).
+            // 'AI' è identica in EN: la sostituzione è identità, nessun rischio
+            // di corruzione strtr (chiave = traduzione).
+            'AI' => 'AI',
             'Access secret X' => 'X access secret',
             'Access token LinkedIn' => 'LinkedIn access token',
             'Access token OAuth 1.0a dell’account che pubblica.' => 'OAuth 1.0a access token of the publishing account.',
@@ -171,6 +175,7 @@ function nexus_i18n_extra_dict() {
             'Confermati' => 'Confirmed',
             'Configurata' => 'Configured',
             'Configurazione AI' => 'AI configuration',
+            'Contenuti' => 'Content',
             'Contenuti nativi' => 'Native content',
             'Copiata' => 'Copied',
             'Costo AI' => 'AI cost',
@@ -488,6 +493,7 @@ function nexus_i18n_extra_dict() {
             'SEO on-page' => 'On-page SEO',
             'Serie giornaliera' => 'Daily series',
             'Sessione scaduta o permessi insufficienti: ricarica la pagina e riprova.' => 'Session expired or insufficient permissions: reload the page and try again.',
+            'Sezioni impostazioni' => 'Settings sections',
             'Si è verificato un errore inatteso.' => 'An unexpected error occurred.',
             'Sistema' => 'System',
             'Sito & sistema' => 'Site & system',
