@@ -1297,6 +1297,51 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'YouTube: API key non impostata (setting youtube_api_key): fonte ignorata.' => 'YouTube: API key not set (setting youtube_api_key): source ignored.',
             'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.' => 'response_format json_object is not supported by the provider: response obtained without JSON mode.',
 
+            /* v1.1.11 (R4-7) — viste admin (redazioni/agents/settings/tools/jobs/wizard) */
+            ' Testo completo' => ' Full text',
+            '•••• (salvata, hashing) — rigenera per ottenerne una nuova' => '•••• (saved, hashed) — regenerate to get a new one',
+            '✗ Inserisci prima il valore della fonte.' => '✗ Enter the source value first.',
+            '… provo la fonte' => '… testing the source',
+            '@canale o URL del canale' => '@channel or channel URL',
+            '[Nexus News AI] Dati admin non disponibili: diagnostica AI non inizializzata.' => '[Nexus News AI] Admin data unavailable: AI diagnostics not initialized.',
+            '[Nexus News AI] Dati admin non disponibili: vista Strumenti non inizializzata.' => '[Nexus News AI] Admin data unavailable: Tools view not initialized.',
+            '[Nexus News AI] NexusAdminData non disponibile: vista Coda Lavori non inizializzata.' => '[Nexus News AI] NexusAdminData unavailable: Jobs queue view not initialized.',
+            'Access token OAuth 1.0a dell’account che pubblica (mascherato).' => 'OAuth 1.0a access token of the publishing account (masked).',
+            'Access token secret OAuth 1.0a dell’account (mascherato).' => 'OAuth 1.0a access token secret of the account (masked).',
+            'API key dell’app dal Developer Portal di X (mascherata).' => 'App API key from the X Developer Portal (masked).',
+            'API secret dell’app, consumer secret (mascherato).' => 'App API secret, consumer secret (masked).',
+            'Assente' => 'Missing',
+            'Categoria dell’agente' => 'Agent category',
+            'Creo gli agenti…' => 'Creating the agents…',
+            'Errore sconosciuto.' => 'Unknown error.',
+            'Estrae l’articolo completo con Readability (solo rss, site e web).' => 'Extracts the full article with Readability (rss, site and web only).',
+            'Forza l\'aggiornamento della lista dal provider (invalida la cache di 12 ore). I badge del picker mostrano gratuità, contesto e prezzo per 1M token quando il provider li espone.' => 'Forces a list refresh from the provider (invalidates the 12-hour cache). The picker badges show free tier, context and price per 1M tokens when the provider exposes them.',
+            'Gli agenti raccolgono notizie reali, le valutano e le riscrivono con AI. Crea quanti agenti vuoi: da 1 a una redazione completa, con preset pronti.' => 'Agents collect real news, evaluate it and rewrite it with AI. Create as many agents as you want: from 1 to a full desk, with ready-made presets.',
+            'Identificativo del modello (es. openai/gpt-4o-mini). Al focus si apre il picker cercabile: digita per filtrare i modelli del provider, clic o Invio per scegliere, Esc per chiudere.' => 'Model identifier (e.g. openai/gpt-4o-mini). A searchable picker opens on focus: type to filter the provider’s models, click or Enter to select, Esc to close.',
+            'La lista dei provider arriva dalle impostazioni; senza chiave in Impostazioni → Provider AI il provider non è utilizzabile.' => 'The provider list comes from the settings; without a key in Settings → Provider AI the provider cannot be used.',
+            'nome|https://server-url|token-opzionale' => 'name|https://server-url|optional-token',
+            'Nessun agente: usa il wizard o i preset per creare il tuo primo giornalista.' => 'No agents yet: use the wizard or the presets to create your first journalist.',
+            'Nuova chiave API generata: copiala subito, non verrà più mostrata' => 'New API key generated: copy it now, it will not be shown again',
+            'Pagina web' => 'Web page',
+            'Parola chiave da cercare' => 'Keyword to search for',
+            'Presente — ' => 'Present — ',
+            'Provider AI (vuoto = globale)' => 'AI provider (empty = global)',
+            'Redazione salvata ma fonti non salvate' => 'Desk saved but sources not saved',
+            'Redazione specifica' => 'Specific desk',
+            'RSS (feed diretto)' => 'RSS (direct feed)',
+            'Scegli il pacchetto di agenti' => 'Choose the agent package',
+            'su modifica, vuota = nessun cambio' => 'on change, empty = no change',
+            'Sì' => 'Yes',
+            'test non riuscito' => 'test failed',
+            'Token del bot Telegram da @BotFather (mascherato: il valore salvato non è visibile a schermo).' => 'Telegram bot token from @BotFather (masked: the saved value is not shown on screen).',
+            'URL del feed (https://…)' => 'Feed URL (https://…)',
+            'URL del sito (https://…)' => 'Site URL (https://…)',
+            'URL del webhook del canale Discord (discord.com/api/webhooks/…, mascherato).' => 'Discord channel webhook URL (discord.com/api/webhooks/…, masked).',
+            'URL della pagina (https://…)' => 'Page URL (https://…)',
+            'URL o valore della fonte' => 'Source URL or value',
+            'Visibile solo per il ruolo Capo redattore: dice al capo quali articoli verifica (intero giornale, solo la sua categoria o una redazione specifica).' => 'Visible only for the Editor-in-chief role: tells the chief which articles to review (whole newspaper, own category only, or a specific desk).',
+            'vuoto = modello principale' => 'empty = main model',
+
         );
 }
 
@@ -2917,6 +2962,12 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Fonte (.+) in cooldown 1h dopo (\d+) fallimenti consecutivi\.',
             'tpl' => 'Source $1 in 1h cooldown after $2 consecutive failures.',
+        ),
+
+        /* v1.1.11 (R4-7) — viste admin (redazioni/agents/settings/tools/jobs/wizard) */
+        array(
+            're'  => 'Vista "(.+)" non ancora disponibile \(admin/views/\)\.',
+            'tpl' => 'View "$1" not yet available (admin/views/).',
         ),
     );
 }
