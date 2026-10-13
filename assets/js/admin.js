@@ -3864,7 +3864,7 @@
                 // (v1.1.5: - site_name, site_tagline — la sezione "Identità del sito" è
                 //  stata rimossa: nome e tagline sono nativi WP, il magazine li legge da
                 //  bloginfo; la whitelist REST li conserva per retrocompatibilità)
-                var simple = [ 'mode', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom' ];
+                var simple = [ 'mode', 'ai_base_url', 'ai_model', 'post_status', 'image_model', 'image_size', 'telegram_bot_token', 'telegram_chat_id', 'discord_webhook_url', 'x_api_key', 'x_api_secret', 'x_access_token', 'x_access_secret', 'linkedin_access_token', 'linkedin_author_urn', 'newsletter_recipients', 'indexnow_key', 'ai_model_cheap', 'factcheck_min_score', 'monthly_budget_usd', 'budget_action', 'translation_langs', 'admin_language', 'admin_theme', 'tools_search_provider', 'mcp_servers_text', 'prov_base_custom', 'global_rss_sources' ]; // v1.1.11 (R1): + global_rss_sources (fonti RSS globali, una URL per riga)
                 for ( i = 0; i < simple.length; i++ ) {
                         var field = form.elements[ simple[ i ] ];
                         if ( field && field.value !== undefined ) {

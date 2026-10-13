@@ -23,14 +23,10 @@
  *   v1.1.11 (R1): + global_rss_sources (textarea "Fonti RSS globali", sezione
  *   "fonti"): chiave STRINGA di Nexus_DB::default_settings(), una URL http(s)
  *   per riga, whitelist REST già estesa in Nexus_Rest::sanitize_settings_payload.
- *   NOTA PONTE SALVATAGGIO: admin.js serializza la form da una lista fissa di
- *   nomi (collectSettings, array `simple`) che NON contiene ancora la chiave
- *   nuova (admin.js è proprietà di un altro agente in questa wave, R3). Finché
- *   non viene aggiunta lì, il micro-script PONTE in fondo a questa vista (fase
- *   capture sul submit + wrapper fetch una-tantum) aggiunge la chiave al body
- *   della PUT /settings generata da admin.js: nessuna logica duplicata, il
- *   salvataggio resta quello standard. Da rimuovere quando admin.js includerà
- *   'global_rss_sources' nell'array `simple` di collectSettings.
+ *   Il salvataggio ora è quello STANDARD di admin.js: dalla v1.1.11 (integrazione
+ *   merge) la chiave 'global_rss_sources' è inclusa nell'array `simple` di
+ *   collectSettings, quindi il micro-script PONTE temporaneo della wave è stato
+ *   rimosso (era solo un wrapper fetch una-tantum in fondo a questa vista).
  * - Bottone SALVA IN CIMA (subito sotto l'h1) OLTRE quello in fondo: entrambi
  *   type="submit" nella stessa form; admin.js v1.1.6 mostra lo stato di
  *   caricamento su tutti i submit della form.
@@ -287,84 +283,5 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
 
         restoreState();
         document.addEventListener( 'click', onClick );
-} )();
-</script>
-<script>
-/* v1.1.11 (R1) — PONTE di salvataggio per global_rss_sources (TEMPORANEO).
- *
- * admin.js serializza la form impostazioni da una lista FISSA di nomi
- * (collectSettings, array `simple`): la chiave `global_rss_sources` è nata
- * dopo quella lista e il campo non può essere aggiunto in questa wave
- * (admin.js è proprietà di un altro agente in parallelo). Finché la lista
- * non lo include, il campo verrebbe scartato in silenzio e le fonti globali
- * non si salvano mai: ponte minimo qui sotto, NESSUNA logica duplicata.
- *
- * Come funziona (pattern W8 "script locale alla vista"):
- * - al submit di #nxa-settings-form (listener in FASE CAPTURE su document:
- *   gira sempre PRIMA del listener submit di admin.js sulla form) avvolge
- *   window.fetch una volta sola;
- * - il dispatch dell'evento submit è sincrono: la PRIMA fetch chiamata dopo
- *   questo listener è quella del salvataggio di admin.js (o una qualsiasi
- *   altra chiamata, che attraversa il wrapper INTATTA e lo smonta senza
- *   toccarla: polling /live, modelli, ecc. restano identici);
- * - se la chiamata è la PUT nexus/v1/settings con body JSON (esattamente
- *   quella che admin.js costruisce in collectSettings → api()), la chiave
- *   global_rss_sources viene aggiunta al body: vuota compresa, così anche
- *   lo SVUOTAMENTO del campo viene salvato (il valore non è un segreto:
- *   l'API accetta la stringa vuota e cancella le fonti);
- * - il wrapper si smonta da solo alla prima fetch: nessun impatto sulle
- *   chiamate successive, nessun leak.
- *
- * Da RIMUOVERE (insieme a questa nota) quando admin.js includerà
- * 'global_rss_sources' nell'array `simple` di collectSettings: a quel punto
- * il campo viene serializzato da admin.js e il ponte diventa superfluo.
- */
-( function () {
-        'use strict';
-
-        var FIELD = 'global_rss_sources';
-
-        function onCapture( ev ) {
-                var form = ev.target;
-                if ( ! form || form.id !== 'nxa-settings-form' ) {
-                        return;
-                }
-                var field = form.elements ? form.elements[ FIELD ] : null;
-                if ( ! field ) {
-                        return;
-                }
-
-                // .trim() come fanno tutti i campi testuali in collectSettings:
-                // stringa vuota = svuota la setting (valore non-segreto).
-                var value      = String( field.value || '' ).trim();
-                var nativeFetch = window.fetch;
-                if ( typeof nativeFetch !== 'function' ) {
-                        return;
-                }
-
-                window.fetch = function ( input, init ) {
-                        // Smonta subito il wrapper: al massimo UNA chiamata
-                        // attraversa la modifica (quella del submit).
-                        window.fetch = nativeFetch;
-                        try {
-                                var url   = typeof input === 'string' ? input : String( ( input && input.url ) || '' );
-                                var opts  = init || {};
-                                var isPut = String( opts.method || 'GET' ).toUpperCase() === 'PUT';
-                                var isSettings = /\/nexus\/v1\/settings\/?$/.test( url.replace( /\/+$/, '' ) || '' );
-                                if ( isPut && isSettings && typeof opts.body === 'string' && opts.body ) {
-                                        var payload = JSON.parse( opts.body );
-                                        if ( payload && typeof payload === 'object' && ! Array.isArray( payload ) ) {
-                                                payload[ FIELD ] = value;
-                                                opts.body = JSON.stringify( payload );
-                                        }
-                                }
-                        } catch ( err ) {
-                                // Mai bloccare il salvataggio standard per colpa del ponte.
-                        }
-                        return nativeFetch.apply( this, arguments );
-                };
-        }
-
-        document.addEventListener( 'submit', onCapture, true );
 } )();
 </script>
