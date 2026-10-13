@@ -6,6 +6,15 @@
  * la pagina del gruppo "Pipeline editoriale" (accordion: pipeline, limits) e
  * raccoglie la prima parte della vecchia settings.php (rimossa in v1.1.6).
  *
+ * v1.1.12 (S8): nuova sezione accordion "Link interni". I name dei campi =
+ * chiavi ESATTE di Nexus_DB::default_settings() v1.1.12: interlink_enabled,
+ * interlink_max (modulo S4). Il gruppo nuovo nasce chiuso, stesso contratto
+ * localStorage/IIFE degli altri. DEBITO INTEGRAZIONE (S8): i name nuovi non
+ * sono ancora negli array di collectSettings() in admin.js né nella whitelist
+ * REST (file fuori perimetro S8): il markup segue già il contratto, il
+ * salvataggio effettivo arriva con l'estensione del glue (stesso percorso di
+ * global_rss_sources in 1.1.11).
+ *
  * I campi sono PRECOMPILATI server-side con Nexus_DB::get_settings()
  * (value / checked / selected): la pagina è già corretta prima che admin.js risponda.
  *
@@ -171,6 +180,37 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <td>
                                                                 <input type="number" name="auto_approve_score" id="nxa-auto-approve-score" value="<?php echo esc_attr( $settings['auto_approve_score'] ); ?>" min="0" max="100" step="1" class="small-text" />
                                                                 <p class="description"><?php esc_html_e( 'In modalità autonoma, approva e pubblica oltre questa soglia (0-100).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
+                <section class="nxa-acc" data-nxa-acc="interlink">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-interlink">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Link interni', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-interlink" hidden>
+                                <?php /* Sezione v1.1.12 (S8) "Link interni": link automatici a post correlati (modulo S4), name = chiavi esatte default_settings v1.1.12. */ ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Link interni automatici', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-interlink-enabled">
+                                                                        <input type="checkbox" name="interlink_enabled" id="nxa-interlink-enabled" value="1" <?php checked( (int) $settings['interlink_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Attiva i link interni automatici', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( "Se attivo, in coda all'articolo vengono aggiunti link ai post correlati dello stesso sito.", 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-interlink-max"><?php esc_html_e( 'Link interni per articolo', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="number" name="interlink_max" id="nxa-interlink-max" value="<?php echo esc_attr( $settings['interlink_max'] ); ?>" min="1" max="10" step="1" class="small-text" />
+                                                                <p class="description"><?php esc_html_e( "Numero massimo di link a post correlati aggiunti in coda all'articolo (1-10).", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>

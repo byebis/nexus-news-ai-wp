@@ -4813,8 +4813,10 @@ class Nexus_Rest {
          * Chiavi settings considerate SEGRETI (mai in risposta REST, mai nell'export).
          *
          * Comprende: chiave AI globale, chiavi per-provider (prov_key_*), chiave di
-         * ricerca, le 7 credenziali social, la chiave dell'API pubblica e il testo
-         * di configurazione dei server MCP (contiene URL e token opzionali).
+         * ricerca, le 7 credenziali social, la chiave dell'API pubblica, il testo
+         * di configurazione dei server MCP (contiene URL e token opzionali) e,
+         * dalla v1.1.12 (S8), il client secret OAuth di Google Search Console e
+         * l'URL del webhook di notifica (token incorporato).
          *
          * @return array
          */
@@ -4844,6 +4846,11 @@ class Nexus_Rest {
                         'linkedin_access_token',
                         'public_api_key',
                         'mcp_servers_text',
+                        // v1.1.12 (S8): client secret OAuth Google (GSC) e webhook
+                        // notifiche Slack-compatibile (URL con token incorporato) —
+                        // mascherati in GET/PUT /settings come gli altri segreti.
+                        'gsc_oauth_client_secret',
+                        'notify_webhook_url',
                 );
         }
 
