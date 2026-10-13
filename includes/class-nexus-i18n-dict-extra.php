@@ -1297,6 +1297,48 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'YouTube: API key non impostata (setting youtube_api_key): fonte ignorata.' => 'YouTube: API key not set (setting youtube_api_key): source ignored.',
             'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.' => 'response_format json_object is not supported by the provider: response obtained without JSON mode.',
 
+            /* v1.1.11 (R4-8) — queue/publisher/readability/cron/social/native/newsletter:
+             * voci fisse residue delle classi varie (class-nexus-queue, publisher,
+             * readability, cron, social discord/linkedin/telegram/x, redazioni,
+             * native). Messaggi compositi con variabili: vedi i pattern in coda
+             * a nexus_i18n_extra_patterns(). */
+            'Contenuto vuoto: niente da validare.' => 'Empty content: nothing to validate.',
+            'Creazione redazione non riuscita.' => 'Desk creation failed.',
+            'Discord non configurato' => 'Discord not configured',
+            'Fonti della redazione (feed RSS o siti da cui scoprire i feed).' => 'Desk sources (RSS feeds or sites to discover feeds from).',
+            'Il titolo non contiene parole significative (solo stopwords o parole di ≤ 3 caratteri): validazione titolo→contenuto impossibile.' => 'The title contains no significant words (only stopwords or words of ≤ 3 characters): title→content validation impossible.',
+            'Impossibile preparare il messaggio Telegram (encoding JSON fallito).' => 'Unable to prepare the Telegram message (JSON encoding failed).',
+            'Impossibile preparare il payload JSON per Discord.' => 'Unable to prepare the JSON payload for Discord.',
+            'Impossibile preparare il payload JSON per LinkedIn (encoding fallito).' => 'Unable to prepare the JSON payload for LinkedIn (encoding failed).',
+            'Impostazioni raccolta modificate: sincronizzo la schedulazione.' => 'Collection settings changed: syncing the schedule.',
+            'Inviato al canale Discord' => 'Sent to the Discord channel',
+            'json_encode del testo del tweet fallito.' => 'json_encode of the tweet text failed.',
+            'LinkedIn non configurato' => 'LinkedIn not configured',
+            'Nessuna parola significativa del titolo compare nel contenuto: probabile paywall, pagina vuota o contenuto non pertinente.' => 'No significant title word appears in the content: probable paywall, empty page or irrelevant content.',
+            'Nexus: runner coda lavori (ogni 60 secondi)' => 'Nexus: jobs queue runner (every 60 seconds)',
+            'Nexus_DB non disponibile.' => 'Nexus_DB not available.',
+            'Nexus_Pipeline non ancora caricata: tick ignorato.' => 'Nexus_Pipeline not loaded yet: tick ignored.',
+            'Nexus_Translate::translate_to_post non disponibile: traduzione automatica saltata.' => 'Nexus_Translate::translate_to_post unavailable: automatic translation skipped.',
+            'Nome redazione mancante o tassonomia non attiva.' => 'Missing desk name or taxonomy not active.',
+            'Pubblicazione Discord non riuscita.' => 'Discord publishing failed.',
+            'Readability: HTML in ingresso vuoto.' => 'Readability: empty input HTML.',
+            'Readability: il parser DOM non è riuscito a leggere l\'HTML (documento indigeribile).' => 'Readability: the DOM parser failed to read the HTML (indigestible document).',
+            'Readability: la risposta non è HTML testuale (binario o SVG): parse bloccato dalla guard.' => 'Readability: the response is not textual HTML (binary or SVG): parsing blocked by the guard.',
+            'Readability: nessun contenuto leggibile estratto dalla pagina.' => 'Readability: no readable content extracted from the page.',
+            'Redazione madre non trovata.' => 'Parent desk not found.',
+            'Runner coda lavori rimosso (coda disattivata).' => 'Jobs queue runner removed (queue disabled).',
+            'Runner coda lavori schedulato (ogni 60 secondi).' => 'Jobs queue runner scheduled (every 60 seconds).',
+            'Telegram non configurato' => 'Telegram not configured',
+            'Testo del tweet vuoto: nessun titolo o summary valido.' => 'Tweet text is empty: no valid title or summary.',
+            'Tick già presente in coda: dispatch saltato (unique).' => 'Tick already in queue: dispatch skipped (unique).',
+            'Titolo e summary dell\'articolo sono vuoti: nessun messaggio da inviare.' => 'Article title and summary are empty: no message to send.',
+            'Titolo vuoto: impossibile validare la corrispondenza titolo→contenuto.' => 'Empty title: cannot validate the title→content match.',
+            'Token LinkedIn scaduto o non valido (HTTP 401)' => 'LinkedIn token expired or invalid (HTTP 401)',
+            'Traduzione automatica fallita senza dettagli.' => 'Automatic translation failed without details.',
+            'URN LinkedIn non valido' => 'Invalid LinkedIn URN',
+            'Webhook Discord non valido' => 'Invalid Discord webhook',
+            'X non configurato' => 'X not configured',
+
         );
 }
 
@@ -2917,6 +2959,143 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Fonte (.+) in cooldown 1h dopo (\d+) fallimenti consecutivi\.',
             'tpl' => 'Source $1 in 1h cooldown after $2 consecutive failures.',
+        ),
+
+        /* v1.1.11 (R4-8) — queue/publisher/readability/cron/social/native/newsletter:
+         * messaggi compositi residui delle classi varie. Regex senza
+         * delimitatori (consumata da new RegExp in i18n.js), template EN con
+         * $1/$2/$3. Dal più specifico al più generico ('Eccezione:' in coda). */
+        array(
+            're'  => 'Retry job #(\d+): stato cambiato durante l\'operazione, retry annullato\.',
+            'tpl' => 'Retry job #$1: state changed during the operation, retry cancelled.',
+        ),
+        array(
+            're'  => 'Cancel job #(\d+): job già in esecuzione o stato cambiato, operazione annullata\.',
+            'tpl' => 'Cancel job #$1: job already running or state changed, operation cancelled.',
+        ),
+        array(
+            're'  => 'Reset dead job #(\d+): stato cambiato durante l\'operazione, reset annullato\.',
+            'tpl' => 'Reset dead job #$1: state changed during the operation, reset cancelled.',
+        ),
+        array(
+            're'  => 'requeue_stale: impossibile marcare dead il job #(\d+) \(riprossima alla prossima passata\)\.',
+            'tpl' => 'requeue_stale: cannot mark job #$1 as dead (retrying on the next pass).',
+        ),
+        array(
+            're'  => 'requeue_stale: impossibile rimettere in coda il job #(\d+) \(riprossima alla prossima passata\)\.',
+            'tpl' => 'requeue_stale: cannot requeue job #$1 (retrying on the next pass).',
+        ),
+        array(
+            're'  => 'Dead letter: (\d+) lavori bloccati \(> (\d+) min\) marcati come dead\.',
+            'tpl' => 'Dead letter: $1 stuck jobs (> $2 min) marked as dead.',
+        ),
+        array(
+            're'  => 'Budget tempo/memoria esaurito: (\d+) job claimati rimessi in coda\.',
+            'tpl' => 'Time/memory budget exhausted: $1 claimed jobs requeued.',
+        ),
+        array(
+            're'  => 'Manutenzione coda fallita: (.+)$',
+            'tpl' => 'Queue maintenance failed: $1',
+        ),
+        array(
+            're'  => 'Deattivazione coda: requeue_stale fallito: (.+)$',
+            'tpl' => 'Queue deactivation: requeue_stale failed: $1',
+        ),
+        array(
+            're'  => 'Traduzione ([a-z]+) articolo #(\d+): (.+)$',
+            'tpl' => 'Translation $1 article #$2: $3',
+        ),
+        array(
+            're'  => 'Readability: errore inatteso durante l\'estrazione \((.+)\)\.',
+            'tpl' => 'Readability: unexpected error during extraction ($1).',
+        ),
+        array(
+            're'  => 'Contenuto troppo corto: (\d+) caratteri di testo contro il minimo di (\d+)\.',
+            'tpl' => 'Content too short: $1 text characters against the minimum of $2.',
+        ),
+        array(
+            're'  => 'ok: titolo coerente col contenuto e (\d+) caratteri di testo \(minimo richiesto: (\d+)\)\.',
+            'tpl' => 'ok: title consistent with content and $1 text characters (required minimum: $2).',
+        ),
+        array(
+            're'  => 'Raccolta automatica schedulata \(intervallo (\d+)s\)\.',
+            'tpl' => 'Automatic collection scheduled (interval $1s).',
+        ),
+        array(
+            're'  => 'Raccolta automatica rischedulata con nuovo intervallo (\d+)s\.',
+            'tpl' => 'Automatic collection rescheduled with new interval $1s.',
+        ),
+        array(
+            're'  => 'Errore fatale durante cron tick: (.+)$',
+            'tpl' => 'Fatal error during cron tick: $1',
+        ),
+        array(
+            're'  => 'Errore durante cron tick: (.+)$',
+            'tpl' => 'Error during cron tick: $1',
+        ),
+        array(
+            're'  => 'Discord ha risposto con errore HTTP (\d+): (.+)$',
+            'tpl' => 'Discord responded with HTTP error $1: $2',
+        ),
+        array(
+            're'  => 'Discord ha risposto con errore HTTP (\d+)\.$',
+            'tpl' => 'Discord responded with HTTP error $1.',
+        ),
+        array(
+            're'  => 'Errore inatteso Discord: (.+)$',
+            'tpl' => 'Unexpected Discord error: $1',
+        ),
+        array(
+            're'  => 'Errore di connessione a Discord: (.+)$',
+            'tpl' => 'Discord connection error: $1',
+        ),
+        array(
+            're'  => 'LinkedIn non ha restituito l\'identificativo del post \(HTTP (\d+)\)\.',
+            'tpl' => 'LinkedIn did not return the post identifier (HTTP $1).',
+        ),
+        array(
+            're'  => 'Errore inatteso durante la pubblicazione su LinkedIn: (.+)$',
+            'tpl' => 'Unexpected error while publishing to LinkedIn: $1',
+        ),
+        array(
+            're'  => 'Errore di connessione a LinkedIn: (.+)$',
+            'tpl' => 'LinkedIn connection error: $1',
+        ),
+        array(
+            're'  => 'Risposta di Telegram non interpretabile \(HTTP (\d+)\)\.',
+            'tpl' => 'Telegram response could not be parsed (HTTP $1).',
+        ),
+        array(
+            're'  => 'Errore inatteso durante l\'invio a Telegram: (.+)$',
+            'tpl' => 'Unexpected error while sending to Telegram: $1',
+        ),
+        array(
+            're'  => 'Errore di connessione a Telegram: (.+)$',
+            'tpl' => 'Telegram connection error: $1',
+        ),
+        array(
+            're'  => 'Inviato in chat (.+)$',
+            'tpl' => 'Sent to chat $1',
+        ),
+        array(
+            're'  => 'Risposta X inattesa \(HTTP 201 senza data\.id\): (.+)$',
+            'tpl' => 'Unexpected X response (HTTP 201 without data.id): $1',
+        ),
+        array(
+            're'  => 'Errore inatteso invio X: (.+)$',
+            'tpl' => 'Unexpected error sending to X: $1',
+        ),
+        array(
+            're'  => 'Errore di rete verso X: (.+)$',
+            'tpl' => 'Network error toward X: $1',
+        ),
+        array(
+            're'  => 'Post #(\d+) non trovato, saltato\.',
+            'tpl' => 'Post #$1 not found, skipped.',
+        ),
+        array(
+            're'  => 'Eccezione: (.+)$',
+            'tpl' => 'Exception: $1',
         ),
     );
 }
