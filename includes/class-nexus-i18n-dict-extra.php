@@ -1035,6 +1035,29 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Disattivalo per lavorare solo con i modelli memorizzati in cache: nessuna richiesta extra ai provider.' => 'Turn it off to work only with the models stored in the cache: no extra requests to providers.',
             'Scarica catalogo modelli dal provider' => 'Download model catalog from the provider',
 
+            /* v1.1.11 (R4-2) — class-nexus-pipeline.php (log attività/fasi) */
+            'Agente non trovato.' => 'Agent not found.',
+            'Agente non attivo: pipeline saltata.' => 'Agent not active: pipeline skipped.',
+            'Approvazione automatica prima della pubblicazione (modalità fully autonomous).' => 'Automatic approval before publication (fully autonomous mode).',
+            'Articolo già pubblicato in precedenza: nessuna nuova pubblicazione.' => 'Article already published previously: no new publication.',
+            'Errore pipeline: ' => 'Pipeline error: ',
+            'Fase di valutazione saltata: budget mensile esaurito.' => 'Evaluation phase skipped: monthly budget exhausted.',
+            'In attesa del capo redattore.' => 'Awaiting the editor-in-chief.',
+            'La risposta AI non contiene un JSON valido con il contenuto dell\'articolo.' => 'The AI response does not contain valid JSON with the article content.',
+            'La direzione non ha prodotto un articolo valido (JSON mancante o incompleto).' => 'The editorial desk did not produce a valid article (missing or incomplete JSON).',
+            'Nessun agente attivo in redazione.' => 'No active agents in the newsroom.',
+            'Nessun nuovo candidato raccolto: pipeline terminata.' => 'No new candidates collected: pipeline finished.',
+            'Nessuna piattaforma di pubblicazione configurata o articolo non valido.' => 'No publishing platform configured or invalid article.',
+            'Non è possibile rifiutare un articolo già pubblicato.' => 'A published article cannot be rejected.',
+            'Raccoglie le fonti' => 'Collecting sources',
+            'Raccolta automatica disabilitata nelle impostazioni: pipeline non avviata.' => 'Automatic collection disabled in settings: pipeline not started.',
+            'Revisione del capo redattore' => 'Editor-in-chief review',
+            'Salvataggio dell\'articolo Nexus Wire fallito.' => 'Nexus Wire article could not be saved.',
+            'Scrive l\'articolo' => 'Writing the article',
+            'Tema mancante: specifica un argomento per il Nexus Wire.' => 'Missing topic: specify a subject for the Nexus Wire.',
+            'approvazione/pubblicazione' => 'approval/publishing',
+            'nessun dettaglio fornito dal modello' => 'no details provided by the model',
+
         );
 }
 
@@ -1985,6 +2008,180 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Fonti RSS non salvate: ',
             'tpl' => 'RSS sources not saved: ',
+        ),
+
+        /* v1.1.11 (R4-2) — class-nexus-pipeline.php (log attività/fasi) */
+        array(
+            're'  => '(\d+) fonti redazione',
+            'tpl' => '$1 desk sources',
+        ),
+        array(
+            're'  => '(\d+) sources redazione',
+            'tpl' => '$1 desk sources',
+        ),
+        array(
+            're'  => 'Inserimento articolo fallito: (.+)$',
+            'tpl' => 'Article insert failed: $1',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) valutato col full-content della fonte \((\d+) caratteri di testo nel prompt\)\.',
+            'tpl' => 'Article #$1 evaluated with the full content of the source ($2 characters of text in the prompt).',
+        ),
+        array(
+            're'  => 'Output AI articolo #(\d+): flag ([^)]+) \(contenuto ripulito con Nexus_Utils::clean_ai_content prima del salvataggio\)\.',
+            'tpl' => 'AI output for article #$1: flag $2 (content cleaned with Nexus_Utils::clean_ai_content before saving).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pending del capo redattore: auto-approvazione non eseguita, resta in coda di revisione\.',
+            'tpl' => 'Article #$1 awaiting the editor-in-chief: auto-approval not performed, remains in the review queue.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pending del capo redattore: auto-approvazione saltata, resta in coda di revisione\.',
+            'tpl' => 'Article #$1 awaiting the editor-in-chief: auto-approval skipped, remains in the review queue.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pending del capo redattore: auto-approvazione e pubblicazione automatiche saltate\.',
+            'tpl' => 'Article #$1 awaiting the editor-in-chief: auto-approval and automatic publication skipped.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pending del capo redattore: auto-approvazione saltata \(modalità fully autonomous\)\.',
+            'tpl' => 'Article #$1 awaiting the editor-in-chief: auto-approval skipped (fully autonomous mode).',
+        ),
+        array(
+            're'  => 'L\'articolo #(\d+) non è pubblicabile nello stato attuale \(([^)]+)\): serve lo stato "approved"\.',
+            'tpl' => 'Article #$1 cannot be published in its current state ($2): the "approved" status is required.',
+        ),
+        array(
+            're'  => 'Agente (.+) non attivo: pipeline saltata\.',
+            'tpl' => 'Agent $1 not active: pipeline skipped.',
+        ),
+        array(
+            're'  => 'Limite giornaliero raggiunto \((\d+)/(\d+) articoli oggi\): pipeline non avviata\.',
+            'tpl' => 'Daily limit reached ($1/$2 articles today): pipeline not started.',
+        ),
+        array(
+            're'  => 'Limite giornaliero raggiunto \((\d+)/(\d+) articles oggi\): pipeline non avviata\.',
+            'tpl' => 'Daily limit reached ($1/$2 articles today): pipeline not started.',
+        ),
+        array(
+            're'  => 'Raccolti (\d+) nuovi candidati\.',
+            'tpl' => 'Collected $1 new candidates.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) rimesso in bozza dal fact-check: serve revisione umana\.',
+            'tpl' => 'Article #$1 sent back to draft by fact-check: human review required.',
+        ),
+        array(
+            're'  => 'approvazione/pubblicazione',
+            'tpl' => 'approval/publishing',
+        ),
+        array(
+            're'  => 'Approvazione automatica: punteggio (\d+) >= (\d+) \(modalità fully autonomous\)\.',
+            'tpl' => 'Automatic approval: score $1 >= $2 (fully autonomous mode).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) approvato automaticamente \(punteggio (\d+) >= (\d+)\)\.',
+            'tpl' => 'Article #$1 approved automatically (score $2 >= $3).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pubblicato automaticamente\.',
+            'tpl' => 'Article #$1 published automatically.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) published automaticamente\.',
+            'tpl' => 'Article #$1 published automatically.',
+        ),
+        array(
+            're'  => 'Pubblicazione automatica articolo #(\d+) fallita: (.+)$',
+            'tpl' => 'Automatic publication of article #$1 failed: $2',
+        ),
+        array(
+            're'  => 'Approvazione automatica articolo #(\d+) fallita: (.+)$',
+            'tpl' => 'Automatic approval of article #$1 failed: $2',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) in coda di revisione: punteggio (\d+) sotto la soglia di auto-approvazione \((\d+)\)\.',
+            'tpl' => 'Article #$1 in the review queue: score $2 below the auto-approval threshold ($3).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) pubblicato \(auto_publish attivo\)\.',
+            'tpl' => 'Article #$1 published (auto_publish enabled).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) published \(auto_publish attivo\)\.',
+            'tpl' => 'Article #$1 published (auto_publish enabled).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) in coda di approvazione \(modalità semi_autonomous\)\.',
+            'tpl' => 'Article #$1 in the approval queue (semi_autonomous mode).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) lasciato in stato bozza \(auto_rewrite disabilitato\)\.',
+            'tpl' => 'Article #$1 left in draft state (auto_rewrite disabled).',
+        ),
+        array(
+            're'  => 'Resume articoli bloccati fallito: (.+)$',
+            'tpl' => 'Stalled articles resume failed: $1',
+        ),
+        array(
+            're'  => 'Errore pipeline: (.+)$',
+            'tpl' => 'Pipeline error: $1',
+        ),
+        array(
+            're'  => 'Resume dopo stallo: articolo #(\d+) in bozza da oltre (\d+)h: rilancio valutazione/riscrittura\.',
+            'tpl' => 'Resume after stall: article #$1 in draft for over $2h: restarting evaluation/rewrite.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+): valutazione fallita nel resume: (.+)$',
+            'tpl' => 'Article #$1: evaluation failed on resume: $2',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) ripreso dopo stallo: riscritto e messo in coda di approvazione\.',
+            'tpl' => 'Article #$1 resumed after stall: rewritten and queued for approval.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) ripreso dopo stallo: riscritto e queued for approval\.',
+            'tpl' => 'Article #$1 resumed after stall: rewritten and queued for approval.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+): riscrittura fallita nel resume: (.+)$',
+            'tpl' => 'Article #$1: rewrite failed on resume: $2',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) ripreso dopo stallo: rivalutato\.',
+            'tpl' => 'Article #$1 resumed after stall: re-evaluated.',
+        ),
+        array(
+            're'  => 'Resume articoli bloccati: (\d+) bozze riprese \(ferme da oltre (\d+)h\)\.',
+            'tpl' => 'Stalled articles resume: $1 drafts resumed (stalled for over $2h).',
+        ),
+        array(
+            're'  => 'La direzione non ha completato la fusione: (.+)$',
+            'tpl' => 'The editorial desk did not complete the merge: $1',
+        ),
+        array(
+            're'  => 'Stato non valido per l\'approvazione: "([^"]+)" \(richiesti "pending_approval" o "approved"\)\.',
+            'tpl' => 'Invalid status for approval: "$1" ("pending_approval" or "approved" required).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) "(.*?)" approved by the reviewer\.',
+            'tpl' => 'Article #$1 "$2" approved by the reviewer.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) "(.*?)" rejected by the reviewer\.',
+            'tpl' => 'Article #$1 "$2" rejected by the reviewer.',
+        ),
+        array(
+            're'  => 'Articolo #(\d+): time budget per articolo esaurito \((\d+)s\) prima della fase "(.*?)": fasi successive interrotte con grazia, i cicli successivi \(resume/coda\) recuperano\.',
+            'tpl' => 'Article #$1: per-article time budget exhausted ($2s) before the "$3" phase: subsequent phases gracefully interrupted, later cycles (resume/queue) recover.',
+        ),
+        array(
+            're'  => 'Fact-check articolo #(\d+): fonte non raggiungibile, fact-check sul riassunto\.',
+            'tpl' => 'Fact-check of article #$1: source unreachable, fact-check on the summary.',
+        ),
+        array(
+            're'  => 'nessun dettaglio fornito dal modello',
+            'tpl' => 'no details provided by the model',
         ),
     );
 }
