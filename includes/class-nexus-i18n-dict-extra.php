@@ -1137,6 +1137,45 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'approvazione/pubblicazione' => 'approval/publishing',
             'nessun dettaglio fornito dal modello' => 'no details provided by the model',
 
+            /* v1.1.11 (R4-4) — assets/js/admin.js (stringhe UI client). Voci nuove
+             * APPENDITE in coda (nessuna voce esistente modificata): wizard
+             * onboarding, ricerca modelli, OAuth/login web, chiavi provider,
+             * provider personalizzati, redazioni. */
+            '(senza nome)' => '(unnamed)',
+            'Avvio del login non riuscito' => 'Login start failed',
+            'Avvio del login web in corso…' => 'Starting web login…',
+            'Caricamento dei provider personalizzati non riuscito.' => 'Custom providers could not be loaded.',
+            'Cerca modello' => 'Search models',
+            'Cerca modello per id o nome…' => 'Search models by id or name…',
+            'Chiave rimossa: il provider è scollegato.' => 'Key removed: the provider is disconnected.',
+            'Chiave salvata' => 'Key saved',
+            'Completamento della connessione in corso…' => 'Completing the connection…',
+            'Connessione OpenRouter' => 'OpenRouter connection',
+            'Connessione OpenRouter non riuscita' => 'OpenRouter connection failed',
+            'Connessione non riuscita' => 'Connection failed',
+            'Connessione…' => 'Connecting…',
+            'Connesso via login web: la chiave è stata salvata.' => 'Connected via web login: the key has been saved.',
+            'Direzione' => 'Leadership',
+            'Divulgativo ma preciso, con spiegazioni chiare' => 'Accessible but precise, with clear explanations',
+            'Eliminare definitivamente? Gli agenti che lo usavano mostreranno un errore finché non riassegni un provider.' => 'Delete permanently? Agents that were using it will show an error until you reassign a provider.',
+            'Etichetta e URL base sono obbligatori.' => 'Label and base URL are required.',
+            'Etichetta e URL base sono obbligatori per il provider personalizzato.' => 'Label and base URL are required for the custom provider.',
+            'Modifica in corso: la chiave salvata resta invariata se lasci vuota.' => 'Editing in progress: the saved key stays unchanged if left empty.',
+            'Nessuna chiave' => 'No key',
+            'OpenRouter connesso: la chiave è stata salvata.' => 'OpenRouter connected: the key has been saved.',
+            'OpenRouter non ha completato il login: ' => 'OpenRouter did not complete the login: ',
+            'Provider personalizzato salvato: ora è selezionabile dagli agenti.' => 'Custom provider saved: agents can now select it.',
+            'Redazione' => 'Desk',
+            'Rimuovere la chiave salvata per questo provider? Gli agenti non potranno più usarlo finché non la riconfiguri o ti riconnetti.' => 'Remove the saved key for this provider? Agents will not be able to use it until you reconfigure it or sign in again.',
+            'Ritorno dal login incompleto (state o code mancanti): riavvia la connessione da Impostazioni AI.' => 'Incomplete login return (missing state or code): restart the connection from AI Settings.',
+            'Salvo le fonti RSS…' => 'Saving RSS sources…',
+            'Scollegamento' => 'Disconnect',
+            'Scollegamento non riuscito' => 'Disconnect failed',
+            'Sì, elimina' => 'Yes, delete',
+            'Test connessione in corso…' => 'Connection test in progress…',
+            'Test non riuscito' => 'Test failed',
+            'URL di autorizzazione mancante nella risposta del server.' => 'Authorization URL missing from the server response.',
+
         );
 }
 
@@ -2304,6 +2343,28 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'nessun dettaglio fornito dal modello',
             'tpl' => 'no details provided by the model',
+        ),
+
+        /* v1.1.11 (R4-4) — assets/js/admin.js (stringhe UI client composte a
+         * runtime, nodi testo/attributi dinamici). Pattern APPENDITI in coda:
+         * riepilogo modelli, toast login OpenRouter, stats redazioni, fallback
+         * errori pannello. L'ultimo non ha variabili: serve come pattern per
+         * sostituire il frammento dentro messaggi più lunghi. */
+        array(
+            're'  => 'Mostrati (\d+) di (\d+) modelli: affina la ricerca\.',
+            'tpl' => 'Showing $1 of $2 models: refine your search.',
+        ),
+        array(
+            're'  => 'OpenRouter non ha completato il login: (.+)$',
+            'tpl' => 'OpenRouter did not complete the login: $1',
+        ),
+        array(
+            're'  => 'articolo coperto',
+            'tpl' => 'article covered',
+        ),
+        array(
+            're'  => 'riprova ricaricando la pagina\.',
+            'tpl' => 'try reloading the page.',
         ),
     );
 }
