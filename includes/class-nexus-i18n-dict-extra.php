@@ -977,6 +977,11 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Valore della fonte mancante.' => 'Missing source value.',
             '— Nessun preset: compilazione manuale —' => '— No preset: fill in manually —',
 
+            // v1.1.11 (R1): sezione "Fonti RSS globali" (settings-contenuti.php).
+            'Feed RSS globali (una URL per riga)' => 'Global RSS feeds (one URL per line)',
+            'Fonti RSS globali' => 'Global RSS sources',
+            'Usate dagli agenti che non hanno fonti nella propria redazione (una URL http(s) per riga; le righe che iniziano con # sono commenti). Se vuote, nessuna raccolta automatica: configura le fonti delle redazioni o queste globali.' => 'Used by agents that have no sources in their own desk (one http(s) URL per line; lines starting with # are comments). When empty, no automatic collection: configure the desk sources or these global ones.',
+
         );
 }
 

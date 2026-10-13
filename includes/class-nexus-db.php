@@ -56,6 +56,14 @@
  *   (righe "nome|url|tokenOpzionale").
  *   update_settings() itera default_settings(): le chiavi nuove sono subito
  *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ * v1.1.11 (R1) — FONTI RSS GLOBALI ZERO-HARDCODE:
+ *   'global_rss_sources' (STRINGA, default '', stesso pattern di
+ *   mcp_servers_text): una URL http(s) per riga (righe vuote e che iniziano
+ *   con '#' ignorate da Nexus_Rss::global_sources()). Sostituisce la vecchia
+ *   mappa categoria→feed hardcoded di Nexus_Rss::sources_for_category:
+ *   senza configurazione utente la raccolta RSS globale non produce item.
+ *   La chiave NON è un segreto (nessun token dentro: solo URL feed) — resta
+ *   leggibile in GET /settings e nell'export.
  * v1.1.6 — TIMESTAMP VERI + ZERO MOCK (contratto T-03):
  *   insert_activity(): QUINTO formato '%s' per created_at. Prima: 5 campi con
  *   4 soli formati → wpdb riciclava il primo formato ('%d') per l'ultimo campo
@@ -195,6 +203,12 @@ class Nexus_DB {
                         'tools_max_rounds'      => 3, // giri max del tool-use loop
                         'tools_timeout'         => 15, // timeout in secondi delle richieste HTTP degli strumenti
                         'mcp_servers_text'      => '', // righe "nome|url|tokenOpzionale" (server MCP Streamable HTTP)
+                        // v1.1.11 (R1) — fonti RSS globali zero-hardcode: una URL
+                        // http(s) per riga (stesso pattern multi-riga di
+                        // mcp_servers_text); usate da Nexus_Rss::sources_for_category
+                        // quando l'agente non ha fonti nella propria redazione. Vuota =
+                        // nessuna raccolta RSS globale (nessun fallback predefinito).
+                        'global_rss_sources'    => '',
                 );
         }
 

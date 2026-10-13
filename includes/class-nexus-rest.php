@@ -4349,6 +4349,12 @@ class Nexus_Rest {
          * v1.1.4: ammesse anche le chiavi provider AI per agente (prov_key_*),
          * capo redattore (chief_*) e strumenti di ricerca (tools_*,
          * mcp_servers_text) con tipi, range ed enum dedicati.
+         * v1.1.11 (R1): ammessa 'global_rss_sources' (fonti RSS globali, STRINGA
+         * una URL http(s) per riga, sanitize_textarea_field come
+         * mcp_servers_text). NON è un segreto (solo URL feed, nessun token):
+         * non entra in secret_settings_keys() — resta leggibile in GET /settings
+         * e una stringa vuota la svuota (comportamento corretto per un valore
+         * non-segreto).
          *
          * @param array $body Body JSON decodificato.
          * @return array|WP_Error Payload pulito (solo chiavi ammesse presenti).
@@ -4452,6 +4458,10 @@ class Nexus_Rest {
                         'enable_public_api'    => 'absint',
                         'enable_autotranslate_posts' => 'absint',
                         'mcp_servers_text'     => 'sanitize_textarea_field',
+                        // v1.1.11 (R1): fonti RSS globali, una URL http(s) per riga
+                        // (stesso sanitize multi-riga di mcp_servers_text; NON è un
+                        // segreto: nessun token dentro, solo URL feed pubbliche).
+                        'global_rss_sources'   => 'sanitize_textarea_field',
                         // Chiave API pubblica (v1.1.9, D6): scrivibile anche via PUT come gli
                         // altri segreti; il valore viene normalizzato DOPO la mappa (vedi
                         // normalize_public_api_key): non vuoto e non hex-64 → hash SHA-256.

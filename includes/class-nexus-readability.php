@@ -508,7 +508,7 @@ class Nexus_Readability {
          * Titolo best effort: og:title (property o name) → <title> → primo <h1>.
          *
          * og:title per primo perché di solito è il più pulito (senza suffisso
-         * del sito tipo " - ANSA.it" che invece spesso c'è in <title>).
+         * del sito tipo " - NomeSito.it" che invece spesso c'è in <title>).
          * textContent/getAttribute di DOM ritornano già il testo decodificato:
          * serve solo whitespace e clip.
          *

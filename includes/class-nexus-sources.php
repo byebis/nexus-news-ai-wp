@@ -13,7 +13,9 @@
  *   il collect: merge, dedup per link e cap gia' fatti qui. Fonti in errore
  *   vengono ignorate (attivita' 'source_error', level warning). Se l'agente
  *   NON ha fonti redazione si ricade sul comportamento storico
- *   Nexus_Rss::fetch_for_agent (feed globali di categoria, source_type 'rss').
+ *   Nexus_Rss::fetch_for_agent (v1.1.11 (R1): le fonti RSS globali arrivano
+ *   SOLO dalla setting utente 'global_rss_sources', zero URL hardcoded nel
+ *   codice — senza configurazione non arriva NESSUN item, source_type 'rss').
  * Nexus_Sources::clear_cooldown() — azzera cooldown e contatori fallimenti
  *   (per CLI/UI).
  *
@@ -146,7 +148,8 @@ class Nexus_Sources {
                         }
                 }
 
-                // Nessuna fonte redazione → comportamento storico: feed globali di categoria.
+                // Nessuna fonte redazione → comportamento storico: fonti RSS globali
+                // configurate dall'utente (v1.1.11 (R1): setting 'global_rss_sources').
                 if ( empty( $sources ) ) {
                         return self::fallback_category_items( $agent, $max_items );
                 }
@@ -1432,8 +1435,10 @@ class Nexus_Sources {
         }
 
         /**
-         * Fallback: nessuna fonte redazione → feed globali di categoria via
-         * Nexus_Rss::fetch_for_agent (source_type 'rss').
+         * Fallback: nessuna fonte redazione → fonti RSS globali configurate
+         * dall'utente via Nexus_Rss::fetch_for_agent (v1.1.11 (R1): setting
+         * 'global_rss_sources', zero URL hardcoded; vuota = nessun item,
+         * source_type 'rss').
          *
          * @param object|array $agent     Agente.
          * @param int          $max_items Cap item.

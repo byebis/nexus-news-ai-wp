@@ -1247,7 +1247,8 @@ class Nexus_AI_Engine {
          * @param string $category    Categoria dell'agente (es. "Tecnologia").
          * @param string $personality Personalità del giornalista AI.
          * @param string $items_text  Lista testuale delle notizie RSS (titolo, estratto, link).
-         * @param string $source_name Nome della sorgente (es. "ANSA").
+         * @param string $source_name Nome della sorgente (dall'host della fonte,
+         *                            vedi Nexus_Rss::source_from_url — nessun nome predefinito).
          * @return string
          */
         public static function collect_prompt( $category, $personality, $items_text, $source_name ) {
