@@ -56,6 +56,20 @@
  *   (righe "nome|url|tokenOpzionale").
  *   update_settings() itera default_settings(): le chiavi nuove sono subito
  *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ * v1.1.13 (O2) — RETENTION ZERO-CRESCITA (schema v5):
+ *   Cron giornaliero self-scheduled 'nexus_retention_cleanup' (bootstrap via
+ *   'nexus_modules_init' a fondo file, stesso pattern dei moduli v1.1.12):
+ *   cancella a BATCH (5000 righe per DELETE, budget 30s per run) le righe dei
+ *   LOG (activity_logs, usage_logs, publish_logs) più vecchie di 90 giorni e
+ *   le righe di nexus_metrics più vecchie di 365 giorni (lo storico serve al
+ *   learning: finestra learn 30gg + retrospettiva). Finestre configurabili
+ *   SOLO via filtri dev nexus_log_retention_days / nexus_metrics_retention_days
+ *   (default 90/365, nessuna UI); ripulisce anche i transient scaduti dei
+ *   prefissi nexus_full_ / nexus_log1_ / nexus_src_. Contratto:
+ *   Nexus_DB::init_retention() / run_retention_cleanup() /
+ *   deactivate_retention() (per nexus_deactivate del bootstrap). Schema v5:
+ *   nuova KEY created_at su nexus_publish_logs (DELETE batched indicizzato),
+ *   upgrade via dbDelta da install()/maybe_upgrade().
  * v1.1.11 (R1) — FONTI RSS GLOBALI ZERO-HARDCODE:
  *   'global_rss_sources' (STRINGA, default '', stesso pattern di
  *   mcp_servers_text): una URL http(s) per riga (righe vuote e che iniziano
@@ -85,7 +99,39 @@ class Nexus_DB {
         const OPTION_SETTINGS = 'nexus_settings';
         const DB_VERSION_KEY  = 'nexus_db_version';
         const DB_REVISION_KEY = 'nexus_db_revision';
-        const DB_REVISION     = 4; // v1.1.12 — schema v4: nexus_metrics (feedback performance GSC/GA4)
+        // v1.1.12 — schema v4: nexus_metrics (feedback performance GSC/GA4)
+        // v1.1.13 — schema v5: KEY created_at su nexus_publish_logs (il DELETE
+        //           batched del cron di retention non fa più full-scan a ogni colpo)
+        const DB_REVISION     = 5;
+
+        /* ============ RETENTION (v1.1.13, O2) ============ */
+
+        /**
+         * Hook WP-Cron del giro di pulizia giornaliero (self-scheduled, stesso
+         * pattern dei cron v1.1.12 nexus_metrics_sync/nexus_learn_refresh/
+         * nexus_evergreen_refresh).
+         */
+        const HOOK_RETENTION = 'nexus_retention_cleanup';
+
+        /**
+         * Righe per singolo DELETE (batch): i cancelli grandi sono spezzati in
+         * colpi da questa misura per non tenere lock a lungo su tabelle da
+         * milioni di righe.
+         */
+        const RETENTION_BATCH = 5000;
+
+        /**
+         * Budget di tempo del giro di retention (secondi): oltre soglia il cron
+         * si ferma pulito e completa al giro successivo (lo stesso contratto di
+         * Nexus_Metrics::TIME_BUDGET).
+         */
+        const RETENTION_TIME_BUDGET = 30;
+
+        /**
+         * Voci di scadenza transient esaminate per famiglia per run (le coppie
+         * _transient_* / _transient_timeout_* scadute vengono eliminate insieme).
+         */
+        const RETENTION_TRANSIENT_BATCH = 500;
 
         /**
          * Default settings (portati da Prisma Settings model).
@@ -344,7 +390,8 @@ class Nexus_DB {
                                 published_at DATETIME NULL DEFAULT NULL,
                                 created_at DATETIME NOT NULL,
                                 PRIMARY KEY  (id),
-                                KEY article_id (article_id)
+                                KEY article_id (article_id),
+                                KEY created_at (created_at)
                         ) {$charset};",
                         "CREATE TABLE {$alogs} (
                                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1725,6 +1772,269 @@ class Nexus_DB {
                 ) );
         }
 
+        /* ============ RETENTION (v1.1.13, O2) ============ */
+
+        /**
+         * Bootstrap manutenzione retention: registra l'handler del cron
+         * giornaliero e allinea la schedulazione. Chiamato su
+         * 'nexus_modules_init' (hook a fondo file, stesso pattern dei moduli
+         * v1.1.12). Nessuna richiesta di rete: solo hook + scheduling.
+         *
+         * La retention NON ha switch on/off: la pulizia delle tabelle di log è
+         * manutenzione obbligatoria (le righe crescono illimitate: ~7M/anno su
+         * nexus_metrics a scala); le finestre sono regolabili SOLO via filtri
+         * dev (nexus_log_retention_days / nexus_metrics_retention_days).
+         *
+         * @return void
+         */
+        public static function init_retention() {
+                add_action( self::HOOK_RETENTION, array( __CLASS__, 'run_retention_cleanup' ) );
+                self::sync_retention_schedule();
+        }
+
+        /**
+         * Allinea l'evento WP-Cron della retention: schedula il giro giornaliero
+         * se assente (primo run sfalsato di 300s + jitter 0..900, stessa formula
+         * di Nexus_Learn). Nessuna impostazione la disattiva (manutenzione).
+         *
+         * @return void
+         */
+        private static function sync_retention_schedule() {
+                if ( ! wp_next_scheduled( self::HOOK_RETENTION ) ) {
+                        wp_schedule_event( time() + 300 + wp_rand( 0, 900 ), 'daily', self::HOOK_RETENTION );
+                }
+        }
+
+        /**
+         * Deattivazione plugin: rimuove l'evento schedulato. Contratto static
+         * per il bootstrap (chiamata con guardia method_exists come per
+         * Nexus_Metrics::deactivate in nexus_deactivate()).
+         *
+         * @return void
+         */
+        public static function deactivate_retention() {
+                wp_clear_scheduled_hook( self::HOOK_RETENTION );
+        }
+
+        /**
+         * Handler dell'evento 'nexus_retention_cleanup'. Il cron DEVE finire
+         * sempre pulito: nessuna eccezione può propagare (incassata e loggata
+         * come attività 'error' con messaggio breve, mai token/URL).
+         *
+         * @return void
+         */
+        public static function run_retention_cleanup() {
+                try {
+                        self::do_retention_cleanup();
+                } catch ( Exception $e ) {
+                        self::insert_activity( 0, 'retention', 'Pulizia retention interrotta: ' . mb_substr( sanitize_text_field( (string) $e->getMessage() ), 0, 120 ), 'error' );
+                } catch ( Throwable $e ) {
+                        self::insert_activity( 0, 'retention', 'Pulizia retention interrotta (errore fatale): ' . mb_substr( sanitize_text_field( (string) $e->getMessage() ), 0, 120 ), 'error' );
+                }
+        }
+
+        /**
+         * Corpo della pulizia retention (chiamato da run_retention_cleanup
+         * dentro try/catch).
+         *
+         *  - LOG (activity_logs, usage_logs, publish_logs): righe con
+         *    created_at più vecchie della finestra di retention log
+         *    (filtro dev 'nexus_log_retention_days', default 90 giorni);
+         *  - METRICHE (nexus_metrics): righe con metric_date più vecchie
+         *    della finestra metriche (filtro dev
+         *    'nexus_metrics_retention_days', default 365 giorni — i dati
+         *    servono allo storico del learning, NON 90: la finestra di learn
+         *    è 30gg e serve retrospettiva più lunga);
+         *  - TRANSIENT scaduti del plugin (prefissi nexus_full_, nexus_log1_,
+         *    nexus_src_): le coppie opzione _transient_* / _transient_timeout_*
+         *    la cui scadenza è passata vengono eliminate insieme (sul DB:
+         *    con object cache esterna le query non trovano righe, no-op).
+         *
+         * TUTTO a BATCH (RETENTION_BATCH righe per DELETE) con budget di tempo
+         * RETENTION_TIME_BUDGET: il cron si ferma pulito a metà lavoro e
+         * completa al giro successivo. Log attività SOLO se c'è qualcosa da
+         * raccontare (righe rimosse o budget raggiunto): un giro vuoto non
+         * inquina il feed attività.
+         *
+         * @return void
+         */
+        private static function do_retention_cleanup() {
+                global $wpdb;
+
+                $start = microtime( true );
+                $t     = self::tables();
+
+                // Finestre retention (SOLO filtri dev, nessuna UI — contratto 1.1.13).
+                $log_days = max( 1, (int) apply_filters( 'nexus_log_retention_days', 90 ) );
+                $met_days = max( 1, (int) apply_filters( 'nexus_metrics_retention_days', 365 ) );
+
+                $log_cutoff = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $log_days * DAY_IN_SECONDS );
+                $met_cutoff = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) - $met_days * DAY_IN_SECONDS );
+
+                $deleted_logs       = 0;
+                $deleted_metrics    = 0;
+                $deleted_transients = 0;
+                $budget_hit         = false;
+
+                // 1) Log: activity/usage hanno indice created_at, publish_logs
+                //    lo ha dalla schema v5 (v1.1.13).
+                $log_tables = array( $t['activity_logs'], $t['usage_logs'], $t['publish_logs'] );
+
+                foreach ( $log_tables as $table ) {
+                        if ( ! is_string( $table ) || '' === $table ) {
+                                continue;
+                        }
+
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break 2;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$table} WHERE created_at < %s LIMIT %d",
+                                        $log_cutoff,
+                                        self::RETENTION_BATCH
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        // 0 righe rimaste (o errore DB): si passa alla prossima
+                                        // tabella senza girare a vuoto.
+                                        break;
+                                }
+
+                                $deleted_logs += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH ) {
+                                        break; // Ultimo batch parziale: tabella esaurita.
+                                }
+                        }
+                }
+
+                // 2) Metriche: metric_date è indicizzata (schema v4). Il DELETE
+                //    usa la stessa forma batched del loop log.
+                if ( ! $budget_hit && ! empty( $t['metrics'] ) ) {
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$t['metrics']} WHERE metric_date < %s LIMIT %d",
+                                        $met_cutoff,
+                                        self::RETENTION_BATCH
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        break;
+                                }
+
+                                $deleted_metrics += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH ) {
+                                        break;
+                                }
+                        }
+                }
+
+                // 3) Transient scaduti del plugin (stesso budget di tempo).
+                if ( ! $budget_hit ) {
+                        $completed = self::purge_expired_transients( $start, $deleted_transients );
+                        if ( ! $completed ) {
+                                $budget_hit = true;
+                        }
+                }
+
+                // Log finale solo se onesto raccontarlo (niente righe "0" quotidiane).
+                $total = $deleted_logs + $deleted_metrics + $deleted_transients;
+
+                if ( $total > 0 || $budget_hit ) {
+                        $detail = sprintf(
+                                'Retention: %d righe log, %d righe metriche, %d transient scaduti rimossi (finestre %d/%d giorni, batch %d).',
+                                $deleted_logs,
+                                $deleted_metrics,
+                                $deleted_transients,
+                                $log_days,
+                                $met_days,
+                                self::RETENTION_BATCH
+                        );
+
+                        if ( $budget_hit ) {
+                                $detail .= ' — budget tempo raggiunto, si completa al prossimo giro';
+                        }
+
+                        self::insert_activity( 0, 'retention', $detail, 'info' );
+                }
+        }
+
+        /**
+         * Elimina i transient SCADUTI del plugin dalle famiglie a prefisso
+         * nexus_full_ (cache full-content Readability), nexus_log1_ (marker
+         * log-once pipeline) e nexus_src_ (cache fact-check fonti, incluse le
+         * sottofamiglie nexus_src_cool_/fail_/log_). Una voce è scaduta quando
+         * il valore della coppia _transient_timeout_<nome> è un timestamp
+         * passato: si eliminano ENTRAMBE le opzioni (transient + timeout) in
+         * un solo statement. Batched (RETENTION_TRANSIENT_BATCH per famiglia
+         * per run): le voci residue arrivano al giro successivo.
+         *
+         * @param float $start    microtime(true) d'inizio run (budget condiviso).
+         * @param int   $deleted  Contatore righe rimosse (per riferimento).
+         * @return bool True se tutte le famiglie sono state scandite, false se
+         *              il budget di tempo è finito prima della fine.
+         */
+        private static function purge_expired_transients( $start, &$deleted ) {
+                global $wpdb;
+
+                $now      = time();
+                $prefixes = array( 'nexus_full_', 'nexus_log1_', 'nexus_src_' );
+
+                foreach ( $prefixes as $prefix ) {
+                        // La scadenza è un timestamp unix: il confronto numerico
+                        // richiede il placeholder %d (letterale non quotato: con %s
+                        // MySQL farebbe un confronto STRINGA e sbaglierebbe).
+                        $expired = $wpdb->get_col( $wpdb->prepare(
+                                "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value < %d LIMIT %d",
+                                $wpdb->esc_like( '_transient_timeout_' . $prefix ) . '%',
+                                $now,
+                                self::RETENTION_TRANSIENT_BATCH
+                        ) );
+
+                        if ( ! is_array( $expired ) || empty( $expired ) ) {
+                                continue;
+                        }
+
+                        foreach ( $expired as $timeout_name ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        return false;
+                                }
+
+                                // Da '_transient_timeout_<suffisso>' si ricostruiscono
+                                // ENTRAMBE le opzioni della coppia: il transient vero e
+                                // proprio vive in '_transient_<suffisso>'.
+                                $timeout_name = (string) $timeout_name;
+                                $suffix       = substr( $timeout_name, strlen( '_transient_timeout_' ) );
+                                $transient    = ( '' !== $suffix ) ? '_transient_' . $suffix : '';
+
+                                if ( '' === $transient ) {
+                                        continue;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$wpdb->options} WHERE option_name IN (%s, %s)",
+                                        $timeout_name,
+                                        $transient
+                                ) );
+
+                                if ( $affected ) {
+                                        $deleted += (int) $affected;
+                                }
+                        }
+                }
+
+                return true;
+        }
+
         /* ============ UNINSTALL ============ */
 
         /* ============ REVISIONI ARTICOLI (v1.1.9) ============ */
@@ -1802,3 +2112,7 @@ class Nexus_DB {
                 delete_option( 'nexus_native_migration' );
         }
 }
+
+// v1.1.13 (O2): cron giornaliero di retention self-registrato sull'action del
+// bootstrap (stesso pattern dei moduli v1.1.12, nessuna modifica al file principale).
+add_action( 'nexus_modules_init', array( 'Nexus_DB', 'init_retention' ) );

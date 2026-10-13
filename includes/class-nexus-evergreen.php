@@ -9,14 +9,22 @@
  * (zero mock) e l'errore viene loggato in attività; il job continua col
  * prossimo articolo nel rispetto del budget di tempo totale.
  *
- * Selezione e ranking: fino a evergreen_max_posts (cap 5) articoli collegati a
- * un post WP (articles.wp_post_id; il meta _nexus_article_id del post punta
- * allo stesso articolo — le traduzioni creano post aggiuntivi, la colonna
- * wp_post_id resta il riferimento canonico del post sorgente), classificati per
- * la somma (clicks + views) della tabella nexus_metrics del post; gli articoli
- * senza metriche vanno in fondo, ordinati per quality_score DESC. Gli articoli
- * il cui post ha il meta _nexus_evergreen_at aggiornato negli ultimi
+ * Selezione e ranking: fino a max_posts() articoli collegati a un post WP
+ * (articles.wp_post_id; il meta _nexus_article_id del post punta allo stesso
+ * articolo — le traduzioni creano post aggiuntivi, la colonna wp_post_id resta
+ * il riferimento canonico del post sorgente), classificati per la somma
+ * (clicks + views) della tabella nexus_metrics del post limitata alla finestra
+ * utile METRIC_WINDOW_DAYS (90 giorni: copre il learning 30gg e il refresh
+ * evergreen 30gg con margine — v1.1.13 O2: la subquery aggregata filtra su
+ * metric_date invece di scansionare TUTTO lo storico delle metriche); gli
+ * articoli senza metriche vanno in fondo, ordinati per quality_score DESC. Gli
+ * articoli il cui post ha il meta _nexus_evergreen_at aggiornato negli ultimi
  * evergreen_refresh_days giorni vengono saltati.
+ *
+ * v1.1.13 (O2) — CAP PER RUN: il vecchio cap hardcoded 5 è sostituito
+ * dall'opzione 'nexus_evergreen_max_per_run' (int, default 5, fallback sul
+ * setting evergreen_max_posts) con filtro dev 'nexus_evergreen_max_per_run'
+ * (ultimo byte, nessuna UI); cap di sanità RUN_CAP = 50 per run.
  *
  * Contratto pubblico:
  * Nexus_Evergreen::init()                  — cron handler + schedula weekly solo se evergreen_enabled = 1
@@ -67,6 +75,23 @@ final class Nexus_Evergreen {
          */
         const MIN_RETURN_RATIO = 0.25;
         const MIN_RETURN_CHARS = 200;
+
+        /**
+         * Finestra metric_date utile per il ranking (v1.1.13, O2): la subquery
+         * aggregata su nexus_metrics legge SOLO le righe di questa finestra
+         * (indice metric_date) invece di tutto lo storico. 90 giorni coprono
+         * il learning (learn_window_days 30) e il refresh evergreen (30) con
+         * margine, senza full-scan settimanale.
+         */
+        const METRIC_WINDOW_DAYS = 90;
+
+        /**
+         * Cap di sanità del numero di articoli per run: il valore reale viene
+         * dall'opzione nexus_evergreen_max_per_run (default 5) via filtro dev,
+         * ma nessuna configurazione può superare questo tetto (budget 120s:
+         * ogni articolo è una chiamata AI).
+         */
+        const RUN_CAP = 50;
 
         /**
          * Bootstrap modulo: registra l'handler del cron e allinea la schedula allo
@@ -162,7 +187,21 @@ final class Nexus_Evergreen {
          * finestra. Ranking: somma (clicks + views) da nexus_metrics per il post,
          * poi quality_score DESC (gli articoli senza metriche restano in fondo).
          *
-         * @param int $limit Numero massimo di candidati (cap 5).
+         * v1.1.13 (O2) — QUERY A FINESTRA: la vecchia forma LEFT JOIN
+         * nexus_metrics SENZA filtro metric_date + GROUP BY su tutti i
+         * published era un full-scan settimanale (ogni riga metrica di ogni
+         * articolo pubblicato, tutta la storia, entrava nel join). Ora:
+         *  - subquery aggregata che somma clicks+views SOLO sulle righe con
+         *    metric_date >= oggi - METRIC_WINDOW_DAYS (usa l'indice metric_date);
+         *  - una riga per post_id (GROUP BY dentro la subquery): il LEFT JOIN
+         *    esterno non moltiplica più le righe degli articoli e non serve
+         *    GROUP BY a livello articolo;
+         *  - il join avviene sui SOLI candidati (la WHERE esterna restringe
+         *    già a published/vecchi/non-rinfrescati prima del join).
+         * Risultato atteso invariato (ranking per performance recente), query
+         * proporzionale ai dati degli ultimi 90 giorni e non a tutta la storia.
+         *
+         * @param int $limit Numero massimo di candidati (default 5, max RUN_CAP).
          * @return array Lista di righe associative (article_id, post_id, title, summary, content,
          *               category, agent_id, quality_score, published_at, metric_score).
          */
@@ -173,7 +212,7 @@ final class Nexus_Evergreen {
                         return array();
                 }
 
-                $limit = min( 5, max( 1, absint( $limit ) ) );
+                $limit = min( self::RUN_CAP, max( 1, absint( $limit ) ) );
 
                 $tables = Nexus_DB::tables();
                 $arts   = $tables['articles'];
@@ -182,16 +221,22 @@ final class Nexus_Evergreen {
                 $days   = self::refresh_days();
                 $cutoff = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $days * DAY_IN_SECONDS );
 
-                // LEFT JOIN sulle metriche: la somma per post manda in cima gli articoli
-                // più performanti; gli articoli senza righe di metriche hanno score 0 e
-                // restano in fondo grazie al secondo criterio (quality_score DESC).
+                // Finestra metriche utile: la subquery aggrega SOLO le righe
+                // recenti (indice metric_date), una riga per post_id.
+                $since_metrics = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) - self::METRIC_WINDOW_DAYS * DAY_IN_SECONDS );
+
                 // NOT EXISTS sul meta _nexus_evergreen_at: salta i post già rinfrescati
                 // nella finestra (meta_value confrontato come data 'Y-m-d H:i:s').
                 $sql = "SELECT a.id AS article_id, a.title, a.summary, a.content, a.category, a.agent_id, "
                         . "a.quality_score, a.published_at, a.wp_post_id AS post_id, "
-                        . "COALESCE( SUM( m.clicks + m.views ), 0 ) AS metric_score "
+                        . "COALESCE( ms.metric_score, 0 ) AS metric_score "
                         . "FROM {$arts} a "
-                        . "LEFT JOIN {$mets} m ON m.post_id = a.wp_post_id "
+                        . "LEFT JOIN ( "
+                        . "SELECT m.post_id, SUM( m.clicks + m.views ) AS metric_score "
+                        . "FROM {$mets} m "
+                        . "WHERE m.metric_date >= %s "
+                        . "GROUP BY m.post_id "
+                        . ") ms ON ms.post_id = a.wp_post_id "
                         . "WHERE a.status = 'published' "
                         . "AND a.wp_post_id > 0 "
                         . "AND a.published_at IS NOT NULL AND a.published_at <> '0000-00-00 00:00:00' "
@@ -201,12 +246,11 @@ final class Nexus_Evergreen {
                         . "SELECT 1 FROM {$wpdb->postmeta} em "
                         . "WHERE em.post_id = a.wp_post_id AND em.meta_key = %s "
                         . "AND em.meta_value <> '' AND em.meta_value >= %s ) "
-                        . "GROUP BY a.id "
                         . "ORDER BY metric_score DESC, a.quality_score DESC, a.published_at ASC "
                         . "LIMIT %d";
 
                 $rows = $wpdb->get_results(
-                        $wpdb->prepare( $sql, $cutoff, self::META_FLAG, $cutoff, $limit ), // phpcs:ignore WordPress.DB
+                        $wpdb->prepare( $sql, $since_metrics, $cutoff, self::META_FLAG, $cutoff, $limit ), // phpcs:ignore WordPress.DB
                         ARRAY_A
                 );
 
@@ -432,19 +476,41 @@ final class Nexus_Evergreen {
         }
 
         /**
-         * Numero massimo di articoli per giro (evergreen_max_posts, cap 5).
+         * Numero massimo di articoli per giro (v1.1.13, O2).
+         *
+         * Sostituito il cap hardcoded 5: si legge l'opzione
+         * 'nexus_evergreen_max_per_run' (int, default 5, scritta dal contratto
+         * 1.1.13); 0/assente = fallback sul setting evergreen_max_posts per
+         * compatibilità con chi ha già configurato quel valore. Filtro dev
+         * 'nexus_evergreen_max_per_run' (nessuna UI) come ultimo byte; cap di
+         * sanità RUN_CAP per proteggere il budget di 120 secondi.
          *
          * @return int
          */
         private static function max_posts() {
                 $max = 5;
-                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+
+                // Opzione dedicata (default 5): >0 vince sul setting storico.
+                $opt = get_option( 'nexus_evergreen_max_per_run', 0 );
+                if ( is_numeric( $opt ) && (int) $opt > 0 ) {
+                        $max = (int) $opt;
+                } elseif ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        // Fallback: setting esistente evergreen_max_posts (default 5).
                         $settings = Nexus_DB::get_settings();
                         if ( isset( $settings['evergreen_max_posts'] ) ) {
                                 $max = absint( $settings['evergreen_max_posts'] );
                         }
                 }
-                return max( 1, min( 5, $max ) );
+
+                $max = max( 1, $max );
+
+                // Filtro dev: ultimo byte (contratto 1.1.13, nessuna UI).
+                $filtered = (int) apply_filters( 'nexus_evergreen_max_per_run', $max );
+                if ( $filtered > 0 ) {
+                        $max = $filtered;
+                }
+
+                return max( 1, min( self::RUN_CAP, $max ) );
         }
 
         /**

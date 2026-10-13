@@ -47,7 +47,16 @@
  * le famiglie transient del plugin (feed, fact-check fonti, rate limit,
  * full-content, lock traduzioni, OAuth, circuit breaker provider) e i
  * transients singoli nominati vengono rimossi alla cancellazione — vedi
- * nexus_uninstall_delete_transients().
+ * nexus_uninstall_delete_transients(). Dalla v1.1.13 entra anche la famiglia
+ * rate limit delle notifiche (nexus_notify_rl_, v1.1.12 S7).
+ *
+ * Dalla v1.1.13 (O2): completamento moduli 1.1.12 (token OAuth Google
+ * nexus_gsc_token, briefing learning nexus_learn_briefing, eventi cron
+ * metrics/learn/evergreen non ancora cancellati, tabella nexus_metrics nel
+ * fallback DROP, meta _nexus_simhash/_nexus_interlinked/_nexus_interlink_ids/
+ * _nexus_evergreen_at) + opzioni dei NUOVI moduli 1.1.13 (dedup window/
+ * lookup, interlink window/candidates, evergreen max per run, notify max
+ * per hour/telegram chat).
  *
  * @package Nexus_News_AI
  */
@@ -73,6 +82,24 @@ function nexus_uninstall_delete_options() {
         delete_option( 'nexus_source_cursor' );
         // v1.1.10 — flag log-once imagery (C2).
         delete_option( 'nexus_pixabay_key_missing' );
+        // v1.1.12 — moduli "redazione che impara": token OAuth Google CIFRATO (S1)
+        // e briefing performance (S2b). Il token è un segreto: DEVE sparire alla
+        // disinstallazione (già assente dal percorso Nexus_DB::drop_tables, qui
+        // coperto anche nel fallback diretto, insieme alle chiavi DB runtime).
+        delete_option( 'nexus_gsc_token' );
+        delete_option( 'nexus_learn_briefing' );
+        delete_option( 'nexus_db_revision' );   // revisione schema (parità col percorso drop_tables)
+        delete_option( 'nexus_agent_runtime' ); // runtime agenti (parità col percorso drop_tables)
+        // v1.1.13 — opzioni dei nuovi moduli (contratto O2/uninstall): nessuna
+        // vive dentro nexus_settings, sono chiavi dedicate scritte dalle viste
+        // / REST 1.1.13.
+        delete_option( 'nexus_dedup_window_days' );
+        delete_option( 'nexus_dedup_lookup_max' );
+        delete_option( 'nexus_interlink_window_days' );
+        delete_option( 'nexus_interlink_candidates' );
+        delete_option( 'nexus_evergreen_max_per_run' );
+        delete_option( 'nexus_notify_max_per_hour' );
+        delete_option( 'nexus_notify_telegram_chat' );
 }
 
 /**
@@ -154,6 +181,7 @@ function nexus_uninstall_delete_transients() {
                 'nexus_tr_lock_',    // v1.1.9 — lock traduzioni multilang.
                 'nexus_oauth_rl_',   // v1.1.10 — rate limit OAuth OpenRouter.
                 'nexus_ai_breaker_', // v1.1.9 — circuit breaker provider (+ _cooldown).
+                'nexus_notify_rl_',  // v1.1.12 (S7) — rate limit orario notifiche.
         );
 
         foreach ( $prefixes as $prefix ) {
@@ -206,6 +234,13 @@ function nexus_uninstall_delete_wp_posts() {
         delete_post_meta_by_key( '_nexus_article_id' );
         delete_post_meta_by_key( '_nexus_seo_title' );
         delete_post_meta_by_key( '_nexus_seo_description' );
+        // v1.1.12 — meta dei moduli "redazione che impara" (simhash dedup S3,
+        // interlink S4, evergreen refresh S6): orfani sicuri anche a post già
+        // cancellati (delete_post_meta_by_key non richiede che il post esista).
+        delete_post_meta_by_key( '_nexus_simhash' );
+        delete_post_meta_by_key( '_nexus_interlinked' );
+        delete_post_meta_by_key( '_nexus_interlink_ids' );
+        delete_post_meta_by_key( '_nexus_evergreen_at' );
 }
 
 /**
@@ -222,10 +257,18 @@ function nexus_uninstall_clear_cron_events() {
         wp_clear_scheduled_hook( 'nexus_weekly_digest' );
         wp_clear_scheduled_hook( 'nexus_ping_article' );
         wp_clear_scheduled_hook( 'nexus_queue_runner' ); // v1.0.4 — runner coda lavori
+        // v1.1.12 — cron dei moduli "redazione che impara" (non erano ancora
+        // coperti qui): sync metriche GSC/GA4, briefing learning, evergreen.
+        wp_clear_scheduled_hook( 'nexus_metrics_sync' );
+        wp_clear_scheduled_hook( 'nexus_learn_refresh' );
+        wp_clear_scheduled_hook( 'nexus_evergreen_refresh' );
+        // v1.1.13 (O2) — cron giornaliero di retention/cleanup.
+        wp_clear_scheduled_hook( 'nexus_retention_cleanup' );
 }
 
 /**
- * Drop diretto delle 9 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile).
+ * Drop diretto delle 11 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile:
+ * le 10 storiche + nexus_metrics della v1.1.12, schema v4).
  *
  * @return void
  */
@@ -243,6 +286,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_translations', // v1.0.3 — traduzioni AI degli articoli
                 $prefix . 'nexus_jobs',         // v1.0.4 — coda lavori Scala & Pro
                 $prefix . 'nexus_article_revisions', // v1.1.9 — snapshot capo redattore
+                $prefix . 'nexus_metrics',      // v1.1.12 — metriche performance GSC/GA4 (schema v4)
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -299,13 +343,16 @@ foreach ( array_unique( $candidates ) as $db_class_file ) {
 }
 
 if ( $loaded && class_exists( 'Nexus_DB' ) ) {
-        // Nexus_DB::drop_tables() fa il drop delle 9 tabelle wp_nexus_* (inclusa
+        // Nexus_DB::drop_tables() fa il drop delle 11 tabelle wp_nexus_* (inclusa
         // nexus_subscribers dalla v1.0.2, nexus_usage_logs e nexus_translations
-        // dalla v1.0.3, nexus_jobs dalla v1.0.4) e cancella le opzioni nexus_settings,
-        // nexus_db_version e nexus_wire_runs.
+        // dalla v1.0.3, nexus_jobs dalla v1.0.4, nexus_metrics dalla v1.1.12) e
+        // cancella le opzioni nexus_settings, nexus_db_version, nexus_wire_runs,
+        // nexus_db_revision, nexus_agent_runtime e nexus_native_migration.
         Nexus_DB::drop_tables();
 
-        // I transients non sono gestiti dalla classe: li rimuoviamo qui.
+        // Le opzioni fuori da Nexus_DB e i transients non sono gestiti dalla
+        // classe: li rimuoviamo qui.
+        nexus_uninstall_delete_options();
         nexus_uninstall_delete_transients();
 } else {
         /* ---------------- 3) Fallback: query dirette ---------------- */

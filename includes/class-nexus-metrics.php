@@ -22,14 +22,17 @@
  * con guardia), altrimenti l'evento viene rimosso (wp_clear_scheduled_hook).
  * init() NON fa richieste di rete: solo hook + scheduling (lettura opzioni locale).
  *
- * LIMITI PER RUN:
+ * LIMITI PER RUN (v1.1.13, O2 — GA4 batched):
  *  - max 50 post (posts_per_page hard cap, articoli pubblicati negli ultimi 7 giorni);
  *  - budget di tempo 60 secondi (check nel loop con microtime: il cron finisce SEMPRE
  *    pulito, anche a metà lavoro — il completamento avviene al giro successivo);
  *  - timeout wp_remote 15 secondi;
- *  - 1 richiesta GSC a run (rowLimit 1000, nessuna paginazione oltre la prima
- *    pagina) + max 1 richiesta GA4 per post (matching esatto permalink; se il
- *    permalink non è risolvibile il post viene saltato con contatore skip).
+ *  - 1 richiesta GSC a run (rowLimit 1000, nessuna paginazione oltre la prima pagina);
+ *  - GA4 BATCHED: 1 sola richiesta runReport (max 3 se le varianti di path
+ *    superano il cap per richiesta) per TUTTE le pagine dei post del giro,
+ *    dimensioni 'date' + 'pagePath', filtro inListFilter sui path dei permalink
+ *    MAI una richiesta per post (il vecchio N+1 con budget 60s tagliava
+ *    sistematicamente: le metriche arrivavano incomplete).
  *
  * SEMANTICA GSC:
  * L'API Search Analytics viene interrogata UNA volta a run con dimensioni
@@ -42,6 +45,23 @@
  * trailing slash normalizzata (rtrim '/') e fallback case-insensitive.
  * Le righe che non matchano nessun post recente vengono SCARTATE: nessuna
  * replica sito-wide e nessuna riga fittizia (il dato mancante è onesto).
+ *
+ * SEMANTICA GA4 (v1.1.13, O2):
+ * runReport UNICO (o max 3 chunk) con dimensioni 'date' + 'pagePath' e
+ * dimensionFilter inListFilter su 'pagePath': i valori del filtro sono le
+ * varianti di path dei permalink del giro (parse_url del permalink + variante
+ * rawurldecoded, per coprire sia GA4 che restituisce path encodati sia
+ * decodati; array_unique elimina i doppioni dei slug ASCII). Ogni riga
+ * (date, pagePath, views) viene attribuita a UN post con la STESSA mappa
+ * path→post_id di GSC (permalink_path_map: match esatto + fallback
+ * case-insensitive, encoding decodificato su entrambi i lati, trailing slash
+ * normalizzata); le righe senza post corrispondente vengono SCARTATE con
+ * contatore (nessuna replica). L'upsert sulla UNIQUE post_metric
+ * (post_id, metric_date, source) rende impossibile duplicare righe: un
+ * re-run sovrascrive i valori del giorno. Limiti GA4 rispettati: 2
+ * dimensioni (max 9), 1 metrica (max 20), inListFilter con cap
+ * GA4_FILTER_VALUES per richiesta (le pagine oltre il cap NON vengono
+ * richieste: nota onesta a log, nessun dato fittizio).
  *
  * NESSUN DATO SENSIBILE NEI LOG: il token OAuth non viene MAI scritto in activity
  * log o error_log; i messaggi d'errore sono brevi e senza URL completi (brief_error()).
@@ -115,6 +135,31 @@ final class Nexus_Metrics {
          * Finestra dati GA4: end = oggi - 1 giorno.
          */
         const GA4_END_OFFSET = 1;
+
+        /**
+         * rowLimit della richiesta GA4 batched: con 2 dimensioni (date +
+         * pagePath) e cap 50 post le righe attese sono ≤ 150 (50 pagine × 3
+         * giorni); 1000 è il tetto prudente della prima pagina (se la risposta
+         * lo riempie il flag 'truncated' va a log, nessuna paginazione).
+         */
+        const GA4_ROW_LIMIT = 1000;
+
+        /**
+         * Numero massimo di VALORI per il filtro inListFilter di GA4 in una
+         * singola richiesta: il valore filtrato è 'pagePath'; ogni post può
+         * contribuire fino a 2 varianti (path grezzo + decodificato), quindi
+         * 50 valori coprono ≥ 25 post per richiesta. Prudente rispetto ai
+         * limiti per-request dell'API (dimensioni max 9, metriche max 20).
+         */
+        const GA4_FILTER_VALUES = 50;
+
+        /**
+         * Cap di richieste GA4 per run: 3 × GA4_FILTER_VALUES valori coprono
+         * sempre i 50 post del giro (anche nel caso peggiore 2 varianti a
+         * post). Oltre il cap le pagine residue NON vengono richieste (nota a
+         * log): MAI una richiesta per post.
+         */
+        const GA4_MAX_REQUESTS = 3;
 
         /**
          * Endpoint Search Analytics di Search Console (la property segue nel path).
@@ -247,7 +292,7 @@ final class Nexus_Metrics {
                 $post_ids = self::recent_post_ids();
 
                 if ( empty( $post_ids ) ) {
-                        self::log_activity( 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0, gsc non attribuite 0) — nessun articolo recente.', 'info' );
+                        self::log_activity( 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0, gsc non attribuite 0, ga4 non attribuite 0) — nessun articolo recente.', 'info' );
                         return;
                 }
 
@@ -255,11 +300,14 @@ final class Nexus_Metrics {
                 $rows_gsc      = 0;
                 $rows_ga4      = 0;
                 $gsc_unmapped  = 0;
+                $ga4_unmapped  = 0;
                 $errors        = 0;
                 $last_error    = '';
                 $skipped       = 0;
                 $budget_hit    = false;
                 $gsc_truncated = false;
+                $ga4_truncated = false;
+                $ga4_capped    = 0;
 
                 // GSC: UNA sola richiesta a run, righe per-pagina (date + page).
                 $gsc_rows = array();
@@ -280,8 +328,21 @@ final class Nexus_Metrics {
                 }
 
                 // Mappa path permalink → post_id dei SOLO post recenti già caricati
-                // (nessuna query aggiuntiva): attribuzione GSC per-pagina.
+                // (nessuna query aggiuntiva): attribuzione GSC e GA4 per-pagina
+                // (v1.1.13 O2: UNICA mappa riusata da entrambe le sorgenti).
                 $gsc_map = self::permalink_path_map( $post_ids );
+
+                // Post non attribuibili a nessun path (permalink non risolvibile):
+                // la richiesta GA4 non può coprirli → contatore "post saltati".
+                $mapped_ids = array();
+                foreach ( $gsc_map['exact'] as $mapped_post_id ) {
+                        $mapped_ids[ absint( $mapped_post_id ) ] = true;
+                }
+                foreach ( $post_ids as $post_id ) {
+                        if ( ! isset( $mapped_ids[ absint( $post_id ) ] ) ) {
+                                $skipped++;
+                        }
+                }
 
                 // Attribuzione righe GSC: una riga per post+giorno (UNIQUE
                 // post_metric, idempotente all'upsert). Le righe che non
@@ -318,30 +379,29 @@ final class Nexus_Metrics {
                         }
                 }
 
-                // Per post: richiesta GA4 (matching esatto permalink). Il loop
-                // gira solo con GA4 configurata: GSC resta comunque 1 sola
-                // richiesta HTTP a run.
+                // GA4 BATCHED (v1.1.13 O2): UNA sola richiesta runReport (max
+                // 3 chunk) con dimensioni date + pagePath per TUTTE le pagine
+                // dei post del giro — MAI una richiesta per post (il vecchio
+                // N+1 con budget 60s tagliava sistematicamente la coda). Le
+                // righe di risposta sono attribuite con la STESSA mappa di GSC;
+                // le righe senza post corrispondente vengono scartate (nessun
+                // doppio conteggio: UNIQUE post_metric all'upsert).
                 if ( $has_ga4 ) {
-                        foreach ( $post_ids as $post_id ) {
+                        $variants = self::ga4_path_variants( $post_ids );
+                        $chunks   = array_chunk( $variants, self::GA4_FILTER_VALUES );
+
+                        // Pagine oltre il cap (GA4_FILTER_VALUES × GA4_MAX_REQUESTS):
+                        // non richieste, nota onesta a log (nessun dato fittizio).
+                        $ga4_capped = max( 0, count( $variants ) - self::GA4_MAX_REQUESTS * self::GA4_FILTER_VALUES );
+                        $chunks     = array_slice( $chunks, 0, self::GA4_MAX_REQUESTS );
+
+                        foreach ( $chunks as $chunk ) {
                                 if ( self::budget_exceeded( $start_ts ) ) {
                                         $budget_hit = true;
                                         break;
                                 }
 
-                                $permalink = get_permalink( $post_id );
-
-                                if ( ! is_string( $permalink ) || '' === $permalink ) {
-                                        // Permalink non risolvibile: matching GA4 impossibile → salta il post.
-                                        $skipped++;
-                                        continue;
-                                }
-
-                                if ( self::budget_exceeded( $start_ts ) ) {
-                                        $budget_hit = true;
-                                        break;
-                                }
-
-                                $ga4_res = self::fetch_ga4_rows( $token, $ga4_prop, $permalink );
+                                $ga4_res = self::fetch_ga4_rows( $token, $ga4_prop, $chunk );
 
                                 if ( '' !== $ga4_res['error'] ) {
                                         $errors++;
@@ -349,8 +409,19 @@ final class Nexus_Metrics {
                                         continue;
                                 }
 
+                                if ( ! empty( $ga4_res['truncated'] ) ) {
+                                        $ga4_truncated = true;
+                                }
+
                                 foreach ( $ga4_res['rows'] as $row ) {
-                                        $written = self::upsert_metric_row( $post_id, $row['date'], 'ga4', 0, 0, 0.0, $row['views'] );
+                                        $row_post_id = self::resolve_post_by_page( $row['page'], $gsc_map['exact'], $gsc_map['ci'] );
+
+                                        if ( 0 === $row_post_id ) {
+                                                $ga4_unmapped++;
+                                                continue;
+                                        }
+
+                                        $written = self::upsert_metric_row( $row_post_id, $row['date'], 'ga4', 0, 0, 0.0, $row['views'] );
 
                                         if ( $written ) {
                                                 $rows_ga4++;
@@ -365,10 +436,18 @@ final class Nexus_Metrics {
                 // Log finale: template richiesto, con aggiunte brevi solo se servono.
                 $total  = $rows_gsc + $rows_ga4;
                 $detail = 'Metriche sincronizzate: ' . $total . ' righe (gsc ' . $rows_gsc . ', ga4 ' . $rows_ga4
-                        . ', gsc non attribuite ' . $gsc_unmapped . ')';
+                        . ', gsc non attribuite ' . $gsc_unmapped . ', ga4 non attribuite ' . $ga4_unmapped . ')';
 
                 if ( $gsc_truncated ) {
                         $detail .= ' — GSC troncata: raggiunto rowLimit ' . self::GSC_ROW_LIMIT;
+                }
+
+                if ( $ga4_truncated ) {
+                        $detail .= ' — GA4 troncata: raggiunto rowLimit ' . self::GA4_ROW_LIMIT;
+                }
+
+                if ( $ga4_capped > 0 ) {
+                        $detail .= ' — pagine non richieste a GA4 (superato cap ' . self::GA4_MAX_REQUESTS . ' richieste): ' . $ga4_capped;
                 }
 
                 if ( $skipped > 0 ) {
@@ -494,15 +573,32 @@ final class Nexus_Metrics {
         }
 
         /**
-         * Richiesta GA4 runReport per UN post (matching esatto sul permalink,
-         * dimensione 'date', metrica screenPageViews; ultimi 3 giorni completi).
+         * Richiesta GA4 runReport BATCHED (v1.1.13, O2): una sola chiamata
+         * per UN gruppo di pagine (dimensioni 'date' + 'pagePath', metrica
+         * screenPageViews, dimensionFilter inListFilter sui path; ultimi 3
+         * giorni completi). Sostituisce la richiesta per post: max 3
+         * richieste a run indipendentemente dal numero di post (MAI una per
+         * post).
          *
-         * @param string $token     Access token OAuth (mai loggato).
-         * @param string $property  Property ID GA4 (solo cifre).
-         * @param string $permalink Permalink del post (valore EXACT su pagePath).
-         * @return array { rows: array, error: string } — error '' = OK.
+         * @param string $token    Access token OAuth (mai loggato).
+         * @param string $property Property ID GA4 (solo cifre).
+         * @param array  $paths    Valori pagePath per inListFilter (varianti di
+         *                         path dei permalink del giro, ≤ GA4_FILTER_VALUES).
+         * @return array { rows: array, truncated: bool, error: string } — error '' = OK;
+         *               rows: lista { date: 'Y-m-d', page: pagePath, views: int }.
          */
-        private static function fetch_ga4_rows( $token, $property, $permalink ) {
+        private static function fetch_ga4_rows( $token, $property, $paths ) {
+                // Difesa: valori vuoti/doppioni fuori (array_unique preserva le chiavi).
+                $paths = array_values( array_unique( array_filter( array_map( 'trim', (array) $paths ) ) ) );
+
+                if ( empty( $paths ) ) {
+                        return array(
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => '',
+                        );
+                }
+
                 $now_local = strtotime( current_time( 'mysql' ) );
 
                 $body = wp_json_encode(
@@ -515,6 +611,7 @@ final class Nexus_Metrics {
                                 ),
                                 'dimensions' => array(
                                         array( 'name' => 'date' ),
+                                        array( 'name' => 'pagePath' ),
                                 ),
                                 'metrics'    => array(
                                         array( 'name' => 'screenPageViews' ),
@@ -522,12 +619,12 @@ final class Nexus_Metrics {
                                 'dimensionFilter' => array(
                                         'filter' => array(
                                                 'fieldName'    => 'pagePath',
-                                                'stringFilter' => array(
-                                                        'matchType' => 'EXACT',
-                                                        'value'     => $permalink,
+                                                'inListFilter' => array(
+                                                        'values' => array_slice( $paths, 0, self::GA4_FILTER_VALUES ),
                                                 ),
                                         ),
                                 ),
+                                'limit'      => self::GA4_ROW_LIMIT,
                         )
                 );
 
@@ -545,8 +642,9 @@ final class Nexus_Metrics {
 
                 if ( is_wp_error( $response ) ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'GA4: ' . self::brief_error( $response->get_error_message() ),
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'GA4: ' . self::brief_error( $response->get_error_message() ),
                         );
                 }
 
@@ -554,8 +652,9 @@ final class Nexus_Metrics {
 
                 if ( $code < 200 || $code >= 300 ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'GA4: risposta HTTP ' . $code,
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'GA4: risposta HTTP ' . $code,
                         );
                 }
 
@@ -563,8 +662,9 @@ final class Nexus_Metrics {
 
                 if ( ! is_array( $data ) ) {
                         return array(
-                                'rows'  => array(),
-                                'error' => 'GA4: risposta non valida.',
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'GA4: risposta non valida.',
                         );
                 }
 
@@ -576,8 +676,10 @@ final class Nexus_Metrics {
                                         continue;
                                 }
 
-                                // GA4 restituisce la data come YYYYMMDD: normalizza a YYYY-MM-DD.
+                                // Con dimensions date+pagePath: dimensionValues[0] = data
+                                // (GA4: YYYYMMDD), dimensionValues[1] = pagePath.
                                 $raw_date = isset( $row['dimensionValues'][0]['value'] ) ? (string) $row['dimensionValues'][0]['value'] : '';
+                                $raw_page = isset( $row['dimensionValues'][1]['value'] ) ? trim( (string) $row['dimensionValues'][1]['value'] ) : '';
                                 $views    = isset( $row['metricValues'][0]['value'] ) ? absint( $row['metricValues'][0]['value'] ) : 0;
                                 $date     = '';
 
@@ -587,24 +689,85 @@ final class Nexus_Metrics {
                                         $date = $raw_date;
                                 }
 
-                                if ( '' === $date ) {
+                                if ( '' === $date || '' === $raw_page ) {
                                         continue;
                                 }
 
                                 $rows[] = array(
                                         'date'  => $date,
+                                        'page'  => $raw_page,
                                         'views' => $views,
                                 );
                         }
                 }
 
+                // rowLimit raggiunto: probabilmente ci sono più righe oltre la
+                // prima pagina (nota a log, nessuna richiesta aggiuntiva).
+                $truncated = ( count( $rows ) >= self::GA4_ROW_LIMIT );
+
                 return array(
-                        'rows'  => $rows,
-                        'error' => '',
+                        'rows'      => $rows,
+                        'truncated' => $truncated,
+                        'error'     => '',
                 );
         }
 
-        /* ============ ATTRIBUZIONE GSC ============ */
+        /* ============ ATTRIBUZIONE GSC/GA4 ============ */
+
+        /**
+         * Varianti di pagePath da chiedere a GA4 per i post del giro (v1.1.13,
+         * O2): per ogni permalink si estrae il path con parse_url (fallback:
+         * prefisso home_url rimosso) e si aggiunge la variante rawurldecoded —
+         * GA4 può restituire/matchare path encodati o decodati a seconda della
+         * property; con slug ASCII le due varianti coincidono e array_unique
+         * le riduce a una. NON vengono normalizzate (trailing slash e encoding
+         * restano come nel permalink reale: è ciò che il browser ha richiesto).
+         * L'attribuzione delle righe di risposta resta comunque tollerante:
+         * passa dalla mappa normalizzata (resolve_post_by_page).
+         *
+         * @param array $post_ids ID dei post recenti (int).
+         * @return array Lista di stringhe pagePath (unica, valori non vuoti).
+         */
+        private static function ga4_path_variants( $post_ids ) {
+                $variants = array();
+
+                foreach ( $post_ids as $post_id ) {
+                        $permalink = get_permalink( $post_id );
+
+                        if ( ! is_string( $permalink ) || '' === $permalink ) {
+                                continue;
+                        }
+
+                        $raw = '';
+                        $parsed = parse_url( $permalink, PHP_URL_PATH );
+
+                        if ( is_string( $parsed ) && '' !== $parsed ) {
+                                $raw = $parsed;
+                        } else {
+                                // Fallback: rimuovi il prefisso home_url() dal permalink.
+                                $home = home_url();
+
+                                if ( is_string( $home ) && '' !== $home && 0 === strpos( $permalink, $home ) ) {
+                                        $raw = substr( $permalink, strlen( $home ) );
+                                }
+                        }
+
+                        $raw = trim( (string) $raw );
+
+                        if ( '' === $raw ) {
+                                continue;
+                        }
+
+                        $variants[] = $raw;
+                        $decoded    = rawurldecode( $raw );
+
+                        if ( '' !== $decoded && $decoded !== $raw ) {
+                                $variants[] = $decoded;
+                        }
+                }
+
+                return array_values( array_unique( $variants ) );
+        }
 
         /**
          * Mappa path permalink → post_id per i SOLO post recenti già caricati
