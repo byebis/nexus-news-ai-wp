@@ -109,6 +109,27 @@
  *     array {action, status, event}: notify instrada sulla chiave (fallback
  *     testuale mantenuto per BC).
  *
+ * v1.1.16 — Agenti Viventi (telemetria run, WD1):
+ *   - LIFECYCLE AGENT_RUNS: ogni run effettivo (dopo i gate che lo bloccano)
+ *     apre una riga su wp_nexus_agent_runs (Nexus_DB::insert_agent_run) e la
+ *     chiude in OGNI caso di uscita (try/catch/finally →
+ *     Nexus_DB::finish_agent_run) con status 'ok'|'partial'|'failed',
+ *     contatori (articles_created, candidates, sources_ok, sources_err),
+ *     ultimo errore e steps {step, ok, detail, ms} per
+ *     collect/evaluate/rewrite/publish. I gate che bloccano il run PRIMA
+ *     che parta (agente assente/non attivo, auto_collect spento, cap
+ *     giornaliero) NON lasciano nessuna run row.
+ *   - TRIGGERED_BY: run_full_agent( $agent_id, $triggered_by = 'cron' ) —
+ *     run_full() (REST/CLI/coda) apre run 'manual'; cron_tick() passa 'cron'.
+ *     Parametro additivo in coda: i chiamanti esistenti restano validi.
+ *   - STATO ERRORE VIVO: run 'failed' → agents.status='error' (escluso il
+ *     caso stop per budget mensile: condizione economica già loggata come
+ *     attività 'budget', non un guasto dell'agente — vedi run_full_phases);
+ *     run 'ok'/'partial' riporta 'error' → 'active' SOLO se lo status
+ *     corrente è già 'error' (mai toccati 'paused' e altri stati scelti
+ *     dall'utente). Telemetria fonti (WD1b): collect() espone le chiavi
+ *     additive 'candidates', 'sources_ok' e 'sources_err'.
+ *
  * v1.1.15 — Affidabilità (Perfezione Maniacale, WA2/WA5/WA6/WA7/WA10):
  *   - HEARTBEAT JOB: ogni fase (collect/evaluate/rewrite/publish) e il giro
  *     per-agente di cron_tick toccano Nexus_Queue::heartbeat() (started_at del
@@ -133,7 +154,7 @@
  * Nexus_Pipeline::approve( $article_id, $note = '' )         → array{ok, error?}
  * Nexus_Pipeline::reject( $article_id, $note = '' )          → array{ok, error?}
  * Nexus_Pipeline::publish( $article_id )                     → array{ok, logs, error?, already?, message?}
- * Nexus_Pipeline::run_full( $agent_id )                      → array{ok, collected, evaluated, rewritten, published, messages}
+ * Nexus_Pipeline::run_full( $agent_id, $triggered_by = 'manual' ) → array{ok, collected, evaluated, rewritten, published, messages} (v1.1.16: $triggered_by additivo in coda, 'manual'|'cron')
  * Nexus_Pipeline::cron_tick()                                → array{ok, ran, results, timestamp}
  * Nexus_Pipeline::resume_stalled( $max_age_hours = 6, $limit = 10 ) → array{ok, resumed, skipped, messages} (v1.1.9)
  * Nexus_Pipeline::wire_run( $topic )                         → array{ok, run}
@@ -203,8 +224,15 @@ class Nexus_Pipeline {
         /**
          * FASE 1 — Raccolta notizie per un agente.
          *
+         * v1.1.16 (WD1b): chiavi additive nel ritorno per la telemetria della
+         * run (Nexus_DB::finish_agent_run): 'candidates' (proposte AI del
+         * collect), 'sources_ok' (fonti che hanno contribuito almeno un item)
+         * e 'sources_err' (0: il contratto attuale di fetch_for_agent non
+         * espone le fonti fallite — l'attribuzione degli errori per-fonte vive
+         * nel log attività 'source_error', v1.1.16 WD2).
+         *
          * @param int $agent_id ID agente.
-         * @return array{ok:bool, collected:int, errors:array, article_ids:array, skipped?:bool}
+         * @return array{ok:bool, collected:int, errors:array, article_ids:array, skipped?:bool, candidates:int, sources_ok:int, sources_err:int}
          */
         public static function collect( $agent_id ) {
                 $out = array(
@@ -212,6 +240,9 @@ class Nexus_Pipeline {
                         'collected'   => 0,
                         'errors'      => array(),
                         'article_ids' => array(),
+                        'candidates'  => 0,
+                        'sources_ok'  => 0,
+                        'sources_err' => 0,
                 );
 
                 $agent = Nexus_DB::get_agent( $agent_id );
@@ -283,6 +314,23 @@ class Nexus_Pipeline {
                         }
                 }
 
+                // v1.1.16 (WD1b): telemetria per-fonte del collect, contata SOLO
+                // dai dati che il dispatcher produce GIÀ (gli item ritornati): una
+                // fonte è "ok" se ha contribuito almeno un item sopravvissuto a
+                // merge/dedup/cap. Il numero di fonti in errore NON è deducibile
+                // da questo contratto (fetch_for_agent ritorna solo gli item
+                // vivi): resta 0 e gli errori per-fonte restano attribuiti nel
+                // log attività 'source_error' dall'agente in esecuzione (WD2).
+                $sources_ok_map = array();
+                foreach ( $items as $item ) {
+                        $src = self::item_field( $item, 'source' );
+                        if ( '' === $src ) {
+                                $src = 'RSS';
+                        }
+                        $sources_ok_map[ $src ] = true;
+                }
+                $out['sources_ok'] = count( $sources_ok_map );
+
                 $evergreen = empty( $items );
 
                 $candidates  = array();
@@ -305,6 +353,7 @@ class Nexus_Pipeline {
                         }
 
                         $candidates  = self::normalize_candidates( Nexus_AI_Engine::extract_json( (string) $res['content'] ) );
+                        $out['candidates'] = count( $candidates ); // v1.1.16 (WD1b): telemetria run.
                         $source_name = 'Nexus News AI - Analisi editoriale';
                 } else {
                         // v1.1.10 (B1): TUTTI gli item del dispatcher fonti (merge,
@@ -339,6 +388,7 @@ class Nexus_Pipeline {
                         }
 
                         $candidates = self::normalize_candidates( Nexus_AI_Engine::extract_json( (string) $res['content'] ) );
+                        $out['candidates'] = count( $candidates ); // v1.1.16 (WD1b): telemetria run.
                 }
 
                 /* ---- FASE 1b: filtra i candidati (max 2, score >= 50) ---- */
@@ -1041,12 +1091,19 @@ class Nexus_Pipeline {
          * ritorno anticipato o eccezione propagata al chiamante) l'agente non
          * resta "in redazione" sul pannello live.
          *
-         * @param int $agent_id ID agente.
+         * v1.1.16 (WD1): parametro additivo in coda $triggered_by per etichettare
+         * la run row (wp_nexus_agent_runs.trigger): default 'manual' — REST
+         * POST /pipeline/run, CLI e job di coda pipeline_run_full continuano a
+         * chiamare senza parametro; cron_tick() passa 'cron'. La struttura di
+         * ritorno resta INVARIATA.
+         *
+         * @param int    $agent_id     ID agente.
+         * @param string $triggered_by 'manual'|'cron' (v1.1.16, additivo).
          * @return array{ok:bool, collected:int, evaluated:int, rewritten:int, published:int, messages:array}
          */
-        public static function run_full( $agent_id ) {
+        public static function run_full( $agent_id, $triggered_by = 'manual' ) {
                 try {
-                        return self::run_full_agent( $agent_id );
+                        return self::run_full_agent( $agent_id, $triggered_by );
                 } finally {
                         // v1.1.5: lo stato runtime va sempre rimosso a fine run,
                         // successo o errore (il finally gira anche su eccezione).
@@ -1064,10 +1121,22 @@ class Nexus_Pipeline {
          * - semi_autonomous → ci si ferma a 'pending_approval' (coda umana).
          * - max_articles_per_day → limite di articoli creati oggi (guardia pre-raccolta).
          *
-         * @param int $agent_id ID agente.
+         * v1.1.16 (WD1) — LIFECYCLE RUN: i gate che bloccano il run PRIMA che
+         * parta (agente assente/non attivo, auto_collect spento, cap giornaliero
+         * raggiunto) non lasciano NESSUNA run row; dal primo giro effettivo una
+         * riga su wp_nexus_agent_runs viene aperta (Nexus_DB::insert_agent_run)
+         * e chiusa in OGNI caso di uscita (try/catch/finally →
+         * finish_agent_run_row) con status 'ok' (flusso completo senza errori),
+         * 'partial' (completo ma con errori in qualche fase) o 'failed'
+         * (eccezione o raccolta fallita). L'eccezione viene RILANCIATA: il
+         * contratto verso i chiamanti (cron_tick logga per agente, run_full
+         * propaga al REST/CLI) resta invariato.
+         *
+         * @param int    $agent_id     ID agente.
+         * @param string $triggered_by 'cron'|'manual'|'wire' (default 'cron' per BC, v1.1.16).
          * @return array{ok:bool, collected:int, evaluated:int, rewritten:int, published:int, messages:array}
          */
-        private static function run_full_agent( $agent_id ) {
+        private static function run_full_agent( $agent_id, $triggered_by = 'cron' ) {
                 $summary = array(
                         'ok'        => false,
                         'agent_id'  => absint( $agent_id ),
@@ -1119,25 +1188,120 @@ class Nexus_Pipeline {
                         return $summary;
                 }
 
+                /* ---- v1.1.16 (WD1): il run PARTE qui — apertura della run row ----
+                 * Guard method_exists difensiva (WB-DB lavora in parallelo alla
+                 * pipeline): se i metodi agent_runs non esistono ancora il run
+                 * prosegue identico ma senza traccia (nessun fatal). $run raccoglie
+                 * la telemetria che le fasi producono; finish_agent_run_row() chiude
+                 * la riga nel finally, in OGNI caso di uscita. */
+                $run_id = 0;
+                if ( method_exists( 'Nexus_DB', 'insert_agent_run' ) ) {
+                        $run_id = (int) Nexus_DB::insert_agent_run( (int) $agent->id, self::run_trigger( $triggered_by ) );
+                }
+
+                $run = array(
+                        // Default più onesto: solo le uscite grazie lo sovrascrivono
+                        // ('ok'/'partial'); un'uscita imprevista resta 'failed'.
+                        'status'      => 'failed',
+                        'error'       => '',
+                        'steps'       => array(),
+                        'phase_error' => false,
+                        'budget_stop' => false,
+                        'articles'    => 0,
+                        'candidates'  => 0,
+                        'sources_ok'  => 0,
+                        'sources_err' => 0,
+                );
+
+                try {
+                        $summary = self::run_full_phases( $summary, $agent, $settings, $mode, $run );
+                } catch ( Throwable $e ) {
+                        $run['status'] = 'failed';
+                        $run['error']  = self::clip( $e->getMessage(), 300 );
+                        throw $e; // Contratto esistente: l'eccezione resta al chiamante (cron_tick la logga per agente).
+                } finally {
+                        self::finish_agent_run_row( $run_id, (int) $agent->id, $summary, $run );
+                }
+
+                return $summary;
+        }
+
+        /**
+         * Corpo delle FASI 1-5 del run completo (estratto da run_full_agent, stesso
+         * pattern WA6 di collect_run/evaluate_run/rewrite_run/publish_locked).
+         *
+         * v1.1.16 (WD1): riceve $run PER RIFERIMENTO e lo alimenta con la
+         * telemetria che le fasi GIÀ producono (steps {step, ok, detail, ms} per
+         * collect/evaluate/rewrite/publish, contatori della run, ultimo errore):
+         * anche su eccezione la telemetria parziale resta visibile al finally del
+         * chiamante. Messaggi e struttura della pipeline INVARIATI.
+         *
+         * @param array  $summary  Esito parziale da riempire (ritornato).
+         * @param object $agent    Agente attivo.
+         * @param array  $settings Settings del plugin.
+         * @param string $mode     Modalità redazionale.
+         * @param array  $run      Telemetria della run (per riferimento).
+         * @return array{ok:bool, collected:int, evaluated:int, rewritten:int, published:int, messages:array}
+         */
+        private static function run_full_phases( $summary, $agent, $settings, $mode, &$run ) {
                 /* ---- FASE 1: raccolta ---- */
-                $collect = self::collect( $agent_id );
-                foreach ( (array) ( isset( $collect['errors'] ) ? $collect['errors'] : array() ) as $collect_error ) {
+                $step_t  = microtime( true );
+                $collect = self::collect( (int) $agent->id );
+                $step_ms = (int) round( ( microtime( true ) - $step_t ) * 1000 );
+
+                // v1.1.16 (WD1): contatori della run letti dal ritorno di collect()
+                // (chiavi additive WD1b) — impostati SUBITO per sopravvivere a un'
+                // eccezione nelle fasi successive (finish_agent_run_row li legge).
+                $run['articles']    = (int) ( isset( $collect['collected'] ) ? $collect['collected'] : 0 );
+                $run['candidates']  = (int) ( isset( $collect['candidates'] ) ? $collect['candidates'] : 0 );
+                $run['sources_ok']  = (int) ( isset( $collect['sources_ok'] ) ? $collect['sources_ok'] : 0 );
+                $run['sources_err'] = (int) ( isset( $collect['sources_err'] ) ? $collect['sources_err'] : 0 );
+
+                $collect_errors = (array) ( isset( $collect['errors'] ) ? $collect['errors'] : array() );
+                foreach ( $collect_errors as $collect_error ) {
                         $summary['messages'][] = 'Raccolta: ' . $collect_error;
                 }
 
                 if ( ! empty( $collect['skipped'] ) ) {
+                        // v1.1.16 (WD1): uscita graziosa (agente disattivato a metà run): nessun errore.
+                        $run['status']         = 'ok';
                         $summary['ok']         = true;
                         $summary['messages'][] = 'Agente non attivo: pipeline saltata.';
                         return $summary;
                 }
 
+                // v1.1.16 (WD1): step collect (dettaglio: ultimo errore o conteggi).
+                $run['steps'][] = array(
+                        'step'   => 'collect',
+                        'ok'     => ! empty( $collect['ok'] ),
+                        'detail' => self::clip( ! empty( $collect_errors ) ? (string) end( $collect_errors ) : sprintf( '%d candidati, %d articoli creati', $run['candidates'], $run['articles'] ), 200 ),
+                        'ms'     => $step_ms,
+                );
+
                 if ( empty( $collect['ok'] ) ) {
+                        // v1.1.16 (WD1): run 'failed'. Se gli UNICI errori sono di budget
+                        // mensile (budget_action 'stop' in budget_allows) la condizione è
+                        // economica, non un guasto dell'agente: budget_stop=true esclude la
+                        // transizione a agents.status='error' (che disattiverebbe l'agente
+                        // nel cron fino al cambio mese, vedi finish_agent_run_row).
+                        $budget_stop = ! empty( $collect_errors );
+                        foreach ( $collect_errors as $collect_error ) {
+                                if ( false === strpos( (string) $collect_error, 'budget mensile esaurito' ) ) {
+                                        $budget_stop = false;
+                                        break;
+                                }
+                        }
+                        $run['budget_stop']    = $budget_stop;
+                        $run['status']         = 'failed';
+                        $run['error']          = self::clip( ! empty( $collect_errors ) ? (string) end( $collect_errors ) : 'Raccolta fallita.', 300 );
                         $summary['messages'][] = 'Raccolta fallita: pipeline interrotta.';
                         return $summary;
                 }
 
                 $summary['collected'] = (int) ( isset( $collect['collected'] ) ? $collect['collected'] : 0 );
                 if ( $summary['collected'] < 1 ) {
+                        // v1.1.16 (WD1): run 'ok' — uscita normale senza candidati (non è un errore).
+                        $run['status']         = 'ok';
                         $summary['ok']         = true;
                         $summary['messages'][] = 'Nessun nuovo candidato raccolto: pipeline terminata.';
                         return $summary;
@@ -1168,7 +1332,9 @@ class Nexus_Pipeline {
                         // FASE 2: valutazione.
                         if ( ! empty( $settings['auto_evaluate'] )
                                 && self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'valutazione' ) ) {
+                                $step_t     = microtime( true );
                                 $evaluation = self::evaluate( $article_id );
+                                $step_ms    = (int) round( ( microtime( true ) - $step_t ) * 1000 );
                                 if ( ! empty( $evaluation['ok'] ) ) {
                                         $summary['evaluated']++;
                                         $score_parsed = ! empty( $evaluation['score_parsed'] );
@@ -1177,9 +1343,25 @@ class Nexus_Pipeline {
                                         } else {
                                                 $summary['messages'][] = sprintf( 'Articolo #%d: punteggio AI non interpretabile (0/100): auto-approvazione bloccata, serve revisione umana.', $article_id );
                                         }
+                                        // v1.1.16 (WD1): step evaluate (dettaglio = messaggio di fase appena emesso).
+                                        $run['steps'][] = array(
+                                                'step'   => 'evaluate',
+                                                'ok'     => true,
+                                                'detail' => self::clip( (string) end( $summary['messages'] ), 200 ),
+                                                'ms'     => $step_ms,
+                                        );
                                         $article = Nexus_DB::get_article( $article_id );
                                 } else {
                                         $summary['messages'][] = sprintf( 'Valutazione articolo #%d fallita: %s', $article_id, $evaluation['error'] );
+                                        // v1.1.16 (WD1): fase fallita → run 'partial' + ultimo errore.
+                                        $run['phase_error'] = true;
+                                        $run['error']       = self::clip( (string) ( isset( $evaluation['error'] ) ? $evaluation['error'] : '' ), 300 );
+                                        $run['steps'][]     = array(
+                                                'step'   => 'evaluate',
+                                                'ok'     => false,
+                                                'detail' => self::clip( (string) end( $summary['messages'] ), 200 ),
+                                                'ms'     => $step_ms,
+                                        );
                                 }
                         }
 
@@ -1187,11 +1369,21 @@ class Nexus_Pipeline {
                         $rewritten_now = false;
                         if ( ! empty( $settings['auto_rewrite'] )
                                 && self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'riscrittura' ) ) {
+                                $step_t    = microtime( true );
                                 $rewriting = self::rewrite( $article_id );
+                                $step_ms   = (int) round( ( microtime( true ) - $step_t ) * 1000 );
                                 if ( ! empty( $rewriting['ok'] ) ) {
                                         $summary['rewritten']++;
                                         $rewritten_now = true;
                                         $summary['messages'][] = sprintf( 'Articolo #%d riscritto e messo in coda di approvazione.', $article_id );
+                                        // v1.1.16 (WD1): step rewrite (la riscrittura è riuscita; la
+                                        // eventuale rimessa in bozza del fact-check resta nei messaggi).
+                                        $run['steps'][] = array(
+                                                'step'   => 'rewrite',
+                                                'ok'     => true,
+                                                'detail' => self::clip( (string) end( $summary['messages'] ), 200 ),
+                                                'ms'     => $step_ms,
+                                        );
                                         $article = Nexus_DB::get_article( $article_id );
 
                                         // Fact-check sotto soglia (v1.0.3): l'articolo è tornato in bozza,
@@ -1202,6 +1394,15 @@ class Nexus_Pipeline {
                                         }
                                 } else {
                                         $summary['messages'][] = sprintf( 'Riscrittura articolo #%d fallita: %s', $article_id, $rewriting['error'] );
+                                        // v1.1.16 (WD1): fase fallita → run 'partial' + ultimo errore.
+                                        $run['phase_error'] = true;
+                                        $run['error']       = self::clip( (string) ( isset( $rewriting['error'] ) ? $rewriting['error'] : '' ), 300 );
+                                        $run['steps'][]     = array(
+                                                'step'   => 'rewrite',
+                                                'ok'     => false,
+                                                'detail' => self::clip( (string) end( $summary['messages'] ), 200 ),
+                                                'ms'     => $step_ms,
+                                        );
                                 }
                         }
 
@@ -1237,15 +1438,34 @@ class Nexus_Pipeline {
                                 if ( ! empty( $approval['ok'] ) ) {
                                         $summary['messages'][] = sprintf( 'Articolo #%d approvato automaticamente (punteggio %.0f >= %d).', $article_id, $score, $threshold );
 
+                                        $step_t      = microtime( true );
                                         $publication = self::publish( $article_id );
+                                        $step_ms     = (int) round( ( microtime( true ) - $step_t ) * 1000 );
                                         if ( ! empty( $publication['ok'] ) && empty( $publication['already'] ) ) {
                                                 $summary['published']++;
                                                 $summary['messages'][] = sprintf( 'Articolo #%d pubblicato automaticamente.', $article_id );
                                         } elseif ( ! empty( $publication['error'] ) ) {
                                                 $summary['messages'][] = sprintf( 'Pubblicazione automatica articolo #%d fallita: %s', $article_id, $publication['error'] );
                                         }
+
+                                        // v1.1.16 (WD1): step publish (contratto publish(): 'message'
+                                        // a successo, 'error' a fallimento — anche con already=true).
+                                        $run['steps'][] = array(
+                                                'step'   => 'publish',
+                                                'ok'     => ! empty( $publication['ok'] ) && empty( $publication['error'] ),
+                                                'detail' => self::clip( (string) ( ! empty( $publication['error'] ) ? $publication['error'] : ( isset( $publication['message'] ) ? $publication['message'] : '' ) ), 200 ),
+                                                'ms'     => $step_ms,
+                                        );
+                                        if ( ! empty( $publication['error'] ) ) {
+                                                $run['phase_error'] = true;
+                                                $run['error']       = self::clip( (string) $publication['error'], 300 );
+                                        }
                                 } else {
                                         $summary['messages'][] = sprintf( 'Approvazione automatica articolo #%d fallita: %s', $article_id, $approval['error'] );
+                                        // v1.1.16 (WD1): la fase di pubblicazione non è mai arrivata
+                                        // (approvazione fallita) → run 'partial' + ultimo errore.
+                                        $run['phase_error'] = true;
+                                        $run['error']       = self::clip( (string) ( isset( $approval['error'] ) ? $approval['error'] : '' ), 300 );
                                 }
                         } elseif ( $rewritten_now && $chief_gate ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione e pubblicazione automatiche saltate.', $article_id );
@@ -1259,10 +1479,25 @@ class Nexus_Pipeline {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione: punteggio %.0f sotto la soglia di auto-approvazione (%d).', $article_id, $score, $threshold );
                         } elseif ( $rewritten_now && ! empty( $settings['auto_publish'] ) && 'approved' === $article->status ) {
                                 // semi_autonomous con auto_publish attivo: pubblica solo ciò che risulta già approvato.
+                                $step_t      = microtime( true );
                                 $publication = self::publish( $article_id );
+                                $step_ms     = (int) round( ( microtime( true ) - $step_t ) * 1000 );
                                 if ( ! empty( $publication['ok'] ) && empty( $publication['already'] ) ) {
                                         $summary['published']++;
                                         $summary['messages'][] = sprintf( 'Articolo #%d pubblicato (auto_publish attivo).', $article_id );
+                                }
+
+                                // v1.1.16 (WD1): step publish anche nel percorso semi_autonomous
+                                // (l'errore qui prima era silenzioso: ora entra nella run row).
+                                $run['steps'][] = array(
+                                        'step'   => 'publish',
+                                        'ok'     => ! empty( $publication['ok'] ) && empty( $publication['error'] ),
+                                        'detail' => self::clip( (string) ( ! empty( $publication['error'] ) ? $publication['error'] : ( isset( $publication['message'] ) ? $publication['message'] : '' ) ), 200 ),
+                                        'ms'     => $step_ms,
+                                );
+                                if ( ! empty( $publication['error'] ) ) {
+                                        $run['phase_error'] = true;
+                                        $run['error']       = self::clip( (string) $publication['error'], 300 );
                                 }
                         } elseif ( $rewritten_now ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (modalità semi_autonomous).', $article_id );
@@ -1283,13 +1518,94 @@ class Nexus_Pipeline {
                         }
                 }
 
+                // v1.1.16 (WD1): esito della run — 'partial' se qualche fase è
+                // fallita (o la raccolta è uscita con errori), 'ok' altrimenti.
+                $run['status'] = ( ! empty( $run['phase_error'] ) || ! empty( $collect_errors ) ) ? 'partial' : 'ok';
+
                 $summary['ok'] = true;
                 return $summary;
         }
 
         /**
+         * Etichetta della run normalizzata sui valori del contratto DB (WB-DB):
+         * 'cron' | 'manual' | 'wire' (qualunque altro valore → 'cron').
+         *
+         * @param string $triggered_by Valore passato dal chiamante.
+         * @return string
+         */
+        private static function run_trigger( $triggered_by ) {
+                $triggered_by = strtolower( trim( (string) $triggered_by ) );
+
+                return in_array( $triggered_by, array( 'cron', 'manual', 'wire' ), true ) ? $triggered_by : 'cron';
+        }
+
+        /**
+         * Chiusura della run row (v1.1.16 WD1): chiamata nel finally di
+         * run_full_agent, in OGNI caso di uscita del run.
+         *
+         * - finish_agent_run(): status + steps + contatori + ultimo errore.
+         * - Stato errore vivo: run 'failed' → agents.status='error' (escluso lo
+         *   stop per budget mensile: condizione economica già loggata come
+         *   attività 'budget', non un guasto — vedi run_full_phases); run
+         *   'ok'/'partial' riporta 'error' → 'active' SOLO se lo status corrente
+         *   è già 'error' (mai toccati 'paused' e altri stati scelti dall'utente:
+         *   cron_tick esegue solo gli 'active', pipeline.php:224-228/1088).
+         *
+         * Guard method_exists difensive (WB-DB lavora in parallelo) e try/catch
+         * totali: la telemetria non deve MAI mascherare l'esito del run.
+         *
+         * @param int    $run_id  ID della run row (0 = non registrata).
+         * @param int    $agent_id ID agente.
+         * @param array  $summary Esito della pipeline.
+         * @param array  $run     Telemetria della run (steps, contatori, errori).
+         * @return void
+         */
+        private static function finish_agent_run_row( $run_id, $agent_id, $summary, $run ) {
+                $status = (string) ( isset( $run['status'] ) ? $run['status'] : 'failed' );
+                if ( ! in_array( $status, array( 'ok', 'partial', 'failed' ), true ) ) {
+                        $status = 'failed';
+                }
+
+                try {
+                        if ( $run_id > 0 && method_exists( 'Nexus_DB', 'finish_agent_run' ) ) {
+                                Nexus_DB::finish_agent_run(
+                                        (int) $run_id,
+                                        $status,
+                                        array(
+                                                'steps'            => isset( $run['steps'] ) && is_array( $run['steps'] ) ? $run['steps'] : array(),
+                                                'articles_created' => isset( $run['articles'] ) ? (int) $run['articles'] : (int) ( isset( $summary['collected'] ) ? $summary['collected'] : 0 ),
+                                                'candidates'       => (int) ( isset( $run['candidates'] ) ? $run['candidates'] : 0 ),
+                                                'sources_ok'       => (int) ( isset( $run['sources_ok'] ) ? $run['sources_ok'] : 0 ),
+                                                'sources_err'      => (int) ( isset( $run['sources_err'] ) ? $run['sources_err'] : 0 ),
+                                                'error'            => (string) ( isset( $run['error'] ) ? $run['error'] : '' ),
+                                        )
+                                );
+                        }
+                } catch ( Throwable $e ) {
+                        // Silenzio onesto: la scrittura della run row non rompe il run.
+                }
+
+                try {
+                        if ( 'failed' === $status && empty( $run['budget_stop'] ) ) {
+                                Nexus_DB::update_agent( $agent_id, array( 'status' => 'error' ) );
+                        } elseif ( 'failed' !== $status ) {
+                                $fresh = Nexus_DB::get_agent( $agent_id );
+                                if ( $fresh && 'error' === (string) $fresh->status ) {
+                                        Nexus_DB::update_agent( $agent_id, array( 'status' => 'active' ) );
+                                }
+                        }
+                } catch ( Throwable $e ) {
+                        // Silenzio onesto: la transizione di stato non maschera l'esito.
+                }
+        }
+
+        /**
          * Tick del cron: esegue run_full per ogni agente attivo, senza fatal error
          * (ogni agente è protetto da try/catch, come runAllAgents dell'originale).
+         *
+         * v1.1.16 (WD1): le run degli agenti partono con triggered_by 'cron' —
+         * le run rows di wp_nexus_agent_runs distinguono i giri automatici da
+         * quelli manuali (run_full() → 'manual'). Contratto di ritorno INVARIATO.
          *
          * @return array{ok:bool, ran:int, results:array, timestamp:string}
          */
@@ -1350,9 +1666,10 @@ class Nexus_Pipeline {
 
                         try {
                                 self::heartbeat(); // v1.1.15 (WA2): tick job vivo tra un agente e l'altro.
-                                $result        = self::run_full( (int) $agent->id );
+                                // v1.1.16 (WD1): run row con trigger 'cron' (run_full default 'manual').
+                                $result         = self::run_full( (int) $agent->id, 'cron' );
                                 $result['agent'] = (string) $agent->name;
-                                $results[]     = $result;
+                                $results[]      = $result;
                                 $ran++;
                         } catch ( Throwable $e ) {
                                 Nexus_DB::insert_activity(
