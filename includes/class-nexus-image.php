@@ -36,7 +36,9 @@
  * - SSRF guard sul download remoto (guard_url): http/https + wp_http_validate_url +
  *   risoluzione DNS + blocco IP privati/riservati (logica duplicata da Nexus_Tools:
  *   db.php non deve essere toccato e la classe immagine resta autonoma).
- * - 'redirection' => 1, 'limit_response_size' => 5MB e timeout espliciti sul download.
+ * - 'redirection' => 0 (v1.1.15 WC2: NESSUN redirect — il target di un
+ *   rimbalzo bypasserebbe la guard SSRF; degrado onesto su 3xx),
+ *   'limit_response_size' => 5MB e timeout espliciti sul download.
  * - SVG REMOTI RIFIUTATI (content-type o sniffing): vettore di stored XSS.
  * - MIME reale del corpo scaricato validato (getimagesizefromstring) prima del salvataggio.
  * - FALLBACK file_put_contents RIMOSSO (v1.1.9): scrivere in uploads bypassando
@@ -368,11 +370,14 @@ class Nexus_Image {
         /**
          * Scarica un'immagine da URL e ritorna il binario con l'estensione rilevata.
          *
-         * Guardie (v1.1.9): SSRF (guard_url: schema+host validati, DNS risolto
-         * fuori dagli IP privati/riservati), 'redirection' => 1, timeout esplicito,
-         * 'limit_response_size' 5MB, SVG remoti rifiutati (content-type o sniffing,
-         * vettore di stored XSS) e MIME reale del corpo validato con
-         * getimagesizefromstring PRIMA di consegnare il binario al chiamante.
+         * Guardie (v1.1.9 + v1.1.15 WC2): SSRF (guard_url: schema+host validati,
+         * DNS risolto fuori dagli IP privati/riservati), 'redirection' => 0
+         * (NESSUN redirect: il target di un rimbalzo non passerebbe dalla SSRF
+         * guard — vettore blind SSRF verso IP interni; un host che risponde
+         * 3xx degrada in modo onesto), timeout esplicito, 'limit_response_size'
+         * 5MB, SVG remoti rifiutati (content-type o sniffing, vettore di stored
+         * XSS) e MIME reale del corpo validato con getimagesizefromstring PRIMA
+         * di consegnare il binario al chiamante.
          *
          * @param string $url     URL dell'immagine (viene sanificato con esc_url_raw).
          * @param int    $timeout Timeout in secondi.
@@ -395,7 +400,15 @@ class Nexus_Image {
                         $url,
                         array(
                                 'timeout'             => max( 1, (int) $timeout ),
-                                'redirection'         => 1, // al massimo un rimbalzo: i CDN di immagini a volte redirigono.
+                                // v1.1.15 (WC2): NESSUN redirect. Con 'redirection' => 1 il
+                                // target del rimbalzo NON passava da guard_url: un 302 verso
+                                // 169.254.169.254 o un IP interno era un SSRF "blind" raggiungibile
+                                // da qualsiasi fonte che controlli image_url. L'immagine di
+                                // destinazione deve rispondere direttamente (comportamento di
+                                // Nexus_Tools::http_get, che usa 'redirection' => 0); un host che
+                                // redirige degrada in modo onesto: errore HTTP 3xx → nota nella
+                                // catena → placeholder. La SSRF guard valida SOLO l'URL richiesto.
+                                'redirection'         => 0,
                                 'limit_response_size' => self::MAX_DOWNLOAD_BYTES,
                         )
                 );
