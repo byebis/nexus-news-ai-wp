@@ -192,6 +192,23 @@
  *  - la barra "Creazione rapida" è INVARIATA (preset 1-click v1.1.4):
  *    resta il modo manuale/progressivo di creare agenti.
  *
+ * =====================================================================
+ * v1.1.16 — DRAWER AGENTE "COSA STA FACENDO" (WE1)
+ * =====================================================================
+ *
+ * Ogni card agente (generata da admin.js, agentCardHtml) espone il bottone
+ * "Dettagli" (classe nxa-agent-details, data-agent-id="{id}", secondo
+ * bottone della riga azioni dopo "▶ Avvia"): apre la modal drawer
+ * #nxa-agent-drawer, creata da admin.js con le stesse classi .nxa-modal*
+ * di #nxa-modal (nessun markup nuovo in questa vista: le card live sono
+ * JS e il drawer viene appeso a document.body alla prima apertura).
+ * Sezioni del drawer: live runtime (GET /live, poll 5s solo a drawer
+ * aperto), ultime run + checklist "Perché non vedi articoli?" (GET
+ * /agents/{id}/diagnostics, contratto PC1 — lettura difensiva: endpoint
+ * assente → sezione con errore onesto + Riprova), attività per-agente
+ * (GET /activity?agent_id=&limit=20). Anche il fallback noscript resta
+ * invariato (sola lettura).
+ *
  * @package Nexus_News_AI
  */
 

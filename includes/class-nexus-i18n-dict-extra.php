@@ -1773,6 +1773,63 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Webhook notifiche' => 'Notification webhook',
             'Webhook Slack-compatibile che riceve gli eventi della pipeline (errori, pending, pubblicazioni).' => 'Slack-compatible webhook that receives pipeline events (errors, pending, publishing).',
             '•••• salvata — compila per sostituire' => '•••• saved — fill in to replace',
+
+            /* ---- v1.1.16 (WE1/WE2/WE3/WE4/WE5) — drawer agente "Cosa sta facendo",
+             * fasi Wire reali, dead letter, wizard onesto ("Dove finiscono gli
+             * articoli" + Prossimi passi) e retry degli errori. Chiavi ESATTE:
+             * le frasi con numeri/passi variabili sono nei pattern IN CIMA a
+             * nexus_i18n_extra_patterns() (regola CIMA: i compositi specifici
+             * corrono prima dei frammenti generici). I codici verdict (PC1)
+             * sono qui sotto come testi base: le varianti con {param} interpolato
+             * passano dai pattern. ---- */
+            'Agente non presente nello stato live (eliminato o runtime non ancora avviato).' => 'Agent not present in the live status (deleted or runtime not started yet).',
+            'Al lavoro' => 'Working',
+            'Apri la pagina Agenti' => 'Open the Agents page',
+            'Auto-pubblicazione disattivata: gli articoli restano in coda finché non li approvi tu.' => 'Auto-publish disabled: articles stay in the queue until you approve them.',
+            'Avvio della pipeline…' => 'Starting the pipeline…',
+            'Bozze WordPress' => 'WordPress drafts',
+            'Budget AI mensile esaurito: aumenta il limite in Impostazioni → Redazione AI o attendi il mese prossimo.' => 'Monthly AI budget exhausted: raise the limit in Settings → AI Newsroom or wait for next month.',
+            'Ci sono fonti di ricerca ma manca la chiave search: per ora vengono ignorate.' => 'There are search sources but the search key is missing: they are ignored for now.',
+            'Comparirà appena l\'agente lavora.' => 'It will appear as soon as the agent works.',
+            'Cosa sta facendo' => 'What it is doing',
+            'Dead letter' => 'Dead letter',
+            'Destinazione articoli non salvata: ' => 'Article destination not saved: ',
+            'Destinazione articoli salvata nelle impostazioni.' => 'Article destination saved in the settings.',
+            'Diagnostica non disponibile' => 'Diagnostics not available',
+            'Dove finiscono gli articoli' => 'Where the articles end up',
+            'Endpoint diagnostica non presente in questa versione del plugin.' => 'Diagnostics endpoint not present in this plugin version.',
+            'Gli articoli approvati diventano Bozze in WordPress: le trovi in Articoli → Bozze, pronte per la tua revisione finale.' => 'Approved articles become WordPress drafts: find them in Posts → Drafts, ready for your final review.',
+            'Gli articoli approvati finiranno come Bozze in WordPress: le trovi in Articoli → Bozze.' => 'Approved articles will become WordPress drafts: find them in Posts → Drafts.',
+            'Gli articoli approvati verranno pubblicati direttamente su WordPress.' => 'Approved articles will be published directly to WordPress.',
+            'Gli articoli approvati vengono pubblicati subito sul sito: li vedi in Articoli → Tutti e nel magazine pubblico.' => 'Approved articles are published right away: you see them in Posts → All and on the public magazine.',
+            'Gli articoli finiranno nella Coda Approvazioni di Nexus: li approvi tu, uno a uno.' => 'Articles will land in the Nexus Approval Queue: you approve them one by one.',
+            'Gli articoli restano in Nexus: li vedi nella Coda Approvazioni e decidi tu cosa pubblicare. Su WordPress non arriva nulla finché non approvi.' => 'Articles stay in Nexus: you see them in the Approval Queue and decide what gets published. Nothing reaches WordPress until you approve.',
+            'Impossibile caricare le statistiche' => 'Unable to load the statistics',
+            'I tuoi agenti partiranno da soli entro il prossimo giro di raccolta.' => 'Your agents will start on their own within the next collection cycle.',
+            'Modalità semi-autonoma: gli articoli aspettano la tua approvazione nella Coda Approvazioni.' => 'Semi-autonomous mode: articles wait for your approval in the Approval Queue.',
+            'Nessuna attività per questo agente' => 'No activity for this agent',
+            'Nessuna fonte configurata: l\'agente genera contenuti evergreen, non notizie vere.' => 'No sources configured: the agent produces evergreen content, not real news.',
+            'Nessun run registrato: premi ▶ Avvia sulla card per il primo giro.' => 'No runs recorded: press ▶ Run on the card for the first cycle.',
+            'Nessuna verifica disponibile.' => 'No checks available.',
+            'Nota: la redazione è semi-autonoma ma le impostazioni attuali pubblicano direttamente su WordPress. Con "Solo Nexus" gli articoli restano comunque nella Coda Approvazioni di Nexus finché non li approvi tu.' => 'Note: the newsroom is semi-autonomous but the current settings publish directly to WordPress. With "Nexus only" articles still wait in the Nexus Approval Queue until you approve them.',
+            'Parziale' => 'Partial',
+            'Pubblica direttamente' => 'Publish directly',
+            'Pubblicazione diretta attiva: gli articoli approvati escono come post pubblicati su WordPress.' => 'Direct publishing active: approved articles go out as published posts on WordPress.',
+            'Prossimi passi' => 'Next steps',
+            'Salvo la destinazione degli articoli…' => 'Saving the article destination…',
+            'Se non la spunti, nessuna fonte viene salvata: puoi aggiungere le tue fonti dopo, dalla redazione di ogni agente o da Impostazioni. Se la spunti aggiunge queste 5 fonti d’esempio: ANSA (generale), ANSA (politica), Il Post, Il Sole 24 Ore (economia) e Wired.it.' => 'If you leave it unchecked, no source is saved: you can add your own sources later, from each agent’s newsroom or from Settings. If you check it, these 5 sample sources are added: ANSA (general), ANSA (politics), Il Post, Il Sole 24 Ore (economy) and Wired.it.',
+            'Scegli dove vedi il risultato del lavoro degli agenti: puoi cambiarlo in ogni momento da Impostazioni → Contenuti e Pubblicazione.' => 'Choose where you see the agents’ work: you can change it at any time in Settings → Content and Publishing.',
+            'Solo Nexus (approvazione manuale)' => 'Nexus only (manual approval)',
+            'Stato live non disponibile' => 'Live status not available',
+            'Stato live non disponibile in questa versione del plugin.' => 'Live status not available in this plugin version.',
+            'Tutto ok: la redazione è operativa e pronta a produrre.' => 'All good: the newsroom is up and ready to produce.',
+            'Ultime run' => 'Latest runs',
+            'Ultimi errori' => 'Latest errors',
+            'Attività recenti' => 'Recent activity',
+            'Verifica non disponibile' => 'Check not available',
+            'Verifica: perché non vedi articoli?' => 'Check: why aren’t you seeing articles?',
+            'Vuoi un run subito? Apri la pagina Agenti e premi ▶ Avvia su un agente (o "Dettagli" per vedere cosa sta facendo).' => 'Want a run right away? Open the Agents page and press ▶ Run on an agent (or "Details" to see what it is doing).',
+            'WP-Cron non ha mai eseguito la redazione: il primo giro partirà appena il sito riceve traffico.' => 'WP-Cron has never run the newsroom: the first cycle starts as soon as the site gets traffic.',
         );
 }
 
@@ -1802,6 +1859,59 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
  */
 function nexus_i18n_extra_patterns() {
     return array(
+        /* ---- v1.1.16 (WE1/WE3/WE4): compositi drawer agente + wizard + jobs args.
+         * IN CIMA (regola CIMA): i compositi specifici con numeri/parametri devono
+         * correre PRIMA di qualunque frammento generico pre-esistente (' articoli',
+         * 'N articoli', ...). I codici verdict PC1 con {param} interpolato dal JS
+         * arrivano qui già "cuciti": i pattern catturano il valore variabile. ---- */
+        array(
+            're'  => 'Cosa sta facendo: (.+)',
+            'tpl' => 'What $1 is doing',
+        ),
+        array(
+            're'  => 'Il cron è in ritardo: il prossimo giro era previsto (.+)\\.',
+            'tpl' => 'The cron is late: the next run was expected $1.',
+        ),
+        array(
+            're'  => '(\\d+) fonti stanno segnalando errori: controllale nella redazione dell\'agente\\.',
+            'tpl' => '$1 sources are reporting errors: check them in the agent’s newsroom.',
+        ),
+        array(
+            're'  => 'Limite giornaliero raggiunto: (\\d+) articoli creati su (\\d+) consentiti\\.',
+            'tpl' => 'Daily limit reached: $1 articles created out of $2 allowed.',
+        ),
+        array(
+            're'  => 'La generazione AI sta fallendo: (.+)',
+            'tpl' => 'AI generation is failing: $1',
+        ),
+        array(
+            're'  => 'L\'ultimo run è fallito: (.+)',
+            'tpl' => 'The last run failed: $1',
+        ),
+        array(
+            're'  => 'I tuoi agenti partiranno da soli entro il prossimo giro di raccolta \\(circa ogni (\\d+) minuti\\)\\.',
+            'tpl' => 'Your agents will start on their own within the next collection cycle (about every $1 minutes).',
+        ),
+        array(
+            're'  => '(\\d+) articoli oggi · (\\d+) run oggi',
+            'tpl' => '$1 articles today · $2 runs today',
+        ),
+        array(
+            're'  => '(\\d+) candidati',
+            'tpl' => '$1 candidates',
+        ),
+        array(
+            're'  => 'fonti (\\d+)/(\\d+)',
+            'tpl' => 'sources $1/$2',
+        ),
+        array(
+            're'  => 'agente #(\\d+)',
+            'tpl' => 'agent #$1',
+        ),
+        array(
+            're'  => 'articolo #(\\d+)',
+            'tpl' => 'article #$1',
+        ),
         /* ---- v1.1.15 (WD10): stringhe log introdotte/alterate da WE5/WE6/WE7
          * (digest, telegram, notify) — prefissi compositi da concatenazione
          * PHP e contatore fallimenti. IN CIMA: copertura deterministica prima

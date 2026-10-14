@@ -14,10 +14,17 @@
  * fetch REST, rendering, azioni di riga, toast, auto-refresh.
  *
  * CONTRATTO REST (rotte definite nel §2 T-06, namespace nexus/v1, perm admin):
- * - GET  {restUrl}/jobs?per_page=50[&status=pending|running|complete|failed|cancelled]
+ * - GET  {restUrl}/jobs?per_page=50[&status=pending|running|complete|failed|cancelled|dead]
  *        → { items: [ { id, hook, args, status, priority, attempts, max_attempts,
  *                       scheduled_at, started_at, completed_at, last_error } ],
  *            total, pages, stats: { pending, running, complete, failed, cancelled, total } }
+ *        v1.1.16 (WE3): jobs.args (già nel payload REST) viene renderizzato in
+ *        forma leggibile nella colonna "Lavoro" ("agente #N" / "articolo #N" /
+ *        topic), troncato con tooltip title= del JSON completo (stesso pattern
+ *        di last_error); lo stato 'dead' (dead letter, Nexus_Queue::monitor)
+ *        ha filtro, card statistica e badge dedicati — la card usa stats.dead
+ *        SE presente (WB aggiunge la chiave a job_stats), altrimenti riconta
+ *        le righe visibili come nel fallback difensivo pre-esistente.
  * - POST {restUrl}/jobs/process      → { processed, failed }       (un batch subito)
  * - POST {restUrl}/jobs/cleanup      body {"days":7} → { deleted }
  * - POST {restUrl}/jobs/{id}/retry   → lavoro complete|failed|cancelled rimesso in pending
@@ -91,6 +98,13 @@ defined( 'ABSPATH' ) || exit;
                         <span class="nxa-jb-card-value" id="nxa-jb-stat-failed">&mdash;</span>
                         <span class="nxa-jb-card-label"><?php esc_html_e( 'Falliti', 'nexus-news-ai' ); ?></span>
                 </div>
+                <!-- v1.1.16 (WE3): dead letter (status 'dead'). Riusa il modificatore
+                     --failed (colore coerente: esauriti i tentativi) perché nexus-jobs.css
+                     non porta variante --dead. -->
+                <div class="nxa-jb-card nxa-jb-card--failed">
+                        <span class="nxa-jb-card-value" id="nxa-jb-stat-dead">&mdash;</span>
+                        <span class="nxa-jb-card-label"><?php esc_html_e( 'Dead letter', 'nexus-news-ai' ); ?></span>
+                </div>
                 <div class="nxa-jb-card nxa-jb-card--total">
                         <span class="nxa-jb-card-value" id="nxa-jb-stat-total">&mdash;</span>
                         <span class="nxa-jb-card-label"><?php esc_html_e( 'Totale', 'nexus-news-ai' ); ?></span>
@@ -109,6 +123,10 @@ defined( 'ABSPATH' ) || exit;
                         <option value="complete"><?php esc_html_e( 'Completati', 'nexus-news-ai' ); ?></option>
                         <option value="failed"><?php esc_html_e( 'Falliti', 'nexus-news-ai' ); ?></option>
                         <option value="cancelled"><?php esc_html_e( 'Annullati', 'nexus-news-ai' ); ?></option>
+                        <!-- v1.1.16 (WE3): dead letter — i job 'running' bloccati oltre i
+                             tentativi massimi (Nexus_Queue::monitor); si riaprono SOLO via
+                             CLI (wp nexus queue dead --reset=<id>), nessun bottone UI. -->
+                        <option value="dead"><?php esc_html_e( 'Dead letter', 'nexus-news-ai' ); ?></option>
                 </select>
 
                 <button type="button" id="nxa-jb-process" class="button button-primary">
@@ -197,6 +215,7 @@ defined( 'ABSPATH' ) || exit;
                         running: document.getElementById('nxa-jb-stat-running'),
                         complete: document.getElementById('nxa-jb-stat-complete'),
                         failed: document.getElementById('nxa-jb-stat-failed'),
+                        dead: document.getElementById('nxa-jb-stat-dead'),
                         total: document.getElementById('nxa-jb-stat-total')
                 };
 
@@ -205,15 +224,19 @@ defined( 'ABSPATH' ) || exit;
                 var toastEl = null;
                 var toastTimer = null;
 
-                /* Etichette italiane degli stati (badge in tabella). */
+                /* Etichette italiane degli stati (badge in tabella).
+                 * v1.1.16 (WE3): + 'dead' (dead letter — Nexus_Queue::monitor marca
+                 * i job 'running' bloccati oltre i tentativi massimi; nessun retry UI,
+                 * si riaprono solo con wp nexus queue dead --reset=<id>). */
                 var STATUS_LABELS = {
                         pending: 'In attesa',
                         running: 'In esecuzione',
                         complete: 'Completato',
                         failed: 'Fallito',
-                        cancelled: 'Annullato'
+                        cancelled: 'Annullato',
+                        dead: 'Dead letter'
                 };
-                var STATUS_KEYS = ['pending', 'running', 'complete', 'failed', 'cancelled'];
+                var STATUS_KEYS = ['pending', 'running', 'complete', 'failed', 'cancelled', 'dead'];
 
                 /* Escape di ogni valore dinamico prima di innerHTML (contratto §2 T-05). */
                 function esc(value) {
@@ -304,22 +327,26 @@ defined( 'ABSPATH' ) || exit;
                         }, 4000);
                 }
 
-                /* Riga di messaggio dentro tbody (caricamento o errore). */
-                function setTableMessage(text, isLoading) {
+                /* Riga di messaggio dentro tbody (caricamento o errore).
+                 * v1.1.16 (WE5): con `retry` a true aggiunge il bottone "Riprova"
+                 * (handler delegato .nxa-jb-retry su rowsBody → load()). */
+                function setTableMessage(text, isLoading, retry) {
                         if (!rowsBody) {
                                 return;
                         }
                         rowsBody.innerHTML = '<tr class="nxa-jb-message"><td colspan="10">' +
                                 (isLoading ? '<span class="spinner is-active nxa-jb-spinner"></span> ' : '') +
-                                esc(text) + '</td></tr>';
+                                esc(text) +
+                                (retry ? ' <button type="button" class="button button-small nxa-jb-retry">Riprova</button>' : '') +
+                                '</td></tr>';
                 }
 
-                /* Riempie le 5 stat-card: usa stats dalla REST; fallback difensivo sul conteggio righe. */
+                /* Riempie le stat-card: usa stats dalla REST; fallback difensivo sul conteggio righe. */
                 function renderStats(payload) {
                         var stats = payload && payload.stats ? payload.stats : null;
                         var items = payload && payload.items ? payload.items : [];
                         var fallbackTotal = payload && payload.total !== undefined ? parseInt(payload.total, 10) || 0 : 0;
-                        var counts = { pending: 0, running: 0, complete: 0, failed: 0, cancelled: 0 };
+                        var counts = { pending: 0, running: 0, complete: 0, failed: 0, cancelled: 0, dead: 0 };
                         var i;
                         var key;
                         if (stats) {
@@ -336,6 +363,18 @@ defined( 'ABSPATH' ) || exit;
                                         }
                                 }
                         }
+                        /* v1.1.16 (WE3): stats.dead arriva solo con la WB (chiave 'dead' in
+                         * job_stats). Se manca ma ci sono righe 'dead' visibili, mostro il
+                         * conteggio client-side (stesso fallback difensivo qui sopra):
+                         * mai la card a zero mentendo sullo stato reale. */
+                        if (stats && stats.dead === undefined) {
+                                counts.dead = 0;
+                                for (i = 0; i < items.length; i++) {
+                                        if (items[i] && items[i].status === 'dead') {
+                                                counts.dead = counts.dead + 1;
+                                        }
+                                }
+                        }
                         if (statNodes.pending) {
                                 statNodes.pending.textContent = String(counts.pending);
                         }
@@ -348,18 +387,60 @@ defined( 'ABSPATH' ) || exit;
                         if (statNodes.failed) {
                                 statNodes.failed.textContent = String(counts.failed);
                         }
+                        if (statNodes.dead) {
+                                statNodes.dead.textContent = String(counts.dead);
+                        }
                         if (statNodes.total) {
                                 statNodes.total.textContent = String(stats ? parseInt(stats.total, 10) || 0 : fallbackTotal);
                         }
                 }
 
-                /* Riga tabella: badge con classe presa da lista chiusa (nessuna classe dinamica libera). */
+                /* v1.1.16 (WE3): args leggibili — "agente #N" / "articolo #N" / topic
+                 * e le altre chiavi scalari in forma key: value; troncato a 60 caratteri
+                 * con il JSON completo nel title (stesso pattern di last_error).
+                 * I nomi degli agenti NON sono disponibili in questa vista (la cache
+                 * /agents vive in admin.js e qui non viene caricata): solo id, come da
+                 * contratto. Restituisce '' quando args è vuoto o non è un oggetto. */
+                function argsSummary(args) {
+                        if (!args || typeof args !== 'object') {
+                                return '';
+                        }
+                        var parts = [];
+                        if (args.agent_id !== undefined && args.agent_id !== null && args.agent_id !== '') {
+                                parts.push('agente #' + args.agent_id);
+                        }
+                        if (args.article_id !== undefined && args.article_id !== null && args.article_id !== '') {
+                                parts.push('articolo #' + args.article_id);
+                        }
+                        if (args.topic !== undefined && args.topic !== null && String(args.topic) !== '') {
+                                parts.push('“' + String(args.topic) + '”');
+                        }
+                        for (var key in args) {
+                                if (!Object.prototype.hasOwnProperty.call(args, key) || key === 'agent_id' || key === 'article_id' || key === 'topic') {
+                                        continue;
+                                }
+                                var value = args[key];
+                                if (value === null || value === undefined || typeof value === 'object') {
+                                        continue;
+                                }
+                                parts.push(key + ': ' + String(value));
+                        }
+                        return parts.join(' · ');
+                }
+
+                /* Riga tabella: badge con classe presa da lista chiusa (nessuna classe dinamica libera).
+                 * v1.1.16 (WE3): 'dead' ri usa la variante --failed (nessun colore dedicato
+                 * in nexus-jobs.css, che non è toccabile da questa wave) con etichetta
+                 * dedicata "Dead letter"; sotto l'hook arriva argsSummary (se presente). */
                 function rowHtml(job) {
                         var status = job && job.status ? String(job.status) : '';
                         var known = STATUS_LABELS.hasOwnProperty(status);
                         var label = known ? STATUS_LABELS[status] : status;
-                        var badgeClass = known ? 'nxa-jb-badge nxa-jb-badge--' + status : 'nxa-jb-badge nxa-jb-badge--cancelled';
+                        var badgeVariant = status === 'dead' ? 'failed' : status;
+                        var badgeClass = known ? 'nxa-jb-badge nxa-jb-badge--' + badgeVariant : 'nxa-jb-badge nxa-jb-badge--cancelled';
                         var errorText = job && job.last_error ? String(job.last_error) : '';
+                        var argsText = argsSummary(job && job.args);
+                        var argsJson = (job && job.args && typeof job.args === 'object') ? JSON.stringify(job.args) : '';
                         var actions = '';
 
                         if (status === 'complete' || status === 'failed' || status === 'cancelled') {
@@ -370,7 +451,9 @@ defined( 'ABSPATH' ) || exit;
 
                         return '<tr>' +
                                 '<td>' + esc(job.id) + '</td>' +
-                                '<td><code>' + esc(job.hook) + '</code></td>' +
+                                '<td><code>' + esc(job.hook) + '</code>' +
+                                        (argsText ? '<div class="nxa-jb-args" style="margin-top:3px;font-size:11px;line-height:1.5;color:var(--nxa-muted);overflow-wrap:anywhere" title="' + esc(argsJson) + '">' + esc(clip(argsText, 60)) + '</div>' : '') +
+                                '</td>' +
                                 '<td><span class="' + badgeClass + '">' + esc(label) + '</span></td>' +
                                 '<td>' + esc(job.priority) + '</td>' +
                                 '<td>' + esc(job.attempts) + ' / ' + esc(job.max_attempts) + '</td>' +
@@ -420,7 +503,9 @@ defined( 'ABSPATH' ) || exit;
                                         /* Auto-refresh: nessun toast ripetuto ogni 15 secondi. */
                                         return;
                                 }
-                                setTableMessage('Impossibile caricare la coda: ' + message, false);
+                                /* v1.1.16 (WE5): errore onesto con bottone "Riprova" — mai
+                                   riga di messaggio senza via d'uscita. */
+                                setTableMessage('Impossibile caricare la coda: ' + message, false, true);
                                 toast('Impossibile caricare la coda: ' + message, 'error');
                         });
                 }
@@ -469,10 +554,17 @@ defined( 'ABSPATH' ) || exit;
                         }
                 }
 
-                /* Click delegato sulle azioni di riga (Riprova / Annulla). */
+                /* Click delegato sulle azioni di riga (Riprova / Annulla) e, dalla
+                 * v1.1.16 (WE5), sul bottone "Riprova" del messaggio d'errore. */
                 function onRowsClick(event) {
                         var target = event.target;
                         if (!target || !target.closest) {
+                                return;
+                        }
+                        var retryBtn = target.closest('.nxa-jb-retry');
+                        if (retryBtn && rowsBody.contains(retryBtn) && !retryBtn.disabled && !busy) {
+                                retryBtn.disabled = true;
+                                load();
                                 return;
                         }
                         var btn = target.closest('[data-nxa-jb-action]');

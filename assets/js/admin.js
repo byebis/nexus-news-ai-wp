@@ -31,6 +31,10 @@
  * v1.1.11 (R3): wizard di onboarding "Crea la tua redazione" (modal #nxa-onboarding, partial admin/views/onboarding-wizard.php incluso da agents.php): con 0 agenti la pagina Agenti apre il wizard al primo render (una volta per vista) e l'empty state porta il bottone "Apri il wizard"; pacchetti preset one-click (1/3/5 agenti o 7+capo) eseguiti come sequenza di POST /agents con progresso e riepilogo onesto, opzione capo redattore e PUT /settings {global_rss_sources} (stringa una URL per riga — contratto branch R1); la dashboard porta la card CTA con hash #nxa-onboarding.
  * v1.1.13 (O4, feedback/audit UI): wizard NON chiudibile a run in corso (X/Annulla/ESC → toast informativo, chiusura solo a run concluso o fallito); conferme distruttive INLINE uniformi (pattern custom provider: pipeline, eliminazione agente, eliminazione redazione — zero window.confirm); focus trap + ripristino focus per #nxa-modal e #nxa-onboarding (Tab confinato, ESC coerente, opener ricordato); stringhe wizard/confirm passate da nxaT() (dizionario esatto + pattern).
  * v1.1.13.1 (Q2, ux-confirm): ULTIME window.confirm native uniformate alla conferma inline (scollega provider, re-check capo redattore, avvio testata) e ponte pubblico window.NexusAdminUi.inlineConfirmOpen/Close perché anche le viste con script inline autonomo (jobs.php) riusino la STESSA implementazione — zero dialoghi nativi nei flussi del plugin.
+ * v1.1.16 (WE1): drawer agente "Cosa sta facendo" (#nxa-agent-drawer, bottone "Dettagli" sulla card): sezione live da GET /live (poll 5s SOLO a drawer aperto, interval azzerato alla chiusura), ultime run + checklist "Perché non vedi articoli?" da GET /agents/{id}/diagnostics (contratto PC: campi assenti → sezione vuota onesta, mai crash), attività per-agente da GET /activity?agent_id=; errori con bottone Riprova per sezione.
+ * v1.1.16 (WE2): fasi Wire REALI — addio WIRE_PHASES animate su timer 15s: mentre POST /wire/run è in volo si polla /live ogni 5s e si mostrano gli step runtime veri per agente (runtime vuoto → "Avvio della pipeline…" onesto con spinner).
+ * v1.1.16 (WE4): wizard onesto — checkbox RSS di esempio OFF di default, scelta "Dove finiscono gli articoli" (Solo Nexus / Bozze WordPress / Pubblica direttamente → PUT /settings con mode/post_status/enable_wp_posts) e passo finale "Prossimi passi" (primo giro cron, dove vedere gli articoli, ▶ Avvia per un run immediato).
+ * v1.1.16 (WE5): errori onesti — ogni loader principale (stats, feed, mini agenti, griglia agenti, coda, attività, wire) mostra lo stato di errore con bottone Riprova (delega .nxa-retry unica su document, mai skeleton eterni).
  *
  * @package Nexus_News_AI
  */
@@ -91,16 +95,13 @@
         };
         var ACTION_DEFAULT = { icon: '📰', label: 'Evento', variant: 'neutral' };
 
-        /** Fasi della redazione collettiva (Nexus Wire). */
-        var WIRE_PHASES = [
-                'Lettura delle fonti in arrivo…',
-                'Gli agenti stanno scegliendo le fonti migliori…',
-                'Ricercatore al lavoro sul dossier…',
-                'Redattore capo sta scrivendo la bozza…',
-                'Due revisori stanno valutando la bozza…',
-                'Editor responsabile sta fondendo le revisioni…',
-                'Invio in coda di approvazione…'
-        ];
+        /** Fasi della redazione collettiva (Nexus Wire).
+         *  v1.1.16 (WE2): le fasi NON sono più una lista animata su timer
+         *  15s slegata dallo stato reale (percezione "fake" diagnosticata in
+         *  P16-DIAG): durante POST /wire/run la UI polla GET /live ogni 5s e
+         *  mostra gli step runtime VERI per agente (nome + label corrente);
+         *  runtime vuoto → riga onesta "Avvio della pipeline…" con spinner.
+         *  Vedi bindWire() — qui non resta alcun testo di fase pre-scritto. */
 
         /** Suggerimenti argomenti (fedeli al pannello React). */
         var WIRE_IDEAS = [
@@ -706,6 +707,99 @@
                         ( hint ? '<p>' + esc( hint ) + '</p>' : '' ) +
                         '</div>';
         }
+
+        /* ---------------- STATO ERRORE CON RETRY (v1.1.16 WE5) ---------------- */
+
+        /**
+         * v1.1.16 (WE5): stato di errore con bottone "Riprova" — estende
+         * emptyState senza toccarlo. `retryKey` instrada il click alla funzione
+         * giusta via RETRY_LOADERS (delega unica su document, bindRetryButtons);
+         * senza chiave il bottone non compare (solo il messaggio, come prima).
+         */
+        function errorState( icon, title, hint, retryKey ) {
+                var html = emptyState( icon, title, hint );
+                if ( retryKey ) {
+                        html += '<p style="text-align:center;margin:-18px 0 44px">' +
+                                '<button type="button" class="button nxa-retry" data-nxa-retry="' + esc( retryKey ) + '">' +
+                                esc( nxaT( 'Riprova' ) ) + '</button></p>';
+                }
+                return html;
+        }
+
+        /** Durata leggibile da millisecondi: 84000 → "1m 24s", 42000 → "42s". */
+        function formatDuration( ms ) {
+                var total = Math.round( num( ms ) / 1000 );
+                if ( total <= 0 ) {
+                        return '—';
+                }
+                var mins = Math.floor( total / 60 );
+                var secs = total % 60;
+                if ( mins <= 0 ) {
+                        return secs + 's';
+                }
+                return mins + 'm ' + ( secs < 10 ? '0' : '' ) + secs + 's';
+        }
+
+        /** Sostituisce i segnaposto {chiave} con i params del verdict (PC1);
+         *  param assente → segnaposto rimosso (mai "{model}" a schermo). */
+        function interpolateParams( text, params ) {
+                var raw = String( text || '' );
+                var values = ( params && typeof params === 'object' ) ? params : {};
+                return raw.replace( /\{(\w+)\}/g, function ( match, key ) {
+                        if ( Object.prototype.hasOwnProperty.call( values, key ) && values[ key ] !== null && values[ key ] !== undefined && values[ key ] !== '' ) {
+                                return String( values[ key ] );
+                        }
+                        return '';
+                } ).replace( /\s{2,}/g, ' ' ).replace( /\s+([.,:;])/g, '$1' ).trim();
+        }
+
+        /**
+         * v1.1.16 (WE5): delega UNICA per i bottoni .nxa-retry sparsi negli
+         * stati d'errore (dashboard stats/feed/mini, griglia agenti, coda,
+         * attività, wire). Registrata una sola volta; chiave senza loader →
+         * warn in console (mai crash). I retry del drawer agente hanno la
+         * loro delega dentro #nxa-agent-drawer (vedi ensureAgentDrawer).
+         */
+        var retryBound = false;
+
+        function bindRetryButtons() {
+                if ( retryBound ) {
+                        return;
+                }
+                retryBound = true;
+                document.addEventListener( 'click', function ( ev ) {
+                        var btn = ( ev.target && ev.target.closest ) ? ev.target.closest( '.nxa-retry' ) : null;
+                        if ( ! btn || btn.disabled ) {
+                                return;
+                        }
+                        var key = String( btn.getAttribute( 'data-nxa-retry' ) || '' );
+                        var loader = RETRY_LOADERS[ key ];
+                        if ( ! loader ) {
+                                window.console.warn( '[Nexus News AI] Retry senza loader: "' + key + '"' );
+                                return;
+                        }
+                        setBtnLoading( btn, true, nxaT( 'Attendi…' ) );
+                        Promise.resolve( loader() ).catch( function ( err ) {
+                                window.console.warn( '[Nexus] retry ' + key + ':', err );
+                        } );
+                } );
+        }
+
+        /**
+         * v1.1.16 (WE5): mappa chiave → loader per i retry degli errori delle
+         * superfici principali. I loader (dichiarati più avanti nel file,
+         * hoisted) si occupano da soli di ripulire il proprio stato d'errore:
+         * qui nessuna logica di rendering.
+         */
+        var RETRY_LOADERS = {
+                stats:   function () { return loadStats(); },
+                feed:    function () { return loadDashboardFeed(); },
+                mini:    function () { return loadAgentsMini(); },
+                agents:  function () { return loadAgents( true ); },
+                queue:   function () { return loadQueueList(); },
+                activity: function () { return loadActivity(); },
+                wire:    function () { return loadWireRuns(); }
+        };
 
         /* ------------------------- CONFERME INLINE ------------------------- */
 
@@ -1487,6 +1581,13 @@
         }
 
         function loadStats() {
+                // v1.1.16 (WE5): lo stato d'errore (con Riprova) vive nel contenitore
+                // #nxa-stats-error della dashboard; a successo viene ripulito — mai
+                // stat-card bloccate sui trattini senza spiegazione.
+                var errorBox = qs( '#nxa-stats-error' );
+                if ( errorBox ) {
+                        errorBox.innerHTML = '';
+                }
                 return api( 'stats' ).then( function ( payload ) {
                         var s = unwrap( payload ) || {};
                         setStat( '#nxa-stat-published', pick( s, 'published' ) );
@@ -1495,6 +1596,11 @@
                         setStat( '#nxa-stat-today', pick( s, 'today' ) );
                         setStat( '#nxa-stat-agents', pick( s, 'agents_active', 'agents' ) );
                         setStat( '#nxa-stat-views', pick( s, 'views' ) );
+                } ).catch( function ( err ) {
+                        if ( errorBox ) {
+                                errorBox.innerHTML = errorState( '⚠️', 'Impossibile caricare le statistiche', err.message || '', 'stats' );
+                        }
+                        throw err;
                 } );
         }
 
@@ -1525,6 +1631,11 @@
                         container.innerHTML = items.length
                                 ? items.map( activityItemHtml ).join( '' )
                                 : emptyState( '📡', 'Nessuna attività registrata', 'Il lavoro degli agenti apparirà qui.' );
+                } ).catch( function ( err ) {
+                        // v1.1.16 (WE5): errore visibile + Riprova (prima lo skeleton
+                        // restava bloccato per sempre a fetch fallita).
+                        container.innerHTML = errorState( '⚠️', 'Impossibile caricare l’attività', err.message || '', 'feed' );
+                        window.console.warn( '[Nexus] feed:', err );
                 } );
         }
 
@@ -1543,6 +1654,10 @@
                                         '</span>';
                                 } ).join( '' ) + '</div>'
                                 : emptyState( '🤖', 'Nessun agente configurato' );
+                } ).catch( function ( err ) {
+                        // v1.1.16 (WE5): errore visibile + Riprova (mai skeleton eterni).
+                        container.innerHTML = errorState( '⚠️', 'Impossibile caricare gli agenti', err.message || '', 'mini' );
+                        window.console.warn( '[Nexus] mini agenti:', err );
                 } );
         }
 
@@ -1749,6 +1864,8 @@
                         // nxa-agent-articles-link + data-agent-id + href="#".
                         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
                                 '<button type="button" class="button nxa-btn-run" data-run-agent="' + esc( pick( agent, 'id' ) ) + '">▶ Avvia</button>' +
+                                // v1.1.16 (WE1): drawer "Cosa sta facendo" — live/run/verifica/attività per agente.
+                                '<button type="button" class="button nxa-agent-details" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Dettagli</button>' +
                                 '<button type="button" class="button nxa-agent-edit" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Modifica</button>' +
                                 '<button type="button" class="button nxa-agent-clone" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Clona</button>' +
                                 '<button type="button" class="button nxa-agent-toggle" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-status="' + esc( status ) + '">' +
@@ -1779,7 +1896,8 @@
                         // si apre da solo (una sola volta per vista — vedi nxaOnboardingAutoOpen).
                         nxaOnboardingAutoOpen( agents.length );
                 } ).catch( function ( err ) {
-                        grid.innerHTML = emptyState( '⚠️', 'Impossibile caricare gli agenti', err.message || '' );
+                        // v1.1.16 (WE5): errore con Riprova (prima solo messaggio).
+                        grid.innerHTML = errorState( '⚠️', 'Impossibile caricare gli agenti', err.message || '', 'agents' );
                         window.console.warn( '[Nexus] agenti:', err );
                 } );
         }
@@ -1803,6 +1921,20 @@
                                         apiErrorToast( err, 'Impossibile aggiornare lo stato' );
                                         setBtnLoading( btn, false );
                                 } );
+                        } );
+
+                        // v1.1.16 (WE1): "Dettagli" (.nxa-agent-details) — apre il drawer
+                        // "Cosa sta facendo" dell'agente (live + run + verifica + attività).
+                        grid.addEventListener( 'click', function ( ev ) {
+                                var btn = ev.target.closest ? ev.target.closest( '.nxa-agent-details' ) : null;
+                                if ( ! btn || btn.disabled ) {
+                                        return;
+                                }
+                                var id = num( btn.getAttribute( 'data-agent-id' ) );
+                                if ( id <= 0 ) {
+                                        return;
+                                }
+                                openAgentDrawer( agentById( id ) || { id: id, name: 'Agente #' + id } );
                         } );
 
                         // v1.1.7: eliminazione agente (DELETE /agents/{id}). Il contenuto
@@ -1918,6 +2050,392 @@
 
                 // v1.0.7: binding dell'editor agenti (modal + nuovo/modifica/clona).
                 bindAgentEditor();
+        }
+
+        /* ==================================================================
+         * 9-bis. DRAWER AGENTE "COSA STA FACENDO" (v1.1.16, WE1)
+         * ==================================================================
+         *
+         * Modal dedicata #nxa-agent-drawer (stesso pattern di ensureModal:
+         * stesse classi .nxa-modal*, focus trap condiviso, ESC + backdrop +
+         * X per chiudere) aperta dal bottone "Dettagli" sulla card agente.
+         * Quattro sezioni indipendenti, ognuna con loading/errore/vuoto propri
+         * e relativo bottone Riprova (delega dentro il corpo del drawer):
+         *
+         *  - LIVE:      GET /live, polling 5s SOLO mentre il drawer è aperto
+         *               (interval azzerato alla chiusura — click, ESC e guardia
+         *               a ogni tick su modal.hidden: nessun leak);
+         *  - ULTIME RUN: GET /agents/{id}/diagnostics → runs[] (contratto PC1;
+         *               endpoint o campi assenti → sezione vuota onesta, MAI
+         *               fatal: l'endpoint arriva in parallelo ad altre branch);
+         *  - VERIFICA:  diagnostics.verdict[] — checklist pallini ok/warn/err
+         *               con i CODICI renderizzati nei testi IT localizzati
+         *               (parametri {…} interpolati) + diagnostics.last_errors;
+         *  - ATTIVITÀ:  GET /activity?agent_id={id}&limit=20 (route esistente).
+         *
+         * I datetime dei payload arrivano RFC3339 CON offset (contratto PA):
+         * new Date() li parsa correttamente — NESSUNA logica timezone client.
+         * ================================================================== */
+
+        var AGENT_DRAWER_POLL_MS = 5000;
+        var agentDrawerTimer = null;
+        var agentDrawerLiveInFlight = false;
+        var agentDrawerAgent = null;
+
+        /** Stato run → icona + badge (contratto PC1: ok|failed|partial|running). */
+        var AGENT_RUN_META = {
+                ok:      { icon: '✓', variant: 'success', label: 'Completata' },
+                failed:  { icon: '✕', variant: 'error',   label: 'Fallita' },
+                partial: { icon: '⚠', variant: 'warning', label: 'Parziale' },
+                running: { icon: '⟳', variant: 'warning', label: 'In corso' }
+        };
+
+        /** Codici verdict (PC1) → testo IT con segnaposto {…} per i params. */
+        var VERDICT_TEXTS = {
+                never_ran_cron:       'WP-Cron non ha mai eseguito la redazione: il primo giro partirà appena il sito riceve traffico.',
+                cron_late:            'Il cron è in ritardo: il prossimo giro era previsto {next_in}.',
+                no_sources:           'Nessuna fonte configurata: l\'agente genera contenuti evergreen, non notizie vere.',
+                source_errors:        '{count} fonti stanno segnalando errori: controllale nella redazione dell\'agente.',
+                cap_reached:          'Limite giornaliero raggiunto: {today} articoli creati su {limit} consentiti.',
+                budget_exceeded:      'Budget AI mensile esaurito: aumenta il limite in Impostazioni → Redazione AI o attendi il mese prossimo.',
+                post_status_publish:  'Pubblicazione diretta attiva: gli articoli approvati escono come post pubblicati su WordPress.',
+                mode_semi_autonomous: 'Modalità semi-autonoma: gli articoli aspettano la tua approvazione nella Coda Approvazioni.',
+                auto_publish_off:     'Auto-pubblicazione disattivata: gli articoli restano in coda finché non li approvi tu.',
+                search_key_missing:   'Ci sono fonti di ricerca ma manca la chiave search: per ora vengono ignorate.',
+                generation_failing:   'La generazione AI sta fallendo: {error}',
+                last_run_failed:      'L\'ultimo run è fallito: {error}',
+                ok_ready:             'Tutto ok: la redazione è operativa e pronta a produrre.'
+        };
+
+        /** Pallino verdict colorato via token CSS (ok/warn/err → verde/giallo/rosso). */
+        function verdictDot( level ) {
+                var lv = String( level || '' ).toLowerCase();
+                var color = lv === 'ok' ? 'var(--nxa-ok-text)' : ( lv === 'err' ? 'var(--nxa-err-text)' : 'var(--nxa-warn-text)' );
+                return '<span class="nxa-dot" style="background:' + color + ';margin-right:8px" aria-hidden="true"></span>';
+        }
+
+        /** Una voce della checklist VERIFICA: codice → testo localizzato + params. */
+        function verdictItemHtml( item ) {
+                var v = item || {};
+                var code = String( v.code || '' );
+                var text = VERDICT_TEXTS[ code ]
+                        ? interpolateParams( VERDICT_TEXTS[ code ], v.params )
+                        : code; // codice sconosciuto (versioni future): mostro il codice grezzo, onesto
+                return '<div style="display:flex;align-items:flex-start;gap:2px;padding:7px 0;border-bottom:1px solid var(--nxa-border-soft)">' +
+                                verdictDot( v.level ) +
+                                '<span style="font-size:13px;line-height:1.5">' + esc( text ) + '</span>' +
+                        '</div>';
+        }
+
+        /** Una riga ULTIME RUN (durata "1m 24s", articoli, candidati, fonti). */
+        function agentRunRowHtml( run ) {
+                var r = run || {};
+                var meta = AGENT_RUN_META[ String( pick( r, 'status' ) || '' ).toLowerCase() ] || null;
+                var icon = meta ? meta.icon : '·';
+                var label = meta ? meta.label : String( pick( r, 'status' ) || '—' );
+                var variant = meta ? meta.variant : 'neutral';
+                var bits = [];
+                if ( pick( r, 'started_at', 'startedAt' ) ) {
+                        bits.push( timeAgoIt( pick( r, 'started_at', 'startedAt' ) ) );
+                }
+                if ( pick( r, 'duration_ms', 'durationMs' ) !== undefined ) {
+                        bits.push( formatDuration( pick( r, 'duration_ms', 'durationMs' ) ) );
+                }
+                if ( pick( r, 'articles_created', 'articlesCreated' ) !== undefined ) {
+                        bits.push( fmt( pick( r, 'articles_created', 'articlesCreated' ) ) + ' articoli' );
+                }
+                if ( pick( r, 'candidates' ) !== undefined ) {
+                        bits.push( fmt( pick( r, 'candidates' ) ) + ' candidati' );
+                }
+                if ( pick( r, 'sources_ok', 'sourcesOk' ) !== undefined || pick( r, 'sources_err', 'sourcesErr' ) !== undefined ) {
+                        bits.push( 'fonti ' + fmt( pick( r, 'sources_ok', 'sourcesOk' ) ) + '/' + fmt( pick( r, 'sources_err', 'sourcesErr' ) ) );
+                }
+                var error = String( pick( r, 'error' ) || '' ).trim();
+                return '<div style="padding:10px 0;border-bottom:1px solid var(--nxa-border-soft)">' +
+                                '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+                                        '<span class="nxa-badge nxa-badge--' + variant + '" aria-hidden="true">' + icon + ' ' + esc( label ) + '</span>' +
+                                        '<span style="font-size:12px;color:var(--nxa-muted)">' + esc( bits.join( ' · ' ) || '—' ) + '</span>' +
+                                '</div>' +
+                                ( error ? '<p style="margin:6px 0 0;font-size:12.5px;color:var(--nxa-err-text);overflow-wrap:anywhere">' + esc( error ) + '</p>' : '' ) +
+                        '</div>';
+        }
+
+        function agentDrawerModal() {
+                return qs( '#nxa-agent-drawer' );
+        }
+
+        /** Markup del drawer (una sola volta): stesse classi di #nxa-modal. */
+        function ensureAgentDrawer() {
+                var modal = agentDrawerModal();
+                if ( modal ) {
+                        return modal;
+                }
+                modal = el(
+                        '<div id="nxa-agent-drawer" class="nxa-modal" hidden role="dialog" aria-modal="true" aria-labelledby="nxa-agent-drawer-title">' +
+                                '<div class="nxa-modal__box">' +
+                                        '<div class="nxa-modal__head">' +
+                                                '<h2 id="nxa-agent-drawer-title">Cosa sta facendo</h2>' +
+                                                '<button type="button" class="nxa-modal__close" aria-label="Chiudi finestra">×</button>' +
+                                        '</div>' +
+                                        '<div class="nxa-modal__body" id="nxa-agent-drawer-body"></div>' +
+                                '</div>' +
+                        '</div>'
+                );
+                document.body.appendChild( modal );
+
+                modal.addEventListener( 'click', function ( ev ) {
+                        if ( ev.target === modal || ( ev.target.classList && ev.target.classList.contains( 'nxa-modal__close' ) ) ) {
+                                closeAgentDrawer();
+                        }
+                } );
+                document.addEventListener( 'keydown', function ( ev ) {
+                        // Tab confinato nel dialog; ESC chiude (coerente con #nxa-modal).
+                        nxaModalTrapTab( ev, modal );
+                        if ( ev.key === 'Escape' && ! modal.hidden ) {
+                                closeAgentDrawer();
+                        }
+                } );
+                // Delega retry DEL DRAWER (i retry "pagina" hanno la delega globale).
+                qs( '#nxa-agent-drawer-body', modal ).addEventListener( 'click', function ( ev ) {
+                        var btn = ( ev.target && ev.target.closest ) ? ev.target.closest( '.nxa-retry' ) : null;
+                        if ( ! btn || btn.disabled ) {
+                                return;
+                        }
+                        var key = String( btn.getAttribute( 'data-nxa-retry' ) || '' );
+                        var fn = {
+                                'drawer-live':      loadAgentDrawerLive,
+                                'drawer-diag':      loadAgentDrawerDiagnostics,
+                                'drawer-activity':  loadAgentDrawerActivity
+                        }[ key ];
+                        if ( ! fn ) {
+                                window.console.warn( '[Nexus News AI] Retry drawer sconosciuto: "' + key + '"' );
+                                return;
+                        }
+                        setBtnLoading( btn, true, nxaT( 'Attendi…' ) );
+                        Promise.resolve( fn() ).catch( function ( err ) {
+                                window.console.warn( '[Nexus] drawer retry ' + key + ':', err );
+                        } );
+                } );
+                return modal;
+        }
+
+        function stopAgentDrawerPolling() {
+                if ( agentDrawerTimer ) {
+                        window.clearInterval( agentDrawerTimer );
+                        agentDrawerTimer = null;
+                }
+        }
+
+        /** Chiusura: polling fermo, focus ripristinato (stesso contratto del wizard). */
+        function closeAgentDrawer() {
+                stopAgentDrawerPolling();
+                agentDrawerAgent = null;
+                var modal = agentDrawerModal();
+                if ( modal ) {
+                        modal.hidden = true;
+                }
+                document.body.classList.remove( 'nxa-modal-open' );
+                nxaModalRestoreFocus();
+        }
+
+        function openAgentDrawer( agent ) {
+                var a = agent || {};
+                var modal = ensureAgentDrawer();
+                agentDrawerAgent = { id: num( pick( a, 'id' ) ), name: String( pick( a, 'name' ) || ( 'Agente #' + num( pick( a, 'id' ) ) ) ) };
+                var title = qs( '#nxa-agent-drawer-title', modal );
+                if ( title ) {
+                        // i18n: pattern dizionario 'Cosa sta facendo: (.+)'.
+                        title.textContent = nxaT( 'Cosa sta facendo: ' + agentDrawerAgent.name );
+                }
+                qs( '#nxa-agent-drawer-body', modal ).innerHTML =
+                        '<div id="nxa-drawer-live"><div class="nxa-skeleton"></div></div>' +
+                        drawerSection( 'Ultime run', 'nxa-drawer-runs' ) +
+                        drawerSection( 'Verifica: perché non vedi articoli?', 'nxa-drawer-verdict' ) +
+                        drawerSection( 'Attività recenti', 'nxa-drawer-activity' );
+                if ( modal.hidden ) {
+                        nxaModalRememberFocus();
+                }
+                modal.hidden = false;
+                document.body.classList.add( 'nxa-modal-open' );
+
+                loadAgentDrawerLive();
+                loadAgentDrawerDiagnostics();
+                loadAgentDrawerActivity();
+                startAgentDrawerPolling();
+        }
+
+        /** Intestazione di sezione (stile h4 di chiefNoteBlockHtml) + contenitore. */
+        function drawerSection( title, id ) {
+                return '<h3 style="margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">' + esc( title ) + '</h3>' +
+                        '<div id="' + id + '"><div class="nxa-skeleton"></div></div>';
+        }
+
+        function startAgentDrawerPolling() {
+                stopAgentDrawerPolling();
+                agentDrawerTimer = window.setInterval( agentDrawerTick, AGENT_DRAWER_POLL_MS );
+        }
+
+        /**
+         * Un tick del polling live del drawer: stop difensivo se il drawer è
+         * stato chiuso (doppia guardia oltre ai listener di chiusura), skip a
+         * tab nascosta e anti-sovrapposizione — stesso schema della live strip.
+         */
+        function agentDrawerTick() {
+                var modal = agentDrawerModal();
+                if ( ! modal || modal.hidden ) {
+                        stopAgentDrawerPolling();
+                        return;
+                }
+                if ( document.hidden || agentDrawerLiveInFlight ) {
+                        return;
+                }
+                loadAgentDrawerLive();
+        }
+
+        /** LIVE: una lettura /live → riga runtime dell'agente del drawer. */
+        function loadAgentDrawerLive() {
+                var box = qs( '#nxa-drawer-live' );
+                if ( ! box || ! agentDrawerAgent ) {
+                        return Promise.resolve();
+                }
+                agentDrawerLiveInFlight = true;
+                return api( 'live' ).then( function ( payload ) {
+                        agentDrawerLiveInFlight = false;
+                        renderAgentDrawerLive( payload );
+                } ).catch( function ( err ) {
+                        agentDrawerLiveInFlight = false;
+                        if ( ! agentDrawerModal() || agentDrawerModal().hidden || ! agentDrawerAgent ) {
+                                return;
+                        }
+                        if ( err && err.status === 404 ) {
+                                // /live assente (plugin v1.1.4): riga onesta, niente polling inutile.
+                                box.innerHTML = '<p style="margin:0;font-size:13px;color:var(--nxa-muted)">Stato live non disponibile in questa versione del plugin.</p>';
+                                stopAgentDrawerPolling();
+                                return;
+                        }
+                        box.innerHTML = errorState( '⚠️', 'Stato live non disponibile', err.message || '', 'drawer-live' );
+                        window.console.warn( '[Nexus] drawer live:', err );
+                } );
+        }
+
+        /** Render LIVE difensivo: agente mancante nel payload → stato onesto. */
+        function renderAgentDrawerLive( payload ) {
+                var box = qs( '#nxa-drawer-live' );
+                if ( ! box || ! agentDrawerAgent ) {
+                        return;
+                }
+                var d = unwrap( payload ) || {};
+                var agents = Array.isArray( d.agents ) ? d.agents : [];
+                var row = null;
+                for ( var i = 0; i < agents.length; i++ ) {
+                        if ( agents[ i ] && num( pick( agents[ i ], 'id' ) ) === agentDrawerAgent.id ) {
+                                row = agents[ i ];
+                                break;
+                        }
+                }
+                if ( ! row ) {
+                        box.innerHTML = '<p style="margin:0;font-size:13px;color:var(--nxa-muted)">Agente non presente nello stato live (eliminato o runtime non ancora avviato).</p>';
+                        return;
+                }
+                var status = String( pick( row, 'status' ) || '' ).toLowerCase();
+                var isRunning = !!row.running;
+                var dotColor = isRunning ? 'var(--nxa-ok-text)' : ( status === 'error' ? 'var(--nxa-err-text)' : 'var(--nxa-warn-text)' );
+                var today = ( row.today && typeof row.today === 'object' ) ? row.today : {};
+                var last = liveLastText( row );
+                box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+                                        '<span class="nxa-dot" style="background:' + dotColor + ( isRunning ? ';animation:nxa-pulse 1.6s ease infinite' : '' ) + '" aria-hidden="true"></span>' +
+                                        '<strong>' + esc( String( pick( row, 'name' ) || agentDrawerAgent.name ) ) + '</strong>' +
+                                        '<span class="nxa-badge nxa-badge--' + ( isRunning ? 'success' : ( status === 'error' ? 'error' : 'neutral' ) ) + '">' + esc( isRunning ? 'Al lavoro' : ( status === 'paused' ? 'In pausa' : ( status === 'error' ? 'Errore' : 'In attesa' ) ) ) + '</span>' +
+                                '</div>' +
+                                '<p style="margin:8px 0 2px;font-size:13.5px">' + esc( liveStepText( row ) ) + '</p>' +
+                                ( last ? '<p style="margin:2px 0;font-size:12px;color:var(--nxa-muted)">' + esc( last ) + '</p>' : '' ) +
+                                '<p style="margin:4px 0 0;font-size:12px;color:var(--nxa-muted)">' +
+                                        esc( fmt( pick( today, 'articles' ) ) + ' articoli oggi · ' + fmt( pick( today, 'runs' ) ) + ' run oggi' ) +
+                                '</p>';
+        }
+
+        /**
+         * Diagnostica (PC1): una fetch → due sezioni (runs + verdict/last_errors).
+         * 404 = endpoint non ancora presente (altre branch in parallelo): sezione
+         * con spiegazione onesta, MAI toast in loop né crash.
+         */
+        function loadAgentDrawerDiagnostics() {
+                var runsBox = qs( '#nxa-drawer-runs' );
+                var verdictBox = qs( '#nxa-drawer-verdict' );
+                if ( ( ! runsBox && ! verdictBox ) || ! agentDrawerAgent ) {
+                        return Promise.resolve();
+                }
+                return api( 'agents/' + agentDrawerAgent.id + '/diagnostics' ).then( function ( payload ) {
+                        if ( ! agentDrawerModal() || agentDrawerModal().hidden ) {
+                                return;
+                        }
+                        var d = unwrap( payload ) || {};
+                        var runs = Array.isArray( d.runs ) ? d.runs : [];
+                        if ( runsBox ) {
+                                runsBox.innerHTML = runs.length
+                                        ? runs.map( agentRunRowHtml ).join( '' )
+                                        : '<p style="margin:0;font-size:13px;color:var(--nxa-muted)">Nessun run registrato: premi ▶ Avvia sulla card per il primo giro.</p>';
+                        }
+                        if ( verdictBox ) {
+                                var verdict = Array.isArray( d.verdict ) ? d.verdict : [];
+                                var lastErrors = Array.isArray( d.last_errors ) ? d.last_errors : [];
+                                var html = '';
+                                if ( verdict.length ) {
+                                        for ( var i = 0; i < verdict.length; i++ ) {
+                                                html += verdictItemHtml( verdict[ i ] );
+                                        }
+                                } else {
+                                        html += '<p style="margin:0;font-size:13px;color:var(--nxa-muted)">Nessuna verifica disponibile.</p>';
+                                }
+                                if ( lastErrors.length ) {
+                                        html += '<p style="margin:12px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Ultimi errori</p>';
+                                        for ( var j = 0; j < lastErrors.length; j++ ) {
+                                                var le = lastErrors[ j ] || {};
+                                                html += '<p style="margin:0 0 6px;font-size:12.5px;color:var(--nxa-err-text);overflow-wrap:anywhere">' +
+                                                        esc( String( pick( le, 'detail' ) || '' ) ) +
+                                                        ' <span style="color:var(--nxa-muted)">· ' + esc( timeAgoIt( pick( le, 'created_at', 'createdAt' ) ) ) + '</span></p>';
+                                        }
+                                }
+                                verdictBox.innerHTML = html;
+                        }
+                } ).catch( function ( err ) {
+                        if ( ! agentDrawerModal() || agentDrawerModal().hidden || ! agentDrawerAgent ) {
+                                return;
+                        }
+                        var message = ( err && err.status === 404 )
+                                ? 'Endpoint diagnostica non presente in questa versione del plugin.'
+                                : ( err && err.message ? err.message : '' );
+                        if ( runsBox ) {
+                                runsBox.innerHTML = errorState( '⚠️', 'Diagnostica non disponibile', message, 'drawer-diag' );
+                        }
+                        if ( verdictBox ) {
+                                verdictBox.innerHTML = errorState( '⚠️', 'Verifica non disponibile', message, 'drawer-diag' );
+                        }
+                        window.console.warn( '[Nexus] drawer diagnostics:', err );
+                } );
+        }
+
+        /** ATTIVITÀ: ultime 20 attività del singolo agente (route esistente). */
+        function loadAgentDrawerActivity() {
+                var box = qs( '#nxa-drawer-activity' );
+                if ( ! box || ! agentDrawerAgent ) {
+                        return Promise.resolve();
+                }
+                return api( 'activity?agent_id=' + agentDrawerAgent.id + '&limit=20' ).then( function ( payload ) {
+                        if ( ! agentDrawerModal() || agentDrawerModal().hidden ) {
+                                return;
+                        }
+                        var items = getList( payload, [ 'activity', 'logs', 'items' ] );
+                        box.innerHTML = items.length
+                                ? items.map( activityItemHtml ).join( '' )
+                                : emptyState( '📰', 'Nessuna attività per questo agente', 'Comparirà appena l\'agente lavora.' );
+                } ).catch( function ( err ) {
+                        if ( ! agentDrawerModal() || agentDrawerModal().hidden || ! agentDrawerAgent ) {
+                                return;
+                        }
+                        box.innerHTML = errorState( '⚠️', 'Impossibile caricare l’attività', err.message || '', 'drawer-activity' );
+                        window.console.warn( '[Nexus] drawer activity:', err );
+                } );
         }
 
         /* ------------------- EDITOR AGENTE (v1.0.7) ------------------- */
@@ -3898,7 +4416,8 @@
                         }
                 } ).catch( function ( err ) {
                         list.removeAttribute( 'aria-busy' );
-                        list.innerHTML = emptyState( '⚠️', 'Impossibile caricare la coda', err.message || '' );
+                        // v1.1.16 (WE5): errore con Riprova (prima solo messaggio).
+                        list.innerHTML = errorState( '⚠️', 'Impossibile caricare la coda', err.message || '', 'queue' );
                         window.console.warn( '[Nexus] coda:', err );
                 } );
         }
@@ -4051,7 +4570,8 @@
                                 ? items.map( activityItemHtml ).join( '' )
                                 : emptyState( '📰', 'Nessuna attività registrata', 'L’attività degli agenti apparirà qui in tempo reale.' );
                 } ).catch( function ( err ) {
-                        container.innerHTML = emptyState( '⚠️', 'Impossibile caricare l’attività', err.message || '' );
+                        // v1.1.16 (WE5): errore con Riprova (prima solo messaggio).
+                        container.innerHTML = errorState( '⚠️', 'Impossibile caricare l’attività', err.message || '', 'activity' );
                         window.console.warn( '[Nexus] attività:', err );
                 } );
         }
@@ -4358,7 +4878,8 @@
                                 ? runs.map( wireRunHtml ).join( '' )
                                 : emptyState( '🕸️', 'Nessuna esecuzione del Wire', 'Avvia la prima redazione collettiva qui sopra.' );
                 } ).catch( function ( err ) {
-                        container.innerHTML = emptyState( '⚠️', 'Impossibile caricare lo storico', err.message || '' );
+                        // v1.1.16 (WE5): errore con Riprova (prima solo messaggio).
+                        container.innerHTML = errorState( '⚠️', 'Impossibile caricare lo storico', err.message || '', 'wire' );
                         window.console.warn( '[Nexus] wire runs:', err );
                 } );
         }
@@ -4368,9 +4889,12 @@
                 if ( form ) {
                         var input = qs( '#nxa-wire-topic', form ) || qs( '#nxa-wire-topic' );
                         var submit = qs( 'button[type="submit"]', form ) || qs( 'button', form );
-                        var phasesBox = null;
-                        var phaseTimer = null;
-                        var phaseIdx = 0;
+                        // v1.1.16 (WE2): box delle fasi REALI + polling /live. Niente più
+                        // lista WIRE_PHASES avanzata su timer 15s (slegata dallo stato
+                        // vero): ogni tick legge lo step runtime di ogni agente.
+                        var liveBox = null;
+                        var liveTimer = null;
+                        var liveInFlight = false;
 
                         // suggerimenti argomenti (fedeli al pannello React)
                         if ( input && ! qs( '#nxa-wire-ideas' ) ) {
@@ -4399,14 +4923,66 @@
                                 syncState(); // stato iniziale: disabilitato se l'argomento manca
                         }
 
-                        var clearPhases = function () {
-                                if ( phaseTimer ) {
-                                        window.clearInterval( phaseTimer );
-                                        phaseTimer = null;
+                        /** Riga onesta quando il runtime non ha (ancora) agenti al lavoro. */
+                        var wireLiveIdleHtml = function () {
+                                return '<span class="nxa-spinner" aria-hidden="true"></span> ' + esc( nxaT( 'Avvio della pipeline…' ) ) +
+                                        '<br><small>' + esc( nxaT( 'La redazione collettiva impiega 1-3 minuti: non chiudere la pagina.' ) ) + '</small>';
+                        };
+
+                        /** Render del box: FASI REALI, una riga per agente al lavoro
+                         *  (nome + step label corrente da /live); runtime vuoto → idle. */
+                        var renderWireLive = function ( payload ) {
+                                if ( ! liveBox ) {
+                                        return;
                                 }
-                                if ( phasesBox && phasesBox.parentNode ) {
-                                        phasesBox.parentNode.removeChild( phasesBox );
-                                        phasesBox = null;
+                                var d = unwrap( payload ) || {};
+                                var agents = Array.isArray( d.agents ) ? d.agents : [];
+                                var rows = '';
+                                for ( var i = 0; i < agents.length; i++ ) {
+                                        var a = agents[ i ];
+                                        if ( ! a || ! a.running ) {
+                                                continue;
+                                        }
+                                        var name = String( pick( a, 'name' ) || ( 'Agente #' + num( pick( a, 'id' ) ) ) );
+                                        rows += '<div style="margin-top:6px"><strong>' + esc( name ) + '</strong> — ' + esc( liveStepText( a ) ) + '</div>';
+                                }
+                                if ( ! rows ) {
+                                        liveBox.innerHTML = wireLiveIdleHtml();
+                                        return;
+                                }
+                                liveBox.innerHTML = '<span class="nxa-spinner" aria-hidden="true"></span> <strong>' + esc( nxaT( 'Redazione al lavoro' ) ) + '</strong>' +
+                                        rows +
+                                        '<br><small>' + esc( nxaT( 'La redazione collettiva impiega 1-3 minuti: non chiudere la pagina.' ) ) + '</small>';
+                        };
+
+                        /** Un tick di polling: guardia data-running (run concluso → stop),
+                         *  anti-sovrapposizione e skip a tab nascosta, errori SOLO in
+                         *  console (il polling non deve fare spam di toast). */
+                        var wireLiveTick = function () {
+                                if ( ! form.getAttribute( 'data-running' ) ) {
+                                        return;
+                                }
+                                if ( liveInFlight || document.hidden || ! liveBox ) {
+                                        return;
+                                }
+                                liveInFlight = true;
+                                api( 'live' ).then( function ( payload ) {
+                                        liveInFlight = false;
+                                        renderWireLive( payload );
+                                } ).catch( function ( err ) {
+                                        liveInFlight = false;
+                                        window.console.warn( '[Nexus] wire live:', err );
+                                } );
+                        };
+
+                        var clearWireLive = function () {
+                                if ( liveTimer ) {
+                                        window.clearInterval( liveTimer );
+                                        liveTimer = null;
+                                }
+                                if ( liveBox && liveBox.parentNode ) {
+                                        liveBox.parentNode.removeChild( liveBox );
+                                        liveBox = null;
                                 }
                         };
 
@@ -4423,19 +4999,14 @@
                                         input.disabled = true;
                                 }
 
-                                // fasi animate: la redazione impiega 1-3 minuti
-                                phasesBox = el( '<div class="nxa-wire-status" role="status"></div>' );
-                                phaseIdx = 0;
-                                phasesBox.innerHTML = '<span class="nxa-spinner" aria-hidden="true"></span> ' + esc( WIRE_PHASES[ 0 ] ) +
-                                        '<br><small>La redazione collettiva impiega 1-3 minuti: non chiudere la pagina.</small>';
-                                form.appendChild( phasesBox );
-                                phaseTimer = window.setInterval( function () {
-                                        phaseIdx = Math.min( phaseIdx + 1, WIRE_PHASES.length - 1 );
-                                        if ( phasesBox ) {
-                                                phasesBox.innerHTML = '<span class="nxa-spinner" aria-hidden="true"></span> ' + esc( WIRE_PHASES[ phaseIdx ] ) +
-                                                        '<br><small>La redazione collettiva impiega 1-3 minuti: non chiudere la pagina.</small>';
-                                        }
-                                }, 15000 );
+                                // v1.1.16 (WE2): fasi REALI — prima lettura immediata + poll /live
+                                // ogni 5s finché POST /wire/run è in volo; la risposta del POST
+                                // porta il risultato vero come prima.
+                                liveBox = el( '<div class="nxa-wire-status" role="status" aria-live="polite"></div>' );
+                                liveBox.innerHTML = wireLiveIdleHtml();
+                                form.appendChild( liveBox );
+                                wireLiveTick();
+                                liveTimer = window.setInterval( wireLiveTick, 5000 );
 
                                 api( 'wire/run', { method: 'POST', body: { topic: topic } } ).then( function ( payload ) {
                                         var d = unwrap( payload ) || {};
@@ -4450,7 +5021,7 @@
                                 } ).catch( function ( err ) {
                                         apiErrorToast( err, 'Redazione interrotta' );
                                 } ).then( function () {
-                                        clearPhases();
+                                        clearWireLive();
                                         form.removeAttribute( 'data-running' );
                                         setBtnLoading( submit, false );
                                         if ( input ) {
@@ -6134,6 +6705,8 @@
                 booted = true;
                 injectFallbackCss();
                 ensureToastStack();
+                // v1.1.16 (WE5): delega unica per i bottoni "Riprova" degli stati d'errore.
+                bindRetryButtons();
 
                 var pageEl = qs( '.wrap.nexus-admin[data-page]' ) || qs( '[data-page]' );
                 var page = pageEl ? String( pageEl.getAttribute( 'data-page' ) || '' ).trim() : '';
@@ -6311,7 +6884,10 @@
                 }
                 var rss = qs( '#nxa-obs-rss', modal );
                 if ( rss ) {
-                        rss.checked = true;
+                        // v1.1.16 (WE4): ONESTO — le fonti di esempio NON vengono più
+                        // preselezionate: diventano config di produzione solo con una
+                        // spunta esplicita dell'utente (diagnostica P16-DIAG/D4).
+                        rss.checked = false;
                 }
                 var fill = qs( '#nxa-obs-progressbar-fill', modal );
                 if ( fill ) {
@@ -6434,11 +7010,148 @@
         }
 
         /**
+         * v1.1.16 (WE4) — "Dove finiscono gli articoli": mapping delle 3 scelte
+         * verso le chiavi ESATTE della whitelist PUT /settings (rest.php
+         * sanitize_settings_payload): mode (semi_autonomous|fully_autonomous),
+         * post_status (publish|draft|pending), enable_wp_posts (0/1).
+         *  - nexus   → Solo Nexus: SOLO mode=semi_autonomous (il resto invariato):
+         *              gli articoli nascono e restano in Nexus finché approvati;
+         *  - draft   → Bozze WordPress: post_status=draft + enable_wp_posts=1
+         *              + mode=fully_autonomous (il Publisher scrive post WP in bozza);
+         *  - publish → Pubblica direttamente: post_status=publish + enable_wp_posts=1
+         *              + mode=fully_autonomous (post WP pubblicati all'approvazione).
+         */
+        var NXA_OBS_DESTINATIONS = {
+                nexus:   { mode: 'semi_autonomous' },
+                draft:   { mode: 'fully_autonomous', post_status: 'draft',   enable_wp_posts: 1 },
+                publish: { mode: 'fully_autonomous', post_status: 'publish', enable_wp_posts: 1 }
+        };
+
+        /** Impostazioni correnti (una sola GET /settings per vista, difensiva). */
+        var nxaObsSettings = null;
+
+        /** Ultima destinazione EFFETTIVAMENTE salvata ('' = mai / errore). */
+        var nxaObsDestSaved = '';
+
+        function nxaObsFetchSettings() {
+                if ( nxaObsSettings ) {
+                        return Promise.resolve( nxaObsSettings );
+                }
+                return api( 'settings' ).then( function ( payload ) {
+                        nxaObsSettings = unwrap( payload ) || {};
+                        return nxaObsSettings;
+                } ).catch( function ( err ) {
+                        // Assenza di settings = note dinamiche disattivate, mai crash.
+                        window.console.warn( '[Nexus] obs settings:', err );
+                        return null;
+                } );
+        }
+
+        /** Radio "Dove finiscono gli articoli" → {key, body} (null se assente). */
+        function nxaObsDestination() {
+                var modal = nxaOnboardingModal();
+                var checked = modal ? qs( 'input[name="nxa-obs-destination"]:checked', modal ) : null;
+                if ( ! checked ) {
+                        return null;
+                }
+                var key = String( checked.value || '' );
+                var body = NXA_OBS_DESTINATIONS[ key ];
+                if ( ! body ) {
+                        return null;
+                }
+                return { key: key, body: body };
+        }
+
+        /**
+         * Salvataggio della destinazione: PUT /settings con il mapping esatto.
+         * Errore NON bloccante → 'err:messaggio' nel riepilogo (stesso contratto
+         * delle fonti RSS). Marcata nel progresso per onestà del passo 3.
+         */
+        function nxaObsSaveDestination( progressEl ) {
+                var choice = nxaObsDestination();
+                if ( ! choice ) {
+                        return Promise.resolve( 'skip' );
+                }
+                if ( progressEl ) {
+                        progressEl.textContent = nxaT( 'Salvo la destinazione degli articoli…' );
+                }
+                return api( 'settings', { method: 'PUT', body: choice.body } ).then( function () {
+                        nxaObsDestSaved = choice.key;
+                        return 'ok';
+                } ).catch( function ( err ) {
+                        return 'err:' + ( ( err && err.message ) ? err.message : '' );
+                } );
+        }
+
+        /** Riga onesta "dove vedere gli articoli" per la destinazione salvata. */
+        function nxaObsDestinationLine( key ) {
+                var lines = {
+                        nexus:   'Gli articoli finiranno nella Coda Approvazioni di Nexus: li approvi tu, uno a uno.',
+                        draft:   'Gli articoli approvati finiranno come Bozze in WordPress: le trovi in Articoli → Bozze.',
+                        publish: 'Gli articoli approvati verranno pubblicati direttamente su WordPress.'
+                };
+                return lines[ key ] || '';
+        }
+
+        /**
+         * Nota informativa del passo 2 (v1.1.16 WE4): visibile SOLO con la
+         * combinazione semi_autonomous + post_status=publish — l'utente deve
+         * sapere che con la scelta "Solo Nexus" nulla arriva su WordPress
+         * finché non approva, anche se le impostazioni dicono "publish".
+         */
+        function nxaObsSyncDestNote() {
+                var modal = nxaOnboardingModal();
+                var note = modal ? qs( '#nxa-obs-dest-note', modal ) : null;
+                if ( ! note ) {
+                        return;
+                }
+                var checked = qs( 'input[name="nxa-obs-destination"]:checked', modal );
+                var show = !!( checked && checked.value === 'nexus' &&
+                        nxaObsSettings && String( nxaObsSettings.post_status || '' ) === 'publish' );
+                note.hidden = !show;
+        }
+
+        /**
+         * Passo 4 — pannello "Prossimi passi" (v1.1.16 WE4): primo giro cron
+         * onesto (intervallo di raccolta reale dalle impostazioni), dove vedere
+         * gli articoli in base alla destinazione salvata, run immediato con
+         * ▶ Avvia e link alla pagina Agenti.
+         */
+        function nxaObsRenderNextSteps( destResult ) {
+                var modal = nxaOnboardingModal();
+                var box = modal ? qs( '#nxa-obs-next', modal ) : null;
+                if ( ! box ) {
+                        return;
+                }
+                var items = [];
+                var interval = nxaObsSettings ? num( nxaObsSettings.collect_interval ) : 0;
+                items.push( interval > 0
+                        // i18n: pattern 'I tuoi agenti partiranno da soli entro il prossimo giro di raccolta \(circa ogni (\d+) minuti\)\.'
+                        ? nxaT( 'I tuoi agenti partiranno da soli entro il prossimo giro di raccolta (circa ogni ' + Math.max( 1, Math.round( interval / 60 ) ) + ' minuti).' )
+                        : nxaT( 'I tuoi agenti partiranno da soli entro il prossimo giro di raccolta.' ) );
+                if ( destResult === 'ok' && nxaObsDestSaved ) {
+                        var line = nxaObsDestinationLine( nxaObsDestSaved );
+                        if ( line ) {
+                                items.push( nxaT( line ) );
+                        }
+                }
+                items.push( nxaT( 'Vuoi un run subito? Apri la pagina Agenti e premi ▶ Avvia su un agente (o "Dettagli" per vedere cosa sta facendo).' ) );
+                var html = '<ul class="nxa-obs-next-list">';
+                for ( var i = 0; i < items.length; i++ ) {
+                        html += '<li>' + esc( items[ i ] ) + '</li>';
+                }
+                html += '</ul>';
+                html += '<p style="margin:10px 0 0"><a class="nxa-btn nxa-btn-primary" href="admin.php?page=nexus-agents">' + esc( nxaT( 'Apri la pagina Agenti' ) ) + '</a></p>';
+                box.innerHTML = html;
+        }
+
+        /**
          * Esecuzione del wizard: sequenza di POST /agents (una promessa per
-         * agente, errori NON bloccanti raccolti per il riepilogo) + eventuale
-         * PUT /settings { global_rss_sources } (contratto branch R1: stringa
-         * una URL per riga). Al termine: riepilogo onesto, loadAgents(true),
-         * passo 4.
+         * agente, errori NON bloccanti raccolti per il riepilogo) + PUT /settings
+         * della destinazione "Dove finiscono gli articoli" (v1.1.16 WE4) +
+         * eventuale PUT /settings { global_rss_sources } (contratto branch R1:
+         * stringa una URL per riga). Al termine: riepilogo onesto + "Prossimi
+         * passi", loadAgents(true), passo 4.
          */
         function nxaOnboardingRun() {
                 var modal  = nxaOnboardingModal();
@@ -6517,8 +7230,12 @@
                         if ( fillEl ) {
                                 fillEl.style.width = '100%';
                         }
+                        // v1.1.16 (WE4): "Dove finiscono gli articoli" — prima gli agenti,
+                        // poi la destinazione (PUT /settings con mode/post_status/enable_wp_posts).
+                        return nxaObsSaveDestination( progressEl );
+                } ).then( function ( destResult ) {
                         if ( ! wantRss ) {
-                                return 'skip';
+                                return { dest: destResult, rss: 'skip' };
                         }
                         if ( progressEl ) {
                                 progressEl.textContent = nxaT( 'Salvo le fonti RSS…' );
@@ -6527,11 +7244,13 @@
                         // una URL per riga. Se la chiave non è (ancora) in whitelist
                         // lato REST l'errore reale finisce nel riepilogo: mai in silenzio.
                         return api( 'settings', { method: 'PUT', body: { global_rss_sources: rssValue } } )
-                                .then( function () { return 'ok'; } )
+                                .then( function () { return { dest: destResult, rss: 'ok' }; } )
                                 .catch( function ( err ) {
-                                        return 'err:' + ( ( err && err.message ) ? err.message : '' );
+                                        return { dest: destResult, rss: 'err:' + ( ( err && err.message ) ? err.message : '' ) };
                                 } );
-                } ).then( function ( rssResult ) {
+                } ).then( function ( results ) {
+                        var destResult = results ? results.dest : 'skip';
+                        var rssResult = results ? results.rss : 'skip';
                         onboardingRunning = false;
                         if ( progressEl ) {
                                 progressEl.textContent = nxaT( 'Creazione completata.' );
@@ -6548,6 +7267,11 @@
                                         }
                                         html += '</ul>';
                                 }
+                                if ( destResult === 'ok' ) {
+                                        html += '<p class="nxa-obs-summary-row is-ok">✓ ' + esc( nxaT( 'Destinazione articoli salvata nelle impostazioni.' ) ) + '</p>';
+                                } else if ( String( destResult || '' ).indexOf( 'err:' ) === 0 ) {
+                                        html += '<p class="nxa-obs-summary-row is-err">✕ ' + esc( nxaT( 'Destinazione articoli non salvata: ' ) + String( destResult || '' ).replace( /^err:/, '' ) ) + '</p>';
+                                }
                                 if ( wantRss && rssResult === 'ok' ) {
                                         html += '<p class="nxa-obs-summary-row is-ok">✓ ' + esc( nxaT( 'Fonti RSS salvate nelle impostazioni.' ) ) + '</p>';
                                 } else if ( wantRss ) {
@@ -6555,6 +7279,8 @@
                                 }
                                 summary.innerHTML = html;
                         }
+                        // v1.1.16 (WE4): pannello "Prossimi passi" del passo 4.
+                        nxaObsRenderNextSteps( destResult );
                         // Griglia dati pagina ricaricata dietro il wizard (stesso
                         // pattern delle altre creazioni: loadAgents(true)).
                         loadAgents( true );
@@ -6580,6 +7306,19 @@
                         if ( ev.target && ev.target.name === 'nxa-obs-preset' ) {
                                 nxaOnboardingSyncCards();
                         }
+                        // v1.1.16 (WE4): cambio destinazione → nota combo semi_autonomous
+                        // + post_status=publish (richiede le settings: fetch una volta sola).
+                        if ( ev.target && ev.target.name === 'nxa-obs-destination' ) {
+                                nxaObsFetchSettings().then( function () {
+                                        nxaObsSyncDestNote();
+                                } );
+                        }
+                } );
+
+                // v1.1.16 (WE4): settings pre-caricate al binding (nota destinazione
+                // e primo giro cron dei "Prossimi passi"); errore → resta null (difensiva).
+                nxaObsFetchSettings().then( function () {
+                        nxaObsSyncDestNote();
                 } );
 
                 // Chiusure: X, Annulla (solo nei passi 1-2), "Vedi la redazione", ESC.

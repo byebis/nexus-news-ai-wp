@@ -99,6 +99,12 @@
  * v1.1.11) usa per aprire in automatico il wizard di onboarding. Il link è
  * un semplice anchor: nessun JS nuovo in questa vista.
  *
+ * v1.1.16 (WE5) — errori onesti: la griglia statistiche porta id
+ * #nxa-stats-grid e il contenitore vuoto #nxa-stats-error (subito dopo):
+ * a GET /stats fallita admin.js lo riempie con messaggio + bottone
+ * "Riprova" (delega .nxa-retry), a successo lo ripulisce. Feed attività e
+ * mini agenti hanno lo stesso trattamento lato JS (errorState + retry).
+ *
  * @package Nexus_News_AI
  */
 
@@ -252,7 +258,10 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 </div>
         <?php endif; ?>
 
-        <div class="nxa-stat-grid">
+        <!-- v1.1.16 (WE5): #nxa-stats-error è il contenitore dello stato d'errore
+             con bottone "Riprova" per GET /stats (loadStats di admin.js lo riempie
+             solo a fetch fallita e lo ripulisce a successo). -->
+        <div class="nxa-stat-grid" id="nxa-stats-grid">
                 <div class="nxa-stat-card">
                         <span class="nxa-stat-value" id="nxa-stat-published">—</span>
                         <span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span>
@@ -353,6 +362,7 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 </div>
                 <?php endif; ?>
         </div>
+        <div id="nxa-stats-error"></div>
 
         <?php
         /*

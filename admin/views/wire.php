@@ -11,7 +11,12 @@
  *   mostrando lo spinner "Redazione al lavoro… 3 agenti + direttore" fino
  *   alla risposta (durata: i 3 agenti propongono + il direttore AI fonde).
  *   admin.js inserisce dopo l'input i suggerimenti (#nxa-wire-ideas) e,
- *   durante l'esecuzione, il box fasi (.nxa-wire-status) dentro il form.
+ *   durante l'esecuzione, il box .nxa-wire-status dentro il form.
+ *   v1.1.16 (WE2): il box NON mostra più fasi pre-scritte animate su timer:
+ *   polla GET /live ogni 5s e renderizza le FASI REALI per-agente (nome +
+ *   step label corrente del runtime); runtime vuoto → riga onesta
+ *   "Avvio della pipeline…" con spinner. Alla risposta del POST il box
+ *   viene rimosso e resta il risultato vero (toast + storico ricaricato).
  * - #nxa-wire-runs.nxa-wire-runs: admin.js esegue GET /wire/runs (nexus/v1)
  *   e renderizza la lista dei run, ognuno con: topic, status (badge),
  *   agenti coinvolti, articolo collegato (link) e data (Nexus_Utils::time_ago_it).
@@ -39,6 +44,12 @@
  * dare respiro tra le due sezioni. Nessun wrapper rimosso: la vista non
  * contiene box annidati; nessun id, data-* o selettore consumato da admin.js
  * modificato.
+ *
+ * v1.1.16 (WE2) — fasi REALI: nessuna modifica al markup (il rendering delle
+ * fasi resta tutto in admin.js); aggiornato SOLO il contratto in testa che
+ * descriveva il box .nxa-wire-status come "fasi animate" su timer. Anche lo
+ * storico porta lo stato d'errore con bottone Riprova (delega .nxa-retry
+ * di admin.js, WE5).
  *
  * @package Nexus_News_AI
  */

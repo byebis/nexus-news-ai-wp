@@ -26,17 +26,30 @@
  *               data-include-chief ("1" = il capo è GIÀ nel pacchetto);
  *               value="manual" → il wizard si chiude senza creare nulla;
  *  - Step 2:    #nxa-obs-chief (checkbox capo redattore: mostrato solo se
- *               data-include-chief="0"), #nxa-obs-rss (checkbox fonti) e
+ *               data-include-chief="0"), #nxa-obs-rss (checkbox fonti, dalla
+ *               v1.1.16 NON pre-selezionata: le fonti di esempio diventano
+ *               config di produzione solo con una spunta esplicita) e
  *               #nxa-obs-rss-textarea (EDITABILE, precompilata qui sotto
  *               con feed d'esempio REALI: i dati sono visibili e modificabili,
  *               MAI applicati in silenzio lato PHP — il salvataggio avviene
  *               SOLO se la checkbox è attiva, via PUT /settings con la chiave
  *               `global_rss_sources`, STRINGA una URL per riga — contratto
  *               con la branch fonti R1);
+ *  - Step 2bis (v1.1.16 WE4): radio name="nxa-obs-destination" — "Dove
+ *               finiscono gli articoli" con mapping ai setting ESISTENTI
+ *               (whitelist PUT /settings): nexus → mode=semi_autonomous;
+ *               draft → post_status=draft + enable_wp_posts=1 +
+ *               mode=fully_autonomous; publish → post_status=publish +
+ *               enable_wp_posts=1 + mode=fully_autonomous. La nota
+ *               #nxa-obs-dest-note (hidden) viene mostrata da admin.js SOLO
+ *               per la combinazione semi_autonomous + post_status=publish;
  *  - Step 3:    #nxa-obs-progress (testo "Creo agente X di N…") e
  *               #nxa-obs-log (righe per agente, una per POST /agents);
  *  - Step 4:    #nxa-obs-summary (riepilogo ONESTO: N creati, eventuali
- *               errori col messaggio REST reale, esito fonti RSS) e
+ *               errori col messaggio REST reale, esito fonti RSS),
+ *               #nxa-obs-next (v1.1.16: pannello "Prossimi passi" — primo
+ *               giro cron reale dall'intervallo di raccolta, dove vedere gli
+ *               articoli, ▶ Avvia per un run immediato) e
  *               #nxa-obs-done (chiude; la griglia è già stata ricaricata).
  *
  * Tutti gli id/classi qui portano prefisso nxa- / nxa-obs- (zero collisioni).
@@ -122,10 +135,53 @@ $nxa_obs_sample_rss = implode(
                                 </span>
                         </label>
 
+                        <!-- v1.1.16 (WE4): "Dove finiscono gli articoli" — scelta esplicita
+                             con mapping ai setting ESISTENTI (mode/post_status/enable_wp_posts,
+                             whitelist PUT /settings — vedi docblock). Salvataggio in
+                             admin.js (nxaOnboardingRun → nxaObsSaveDestination). Nessuna
+                             classe CSS nuova (nexus-admin.css fuori perimetro): riuso
+                             .nxa-obs-option e stili inline a token del design system. -->
+                        <div class="nxa-obs-option" style="display:block;cursor:default">
+                                <span class="nxa-obs-option-text" style="width:100%">
+                                        <strong><?php esc_html_e( 'Dove finiscono gli articoli', 'nexus-news-ai' ); ?></strong>
+                                        <span><?php esc_html_e( 'Scegli dove vedi il risultato del lavoro degli agenti: puoi cambiarlo in ogni momento da Impostazioni → Contenuti e Pubblicazione.', 'nexus-news-ai' ); ?></span>
+                                        <span style="display:flex;flex-direction:column;gap:10px;margin-top:8px" role="radiogroup" aria-label="<?php esc_attr_e( 'Dove finiscono gli articoli', 'nexus-news-ai' ); ?>">
+                                                <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+                                                        <input type="radio" name="nxa-obs-destination" value="nexus" checked="checked" />
+                                                        <span style="display:block">
+                                                                <strong><?php esc_html_e( 'Solo Nexus (approvazione manuale)', 'nexus-news-ai' ); ?></strong><br />
+                                                                <span style="font-size:0.8rem;line-height:1.5;color:var(--nxa-muted)"><?php esc_html_e( 'Gli articoli restano in Nexus: li vedi nella Coda Approvazioni e decidi tu cosa pubblicare. Su WordPress non arriva nulla finché non approvi.', 'nexus-news-ai' ); ?></span>
+                                                        </span>
+                                                </label>
+                                                <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+                                                        <input type="radio" name="nxa-obs-destination" value="draft" />
+                                                        <span style="display:block">
+                                                                <strong><?php esc_html_e( 'Bozze WordPress', 'nexus-news-ai' ); ?></strong><br />
+                                                                <span style="font-size:0.8rem;line-height:1.5;color:var(--nxa-muted)"><?php esc_html_e( 'Gli articoli approvati diventano Bozze in WordPress: le trovi in Articoli → Bozze, pronte per la tua revisione finale.', 'nexus-news-ai' ); ?></span>
+                                                        </span>
+                                                </label>
+                                                <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">
+                                                        <input type="radio" name="nxa-obs-destination" value="publish" />
+                                                        <span style="display:block">
+                                                                <strong><?php esc_html_e( 'Pubblica direttamente', 'nexus-news-ai' ); ?></strong><br />
+                                                                <span style="font-size:0.8rem;line-height:1.5;color:var(--nxa-muted)"><?php esc_html_e( 'Gli articoli approvati vengono pubblicati subito sul sito: li vedi in Articoli → Tutti e nel magazine pubblico.', 'nexus-news-ai' ); ?></span>
+                                                        </span>
+                                                </label>
+                                        </span>
+                                        <!-- Nota combo semi_autonomous + post_status=publish: mostrata
+                                             da admin.js (nxaObsSyncDestNote) SOLO in quel caso. -->
+                                        <span id="nxa-obs-dest-note" hidden style="display:block;margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--nxa-warn-bg);color:var(--nxa-warn-text);font-size:0.8rem;line-height:1.5"><?php esc_html_e( 'Nota: la redazione è semi-autonoma ma le impostazioni attuali pubblicano direttamente su WordPress. Con "Solo Nexus" gli articoli restano comunque nella Coda Approvazioni di Nexus finché non li approvi tu.', 'nexus-news-ai' ); ?></span>
+                                </span>
+                        </div>
+
+                        <!-- v1.1.16 (WE4): checkbox NON più pre-selezionata (le fonti di
+                             esempio non diventano config di produzione in silenzio) e
+                             etichetta esplicita con le 5 fonti che aggiunge. -->
                         <label class="nxa-obs-option">
-                                <input type="checkbox" id="nxa-obs-rss" value="1" checked="checked" />
+                                <input type="checkbox" id="nxa-obs-rss" value="1" />
                                 <span class="nxa-obs-option-text">
                                         <strong><?php esc_html_e( 'Precarica fonti RSS globali di esempio', 'nexus-news-ai' ); ?></strong>
+                                        <span><?php esc_html_e( 'Se non la spunti, nessuna fonte viene salvata: puoi aggiungere le tue fonti dopo, dalla redazione di ogni agente o da Impostazioni. Se la spunti aggiunge queste 5 fonti d’esempio: ANSA (generale), ANSA (politica), Il Post, Il Sole 24 Ore (economia) e Wired.it.', 'nexus-news-ai' ); ?></span>
                                         <span><?php esc_html_e( 'Una URL per riga. Puoi modificare l’elenco qui sotto: verrà salvato tra le impostazioni globali.', 'nexus-news-ai' ); ?></span>
                                 </span>
                         </label>
@@ -139,9 +195,15 @@ $nxa_obs_sample_rss = implode(
                         <ul class="nxa-obs-log" id="nxa-obs-log" aria-live="polite"></ul>
                 </div>
 
-                <!-- STEP 4 — riepilogo onesto. -->
+                <!-- STEP 4 — riepilogo onesto + prossimi passi. -->
                 <div class="nxa-obs-step" data-nxa-obs-step="4" hidden>
                         <div id="nxa-obs-summary" class="nxa-obs-summary" aria-live="polite"></div>
+                        <!-- v1.1.16 (WE4): "Prossimi passi" — compilato da admin.js
+                             (nxaObsRenderNextSteps): primo giro cron reale (intervallo
+                             di raccolta), dove vedere gli articoli in base alla
+                             destinazione salvata e run immediato con ▶ Avvia. -->
+                        <h3 class="nxa-obs-step-title"><?php esc_html_e( 'Prossimi passi', 'nexus-news-ai' ); ?></h3>
+                        <div id="nxa-obs-next"></div>
                 </div>
 
                 <p class="nxa-obs-actions">
