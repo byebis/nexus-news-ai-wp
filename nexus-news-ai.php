@@ -107,6 +107,12 @@ function nexus_deactivate() {
                 Nexus_DB::deactivate_retention();
         }
         wp_clear_scheduled_hook( 'nexus_weekly_digest' );
+
+        // v1.1.15 (WB4): flush canonico delle rewrite rules alla disattivazione
+        // (pattern WP): senza flush le regole /nexus/… e le sitemap restano
+        // nell'option rewrite_rules con il plugin inattivo (soft-404) fino al
+        // prossimo flush naturale.
+        flush_rewrite_rules();
 }
 
 /**
