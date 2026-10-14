@@ -33,6 +33,14 @@
  *    poi pattern) prima di delegare al confirm nativo; il risultato booleano
  *    è invariato e con la mappa vuota (admin in IT) il comportamento è
  *    identico al nativo.
+ * 6. v1.1.15 (WD9): l'observer processa preferenzialmente i NODI NUOVI
+ *    (addedNodes) e i target delle mutazioni di attributo; il full-walk
+ *    della root resta come fallback ma THROTTLED a massimo 1 ogni 10s
+ *    (la dashboard polla ogni ~5s: prima ogni poll ri-attraversava tutto
+ *    il DOM admin). I nodi testo già tradotti e invariati sono marcati
+ *    (WeakMap nodo → ultimo valore visto) e saltati nei giri successivi:
+ *    comportamento idempotente invariato, costo per poll ridotto ai soli
+ *    sottoalberi davvero aggiornati.
  *
  * Anti-loop: durante la sostituzione l'observer è disconnesso; le mutazioni generate
  * dalla traduzione stessa non vengono riprocessate. Skip su script/style/textarea/input testuali.
@@ -50,6 +58,14 @@
         var busy = false;
         var pending = false;
         var observer = null;
+        // v1.1.15 (WD9): code dei nodi nuovi (addedNodes) e dei target di
+        // attributo accumulati tra rAF e flush; marca dei nodi testo già
+        // processati (valore uguale → skip); full-walk di fallback throttled.
+        var addedQueue = [];
+        var attrQueue = [];
+        var seenText = ( typeof WeakMap === 'function' ) ? new WeakMap() : null;
+        var lastFullWalk = 0;
+        var FULL_WALK_MIN_MS = 10000;
 
         /* ---------------- utilità ---------------- */
 
@@ -102,6 +118,14 @@
          */
         function adminMenuEl() {
                 return document.getElementById( 'adminmenu' );
+        }
+
+        /**
+         * v1.1.15 (WD9): millisecondi monotoni quando disponibili (throttle
+         * del full-walk); fallback epoch per ambienti senza performance.now.
+         */
+        function nowMs() {
+                return ( window.performance && window.performance.now ) ? window.performance.now() : ( +new Date() );
         }
 
         function isSkip( el ) {
@@ -253,7 +277,15 @@
                                 current = walker.nextNode();
                         }
                         for ( var i = 0; i < nodes.length; i++ ) {
+                                // v1.1.15 (WD9): nodo già visto con lo stesso valore →
+                                // la ri-traduzione sarebbe un no-op: skip economico.
+                                if ( seenText && seenText.get( nodes[ i ] ) === nodes[ i ].nodeValue ) {
+                                        continue;
+                                }
                                 translateTextNode( nodes[ i ] );
+                                if ( seenText ) {
+                                        seenText.set( nodes[ i ], nodes[ i ].nodeValue );
+                                }
                         }
                 } catch ( e ) {
                         /* degrada con grazia: nessun blocco dell'admin */
@@ -278,45 +310,57 @@
                 }
         }
 
+        /**
+         * v1.1.15 (WD9): processing per-ELEMENTO estratto da translateAttrs e
+         * riusato sui soli target delle mutazioni di attributo (il target È
+         * l'elemento toccato: querySelectorAll su di lui non lo matcherebbe).
+         */
+        function translateElAttrs( el ) {
+                try {
+                        if ( isSkip( el ) ) {
+                                return;
+                        }
+                        var tag = el.nodeName;
+                        var type = ( el.getAttribute( 'type' ) || '' ).toLowerCase();
+
+                        // value: SOLO bottoni (input button/submit), mai input testo/hidden.
+                        if ( ( tag === 'INPUT' ) && ( type === 'button' || type === 'submit' ) ) {
+                                var v = el.value;
+                                var vHit = lookup( v );
+                                if ( vHit ) {
+                                        el.value = v.replace( vHit.trimmed, vHit.translated );
+                                } else {
+                                        var vTranslated = applyPatterns( v );
+                                        if ( vTranslated !== v ) {
+                                                el.value = vTranslated;
+                                        }
+                                }
+                        }
+                        // v1.1.7 (T-C): il placeholder viene tradotto anche sugli
+                        // INPUT: il strtr lato PHP traduce già i placeholder
+                        // nell'HTML server-rendered (attributi inclusi); il
+                        // guard JS creava un'incoerenza (placeholder degli
+                        // input creati da admin.js restati in italiano, es.
+                        // "vuoto = modello globale" nel modal agente).
+                        if ( el.hasAttribute( 'placeholder' ) ) {
+                                setAttrTranslated( el, 'placeholder' );
+                        }
+                        if ( el.hasAttribute( 'title' ) ) {
+                                setAttrTranslated( el, 'title' );
+                        }
+                        if ( el.hasAttribute( 'aria-label' ) ) {
+                                setAttrTranslated( el, 'aria-label' );
+                        }
+                } catch ( e ) {
+                        /* degrada con grazia */
+                }
+        }
+
         function translateAttrs( root ) {
                 try {
                         var els = root.querySelectorAll ? root.querySelectorAll( '[placeholder], [title], [aria-label], input[type="button"], input[type="submit"]' ) : [];
                         for ( var i = 0; i < els.length; i++ ) {
-                                var el = els[ i ];
-                                if ( isSkip( el ) ) {
-                                        continue;
-                                }
-                                var tag = el.nodeName;
-                                var type = ( el.getAttribute( 'type' ) || '' ).toLowerCase();
-
-                                // value: SOLO bottoni (input button/submit), mai input testo/hidden.
-                                if ( ( tag === 'INPUT' ) && ( type === 'button' || type === 'submit' ) ) {
-                                        var v = el.value;
-                                        var vHit = lookup( v );
-                                        if ( vHit ) {
-                                                el.value = v.replace( vHit.trimmed, vHit.translated );
-                                        } else {
-                                                var vTranslated = applyPatterns( v );
-                                                if ( vTranslated !== v ) {
-                                                        el.value = vTranslated;
-                                                }
-                                        }
-                                }
-                                // v1.1.7 (T-C): il placeholder viene tradotto anche sugli
-                                // INPUT: il strtr lato PHP traduce già i placeholder
-                                // nell'HTML server-rendered (attributi inclusi); il
-                                // guard JS creava un'incoerenza (placeholder degli
-                                // input creati da admin.js restati in italiano, es.
-                                // "vuoto = modello globale" nel modal agente).
-                                if ( el.hasAttribute( 'placeholder' ) ) {
-                                        setAttrTranslated( el, 'placeholder' );
-                                }
-                                if ( el.hasAttribute( 'title' ) ) {
-                                        setAttrTranslated( el, 'title' );
-                                }
-                                if ( el.hasAttribute( 'aria-label' ) ) {
-                                        setAttrTranslated( el, 'aria-label' );
-                                }
+                                translateElAttrs( els[ i ] );
                         }
                 } catch ( e ) {
                         /* degrada con grazia */
@@ -325,6 +369,11 @@
 
         /* ---------------- batch di mutazioni ---------------- */
 
+        /**
+         * v1.1.15 (WD9): processa i SOLI nodi passati (addedNodes dell'observer).
+         * Prima del fix era definita ma mai chiamata: flush() ri-attraversava
+         * sempre l'intera root.
+         */
         function processNodes( nodes ) {
                 for ( var i = 0; i < nodes.length; i++ ) {
                         var n = nodes[ i ];
@@ -333,7 +382,13 @@
                         }
                         if ( n.nodeType === 3 ) {
                                 if ( ! isSkip( n.parentNode ) ) {
+                                        if ( seenText && seenText.get( n ) === n.nodeValue ) {
+                                                continue;
+                                        }
                                         translateTextNode( n );
+                                        if ( seenText ) {
+                                                seenText.set( n, n.nodeValue );
+                                        }
                                 }
                         } else if ( n.nodeType === 1 ) {
                                 if ( ! isSkip( n ) ) {
@@ -344,21 +399,60 @@
                 }
         }
 
+        /**
+         * v1.1.15 (WD9): accumula nodi nuovi e target di attributo dal batch di
+         * mutazioni. characterData non è osservata (come prima): i testi cambiati
+         * senza childList emergono solo al full-walk throttled di flush().
+         */
+        function collectMutations( mutations ) {
+                for ( var i = 0; i < mutations.length; i++ ) {
+                        var m = mutations[ i ];
+                        var added = m.addedNodes;
+                        if ( added && added.length ) {
+                                for ( var j = 0; j < added.length; j++ ) {
+                                        if ( added[ j ] ) {
+                                                addedQueue.push( added[ j ] );
+                                        }
+                                }
+                        }
+                        if ( m.type === 'attributes' && m.target && m.target.nodeType === 1 ) {
+                                attrQueue.push( m.target );
+                        }
+                }
+        }
+
         function flush() {
-                if ( busy || ! pending || ! observer ) {
+                if ( busy || ( ! pending && ! addedQueue.length && ! attrQueue.length ) || ! observer ) {
                         return;
                 }
                 pending = false;
                 busy = true;
                 observer.disconnect();
                 try {
-                        // Riprocessa l'intera root: semplice, idempotente e immune a nodi spostati.
-                        walkText( rootEl() );
-                        translateAttrs( rootEl() );
-                        // v1.1.7 (T-C): anche la sidebar (soli nodi testo).
-                        var menu = adminMenuEl();
-                        if ( menu ) {
-                                walkText( menu );
+                        // v1.1.15 (WD9): PRIMA i nodi nuovi e gli attributi toccati
+                        // dalle mutazioni (medesimo walkText/translateAttrs, solo su
+                        // di loro): la dashboard polla ogni ~5s e il flush storico
+                        // ri-attraversava l'intera root a ogni poll.
+                        var added = addedQueue;
+                        var attrs = attrQueue;
+                        addedQueue = [];
+                        attrQueue = [];
+                        processNodes( added );
+                        for ( var i = 0; i < attrs.length; i++ ) {
+                                translateElAttrs( attrs[ i ] );
+                        }
+                        // Fallback THROTTLED: full-walk massimo 1 ogni 10s; i nodi
+                        // testo marcati e invariati vengono saltati (v. walkText).
+                        // Resta idempotente e immune a nodi spostati.
+                        if ( ( nowMs() - lastFullWalk ) >= FULL_WALK_MIN_MS ) {
+                                lastFullWalk = nowMs();
+                                walkText( rootEl() );
+                                translateAttrs( rootEl() );
+                                // v1.1.7 (T-C): anche la sidebar (soli nodi testo).
+                                var menu = adminMenuEl();
+                                if ( menu ) {
+                                        walkText( menu );
+                                }
                         }
                 } catch ( e ) {
                         /* degrada con grazia */
@@ -417,12 +511,16 @@
                         walkText( menu );
                 }
                 busy = false;
+                // v1.1.15 (WD9): la prima passata È il primo full-walk: il flush
+                // successivo non ripete subito il giro completo.
+                lastFullWalk = nowMs();
 
                 if ( ! window.MutationObserver ) {
                         return;
                 }
 
-                observer = new MutationObserver( function () {
+                observer = new MutationObserver( function ( mutations ) {
+                        collectMutations( mutations );
                         schedule();
                 } );
                 reobserve();
