@@ -34,6 +34,8 @@
  *   v1.1.9: $opts['unique'] (bool) — se true il job NON viene inserito quando
  *     esiste già un job pending/running con lo stesso hook (dedup per hook);
  *     in quel caso ritorna queued=false + duplicate=true (nessun errore).
+ *   v1.1.15 WA4: senza $opts['max_attempts'] viene usato il setting
+ *     'queue_max_attempts' (prima era letto da nessuno: job sempre a 3).
  *   enable_queue=0 → esegue SUBITO l'handler se registrato (try/catch Throwable):
  *     array('queued'=>false,'job_id'=>0,'executed'=>bool,'result'=>mixed,'error'=>string)
  *   handler sconosciuto e enable_queue=0 → error 'handler_non_registrato'
@@ -43,6 +45,9 @@
  *   $limit<=0 → setting queue_batch_size (min 1). Nexus_DB::claim_jobs($limit),
  *   per ogni job risolve l'handler dal filtro 'nexus_job_handlers' ed esegue con
  *   call_user_func_array (try/catch Throwable). Successo → status 'complete';
+ *   v1.1.15 WA3: un handler che ritorna array con ok=false è un fallimento
+ *   REALE → RuntimeException → stesso percorso backoff esponenziale +
+ *   dead-letter (prima venivano marcati 'complete' nonostante l'errore);
  *   eccezione → bump_job_failure (attempts+1 ATOMICO, guardia status='running'):
  *   se attempts < max_attempts → status 'pending' con scheduled_at = now +
  *   backoff (60 * 2^attempts, cap 3600) e last_error; altrimenti status
@@ -407,6 +412,18 @@ class Nexus_Queue {
                         }
 
                         try {
+                                // v1.1.15 (WA4): il setting 'queue_max_attempts' (UI/REST)
+                                // diventa il default reale dei job quando l'opzione non è
+                                // passata: prima nessun chiamante la passava e insert_job
+                                // usava l'hardcoded 3, rendendo il setting un no-op.
+                                if ( ! isset( $opts['max_attempts'] ) || (int) $opts['max_attempts'] <= 0 ) {
+                                        $from_settings = isset( $settings['queue_max_attempts'] ) ? absint( $settings['queue_max_attempts'] ) : 0;
+
+                                        if ( $from_settings > 0 ) {
+                                                $opts['max_attempts'] = $from_settings;
+                                        }
+                                }
+
                                 $out['job_id'] = (int) Nexus_DB::insert_job( $hook, $args, $opts );
                                 $out['queued'] = true;
                         } catch ( Throwable $e ) {
@@ -525,6 +542,17 @@ class Nexus_Queue {
 
                         try {
                                 $result = call_user_func_array( $callable, array_values( $args ) );
+
+                                // v1.1.15 (WA3): gli esiti {ok:false} degli handler sono
+                                // fallimenti REALI (es. evaluate()/rewrite() della pipeline
+                                // riportano l'errore AI transiente senza lanciare eccezioni):
+                                // senza questo check il job veniva marcato 'complete'
+                                // nonostante il fallimento. RuntimeException usa il percorso
+                                // già pronto: backoff esponenziale + dead-letter (fail_job).
+                                if ( is_array( $result ) && array_key_exists( 'ok', $result ) && false === $result['ok'] ) {
+                                        $handler_error = isset( $result['error'] ) ? self::clip( (string) $result['error'] ) : '';
+                                        throw new RuntimeException( '' !== $handler_error ? $handler_error : 'handler completato con esito ok=false' );
+                                }
 
                                 // v1.1.15 (WA2-d): attempts MAI regrediti. Il valore
                                 // claim-time+1 può essere indietro rispetto al DB se

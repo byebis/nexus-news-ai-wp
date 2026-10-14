@@ -120,7 +120,11 @@ class Nexus_DB {
         //           NEXUS_VERSION invariata (maybe_upgrade controlla "versione
         //           diversa OR revisione minore"), quindi la migration gira su
         //           installazioni esistenti senza attendere il bump di release.
-        const DB_REVISION     = 6;
+        // v1.1.15 — schema v7: KEY created_at / published_at / views su
+        //           nexus_articles (ORDER BY whitelisted di articles(), stats
+        //           'today' e analytics usavano full-scan su tabella LONGTEXT;
+        //           migrate_schema_v7 è idempotente con guard information_schema).
+        const DB_REVISION     = 7;
 
         /* ============ RETENTION (v1.1.13, O2) ============ */
 
@@ -396,6 +400,9 @@ class Nexus_DB {
                                 KEY category (category(100)),
                                 KEY agent_id (agent_id),
                                 KEY wp_post_id (wp_post_id),
+                                KEY created_at (created_at),
+                                KEY published_at (published_at),
+                                KEY views (views),
                                 UNIQUE KEY content_hash (content_hash)
                         ) {$charset};",
                         "CREATE TABLE {$plogs} (
@@ -564,6 +571,7 @@ class Nexus_DB {
                 self::cleanup_broken_rows();
                 self::migrate_schema_v2();
                 self::migrate_schema_v3();
+                self::migrate_schema_v7();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
                 update_option( self::DB_REVISION_KEY, (string) self::DB_REVISION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
@@ -670,6 +678,42 @@ class Nexus_DB {
                                 if ( ! $exists ) {
                                         $wpdb->query( $sql ); // phpcs:ignore WordPress.DB
                                 }
+                        }
+                }
+        }
+
+        /**
+         * Migrazione schema v7 (v1.1.15, WA8) per installazioni esistenti — idempotente.
+         *
+         * Indici mancanti su nexus_articles: created_at, published_at, views.
+         * PRIMA: ORDER BY whitelisted di articles() (db:articles — orderby
+         * id/created_at/published_at/quality_score/views), il conteggio 'today'
+         * di stats() e le sezioni analytics (serie per data, class-nexus-analytics)
+         * facevano full-scan su una tabella con LONGTEXT: ogni tick della pipeline
+         * scansionava l'intera tabella per leggere solo il conteggio del giorno.
+         *
+         * Stesso pattern delle migration v2/v3: guard su information_schema
+         * (STATISTICS) prima di ogni ALTER — ogni indice viene aggiunto SOLO se
+         * assente, quindi la migration è rientrante (secondo giro = zero ALTER).
+         * Le installazioni NUOVE ricevono gli stessi indici dal CREATE TABLE in
+         * schema(); dbDelta per le esistenti NON è sufficiente su tutti i setup
+         * (lezione v2/v3), qui lo si fa a mano. Fuori dal percorso critico del
+         * tick: gira solo da install()/maybe_upgrade().
+         *
+         * @return void
+         */
+        private static function migrate_schema_v7() {
+                global $wpdb;
+                $arts    = self::tables()['articles'];
+                $indexes = array( 'created_at', 'published_at', 'views' );
+
+                foreach ( $indexes as $index ) {
+                        $exists = (int) $wpdb->get_var( $wpdb->prepare(
+                                "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s",
+                                DB_NAME, $arts, $index
+                        ) );
+                        if ( ! $exists ) {
+                                $wpdb->query( "ALTER TABLE {$arts} ADD KEY {$index} ({$index})" ); // phpcs:ignore WordPress.DB
                         }
                 }
         }
@@ -1510,12 +1554,32 @@ class Nexus_DB {
 
         /* ============ SETTINGS ============ */
 
+        /**
+         * Cache di request delle impostazioni (v1.1.15, WA9): get_settings() era
+         * chiamata 20-50 volte per request cron con merge identico a ogni colpo.
+         * Statica = valida SOLO per questa request (multisite-safe: niente cache
+         * cross-request); invalidata da update_settings(), dall'hook
+         * 'update_option_nexus_settings' (scrittori esterni) e da
+         * reset_settings_cache().
+         *
+         * @var array|null
+         */
+        private static $settings_cache = null;
+
         public static function get_settings() {
+                // v1.1.15 (WA9): cache statica di request — il merge default+saved è
+                // identico a ogni chiamata nella stessa request, lo ricalcolo una volta.
+                if ( is_array( self::$settings_cache ) ) {
+                        return self::$settings_cache;
+                }
+
                 $saved = get_option( self::OPTION_SETTINGS, array() );
                 if ( ! is_array( $saved ) ) {
                         $saved = array();
                 }
-                return array_merge( self::default_settings(), $saved );
+                $merged                = array_merge( self::default_settings(), $saved );
+                self::$settings_cache = $merged;
+                return $merged;
         }
 
         public static function update_settings( $fields ) {
@@ -1527,7 +1591,32 @@ class Nexus_DB {
                         }
                 }
                 update_option( self::OPTION_SETTINGS, $current, false );
+                // v1.1.15 (WA9): invalidazione esplicita della cache di request:
+                // il valore riletto sotto riflette SEMPRE ciò che è appena salvato.
+                self::$settings_cache = null;
                 return self::get_settings();
+        }
+
+        /**
+         * v1.1.15 (WA9): invalidazione della cache per gli scrittori esterni che
+         * aggiornano l'opzione bypassando update_settings(). Registrata su
+         * 'update_option_nexus_settings' da init_settings_cache() (bootstrap
+         * nexus_modules_init a fondo file, stesso pattern di init_retention).
+         *
+         * @return void
+         */
+        public static function reset_settings_cache() {
+                self::$settings_cache = null;
+        }
+
+        /**
+         * v1.1.15 (WA9): bootstrap della coerenza della cache settings (hook
+         * update_option_nexus_settings). Chiamato su 'nexus_modules_init'.
+         *
+         * @return void
+         */
+        public static function init_settings_cache() {
+                add_action( 'update_option_nexus_settings', array( __CLASS__, 'reset_settings_cache' ) );
         }
 
         /* ============ STATS ============ */
@@ -1540,13 +1629,22 @@ class Nexus_DB {
                 $today_start = substr( current_time( 'mysql' ), 0, 10 ) . ' 00:00:00';
                 $ago_24h     = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - DAY_IN_SECONDS );
 
+                // v1.1.15 (WA10): i 4 COUNT per status (5 full-scan con LONGTEXT in
+                // tabella) sono UN solo GROUP BY status (usa la KEY status) e 'total'
+                // è la somma dei gruppi: stesse chiavi di ritorno, contratto REST
+                // intatto (rest:serialize_stats / GET /stats).
+                $by_status = array();
+                foreach ( (array) $wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$a} GROUP BY status" ) as $row ) {
+                        $by_status[ (string) $row->status ] = (int) $row->n;
+                }
+
                 return array(
-                        'total'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a}" ),
-                        'published'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a} WHERE status = 'published'" ),
-                        'pending'    => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a} WHERE status = 'pending_approval'" ),
-                        'draft'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a} WHERE status = 'draft'" ),
-                        'rejected'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a} WHERE status = 'rejected'" ),
-                        'approved'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$a} WHERE status = 'approved'" ),
+                        'total'      => array_sum( $by_status ),
+                        'published'  => isset( $by_status['published'] ) ? $by_status['published'] : 0,
+                        'pending'    => isset( $by_status['pending_approval'] ) ? $by_status['pending_approval'] : 0,
+                        'draft'      => isset( $by_status['draft'] ) ? $by_status['draft'] : 0,
+                        'rejected'   => isset( $by_status['rejected'] ) ? $by_status['rejected'] : 0,
+                        'approved'   => isset( $by_status['approved'] ) ? $by_status['approved'] : 0,
                         'today'      => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$a} WHERE created_at >= %s", $today_start ) ),
                         'views'      => (int) $wpdb->get_var( "SELECT COALESCE(SUM(views),0) FROM {$a}" ),
                         'agents_active' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$ag} WHERE status = 'active'" ),
@@ -2238,3 +2336,4 @@ class Nexus_DB {
 // v1.1.13 (O2): cron giornaliero di retention self-registrato sull'action del
 // bootstrap (stesso pattern dei moduli v1.1.12, nessuna modifica al file principale).
 add_action( 'nexus_modules_init', array( 'Nexus_DB', 'init_retention' ) );
+add_action( 'nexus_modules_init', array( 'Nexus_DB', 'init_settings_cache' ) );

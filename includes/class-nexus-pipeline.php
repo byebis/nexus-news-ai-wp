@@ -109,6 +109,23 @@
  *     array {action, status, event}: notify instrada sulla chiave (fallback
  *     testuale mantenuto per BC).
  *
+ * v1.1.15 — Affidabilità (Perfezione Maniacale, WA2/WA5/WA6/WA7/WA10):
+ *   - HEARTBEAT JOB: ogni fase (collect/evaluate/rewrite/publish) e il giro
+ *     per-agente di cron_tick toccano Nexus_Queue::heartbeat() (started_at del
+ *     job corrente): il reaper requeue_stale non riaccoda più i job vivi.
+ *   - CRON TICK: budget di tempo globale (filtro nexus_pipeline_tick_budget,
+ *     default 240s) verificato a inizio iterazione agente + cap agenti per tick
+ *     (filtro nexus_pipeline_tick_agent_cap, default 5) con rotazione last_run;
+ *     contratto di ritorno di cron_tick INVARIATO (results = agenti avviati).
+ *   - RUNTIME ONESTO: collect/evaluate/rewrite (e publish) puliscono lo stato
+ *     runtime in try/finally anche su uscita anticipata/eccezione (corpi spostati
+ *     in collect_run/evaluate_run/rewrite_run/publish_locked).
+ *   - MUTEX PUBLISH per-articolo (nexus_publish_lock_<id>, acquisizione atomica
+ *     via add_option, TTL 120s, ri-check "published" dentro il lock, release in
+ *     finally): chiude la doppia pubblicazione social dai percorsi concorrenti.
+ *   - Limite giornaliero: 1 query diretta su created_at (indice schema v7)
+ *     invece dell'intera stats() a ogni tick per ogni agente.
+ *
  * CONTRATTO PUBBLICO:
  * Nexus_Pipeline::collect( $agent_id )                       → array{ok, collected, errors, article_ids, skipped?}
  * Nexus_Pipeline::evaluate( $article_id )                    → array{ok, score, score_parsed, error?}
@@ -153,6 +170,37 @@ class Nexus_Pipeline {
         const RESUME_LOCK_TTL = 900;
 
         /**
+         * v1.1.15 (WA5): budget di tempo di DEFAULT dell'intero tick (secondi),
+         * regolabile con il filtro 'nexus_pipeline_tick_budget' (0 = senza limite).
+         * Prima N agenti giravano in serie senza tetto: tick da 10-40+ min uccisi
+         * da max_execution_time → lock residuo → 15 min di giri saltati.
+         */
+        const TICK_BUDGET_SECONDS = 240;
+
+        /**
+         * v1.1.15 (WA5): cap di agenti per singolo tick, regolabile con il filtro
+         * 'nexus_pipeline_tick_agent_cap'. Gli agenti oltre il cap partono al giro
+         * successivo (rotazione last_run, vedi sort_agents_by_last_run): zero
+         * starvation anche con redazioni grandi.
+         */
+        const TICK_AGENT_CAP = 5;
+
+        /**
+         * v1.1.15 (WA7): prefisso del mutex di pubblicazione per-articolo.
+         * publish() è raggiunto da 4 percorsi concorrenti (REST, CLI, capo
+         * redattore, coda) e requeue_stale può creare runner paralleli: senza
+         * lock una doppia pubblicazione social era possibile.
+         */
+        const PUBLISH_LOCK_PREFIX = 'nexus_publish_lock_';
+
+        /**
+         * v1.1.15 (WA7): TTL del mutex publish in secondi (120): copre il giro
+         * completo del Publisher (immagini incluse); il rilascio NORMALE avviene
+         * nel finally, il TTL rende il lock auto-guarigente dopo un crash duro.
+         */
+        const PUBLISH_LOCK_TTL = 120;
+
+        /**
          * FASE 1 — Raccolta notizie per un agente.
          *
          * @param int $agent_id ID agente.
@@ -180,7 +228,29 @@ class Nexus_Pipeline {
                 }
 
                 // v1.1.5: stato runtime per il pannello live "In redazione ora".
+                // v1.1.15 (WA6): try/finally con clear_runtime — le uscite anticipate
+                // (budget esaurito, motore AI non disponibile, eccezione) non lasciano
+                // più l'agente "In redazione ora" fintamente quando collect gira come
+                // job di coda standalone (il runtime vive SOLO per la durata della fase).
                 self::set_runtime( (int) $agent->id, 'collect', 'Raccoglie le fonti' );
+
+                try {
+                        return self::collect_run( $out, $agent );
+                } finally {
+                        self::clear_runtime( (int) $agent->id );
+                }
+        }
+
+        /**
+         * Corpo della FASE 1 (raccolta), eseguito dentro il try/finally del runtime
+         * agente (WA6). Riceve l'esito parziale e l'agente già verificato attivo;
+         * ritorna l'esito completo.
+         *
+         * @param array  $out   Esito parziale da riempire.
+         * @param object $agent Agente attivo.
+         * @return array{ok:bool, collected:int, errors:array, article_ids:array, skipped?:bool}
+         */
+        private static function collect_run( $out, $agent ) {
                 self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 $category    = (string) $agent->category;
@@ -439,10 +509,31 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
+                // v1.1.5: stato runtime per il pannello live (fase di valutazione).
+                // v1.1.15 (WA6): try/finally con clear_runtime — vedi collect(): anche
+                // le uscite anticipate di evaluate (budget, AI fallita, eccezione) non
+                // lasciano più lo stato runtime appeso per un job di coda standalone.
+                self::set_runtime( (int) $article->agent_id, 'evaluate', 'Valuta i materiali', (int) $article_id, (string) $article->title );
+
+                try {
+                        return self::evaluate_run( $out, $article, $article_id );
+                } finally {
+                        self::clear_runtime( (int) $article->agent_id );
+                }
+        }
+
+        /**
+         * Corpo della FASE 2 (valutazione), eseguito dentro il try/finally del
+         * runtime agente (WA6).
+         *
+         * @param array  $out        Esito parziale da riempire.
+         * @param object $article    Articolo esistente.
+         * @param int    $article_id ID articolo.
+         * @return array{ok:bool, score:int, score_parsed:bool, error:string}
+         */
+        private static function evaluate_run( $out, $article, $article_id ) {
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
 
-                // v1.1.5: stato runtime per il pannello live (fase di valutazione).
-                self::set_runtime( (int) $article->agent_id, 'evaluate', 'Valuta i materiali', (int) $article_id, (string) $article->title );
                 self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di valutazione viene saltata.
@@ -548,11 +639,32 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                $agent = $article->agent_id ? Nexus_DB::get_agent( $article->agent_id ) : null;
+                // v1.1.5: stato runtime per il pannello live (fase di scrittura).
+                // v1.1.15 (WA6): try/finally con clear_runtime — vedi collect(): anche
+                // le uscite anticipate di rewrite (budget, AI fallita, eccezione) non
+                // lasciano più lo stato runtime appeso per un job di coda standalone.
+                self::set_runtime( (int) $article->agent_id, 'rewrite', 'Scrive l\'articolo', (int) $article_id, (string) $article->title );
+
+                try {
+                        return self::rewrite_run( $out, $article, $article_id );
+                } finally {
+                        self::clear_runtime( (int) $article->agent_id );
+                }
+        }
+
+        /**
+         * Corpo della FASE 3 (riscrittura), eseguito dentro il try/finally del
+         * runtime agente (WA6).
+         *
+         * @param array  $out        Esito parziale da riempire.
+         * @param object $article    Articolo esistente.
+         * @param int    $article_id ID articolo.
+         * @return array{ok:bool, error:string}
+         */
+        private static function rewrite_run( $out, $article, $article_id ) {
+                $agent    = $article->agent_id ? Nexus_DB::get_agent( $article->agent_id ) : null;
                 $category = '' !== (string) $article->category ? (string) $article->category : self::agent_category( $article->agent_id );
 
-                // v1.1.5: stato runtime per il pannello live (fase di scrittura).
-                self::set_runtime( (int) $article->agent_id, 'rewrite', 'Scrive l\'articolo', (int) $article_id, (string) $article->title );
                 self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di riscrittura viene saltata.
@@ -708,6 +820,18 @@ class Nexus_Pipeline {
          * Consentito solo se lo stato è 'approved' (oppure 'pending_approval' in
          * modalità fully_autonomous, dove l'approvazione automatica avviene al volo).
          *
+         * v1.1.15 (WA7) — MUTEX PUBLISH PER-ARTICOLO: publish() è raggiunto da 4
+         * percorsi concorrenti (REST, CLI, capo redattore, coda) e requeue_stale
+         * può creare runner paralleli: senza lock una doppia pubblicazione social
+         * era possibile. Acquisizione ATOMICA del lock (add_option fallisce se la
+         * chiave esiste già, v. acquire_lock), TTL PUBLISH_LOCK_TTL con auto-guarigione
+         * sui lock scaduti (ruba-lock), ri-check di OGNI condizione di stato DENTRO
+         * il lock (publish_locked) e rilascio in finally. Lock occupato → esito
+         * onesto 'già in corso' (nessuna attesa, nessuna doppia spesa).
+         * Il rilascio del lock è in finally insieme a clear_runtime (v1.1.15 WA6
+         * per estensione: anche publish poteva lasciare lo stato runtime "finto"
+         * quando eseguito come job di coda standalone).
+         *
          * @param int $article_id ID articolo.
          * @return array{ok:bool, logs:array, error:string, already:bool, message:string}
          */
@@ -728,6 +852,43 @@ class Nexus_Pipeline {
 
                 $settings = Nexus_DB::get_settings();
                 $mode     = isset( $settings['mode'] ) ? (string) $settings['mode'] : 'semi_autonomous';
+
+                $lock_key = self::PUBLISH_LOCK_PREFIX . absint( $article_id );
+
+                if ( ! self::acquire_lock( $lock_key, self::PUBLISH_LOCK_TTL ) ) {
+                        $out['error']   = 'Pubblicazione già in corso per questo articolo: riprova più tardi.';
+                        $out['message'] = 'Pubblicazione già in corso.';
+                        return $out;
+                }
+
+                try {
+                        return self::publish_locked( $out, (int) $article_id, $mode );
+                } finally {
+                        self::release_lock( $lock_key );
+                        self::clear_runtime( (int) $article->agent_id );
+                }
+        }
+
+        /**
+         * Corpo della FASE 5, eseguito DENTRO il mutex per-articolo (WA7).
+         *
+         * TUTTI i controlli di stato sono ridettetti qui sulla riga fresca: tra il
+         * rilascio del lock precedente e la nostra acquisizione un altro percorso
+         * (REST/CLI/capo/coda) può aver già completato la pubblicazione. Il
+         * ri-check "published → already" dentro il lock è la vera chiusura della
+         * doppia pubblicazione.
+         *
+         * @param array  $out        Esito parziale da riempire.
+         * @param int    $article_id ID articolo.
+         * @param string $mode       Modalità corrente ('semi_autonomous'|'fully_autonomous').
+         * @return array{ok:bool, logs:array, error:string, already:bool, message:string}
+         */
+        private static function publish_locked( $out, $article_id, $mode ) {
+                $article = Nexus_DB::get_article( $article_id );
+                if ( ! $article ) {
+                        $out['error'] = 'Articolo non trovato.';
+                        return $out;
+                }
 
                 if ( 'published' === $article->status ) {
                         // Idempotenza: già pubblicato → restituisci i log esistenti senza duplicare.
@@ -823,6 +984,56 @@ class Nexus_Pipeline {
         }
 
         /**
+         * v1.1.15 (WA7/WA11) — acquisizione ATOMICA di un lock a transient:
+         * add_option('_transient_<key>', timestamp) è un check-and-set atomico
+         * (fallisce se l'opzione esiste già: la INSERT su chiave duplicata di
+         * wpdb ritorna false). Il valore è il timestamp di acquisizione: un lock
+         * più vecchio del TTL viene considerato orfano di un crash duro (il
+         * finally non è potuto girare) e viene RUBATO (delete + re-add); i lock
+         * legacy di set_transient (con opzione _transient_timeout_*) scaduti
+         * vengono gestiti dalla stessa regola. Il timeout non usa
+         * _transient_timeout_: la scadenza è gestita qui, così add_option resta
+         * l'unico primitivo di acquisizione.
+         *
+         * NOTA onesta: su installazioni con object cache esterna il lock resta
+         * best-effort (come ogni mutex transient di WordPress); la ri-verifica
+         * di stato DENTRO il lock (publish_locked) è la protezione vera.
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @param int    $ttl TTL in secondi oltre il quale il lock è rubabile.
+         * @return bool True se il lock è stato acquisito.
+         */
+        private static function acquire_lock( $key, $ttl ) {
+                $option = '_transient_' . $key;
+                $now    = time();
+                $held   = get_option( $option, false );
+
+                if ( false !== $held ) {
+                        // Lock presente: è orfano se il suo timestamp è più vecchio del TTL.
+                        if ( is_numeric( $held ) && ( $now - (int) $held ) > (int) $ttl ) {
+                                self::release_lock( $key );
+                        } else {
+                                return false;
+                        }
+                }
+
+                // Atomico: ritorna false se l'opzione esiste già (persa la corsa).
+                return (bool) add_option( $option, $now, '', 'no' );
+        }
+
+        /**
+         * v1.1.15 (WA7/WA11) — rilascio del lock (idempotente, pulisce anche l'
+         * eventuale opzione _transient_timeout_* lasciata da lock legacy).
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @return void
+         */
+        private static function release_lock( $key ) {
+                delete_option( '_transient_' . $key );
+                delete_option( '_transient_timeout_' . $key );
+        }
+
+        /**
          * Pipeline completa per un agente (facciata v1.1.5).
          *
          * Delega il corpo a run_full_agent e garantisce la pulizia dello stato
@@ -892,8 +1103,16 @@ class Nexus_Pipeline {
 
                 // Limite giornaliero di articoli creati.
                 $max_per_day = max( 1, absint( isset( $settings['max_articles_per_day'] ) ? $settings['max_articles_per_day'] : 10 ) );
-                $stats       = Nexus_DB::stats();
-                $today       = isset( $stats['today'] ) ? (int) $stats['today'] : 0;
+
+                // v1.1.15 (WA10): qui serve SOLO il conteggio 'today' — niente
+                // Nexus_DB::stats() (10 query, 5 full-scan su LONGTEXT per OGNI agente
+                // a OGNI tick): 1 query diretta sulla colonna created_at (indice della
+                // migration schema v7), STESSA semantica di stats() per 'today'
+                // (inizio del giorno locale da current_time, v. Nexus_DB::stats()).
+                global $wpdb;
+                $today_start = substr( current_time( 'mysql' ), 0, 10 ) . ' 00:00:00';
+                $today_table = Nexus_DB::tables()['articles'];
+                $today       = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$today_table} WHERE created_at >= %s", $today_start ) );
                 if ( $today >= $max_per_day ) {
                         $summary['ok']         = true;
                         $summary['messages'][] = sprintf( 'Limite giornaliero raggiunto (%d/%d articoli oggi): pipeline non avviata.', $today, $max_per_day );
@@ -1081,15 +1300,51 @@ class Nexus_Pipeline {
                 // v1.1.9 — Resume articoli bloccati ALL'INIZIO del tick (WP4): UN solo
                 // batch per chiamata (limit interno, default 10) per non sovrapporsi al
                 // lavoro degli agenti né mandare in loop il tick. Mai fatale: il giro
-                // regolare degli agenti deve proseguire comunque.
+                // regolare degli agenti deve proseguire comunque. L'orologio del budget
+                // tick (WA5) parte PRIMA del resume: è tempo del tick a tutti gli effetti.
+                $tick_started = microtime( true );
+
                 try {
                         self::resume_stalled();
                 } catch ( Throwable $e ) {
                         self::log_phase( 0, 'rewriting', sprintf( 'Resume articoli bloccati fallito: %s', self::clip( $e->getMessage(), 300 ) ), 'error' );
                 }
 
+                // v1.1.15 (WA5) — budget di tempo GLOBALE per tick + cap agenti per
+                // tick: prima gli agenti attivi giravano tutti IN SERIE senza tetto.
+                // Il budget è verificato a inizio di OGNI iterazione agente; gli agenti
+                // oltre il cap (o con budget esaurito) partono al prossimo giro —
+                // rotazione last_run (sort_agents_by_last_run), zero starvation.
+                // Il contratto di ritorno è INVARIATO: $results contiene solo gli
+                // agenti effettivamente avviati (ok o in errore).
+                $tick_budget = (float) apply_filters( 'nexus_pipeline_tick_budget', self::TICK_BUDGET_SECONDS );
+                $agent_cap   = max( 1, (int) apply_filters( 'nexus_pipeline_tick_agent_cap', self::TICK_AGENT_CAP ) );
+
+                $active = array();
                 foreach ( (array) Nexus_DB::agents() as $agent ) {
                         if ( 'active' !== $agent->status ) {
+                                continue;
+                        }
+                        $active[] = $agent;
+                }
+
+                // Rotazione onesta (solo se serve davvero): chi ha girato più di
+                // recente lascia il posto a chi attende da più tempo.
+                if ( count( $active ) > $agent_cap ) {
+                        usort( $active, array( __CLASS__, 'sort_agents_by_last_run' ) );
+                }
+
+                $skipped_by_cap = 0;
+                $skipped_budget = 0;
+
+                foreach ( $active as $index => $agent ) {
+                        if ( $index >= $agent_cap ) {
+                                $skipped_by_cap++;
+                                continue;
+                        }
+
+                        if ( $tick_budget > 0 && ( microtime( true ) - $tick_started ) >= $tick_budget ) {
+                                $skipped_budget++;
                                 continue;
                         }
 
@@ -1119,6 +1374,12 @@ class Nexus_Pipeline {
                         }
                 }
 
+                // v1.1.15 (WA5): nota ONESTA (una per tick) degli agenti rinviati al
+                // prossimo giro — fuori da $results, che resta "agenti avviati".
+                if ( $skipped_by_cap + $skipped_budget > 0 ) {
+                        self::log_phase( 0, 'budget', sprintf( 'Tick: %d agenti attivi rinviati al prossimo giro (%d oltre il cap di %d agenti per tick, %d per budget di tempo %.0fs).', $skipped_by_cap + $skipped_budget, $skipped_by_cap, $agent_cap, $skipped_budget, $tick_budget ), 'info' );
+                }
+
                 // v1.1.4 — Capo redattore AI: dopo il giro degli agenti il capo rilegge
                 // fino a 3 articoli in attesa di revisione (giri di revisione inclusi),
                 // se la funzionalita' e' attiva. Guard totali, mai fatale.
@@ -1138,6 +1399,26 @@ class Nexus_Pipeline {
                         'results'   => $results,
                         'timestamp' => current_time( 'mysql' ),
                 );
+        }
+
+        /**
+         * v1.1.15 (WA5) — comparatore di rotazione per il cap agenti per tick:
+         * prima gli agenti con last_run più vecchio (0 = mai girato o last_run
+         * illeggibile), tie-break per id ASC (ordine stabile).
+         *
+         * @param object $a Primo agente.
+         * @param object $b Secondo agente.
+         * @return int
+         */
+        private static function sort_agents_by_last_run( $a, $b ) {
+                $a_time = isset( $a->last_run ) && '' !== (string) $a->last_run ? strtotime( (string) $a->last_run ) : 0;
+                $b_time = isset( $b->last_run ) && '' !== (string) $b->last_run ? strtotime( (string) $b->last_run ) : 0;
+
+                if ( $a_time === $b_time ) {
+                        return ( (int) $a->id < (int) $b->id ) ? -1 : 1;
+                }
+
+                return ( $a_time < $b_time ) ? -1 : 1;
         }
 
         /**
