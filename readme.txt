@@ -2,7 +2,7 @@
 Contributors: byebis
 Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
-Tested up to: 6.7
+Tested up to: 6.8
 Requires PHP: 7.4
 Stable tag: 1.1.14
 License: MIT
@@ -65,7 +65,7 @@ Il tutto gestibile da un **admin panel completo** (dashboard, agenti, coda di ap
 == Installation ==
 
 1. Carica la cartella `nexus-news-ai` dentro `wp-content/plugins/` (via FTP o "Plugin → Aggiungi nuovo → Carica plugin" con lo zip).
-2. Attiva il plugin dalla pagina **Plugin** di WordPress: all'attivazione vengono create le 9 tabelle `wp_nexus_*` e la redazione parte da ZERO agenti — la pagina Agenti apre il wizard «Crea la tua redazione» con pacchetti preset 1-click (Testata generalista, News veloci, Solo Tecnologia, Agenzia completa) oppure puoi creare gli agenti a mano con i preset e l'editor; le installazioni esistenti non vengono toccate. Dalla 1.1.0 viene registrato anche il ruolo «Giornalista AI» per gli utenti bot degli agenti.
+2. Attiva il plugin dalla pagina **Plugin** di WordPress: all'attivazione vengono create le 12 tabelle `wp_nexus_*` e la redazione parte da ZERO agenti — la pagina Agenti apre il wizard «Crea la tua redazione» con pacchetti preset 1-click (Testata generalista, News veloci, Solo Tecnologia, Agenzia completa) oppure puoi creare gli agenti a mano con i preset e l'editor; le installazioni esistenti non vengono toccate. Dalla 1.1.0 viene registrato anche il ruolo «Giornalista AI» per gli utenti bot degli agenti.
 3. Vai in **Nexus News → Impostazioni** e inserisci la tua **chiave AI** (API OpenRouter-compatible, es. openrouter.ai): la pipeline la richiede in ogni fase (anche la raccolta seleziona i candidati con il modello). Senza chiave magazine, admin panel, coda, REST e pubblicazione funzionano comunque.
 4. [Opzionale] Per una schedulazione affidabile imposta un **cron di sistema** che chiama `wp-cron.php` ogni ora (WP-Cron integrato funziona già, ma su siti a basso traffico può ritardare).
 5. Crea una pagina (es. "Magazine") e inserisci lo shortcode **[nexus_magazine]**: il tuo giornale è online.
@@ -90,7 +90,7 @@ Inserisci lo shortcode `[nexus_magazine]` in una qualsiasi pagina: riceverai her
 
 = I dati vengono cancellati quando disattivo il plugin? =
 
-**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` rimuove le 8 tabelle `wp_nexus_*` (incluse `wp_nexus_subscribers`, `wp_nexus_usage_logs` e `wp_nexus_translations`), le opzioni `nexus_settings`, `nexus_db_version`, `nexus_wire_runs`, i transients `nexus_rss_*`, gli eventi cron `nexus_weekly_digest` e `nexus_ping_article` e i post `nexus_article` (con i loro meta `_nexus_*`). Se vuoi conservare gli articoli, fai un backup del database prima di eliminare il plugin.
+**No.** La *disattivazione* conserva tabelle, articoli, agenti e impostazioni: puoi riattivare quando vuoi senza perdere nulla. I dati vengono eliminati **solo alla disinstallazione** (cancellazione del plugin dalla pagina Plugin), quando `uninstall.php` — su multisite per OGNI sito della rete (le tabelle utenti condivise una sola volta) — rimuove: le 12 tabelle `wp_nexus_*`, i post del CPT `nexus_article` con i loro meta `_nexus_*`, gli utenti bot degli agenti (con il ruolo «Giornalista AI» e lo user meta redazione), le opzioni (`nexus_settings`, `nexus_db_version`, `nexus_wire_runs` e le chiavi dedicate dei moduli), le famiglie transient `nexus_*` (feed RSS, fact-check fonti, rate limit, full-content, lock traduzioni, OAuth, breaker AI, notifiche…) e gli eventi WP-Cron del plugin (tick pipeline, digest, ping, metrics, calendario, health e gli altri). Restano nel sito, per design, i contenuti nativi: i post WordPress «tutto nativo» (articoli 1.1.0+), le redazioni (tassonomia nativa) e i post tradotti. Se vuoi conservare anche gli articoli CPT, fai un backup del database prima di eliminare il plugin.
 
 = Come funziona la pubblicazione «tutto nativo»? =
 

@@ -310,20 +310,48 @@ class Nexus_Cpt {
         }
 
         /**
-         * Filter template_include: su single nexus_article usa il template del
-         * plugin SOLO se il file esiste, altrimenti lascia il default del tema.
+         * Filter template_include (priorità 99): su single nexus_article il
+         * template è risolto con QUESTA cascata:
+         * 1. TEMPLATE DEL TEMA — locate_template( 'single-nexus_article.php' )
+         *    (tema figlio prima del tema padre, come il template hierarchy WP):
+         *    se il tema fornisce il proprio single-nexus_article.php vince
+         *    SEMPRE (v1.1.15, WF8: prima il fallback plugin girava prima e
+         *    azzerava ogni override del tema — il file del tema era mai
+         *    raggiungibile);
+         * 2. TEMPLATE DEL PLUGIN — templates/single-nexus_article.php, solo se
+         *    il tema non lo fornisce e il file esiste (comportamento storico);
+         * 3. FILTRO DEV 'nexus_single_template' — ultimo passo: valore non
+         *    vuoto vince su tutto, per override programmatici (page builder,
+         *    routing custom); vuoto/assente → si conserva il $template risolto
+         *    da WordPress (singolo generico del tema).
          *
          * @param string $template Percorso del template risolto da WordPress.
          * @return string Percorso del template da caricare.
          */
         public static function maybe_use_single_template( $template ) {
-                if ( is_singular( 'nexus_article' ) && defined( 'NEXUS_PLUGIN_DIR' ) ) {
+                if ( ! is_singular( 'nexus_article' ) ) {
+                        return $template;
+                }
+
+                // 1) Tema (child theme prima del padre) — v1.1.15 (WF8).
+                $theme = locate_template( 'single-nexus_article.php', false );
+
+                if ( is_string( $theme ) && '' !== $theme ) {
+                        return $theme;
+                }
+
+                // 2) Fallback storico: template del plugin, solo se esiste.
+                if ( defined( 'NEXUS_PLUGIN_DIR' ) ) {
                         $custom = NEXUS_PLUGIN_DIR . 'templates/single-nexus_article.php';
+
                         if ( file_exists( $custom ) ) {
                                 return $custom;
                         }
                 }
 
-                return $template;
+                // 3) Filtro dev: ultimo sigillo sul template del single.
+                $filtered = apply_filters( 'nexus_single_template', $template );
+
+                return is_string( $filtered ) && '' !== $filtered ? $filtered : $template;
         }
 }

@@ -13,7 +13,7 @@
  *   (tabelle + seed agenti + impostazioni di default) → restore_current_blog;
  *   ritorna true in caso di successo, false altrimenti.
  * - status(): una riga per sito della rete (max 500): blog_id, URL, tabelle
- *   presenti "n/9" (SHOW TABLES LIKE per ognuna di Nexus_DB::tables()), numero
+ *   presenti "n/12" (SHOW TABLES LIKE per ognuna di Nexus_DB::tables()), numero
  *   agenti e presenza impostazioni (get_option('nexus_settings')).
  * - install_all( $blog_ids ): installa tabelle+seed su una lista di siti
  *   (lista vuota = TUTTI i siti della rete); ritorna array con 'installed',
@@ -119,7 +119,7 @@ class Nexus_Multisite {
          * Stato del plugin sito per sito (max 500 siti della rete).
          *
          * Per ogni sito riporta: blog_id, URL (letto PRIMA dello switch), tabelle
-         * presenti "n/9" (SHOW TABLES LIKE per ognuna di Nexus_DB::tables()),
+         * presenti "n/12" (SHOW TABLES LIKE per ognuna di Nexus_DB::tables()),
          * numero agenti e presenza impostazioni (get_option('nexus_settings')).
          *
          * @return array Elenco di righe; array() vuoto fuori dal multisite.
