@@ -49,6 +49,15 @@
  * wp_http_validate_url; tutti gli adapter sono difensivi (try/catch Throwable
  * nel dispatcher, wp_remote_* con timeout, mai fatal).
  *
+ * ATTRIBUZIONE ERRORI (v1.1.16, WD2): durante un fetch l'agente in esecuzione
+ * vive in $current_agent_id (impostato da fetch_for_agent, che conosce
+ * l'agente): TUTTI i log attività 'source_error' del dispatcher (log() e
+ * log_once(), includendo mark_failure/cooldown) vengono attribuiti a QUEL
+ * agente invece che a agent_id=0. Fuori da un fetch (nessun contesto agente,
+ * es. chiamate standalone future) l'id resta 0: nessun call-site di log()
+ * vive fuori dal flusso di fetch_for_agent (verificato v1.1.16). Semantica di
+ * log_once e dei livelli INVARIATA.
+ *
  * @package Nexus_News_AI
  */
 
@@ -119,6 +128,15 @@ class Nexus_Sources {
         private static $full_budget_left = 0;
 
         /**
+         * v1.1.16 (WD2): ID dell'agente in esecuzione durante il fetch corrente
+         * (0 = fuori da un flusso fetch_for_agent, es. future chiamate standalone).
+         * Log attività 'source_error' attribuito a questo agente invece che a 0.
+         *
+         * @var int
+         */
+        private static $current_agent_id = 0;
+
+        /**
          * Raccoglie gli item di TUTTE le fonti della redazione dell'agente.
          *
          * Flusso: fonti da Nexus_Redazioni::sources_for_term(term_id dell'agente)
@@ -133,6 +151,13 @@ class Nexus_Sources {
          */
         public static function fetch_for_agent( $agent, $max_items = 10 ) {
                 $max_items = max( 1, (int) $max_items );
+
+                // v1.1.16 (WD2): contesto agente per l'attribuzione degli errori
+                // fonte (log attività 'source_error'): ogni call-site di log()/log_once()
+                // vive dentro QUESTO flusso → errori attribuiti all'agente del run
+                // invece che a agent_id=0. Azzera a ogni chiamata (mai leakage tra
+                // agenti nel medesimo processo, es. runner di coda).
+                self::$current_agent_id = self::agent_id_of( $agent );
 
                 // v1.1.10 (WP3): budget full-content di QUESTO run (max 4 fetch reali
                 // su tutte le fonti dell'agente; reset a ogni chiamata).
@@ -150,8 +175,12 @@ class Nexus_Sources {
 
                 // Nessuna fonte redazione → comportamento storico: fonti RSS globali
                 // configurate dall'utente (v1.1.11 (R1): setting 'global_rss_sources').
+                // (WD2: i log del fallback restano attribuiti all'agente del run —
+                // il fallback gira DENTRO il suo flusso.)
                 if ( empty( $sources ) ) {
-                        return self::fallback_category_items( $agent, $max_items );
+                        $items = self::fallback_category_items( $agent, $max_items );
+                        self::$current_agent_id = 0;
+                        return $items;
                 }
 
                 // Fair-share: ruota l'ordine fonti con il cursore persistente.
@@ -228,6 +257,10 @@ class Nexus_Sources {
                                 $items[]      = $item;
                         }
                 }
+
+                // v1.1.16 (WD2): fine del flusso — contesto agente azzerato (i log
+                // successivi, fuori da un fetch, tornano a agent_id=0).
+                self::$current_agent_id = 0;
 
                 return $items;
         }
@@ -1513,6 +1546,25 @@ class Nexus_Sources {
         }
 
         /**
+         * ID agente difensivo da oggetto/array (v1.1.16 WD2): stessa estrazione
+         * difensiva di agent_term_id, per il contesto di attribuzione dei log.
+         * Nessun lookup DB (il chiamante canonico fetch_for_agent riceve
+         * l'agente caricato): id assente = 0.
+         *
+         * @param object|array $agent Agente.
+         * @return int
+         */
+        private static function agent_id_of( $agent ) {
+                if ( is_object( $agent ) && isset( $agent->id ) ) {
+                        return absint( $agent->id );
+                }
+                if ( is_array( $agent ) && isset( $agent['id'] ) ) {
+                        return absint( $agent['id'] );
+                }
+                return 0;
+        }
+
+        /**
          * Valore settings plugin (via Nexus_DB::get_settings, lettura difensiva).
          *
          * @param string $key Chiave (youtube_api_key, tools_search_key, ...).
@@ -1598,13 +1650,18 @@ class Nexus_Sources {
         /**
          * Attività su Nexus_DB (source_error, level default warning).
          *
+         * v1.1.16 (WD2): l'agente è quello del contesto fetch corrente
+         * ($current_agent_id, impostato da fetch_for_agent): gli errori fonte
+         * diventano attribuibili all'agente del run. Fuori da un fetch il
+         * contesto è 0 (agent_id=0 = sistema, come lo storico).
+         *
          * @param string $detail Dettaglio.
          * @param string $status Level.
          * @return void
          */
         private static function log( $detail, $status = 'warning' ) {
                 if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
-                        Nexus_DB::insert_activity( 0, 'source_error', self::clip( (string) $detail, 240 ), $status );
+                        Nexus_DB::insert_activity( self::$current_agent_id, 'source_error', self::clip( (string) $detail, 240 ), $status );
                 }
         }
 
