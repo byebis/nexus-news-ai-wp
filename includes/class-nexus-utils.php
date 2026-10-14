@@ -14,6 +14,7 @@
  * Nexus_Utils::format_settings_for_form( $settings )   — settings normalizzate per il form admin
  * Nexus_Utils::clean_ai_content( $html )               — pulizia deterministica dell’output AI (v1.1.10, WP7)
  * Nexus_Utils::ai_content_quality_flags( $html )       — flag qualità output AI per il log attività (v1.1.10, WP7)
+ * Nexus_Utils::to_rfc3339_local( $mysql_datetime )     — datetime RFC3339 CON l’offset del fuso del sito (v1.1.16, WC1)
  *
  * @package Nexus_News_AI
  */
@@ -85,6 +86,47 @@ class Nexus_Utils {
 
                 $years = (int) floor( $diff / YEAR_IN_SECONDS );
                 return self::plural_it( $years, 'anno', 'anni' ) . ' fa';
+        }
+
+        /* ============ OROLOGI ONESTI (v1.1.16, WC1) ============ */
+
+        /**
+         * Converte un datetime MySQL (Y-m-d H:i:s, orologio LOCALE del sito —
+         * quello scritto ovunque da current_time('mysql')) in RFC3339 CON
+         * l'offset del fuso orario configurato in WordPress (wp_timezone()).
+         *
+         * Perché esiste: i payload REST uscivano SENZA fuso ('2025-01-01 12:00:00')
+         * e il browser li interpretava come ora locale del visitatore: con
+         * WordPress in UTC e il browser a Roma (CEST) un evento "pochi minuti
+         * fa" appariva "2 ore fa". Con l'offset esplicito ('…T12:00:00+00:00')
+         * new Date() mostra l'ora di WordPress su qualunque browser: il plugin
+         * prende l'orario già impostato in WordPress, zero altre meccaniche.
+         *
+         * Contratto: input vuoto → ''; stringa non interpretabile (o
+         * DateTimeImmutable/wp_timezone non disponibile) → l'INPUT torna
+         * invariato. Mai fatal, mai null, mai una data inventata.
+         *
+         * @param string|null $mysql_datetime Datetime MySQL (ora locale del sito).
+         * @return string RFC3339 con offset ('' o input invariato nei casi limite).
+         */
+        public static function to_rfc3339_local( $mysql_datetime ) {
+                if ( empty( $mysql_datetime ) ) {
+                        return '';
+                }
+
+                if ( ! function_exists( 'wp_timezone' ) || ! class_exists( 'DateTimeImmutable' ) ) {
+                        return (string) $mysql_datetime;
+                }
+
+                try {
+                        $date = new DateTimeImmutable( (string) $mysql_datetime, wp_timezone() );
+                } catch ( Throwable $e ) {
+                        // Stringa non interpretabile: mai una data ricostruita a caso,
+                        // si restituisce l'input com'è (contratto onesto, v. docblock).
+                        return (string) $mysql_datetime;
+                }
+
+                return $date->format( DATE_RFC3339 );
         }
 
         /**

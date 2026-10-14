@@ -86,8 +86,12 @@
  *
  * SHAPE DATE (v1.1.6, regola ZERO MOCK): nessun serializzatore emette la data
  * zero MySQL ('0000-00-00 00:00:00') o stringhe vuote come date: date_or_empty()
- * le converte in '' (la UI mostrerà vuoto/—, mai una data finta). Le date valide
- * passano intatte: nessun cambio di shape per i consumatori.
+ * le converte in '' (la UI mostrerà vuoto/—, mai una data finta). Dalla
+ * v1.1.16 (WC1) le date VALIDE escono in RFC3339 CON l'offset del fuso del
+ * sito (wp_timezone, via Nexus_Utils::to_rfc3339_local): il browser le mostra
+ * all'ora di WordPress (prima uscivano naive e il browser le interpretava
+ * come ora locale → il bug "2 ore fa"). I campi restano gli stessi: RFC3339
+ * con offset è retrocompatibile per new Date() dei consumatori.
  *
  * HARDENING v1.1.9 (WP2):
  * - Le rotte PUBBLICHE degli articoli usano serialize_public_article(): mai il
@@ -4077,8 +4081,10 @@ class Nexus_Rest {
         /**
          * Ultima azione per agente da nexus_activity_logs con UNA sola query
          * raggruppata (MAX(id) per agent_id): array agent_id => {action,
-         * detail, status, created_at}. created_at convertito in RFC3339
-         * (ISO8601, fuso del sito) per il diff lato client; le date zero
+         * detail, status, created_at}. created_at esce in RFC3339 CON l'offset
+         * del fuso del sito (v1.1.16, WC1: date_or_empty → Nexus_Utils::
+         * to_rfc3339_local — il vecchio mysql_to_rfc3339() STRIPPAVA il fuso
+         * nonostante il docblock precedente che lo dichiarava); le date zero
          * (v1.1.6) diventano stringa vuota, mai RFC3339 di una data finta.
          *
          * @param array $agent_ids Agent ID da considerare.
@@ -4120,10 +4126,11 @@ class Nexus_Rest {
                                 $detail = substr( $detail, 0, 200 );
                         }
 
+                        // v1.1.16 (WC1): date_or_empty emette RFC3339 con l'offset del
+                        // fuso del sito. Il vecchio doppio passo mysql_to_rfc3339()
+                        // è rimosso: STRIPPAVA il fuso (e su una stringa già RFC3339
+                        // avrebbe prodotto un timestamp corrotto).
                         $created = self::date_or_empty( isset( $row->created_at ) ? $row->created_at : '' );
-                        if ( '' !== $created && function_exists( 'mysql_to_rfc3339' ) ) {
-                                $created = mysql_to_rfc3339( $created );
-                        }
 
                         $out[ (int) $row->agent_id ] = array(
                                 'action'     => (string) $row->action,
@@ -4248,6 +4255,21 @@ class Nexus_Rest {
                         return $runs;
                 }
                 $runs = is_array( $runs ) ? array_values( $runs ) : array();
+
+                // v1.1.16 (WC1): le run dell'option nascono naive (pipeline
+                // current_time('mysql')): created_at/updated_at escono in RFC3339
+                // con l'offset del sito, come tutti i datetime verso il JS
+                // (admin.js le mostra con dateIt). Le altre chiavi non si toccano.
+                foreach ( $runs as $run_index => $run ) {
+                        if ( ! is_array( $run ) ) {
+                                continue;
+                        }
+                        foreach ( array( 'created_at', 'updated_at' ) as $dt_key ) {
+                                if ( isset( $run[ $dt_key ] ) ) {
+                                        $runs[ $run_index ][ $dt_key ] = self::date_or_empty( $run[ $dt_key ] );
+                                }
+                        }
+                }
 
                 return rest_ensure_response(
                         array(
@@ -4410,6 +4432,13 @@ class Nexus_Rest {
                         $arr = is_array( $run ) ? $run : (array) $run;
                         if ( ! isset( $arr['status'] ) || 'completed' !== $arr['status'] ) {
                                 continue;
+                        }
+                        // v1.1.16 (WC1): come su /wire/runs admin — i datetime dell'option
+                        // escono in RFC3339 con l'offset del sito (primitive: current_time('mysql')).
+                        foreach ( array( 'created_at', 'updated_at' ) as $dt_key ) {
+                                if ( isset( $arr[ $dt_key ] ) ) {
+                                        $arr[ $dt_key ] = self::date_or_empty( $arr[ $dt_key ] );
+                                }
                         }
                         $items[] = array_intersect_key( $arr, array_flip( $allowed_keys ) );
                 }
@@ -5573,8 +5602,15 @@ class Nexus_Rest {
          *
          * Le date zero MySQL ('0000-00-00 00:00:00' e ogni variante che inizia
          * con '0000-00-00') e le stringhe vuote diventano '': la UI mostrerà
-         * vuoto/—, mai una data finta. Le date valide passano intatte (nessuna
-         * riformattazione: lo shape storico delle risposte resta invariato).
+         * vuoto/—, mai una data finta.
+         *
+         * v1.1.16 (WC1): le date valide NON passano più intatte — escono in
+         * RFC3339 CON l'offset del fuso del sito (Nexus_Utils::to_rfc3339_local,
+         * wp_timezone). Fix del bug "2 ore fa": prima uscivano naive
+         * ('Y-m-d H:i:s') e il browser le interpretava come ora locale del
+         * visitatore. new Date() regge entrambe le forme (retrocompatibile);
+         * se la stringa non fosse interpretabile l'helper la restituisce
+         * invariata (mai fatal, mai una data inventata).
          *
          * @param string|null $value Data letta dal DB (o assente).
          * @return string
@@ -5584,7 +5620,7 @@ class Nexus_Rest {
                 if ( '' === $value || 0 === strpos( $value, '0000-00-00' ) ) {
                         return '';
                 }
-                return $value;
+                return Nexus_Utils::to_rfc3339_local( $value );
         }
 
         /**
