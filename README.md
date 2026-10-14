@@ -27,24 +27,25 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 8. [Impostazioni](#impostazioni)
 9. [Cron automatico](#cron-automatico)
 10. [Pubblicazione multi-piattaforma](#pubblicazione-multi-piattaforma)
-11. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
-12. [Scala & Pro (v1.0.4)](#scala--pro-v104)
-13. [Strumenti, API pubblica, Multisite, Admin bilingue (v1.0.5)](#v105--strumenti-api-pubblica-multisite-admin-bilingue)
-14. [UI chiara & curata (v1.0.6)](#v106--ui-chiara--curata)
-15. [Impostazioni & Agenti Pro (v1.0.7)](#v107--impostazioni--agenti-pro)
-16. [Tutto nativo (v1.1.0)](#v110--tutto-nativo)
-17. [Redazioni gerarchiche (v1.1.1)](#v111--redazioni-gerarchiche)
-18. [Multilingua nativo (v1.1.2)](#v112--multilingua-nativo)
-19. [Pulizia menu legacy e bozza WP (v1.1.3)](#v113--pulizia-menu-legacy-e-bozza-wp)
-20. [Capo redattore AI, provider per agente, strumenti di ricerca (v1.1.4)](#v114--capo-redattore-ai-provider-per-agente-strumenti-di-ricerca)
-21. [UI che respira, avvii mirati, live redazionale (v1.1.5)](#v115--ui-che-respira-avvii-mirati-live-redazionale)
-22. [Zero mock, IT/EN 100%, impostazioni a sottomenu (v1.1.6)](#v116--zero-mock-iten-100-impostazioni-a-sottomenu)
-23. [E2E su WordPress reale, dashboard singola, test vivi (v1.1.7)](#v117--e2e-su-wordpress-reale-dashboard-singola-test-vivi)
-24. [API pubblica risanata, pipeline certificata (v1.1.8)](#v118--api-pubblica-risanata-pipeline-certificata)
-25. [Installazione](#installazione)
-26. [FAQ tecniche](#faq-tecniche)
-27. [Licenza e crediti](#licenza-e-crediti)
-28. [Changelog](#changelog)
+11. [Dove finiscono gli articoli generati](#dove-finiscono-gli-articoli-generati)
+12. [Redazione intelligente (v1.0.3)](#redazione-intelligente-v103)
+13. [Scala & Pro (v1.0.4)](#scala--pro-v104)
+14. [Strumenti, API pubblica, Multisite, Admin bilingue (v1.0.5)](#v105--strumenti-api-pubblica-multisite-admin-bilingue)
+15. [UI chiara & curata (v1.0.6)](#v106--ui-chiara--curata)
+16. [Impostazioni & Agenti Pro (v1.0.7)](#v107--impostazioni--agenti-pro)
+17. [Tutto nativo (v1.1.0)](#v110--tutto-nativo)
+18. [Redazioni gerarchiche (v1.1.1)](#v111--redazioni-gerarchiche)
+19. [Multilingua nativo (v1.1.2)](#v112--multilingua-nativo)
+20. [Pulizia menu legacy e bozza WP (v1.1.3)](#v113--pulizia-menu-legacy-e-bozza-wp)
+21. [Capo redattore AI, provider per agente, strumenti di ricerca (v1.1.4)](#v114--capo-redattore-ai-provider-per-agente-strumenti-di-ricerca)
+22. [UI che respira, avvii mirati, live redazionale (v1.1.5)](#v115--ui-che-respira-avvii-mirati-live-redazionale)
+23. [Zero mock, IT/EN 100%, impostazioni a sottomenu (v1.1.6)](#v116--zero-mock-iten-100-impostazioni-a-sottomenu)
+24. [E2E su WordPress reale, dashboard singola, test vivi (v1.1.7)](#v117--e2e-su-wordpress-reale-dashboard-singola-test-vivi)
+25. [API pubblica risanata, pipeline certificata (v1.1.8)](#v118--api-pubblica-risanata-pipeline-certificata)
+26. [Installazione](#installazione)
+27. [FAQ tecniche](#faq-tecniche)
+28. [Licenza e crediti](#licenza-e-crediti)
+29. [Changelog](#changelog)
 
 ---
 
@@ -466,6 +467,29 @@ Nella v1.0.1 l'admin aggiunge la sezione **«Pubblicazione WordPress & SEO»** c
 > **Nota onesta (v1.0.2):** per **blog la pubblicazione è reale** — l'articolo diventa un **post WordPress vero** (CPT `nexus_article`, permalink `home_url('/nexus/{slug}/')`, collegato al record Nexus via meta `_nexus_article_id`); solo in caso di errore (o con `enable_wp_posts=0`) si ricade sul front-end Nexus legacy con URL `home_url('/?nexus_article={id}')`. I canali **Telegram, Discord, X e LinkedIn sono reali dalla v1.0.2**: se il canale è abilitato nei settings con le proprie credenziali (sezione «Distribuzione sociale»), il publisher invia il messaggio con le API ufficiali (Bot API, webhook, OAuth 1.0a firmato in PHP senza librerie, UGC post via Bearer token) e registra nei log l'id e l'URL remoti veri; se il canale non è configurato il log registra lo stato `skipped` con nota onesta (es. «Telegram non configurato»), senza fingere invii. **Facebook, Instagram e qualunque altra piattaforma restano simulati**: post_id e URL demo dichiarati come tali («Pubblicazione simulata (demo)»). Ogni invio, reale o simulato, genera una riga in `wp_nexus_publish_logs` consultabile dall'admin, e i segreti (token/key) non compaiono mai in chiaro nei log.
 
 > **Aggiornamento (v1.1.0 — «Tutto nativo»):** per blog la pubblicazione avviene ora come **post WordPress nativo** (post type `post`, filtrabile con `nexus_native_post_type`): in home, negli archivi e nel feed del tema come qualunque articolo della redazione. Il post ha **autore bot** (utente con ruolo `nexus_ai_journalist` → byline e pagina autore reali), **categoria nativa** della testata (prima quella dell'agente) e **tag deterministici**. Il CPT `nexus_article` resta registrato per i permalink legacy `/nexus/{slug}/` degli articoli non ancora migrati e le letture sono dual-mode (`post` + `nexus_article`) finché la migrazione non è completa. Nuovo stato `pending` per passare dalla bozza alla revisione editoriale prima di pubblicare.
+
+---
+
+## Dove finiscono gli articoli generati
+
+Domanda legittima, risposta onesta: **durante la pipeline l'articolo non è ancora un post WordPress.**
+
+- **Raccolta → valutazione → scrittura → approvazione**: l'articolo vive nella tabella interna `wp_nexus_articles`. In modalità semi-autonoma si ferma nella **Coda Approvazioni** di Nexus News in attesa di un revisore umano: è il flusso normale, non un malfunzionamento.
+- **Pubblicazione (fase Publisher)**: qui, e solo qui, nasce il post WordPress (è l'unico `wp_insert_post` della pipeline — mai durante la raccolta). Lo stato del post dipende da **Impostazioni → Pubblicazione**:
+  - `post_status = draft` («Salvati come bozze») → l'articolo approvato finisce come **bozza in Articoli → WordPress**, pronta per la rilettura e la pubblicazione manuale;
+  - `post_status = publish` (default) → viene **pubblicato direttamente** sul sito.
+
+Un articolo «sparito» ha solo tre posti dove stare: **Coda Approvazioni Nexus**, **bozze WordPress**, **articoli pubblicati** — nessun altro destinatario.
+
+**L'agente non produce nulla? Checklist in ordine di frequenza:**
+
+1. **Fonti** nella redazione dell'agente (pagina Redazioni) o Fonti RSS globali — un agente **senza fonti** può generare solo contenuti **evergreen** AI, non attualità.
+2. **Chiave di ricerca web** (`tools_search_key`, Impostazioni → AI) se usi fonti di tipo search: senza chiave la fonte viene ignorata.
+3. **Cap giornaliero** `max_articles_per_day` (Impostazioni → Contenuti, default 10) già raggiunto: la pipeline riparte il giorno dopo.
+4. **Modalità semi-autonoma**: si ferma in Coda Approvazioni — non è un blocco, è il flusso.
+5. **WP-Cron** fermo: scatta solo con le visite al sito; su siti a basso traffico i tick possono ritardare di ore o non partire mai (il primo tick dopo l'attivazione è ritardato di ~5 minuti di proposito) → imposta un **cron di sistema**, vedi [Cron automatico](#cron-automatico).
+6. **Errori**: pagina **Attività** e card dell'agente (chiave AI mancante, fonti irraggiungibili, budget esaurito).
+7. **Fuso orario**: gli orari mostrati usano l'orario di WordPress (Impostazioni → Generali) — se il fuso del sito è sbagliato o su UTC, «adesso» e «X ore fa» appaiono sfasati.
 
 ---
 
