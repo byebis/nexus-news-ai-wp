@@ -26,6 +26,9 @@
  *  lang_of_post(), set_lang_of_post()
  *  group_of_post(), translations_of(), post_for_lang()
  *  register_translation( $post_id, $lang, $source_post_id )
+ *  on_deleted_post( $post_id, $post ) — v1.1.15: hook deleted_post, pulizia
+ *    dei gruppi di traduzione del driver nexus (meta sorgente rotto + teardown
+ *    gruppi vuoti/a membro singolo; Polylang e WPML non vengono toccati).
  *  stats_counts()  — articoli pubblicati per lingua (dashboard)
  *  doctor( $fix = false ) — v1.1.9: diagnostica/riparazione collegamenti multilingua
  *    (ritorna array( 'report' => string[], 'fixed' => int ); ZERO distruttività senza $fix).
@@ -49,12 +52,16 @@ class Nexus_Multilang {
         /* ========================= BOOTSTRAP ========================= */
 
         /**
-         * Bootstrap: nessun hook obbligatorio, il driver si decide al volo.
-         * Punto di aggancio futuro per query var e filtri di lingua.
+         * Bootstrap: registra gli hook del modulo, nessun side-effect diretto.
+         *
+         * v1.1.15 (WF5): aggancio deleted_post (priorità standard 10) per la
+         * pulizia dei gruppi di traduzione del driver nexus quando un post
+         * collegato viene cancellato (vedi on_deleted_post).
          *
          * @return void
          */
         public static function init() {
+                add_action( 'deleted_post', array( __CLASS__, 'on_deleted_post' ), 10, 2 );
         }
 
         /* ========================= DRIVER E LINGUE ========================= */
@@ -548,6 +555,122 @@ class Nexus_Multilang {
                 }
                 if ( '' === self::group_of_post( $post_id ) ) {
                         update_post_meta( $post_id, self::META_GROUP, $group );
+                }
+        }
+
+        /* ========================= CLEANUP ALLA CANCELLAZIONE (v1.1.15 WF5) ========================= */
+
+        /**
+         * Hook deleted_post: pulizia dei gruppi di traduzione del driver nexus.
+         *
+         * PERCHÉ: eliminando il post SORGENTE, le traduzioni pubblicate restano
+         * online ma i loro meta referenziano un post che non esiste più (meta
+         * _nexus_source_post_id orfano): il doctor segnala il collegamento come
+         * "rotto" (controllo (d)) e il gruppo resta agganciato a un fantasma.
+         * Con Polylang e WPML la gestione dei post cancellati è DEI LORO driver
+         * (hook e API proprie): qui si interviene SOLO sul driver nexus.
+         *
+         * Cosa fa (driver nexus — realtà del codice: il meta _nexus_trid vive su
+         * OGNI membro del gruppo, non solo sul sorgente):
+         *  1. trova i post che referenziano il cancellato via _nexus_source_post_id
+         *     (le sue traduzioni, dirette o a catena) e rimuove il meta sorgente
+         *     rotto — la STESSA riparazione applicata da doctor( $fix = true );
+         *  2. se un gruppo toccato resta con UN SOLO membro (o zero) lo scioglie
+         *     (delete_post_meta di _nexus_trid sui membri rimasti): un gruppo da
+         *     1 non produce mai hreflang (servono almeno 2 lingue pubblicate) e
+         *     non ha più motivo di esistere. I gruppi con 2+ membri restano:
+         *     le traduzioni rimaste continuano a essere collegate tra loro e
+         *     l'hreflang tra di loro resta corretto;
+         *  3. _nexus_lang NON viene toccata: la lingua è un fatto del post, non
+         *     un collegamento.
+         *
+         * Nota timing: deleted_post scatta DOPO che WordPress ha rimosso post e
+         * meta del cancellato, quindi il gruppo del cancellato viene ricostruito
+         * DAI MEMBRI che lo referenziano (il loro meta _nexus_trid), non dal suo
+         * meta (già perso).
+         *
+         * Mai fatale: query guardate, nessuna eccezione propagata.
+         *
+         * @param int     $post_id ID del post cancellato.
+         * @param WP_Post $post    Oggetto post passato dall'hook (meta già persi).
+         * @return void
+         */
+        public static function on_deleted_post( $post_id, $post = null ) {
+                $post_id = absint( $post_id );
+
+                if ( $post_id < 1 ) {
+                        return;
+                }
+
+                // Solo driver nexus: Polylang/WPML gestiscono da sé i gruppi dei
+                // post cancellati (e doctor pulisce i meta-traccia interni con --fix).
+                if ( 'nexus' !== self::driver() ) {
+                        return;
+                }
+
+                if ( ! function_exists( 'get_posts' ) || ! function_exists( 'delete_post_meta' ) ) {
+                        return;
+                }
+
+                /* 1) Membri che referenziano il cancellato (traduzioni dirette o a catena). */
+                $referencing = get_posts( array(
+                        'post_type'        => 'post',
+                        'post_status'      => 'any',
+                        'meta_key'         => self::META_SOURCE,
+                        'meta_value'       => (string) $post_id,
+                        'numberposts'      => 100,
+                        'orderby'          => 'ID',
+                        'order'            => 'ASC',
+                        'fields'           => 'ids',
+                        'suppress_filters' => false,
+                ) );
+
+                $referencing = array_map( 'absint', (array) $referencing );
+
+                if ( empty( $referencing ) ) {
+                        return;
+                }
+
+                $groups = array();
+
+                foreach ( $referencing as $pid ) {
+                        if ( $pid < 1 ) {
+                                continue;
+                        }
+
+                        $group = self::group_of_post( $pid );
+
+                        if ( '' !== $group ) {
+                                $groups[ $group ] = true;
+                        }
+
+                        // Meta sorgente rotto (il post referenziato non esiste più):
+                        // stessa riparazione di doctor( $fix = true ), applicata al volo.
+                        delete_post_meta( $pid, self::META_SOURCE );
+                }
+
+                /* 2) Teardown dei gruppi rimasti vuoti o a membro singolo. */
+                foreach ( array_keys( $groups ) as $group ) {
+                        $members = get_posts( array(
+                                'post_type'        => 'post',
+                                'post_status'      => 'any',
+                                'meta_key'         => self::META_GROUP,
+                                'meta_value'       => $group,
+                                'numberposts'      => 100,
+                                'orderby'          => 'ID',
+                                'order'            => 'ASC',
+                                'fields'           => 'ids',
+                                'suppress_filters' => false,
+                        ) );
+
+                        if ( count( (array) $members ) > 1 ) {
+                                continue;
+                        }
+
+                        // Gruppo con 0-1 membri: nessun hreflang possibile, si scioglie.
+                        foreach ( (array) $members as $pid ) {
+                                delete_post_meta( absint( $pid ), self::META_GROUP );
+                        }
                 }
         }
 
