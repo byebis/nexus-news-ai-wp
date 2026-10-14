@@ -64,6 +64,22 @@ class Nexus_Rss {
         const MAX_ITEMS = 10;
 
         /**
+         * v1.1.15 (WB2): circuit breaker per-feed (stesso pattern di
+         * Nexus_Sources): contatore fallimenti sliding 1h e cooldown 1h dopo
+         * soglia (3 esiti vuoti consecutivi). TTL espliciti: i transient
+         * espirano da soli, nessuna retention dedicata.
+         */
+        const FAIL_TTL       = 3600;
+        const COOLDOWN_TTL   = 3600;
+        const FAIL_THRESHOLD = 3;
+
+        /**
+         * v1.1.15 (WB2): cache negativa breve (10 minuti) sui risultati vuoti:
+         * il vuoto non viene più rifetchato a ogni collect_interval.
+         */
+        const EMPTY_TTL = 600;
+
+        /**
          * v1.1.11 (R1): feed RSS GLOBALI configurati dall'utente nella setting
          * 'global_rss_sources' (una URL http(s) per riga). ZERO URL hardcoded
          * nel codice: senza configurazione utente ritorna array() e la raccolta
@@ -213,11 +229,11 @@ class Nexus_Rss {
          * link, cap MAX_ITEMS totale invariato).
          *
          * - I feed in errore vengono ignorati e si continua con i successivi;
-         * - Cache transient 'nexus_rss_' . md5( $category ) per 30 minuti SOLO
-         *   per gli item globali (i risultati vuoti NON vengono cachati,
-         *   così il prossimo ciclo può ritentare): il merge con le fonti della
-         *   redazione avviene SEMPRE dopo la cache, perché dipende dall'agente
-         *   e non solo dalla categoria;
+         * - Cache transient 'nexus_rss_' . md5( $category ) per 30 minuti per
+         *   gli item globali (v1.1.15 (WB2): anche i risultati vuoti vengono
+         *   cachati brevemente, 10 minuti, con circuit breaker per-feed a
+         *   monte): il merge con le fonti della redazione avviene SEMPRE dopo
+         *   la cache, perché dipende dall'agente e non solo dalla categoria;
          * - Se nessun item è disponibile (nessuna fonte redazione E nessuna
          *   fonte globale configurata) ritorna array() vuoto.
          *
@@ -297,9 +313,15 @@ class Nexus_Rss {
          * (contesto dell'agente) e il contenuto non dipende dall'agente.
          *
          * - Loop sui feed globali con fetch_feed() (SimplePie di WordPress);
+         * - v1.1.15 (WB2) circuit breaker per-feed (stile Nexus_Sources):
+         *   ogni esito vuoto incrementa un contatore sliding 1h
+         *   ('nexus_rss_fail_<hash>', hash = md5 dell'URL normalizzato);
+         *   al 3° esito consecutivo il feed entra in cooldown 1h
+         *   ('nexus_rss_cool_<hash>') e viene saltato senza fetch;
          * - I feed in errore vengono ignorati e si continua con i successivi;
-         * - Cache transient 'nexus_rss_' . md5( $category ) per 30 minuti
-         *   (i risultati vuoti NON vengono cachati, così il prossimo ciclo può ritentare).
+         * - Cache transient 'nexus_rss_' . md5( $category ) per 30 minuti con
+         *   i risultati; i vuoti sono cachati brevemente (10 minuti, EMPTY_TTL)
+         *   così un giro senza item non rifetcha i feed a ogni collect_interval.
          *
          * @param string $category Nome della categoria (es. "Tecnologia").
          * @return array Array di item: {title, description, link, source}.
@@ -324,10 +346,23 @@ class Nexus_Rss {
                                 continue;
                         }
 
+                        // v1.1.15 (WB2): feed in cooldown (3 esiti vuoti consecutivi
+                        // → 1h): niente fetch sul feed morto, si prosegue col successivo.
+                        $feed_key = self::feed_state_key( $feed_url );
+                        if ( get_transient( 'nexus_rss_cool_' . $feed_key ) ) {
+                                continue;
+                        }
+
                         $rss_items = self::fetch_feed_items( $feed_url, self::MAX_ITEMS - count( $items ) );
                         if ( empty( $rss_items ) ) {
+                                // v1.1.15 (WB2): esito vuoto = fallimento per il circuit
+                                // breaker (fail-counter + cooldown dopo soglia).
+                                self::mark_feed_failure( $feed_key );
                                 continue; // Feed irraggiungibile o senza item: ignora e prosegui con il successivo.
                         }
+
+                        // v1.1.15 (WB2): esito positivo → azzera il contatore fallimenti.
+                        self::mark_feed_success( $feed_key );
 
                         foreach ( $rss_items as $item ) {
                                 if ( count( $items ) >= self::MAX_ITEMS ) {
@@ -348,9 +383,59 @@ class Nexus_Rss {
 
                 if ( ! empty( $items ) ) {
                         set_transient( $cache_key, $items, self::CACHE_TTL );
+                } else {
+                        // v1.1.15 (WB2): cache negativa breve sul vuoto: prima il
+                        // vuoto non veniva cachato e i feed venivano rifetchati a
+                        // ogni collect_interval (N feed × M agenti, per sempre).
+                        // Cache TTL 10 minuti: il ritento resta frequente ma non
+                        // martellante, e il circuit breaker per-feed taglia i morti.
+                        set_transient( $cache_key, array(), self::EMPTY_TTL );
                 }
 
                 return $items;
+        }
+
+        /**
+         * v1.1.15 (WB2): chiave stato stabile di un feed per i transient del
+         * circuit breaker: md5 dell'URL normalizzato (trim + lower). Stessa
+         * idea di Nexus_Sources::state_key, senza il tipo (qui esiste solo
+         * il feed RSS/Atom): la chiave non cambia tra giri e tra agenti.
+         *
+         * @param string $feed_url URL del feed.
+         * @return string Hash stabile.
+         */
+        private static function feed_state_key( $feed_url ) {
+                return md5( strtolower( trim( (string) $feed_url ) ) );
+        }
+
+        /**
+         * v1.1.15 (WB2): registra un esito vuoto del feed: contatore sliding 1h
+         * ('nexus_rss_fail_<hash>'); al 3° esito consecutivo → cooldown 1h
+         * ('nexus_rss_cool_<hash>'). Stesso pattern di
+         * Nexus_Sources::mark_failure (fail-counter + cooldown, mai fatale).
+         *
+         * @param string $feed_key Chiave stato del feed (feed_state_key).
+         * @return void
+         */
+        private static function mark_feed_failure( $feed_key ) {
+                $transient = 'nexus_rss_fail_' . $feed_key;
+                $failures  = (int) get_transient( $transient ) + 1;
+                set_transient( $transient, $failures, self::FAIL_TTL );
+
+                if ( $failures >= self::FAIL_THRESHOLD && ! get_transient( 'nexus_rss_cool_' . $feed_key ) ) {
+                        set_transient( 'nexus_rss_cool_' . $feed_key, 1, self::COOLDOWN_TTL );
+                }
+        }
+
+        /**
+         * v1.1.15 (WB2): registra un esito positivo del feed: azzera il
+         * contatore fallimenti (transient 'nexus_rss_fail_<hash>').
+         *
+         * @param string $feed_key Chiave stato del feed (feed_state_key).
+         * @return void
+         */
+        private static function mark_feed_success( $feed_key ) {
+                delete_transient( 'nexus_rss_fail_' . $feed_key );
         }
 
         /**
