@@ -169,9 +169,12 @@ class Nexus_Calendar {
         /**
          * Disattivazione: rimuove l'evento cron del calendario.
          *
-         * Da chiamare in nexus_deactivate() (vedi docblock di testa, wiring
-         * per l'integratore). Le option slot/spostamenti NON vengono
-         * cancellate: la configurazione sopravvive a riattivazioni.
+         * v1.1.15 (WF3): il metodo è ora registrato automaticamente via
+         * register_deactivation_hook a fondo file (stesso pattern di
+         * class-nexus-health.php) — prima nessuno lo registrava e il cron
+         * nexus_calendar_tick sopravviveva alla disattivazione del plugin.
+         * Le option slot/spostamenti NON vengono cancellate: la
+         * configurazione sopravvive a riattivazioni.
          *
          * @return void
          */
@@ -1335,3 +1338,12 @@ class Nexus_Calendar {
 // Boot self-registrante (pattern class-nexus-health.php / class-nexus-google-wizard.php):
 // il bootstrap richiede il file PRIMA di do_action('nexus_modules_init') (v1.1.14, glue).
 add_action( 'nexus_modules_init', array( 'Nexus_Calendar', 'init' ) );
+
+// v1.1.15 (WF3): alla disattivazione del plugin il cron del calendario
+// (nexus_calendar_tick) viene rimosso. Il metodo Nexus_Calendar::deactivate()
+// esisteva dal 1.1.14 ma NESSUNO lo registrava (dead code): il cron sopravviveva
+// alla disattivazione. Stesso pattern di class-nexus-health.php:1345 — il
+// modulo è richiesto dal bootstrap (require a nexus-news-ai.php:76) PRIMA di
+// do_action('nexus_modules_init'), quindi NEXUS_PLUGIN_FILE è già definito
+// a questo punto.
+register_deactivation_hook( NEXUS_PLUGIN_FILE, array( 'Nexus_Calendar', 'deactivate' ) );
