@@ -23,6 +23,11 @@
  * ④ FALLBACK placeholder locale — con GD: PNG 1200x675 con gradiente derivato dall'hash
  *    della categoria e iniziali del titolo (font builtin, nessun file esterno);
  *    senza GD: SVG minimale (gradiente + testo) come ultima spiaggia.
+ *    BUDGET DI TEMPO (v1.1.15, WC7): le sorgenti remote (①②③) partono solo se
+ *    il tempo totale consumato e' sotto il budget (default 20s, filtro dev
+ *    'nexus_image_time_budget'): superato il budget le sorgenti restanti
+ *    vengono saltate con nota onesta e si va diretti al placeholder (evita
+ *    fino a ~85s di publish bloccato in cascata).
  *
  * CONTRATTO PUBBLICO (usato dagli altri moduli):
  * Nexus_Image::ensure_featured( $article, $post_id ) — accetta l'articolo come
@@ -83,6 +88,16 @@ class Nexus_Image {
         const PIXABAY_QUERY_TTL = 86400; // 24 h.
 
         /**
+         * Budget totale di tempo (secondi) per le SORGENTI REMOTE della catena
+         * featured image (v1.1.15, WC7): superato il budget, le sorgenti
+         * successive vengono saltate con nota onesta e si va diretti al
+         * placeholder locale. Valore sovrascrivibile con il filtro dev
+         * 'nexus_image_time_budget' (per ambienti più lenti o più rapidi);
+         * valori non positivi tornano al default (mai catene senza limite).
+         */
+        const TIME_BUDGET_SECONDS = 20;
+
+        /**
          * Punto d'ingresso: garantisce che il post WP abbia una featured image.
          *
          * @param object|array $article Articolo (riga wp_nexus_articles o array associativo).
@@ -136,9 +151,18 @@ class Nexus_Image {
                                 $settings = (array) Nexus_DB::get_settings();
                         }
 
+                        // BUDGET DI TEMPO (v1.1.15, WC7): orologio della catena. Le
+                        // sorgenti remote (①②③) partono SOLO se il tempo consumato è
+                        // sotto il budget (default 20s, filtro 'nexus_image_time_budget');
+                        // superata la soglia si salta alla sorgente successiva fino al
+                        // placeholder locale (sempre eseguito: non è remoto). Ogni salto
+                        // lascia una nota onesta nel log attività.
+                        $budget  = self::image_time_budget();
+                        $started = microtime( true );
+
                         // ① GENERAZIONE AI — solo se abilitata nelle impostazioni.
                         $enable_ai = isset( $settings['enable_ai_images'] ) && (int) $settings['enable_ai_images'] === 1;
-                        if ( $enable_ai ) {
+                        if ( $enable_ai && self::time_budget_allows( $started, $budget, 'generazione AI', $notes ) ) {
                                 $api_key  = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
                                 $base_url = isset( $settings['ai_base_url'] ) ? trim( (string) $settings['ai_base_url'] ) : '';
                                 if ( '' === $base_url ) {
@@ -162,7 +186,7 @@ class Nexus_Image {
                         }
 
                         // ② FALLBACK image_url dell'articolo (gate qualità: larghezza minima v1.1.10).
-                        if ( '' === $binary && '' !== $image_url ) {
+                        if ( '' === $binary && '' !== $image_url && self::time_budget_allows( $started, $budget, 'download image_url', $notes ) ) {
                                 $downloaded = self::download_image( $image_url, 20 );
                                 if ( is_array( $downloaded ) ) {
                                         // Gate qualità v1.1.10 (AI esente): larghezza REALE del file scaricato.
@@ -184,7 +208,7 @@ class Nexus_Image {
 
                         // ③ FALLBACK Pixabay (v1.1.10) — scatta SOLO se AI è disabilitata/fallita
                         // E nessuna image_url utilizzabile (a questo punto '' === $binary).
-                        if ( '' === $binary ) {
+                        if ( '' === $binary && self::time_budget_allows( $started, $budget, 'ricerca e download Pixabay', $notes ) ) {
                                 $pixabay = self::fetch_pixabay_image( $title, $category, $settings );
                                 if ( is_array( $pixabay ) ) {
                                         // Download SEMPRE via download_image: SSRF guard + SVG ban + MIME
@@ -248,6 +272,51 @@ class Nexus_Image {
                         self::log_activity( 'Errore imprevisto nella gestione della featured image: ' . $e->getMessage(), 'error' );
                         return false;
                 }
+        }
+
+        /* ============ BUDGET DI TEMPO (v1.1.15, WC7) ============ */
+
+        /**
+         * Budget totale (secondi) per le sorgenti remote della catena: costante
+         * TIME_BUDGET_SECONDS sovrascrivibile con il filtro dev
+         * 'nexus_image_time_budget'. Valori non positivi tornano al default:
+         * un filtro rotto non deve produrre catene senza limite di tempo.
+         *
+         * @return float
+         */
+        private static function image_time_budget() {
+                $budget = (float) apply_filters( 'nexus_image_time_budget', (float) self::TIME_BUDGET_SECONDS );
+
+                return $budget > 0 ? $budget : (float) self::TIME_BUDGET_SECONDS;
+        }
+
+        /**
+         * Guardia di budget tra le sorgenti remote: true se la sorgente può
+         * partire; false se il tempo consumato ha esaurito il budget (in quel
+         * caso aggiunge la nota onesta a $notes e la catena prosegue verso la
+         * sorgente successiva fino al placeholder locale, sempre eseguito).
+         *
+         * Nota: la sorgente GIÀ avviata viene completata (una chiamata HTTP non
+         * è preemptibile in PHP): il budget è quindi garantito "a sorgente
+         * nuova", con un overshoot massimo pari alla durata dell'ultima
+         * sorgente avviata (30s per la generazione AI).
+         *
+         * @param float  $started microtime(true) d'inizio catena.
+         * @param float  $budget  Budget totale in secondi.
+         * @param string $what    Nome della sorgente per la nota.
+         * @param array  $notes   Note della catena (per riferimento).
+         * @return bool True se la sorgente può partire, false se va saltata.
+         */
+        private static function time_budget_allows( $started, $budget, $what, &$notes ) {
+                $elapsed = microtime( true ) - $started;
+
+                if ( $elapsed < $budget ) {
+                        return true;
+                }
+
+                $notes[] = 'budget di tempo esaurito (' . round( $elapsed, 1 ) . 's su ' . round( (float) $budget, 1 ) . 's): ' . $what . ' saltata, si passa alla sorgente successiva';
+
+                return false;
         }
 
         /* ============ ① GENERAZIONE AI ============ */
