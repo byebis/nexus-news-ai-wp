@@ -15,11 +15,31 @@
  * post WordPress REALI pubblicati dal plugin (post nativo 'post' + CPT legacy
  * 'nexus_article', stessa copertura dual-mode di Nexus_Ping via
  * Nexus_Native::query_post_types()) e pinga Google dopo ogni pubblicazione.
- * Da v1.1.14 (P6) espone anche la sitemap immagini all'indirizzo
+ * Dalla v1.1.14 (P6) espone anche la sitemap immagini all'indirizzo
  * /nexus-images.xml: articoli pubblicati con le LORO immagini (featured image
  * gestita da Nexus_Image::ensure_featured() → attachment WP con metadati;
  * immagini nel contenuto SOLO quando sono attachment della libreria media del
  * sito, riconosciute dalla classe wp-image-{ID} nell'<img>).
+ *
+ * v1.1.15 (WF6) — PERFORMANCE:
+ * - PRE-CARICO BATCH degli attachment (WF6a): la sitemap immagini raccoglie
+ *   PRIMA tutti gli attachment ID candidati (featured via _thumbnail_id, già
+ *   primato dalla query post; wp-image-{ID} nel contenuto) e li carica con
+ *   UNA sola get_posts (post__in, update_post_meta_cache): get_post() e
+ *   wp_get_attachment_image_url() nel loop leggono poi dalla cache WP
+ *   (prima: 2 query per ogni <img> con classe → 2.000-4.000 query/hit con
+ *   1000 post);
+ * - CACHE dell'XML (WF6b): l'OUTPUT finale della sitemap immagini è tenuto
+ *   nel transient 'nexus_image_sitemap_cache' (TTL 2h, filtro
+ *   nexus_sitemap_cache_ttl): il costo di rigenerazione scade a una volta
+ *   per TTL. Invalidazione su nexus_pipeline_after_publish e su save_post
+ *   dei tipi pubblicati (dual-mode). nocache_headers() resta (il Googlebot
+ *   riceve sempre XML coerente, il browser non cachia);
+ * - SEEDING dello stato di flush (WF6d): un'installazione fresca (option
+ *   nexus_news_sitemap_flushed assente) causava un flush_rewrite_rules
+ *   "fantasma" al primo request anche a modulo spento (default -1 ≠ 0):
+ *   al bootstrap l'option viene seminata a 0 (= rules rigenerate per stato
+ *   disattivato), nessun flush al seeding.
  *
  * COMPORTAMENTO:
  * - Rewrite (hook 'init'): la rule nexus-news-sitemap\.xml$ →
@@ -110,17 +130,45 @@ final class Nexus_News_Sitemap {
         const MAX_IMAGES_PER_POST = 10;
 
         /**
+         * v1.1.15 (WF6b): chiave del transient con l'OUTPUT XML della sitemap
+         * immagini (TTL 2h, filtro nexus_sitemap_cache_ttl). Invalidato su
+         * nexus_pipeline_after_publish e su save_post dei tipi pubblicati.
+         */
+        const CACHE_KEY_IMAGES = 'nexus_image_sitemap_cache';
+
+        /**
          * Bootstrap modulo (self-registrato su nexus_modules_init a fondo file).
          *
          * @return void
          */
         public static function init() {
+                // v1.1.15 (WF6d): seeding dello stato di flush. Un'installazione
+                // fresca (option assente) faceva leggere register_rewrite() il
+                // default -1 e causava un flush_rewrite_rules fantasma al primo
+                // request anche a modulo SPENTO. Seeminando 0 (= rules rigenerate
+                // per stato disattivato) il flush avviene solo alla vera
+                // transizione enabled↔disabled: nessun flush al seeding.
+                if ( false === get_option( self::OPTION_FLUSHED ) ) {
+                        // Autoload di DEFAULT (senza terzo argomento): l'option è
+                        // letta a ogni request da register_rewrite() su 'init' e le
+                        // installazioni esistenti la hanno nata autoload 'yes' dal
+                        // proprio register_rewrite(): parità e zero query dedicate.
+                        update_option( self::OPTION_FLUSHED, 0 );
+                }
+
                 add_filter( 'query_vars', array( __CLASS__, 'add_query_var' ) );
                 add_action( 'init', array( __CLASS__, 'register_rewrite' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'render_sitemap' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'render_image_sitemap' ) );
                 add_action( 'nexus_pipeline_after_publish', array( __CLASS__, 'maybe_ping_google' ), 10, 3 );
                 add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 10, 2 );
+
+                // v1.1.15 (WF6b): invalidazione della cache XML della sitemap
+                // immagini a ogni pubblicazione Nexus e a ogni salvataggio dei
+                // tipi pubblicati (dual-mode: edit umano compreso — correttezza
+                // prima dell'efficienza: la cache si rigenera al prossimo hit).
+                add_action( 'nexus_pipeline_after_publish', array( __CLASS__, 'flush_xml_cache' ), 5 );
+                add_action( 'save_post', array( __CLASS__, 'on_save_post' ), 10, 2 );
         }
 
         /**
@@ -237,10 +285,36 @@ final class Nexus_News_Sitemap {
                 header( 'Content-Type: application/xml; charset=UTF-8' );
                 nocache_headers();
 
+                // v1.1.15 (WF6b): cache dell'OUTPUT XML in un transient (TTL 2h,
+                // filtro nexus_sitemap_cache_ttl, 0 = cache spenta): il costo di
+                // rigenerazione scade a una volta per TTL. nocache_headers resta
+                // (intestazioni verso il client): il Googlebot riceve sempre XML
+                // coerente e il contenuto è sempre fresco dopo l'invalidazione.
+                $ttl = self::cache_ttl();
+
+                if ( $ttl > 0 ) {
+                        $cached = get_transient( self::CACHE_KEY_IMAGES );
+
+                        if ( is_string( $cached ) && '' !== $cached ) {
+                                echo $cached;
+                                exit;
+                        }
+                }
+
+                ob_start();
+
                 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
                 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
 
-                foreach ( self::query_posts_for_images() as $post ) {
+                $posts = self::query_posts_for_images();
+
+                // v1.1.15 (WF6a): pre-carico in BATCH degli attachment candidati
+                // (featured + wp-image-{ID} nel contenuto) con UNA sola query:
+                // get_post() e wp_get_attachment_image_url() nel loop leggono
+                // poi dalla cache WP (prima: 2 query per ogni <img> classata).
+                self::prime_attachment_cache( $posts );
+
+                foreach ( $posts as $post ) {
                         $images = self::collect_post_images( $post );
 
                         // Nessuna immagine raggiungibile → NESSUNA voce <url> per
@@ -251,7 +325,69 @@ final class Nexus_News_Sitemap {
                 }
 
                 echo '</urlset>' . "\n";
+
+                $xml = (string) ob_get_clean();
+
+                if ( $ttl > 0 ) {
+                        set_transient( self::CACHE_KEY_IMAGES, $xml, $ttl );
+                }
+
+                echo $xml;
                 exit;
+        }
+
+        /**
+         * v1.1.15 (WF6b): invalidazione della cache XML della sitemap immagini.
+         *
+         * Registrata su nexus_pipeline_after_publish (priorità 5, PRIMA del
+         * ping) e chiamata da on_save_post() su save_post dei tipi pubblicati.
+         * delete_transient è idempotente: sicuro anche a cache mai generata.
+         *
+         * @return void
+         */
+        public static function flush_xml_cache() {
+                delete_transient( self::CACHE_KEY_IMAGES );
+        }
+
+        /**
+         * v1.1.15 (WF6b): listener di save_post per l'invalidazione cache.
+         *
+         * Gated sui tipi pubblicati dual-mode (Nexus_Native::query_post_types(),
+         * fallback post + nexus_article): un edit manuale a un post nativo cambia
+         * le immagini/contenuto tanto quanto una pubblicazione Nexus, quindi
+         * busta la cache (correttezza prima dell'efficienza: cache rigenerata
+         * al prossimo hit). save_post gira anche per revisioni/autosave: i
+         * tipi estranei escono subito senza toccare nulla.
+         *
+         * @param int     $post_id ID del post salvato.
+         * @param WP_Post $post    Oggetto post salvato.
+         * @return void
+         */
+        public static function on_save_post( $post_id, $post ) {
+                if ( ! $post instanceof WP_Post ) {
+                        return;
+                }
+
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
+                        ? Nexus_Native::query_post_types()
+                        : array( 'post', 'nexus_article' );
+
+                if ( in_array( $post->post_type, (array) $types, true ) ) {
+                        self::flush_xml_cache();
+                }
+        }
+
+        /**
+         * v1.1.15 (WF6b): TTL della cache XML (filtro nexus_sitemap_cache_ttl).
+         * Default 2 ore; 0 o negativo = cache DISATTIVATA (rigenerazione a ogni
+         * hit, comportamento v1.1.14).
+         *
+         * @return int TTL in secondi (0 = cache spenta).
+         */
+        private static function cache_ttl() {
+                $ttl = (int) apply_filters( 'nexus_sitemap_cache_ttl', 2 * HOUR_IN_SECONDS );
+
+                return $ttl > 0 ? $ttl : 0;
         }
 
         /**
@@ -434,6 +570,79 @@ final class Nexus_News_Sitemap {
                 );
 
                 return $query->posts;
+        }
+
+        /**
+         * v1.1.15 (WF6a): pre-carico in BATCH degli attachment candidati della
+         * sitemap immagini.
+         *
+         * Raccoglie TUTTI gli attachment ID (featured via _thumbnail_id — meta
+         * già primato dalla query post con update_post_meta_cache — e classi
+         * wp-image-{ID} nei contenuti) e li carica con UNA SOLA get_posts
+         * (post__in + update_post_meta_cache): nel loop collect_post_images()
+         * legge poi get_post()/wp_get_attachment_image_url() dalla cache WP.
+         * Prima di questo pre-carico ogni <img> classata costava 2 query non
+         * primare (get_post + image_downsize): con 1000 post × 10 immagini
+         * erano 2.000-4.000 query per hit del Googlebot (audit P15).
+         *
+         * Filtri: post_type attachment, post_status inherit, mime image — gli
+         * ID scartati qui (non-attachment/non-immagine) restano comunque
+         * coperti dal guard in attachment_image_entry() (cache miss → get_post
+         * diretto, stesso esito di prima).
+         *
+         * @param WP_Post[] $posts Post candidati (max MAX_POSTS_IMAGES).
+         * @return void
+         */
+        private static function prime_attachment_cache( $posts ) {
+                $ids = array();
+
+                foreach ( (array) $posts as $post ) {
+                        if ( ! $post instanceof WP_Post ) {
+                                continue;
+                        }
+
+                        // Featured image: _thumbnail_id è già in cache meta (query post).
+                        $thumb_id = (int) get_post_thumbnail_id( $post );
+
+                        if ( $thumb_id > 0 ) {
+                                $ids[ $thumb_id ] = $thumb_id;
+                        }
+
+                        // Immagini nel contenuto: classi wp-image-{ID} su <img>.
+                        $content = (string) $post->post_content;
+
+                        if ( '' !== $content && preg_match_all( '#<img\b[^>]*>#i', $content, $tags ) ) {
+                                foreach ( $tags[0] as $tag ) {
+                                        if ( preg_match( '#\bwp-image-(\d{1,10})\b#i', (string) $tag, $m ) ) {
+                                                $attach_id = absint( $m[1] );
+
+                                                if ( $attach_id > 0 ) {
+                                                        $ids[ $attach_id ] = $attach_id;
+                                                }
+                                        }
+                                }
+                        }
+                }
+
+                if ( empty( $ids ) ) {
+                        return;
+                }
+
+                // UNA sola query: primare cache oggetti + meta (_wp_attachment_metadata
+                // serve a wp_get_attachment_image_url via image_downsize).
+                get_posts( array(
+                        'post__in'               => array_values( $ids ),
+                        'post_type'              => 'attachment',
+                        'post_status'            => 'inherit',
+                        'post_mime_type'         => 'image',
+                        'posts_per_page'         => count( $ids ),
+                        'orderby'                => 'post__in',
+                        'ignore_sticky_posts'    => true,
+                        'no_found_rows'          => true,
+                        'update_post_meta_cache' => true,
+                        'update_post_term_cache' => false,
+                        'suppress_filters'       => false,
+                ) );
         }
 
         /**

@@ -49,6 +49,15 @@
  *   max 1000, orderby date DESC, no found rows: stessa disciplina della
  *   news sitemap. Nessun ping aggiuntivo a Google (come da v1.1.13 O1).
  * - robots_txt: se abilitato aggiunge la riga "Sitemap: {url}".
+ * - CACHE dell'output XML (v1.1.15, WF6): l'OUTPUT finale della video sitemap
+ *   è tenuto nel transient 'nexus_video_sitemap_cache' (TTL 2 ore, filtro
+ *   nexus_sitemap_cache_ttl — lo STESSO filtro della sitemap immagini/news —
+ *   0 = cache spenta, comportamento v1.1.14): il costo della query su 1000
+ *   post completi (contenuti interi in memoria) scade a UNA volta per TTL.
+ *   Invalidazione su nexus_pipeline_after_publish e su save_post dei tipi
+ *   pubblicati (dual-mode, edit umano compreso). nocache_headers() resta
+ *   (intestazioni verso il client): il Googlebot riceve sempre XML coerente,
+ *   rigenerato al prossimo hit dopo l'invalidazione.
  *
  * @package Nexus_News_AI
  */
@@ -81,6 +90,13 @@ final class Nexus_Video_Sitemap {
         const MAX_VIDEOS_PER_POST = 10;
 
         /**
+         * v1.1.15 (WF6b): chiave del transient con l'OUTPUT XML della video
+         * sitemap (TTL 2h, filtro nexus_sitemap_cache_ttl). Invalidato su
+         * nexus_pipeline_after_publish e su save_post dei tipi pubblicati.
+         */
+        const CACHE_KEY_VIDEOS = 'nexus_video_sitemap_cache';
+
+        /**
          * Pattern degli embed YouTube riconosciuti nel contenuto. Cattura l'ID
          * video dalla FORMA completa dell'URL (youtu.be/ID anche con prefisso
          * shorts/ o live/, youtube.com/embed/ID, /shorts/ID, /live/ID, /v/ID,
@@ -107,6 +123,13 @@ final class Nexus_Video_Sitemap {
                 add_action( 'init', array( __CLASS__, 'register_rewrite' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'render_sitemap' ) );
                 add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 10, 2 );
+
+                // v1.1.15 (WF6b): invalidazione della cache XML della video
+                // sitemap a ogni pubblicazione Nexus e a ogni salvataggio dei
+                // tipi pubblicati (dual-mode: edit umano compreso — correttezza
+                // prima dell'efficienza: la cache si rigenera al prossimo hit).
+                add_action( 'nexus_pipeline_after_publish', array( __CLASS__, 'flush_xml_cache' ), 5 );
+                add_action( 'save_post', array( __CLASS__, 'on_save_post' ), 10, 2 );
         }
 
         /**
@@ -158,6 +181,9 @@ final class Nexus_Video_Sitemap {
          * - Altrimenti: header XML + nocache_headers() + urlset (namespace video 0.9)
          *   con le pagine che incorporano video, una voce video:video per embed.
          *   Nessuna voce → urlset vuoto (stato lecito, documentato nel docblock).
+         *   v1.1.15 (WF6b): l'OUTPUT è cachato nel transient
+         *   nexus_video_sitemap_cache (TTL 2h, filtro nexus_sitemap_cache_ttl):
+         *   hit → echo + exit; miss → rigenerazione + set_transient.
          *
          * @return void
          */
@@ -175,6 +201,25 @@ final class Nexus_Video_Sitemap {
                 header( 'Content-Type: application/xml; charset=UTF-8' );
                 nocache_headers();
 
+                // v1.1.15 (WF6b): cache dell'OUTPUT XML in un transient (TTL 2h,
+                // filtro nexus_sitemap_cache_ttl, 0 = cache spenta): il costo della
+                // query su 1000 post completi scade a una volta per TTL.
+                // nocache_headers resta (intestazioni verso il client): il Googlebot
+                // riceve sempre XML coerente e il contenuto è sempre fresco dopo
+                // l'invalidazione.
+                $ttl = self::cache_ttl();
+
+                if ( $ttl > 0 ) {
+                        $cached = get_transient( self::CACHE_KEY_VIDEOS );
+
+                        if ( is_string( $cached ) && '' !== $cached ) {
+                                echo $cached;
+                                exit;
+                        }
+                }
+
+                ob_start();
+
                 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
                 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">' . "\n";
 
@@ -183,7 +228,70 @@ final class Nexus_Video_Sitemap {
                 }
 
                 echo '</urlset>' . "\n";
+
+                $xml = (string) ob_get_clean();
+
+                if ( $ttl > 0 ) {
+                        set_transient( self::CACHE_KEY_VIDEOS, $xml, $ttl );
+                }
+
+                echo $xml;
                 exit;
+        }
+
+        /**
+         * v1.1.15 (WF6b): invalidazione della cache XML della video sitemap.
+         *
+         * Registrata su nexus_pipeline_after_publish (priorità 5) e chiamata
+         * da on_save_post() su save_post dei tipi pubblicati. delete_transient
+         * è idempotente: sicuro anche a cache mai generata.
+         *
+         * @return void
+         */
+        public static function flush_xml_cache() {
+                delete_transient( self::CACHE_KEY_VIDEOS );
+        }
+
+        /**
+         * v1.1.15 (WF6b): listener di save_post per l'invalidazione cache.
+         *
+         * Gated sui tipi pubblicati dual-mode (Nexus_Native::query_post_types(),
+         * fallback post + nexus_article): un edit manuale a un post nativo
+         * cambia gli embed nel contenuto tanto quanto una pubblicazione Nexus,
+         * quindi busta la cache (correttezza prima dell'efficienza: cache
+         * rigenerata al prossimo hit). save_post gira anche per revisioni/
+         * autosave: i tipi estranei escono subito senza toccare nulla.
+         *
+         * @param int     $post_id ID del post salvato.
+         * @param WP_Post $post    Oggetto post salvato.
+         * @return void
+         */
+        public static function on_save_post( $post_id, $post ) {
+                if ( ! $post instanceof WP_Post ) {
+                        return;
+                }
+
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
+                        ? Nexus_Native::query_post_types()
+                        : array( 'post', 'nexus_article' );
+
+                if ( in_array( $post->post_type, (array) $types, true ) ) {
+                        self::flush_xml_cache();
+                }
+        }
+
+        /**
+         * v1.1.15 (WF6b): TTL della cache XML (filtro nexus_sitemap_cache_ttl,
+         * lo STESSO filtro della sitemap immagini/news: un dev che lo regola
+         * copre tutte le sitemap Nexus). Default 2 ore; 0 o negativo = cache
+         * DISATTIVATA (rigenerazione a ogni hit, comportamento v1.1.14).
+         *
+         * @return int TTL in secondi (0 = cache spenta).
+         */
+        private static function cache_ttl() {
+                $ttl = (int) apply_filters( 'nexus_sitemap_cache_ttl', 2 * HOUR_IN_SECONDS );
+
+                return $ttl > 0 ? $ttl : 0;
         }
 
         /**
