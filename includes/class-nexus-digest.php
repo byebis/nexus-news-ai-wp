@@ -309,7 +309,9 @@ class Nexus_Digest {
                         return '';
                 }
 
-                $since = gmdate( 'Y-m-d H:i:s', time() - self::WINDOW_DAYS * DAY_IN_SECONDS );
+                // Finestra in ORARIO SITO (v1.1.16 WA1): created_at/updated_at di
+                // activity_logs e jobs sono scritti con current_time('mysql').
+                $since = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - self::WINDOW_DAYS * DAY_IN_SECONDS );
                 $items = array();
 
                 if ( '' !== $act ) {

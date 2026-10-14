@@ -98,7 +98,9 @@ final class Nexus_Learn {
                 }
 
                 $generated = isset( $b['generated_at'] ) ? strtotime( (string) $b['generated_at'] ) : 0;
-                $stale     = $generated <= 0 || ( time() - $generated ) > self::BRIEFING_TTL;
+                // generated_at è salvato in ORARIO SITO (current_time('mysql') qui
+                // sotto): il TTL confronta lo stesso orologio — v1.1.16 WA1.
+                $stale     = $generated <= 0 || ( current_time( 'timestamp' ) - $generated ) > self::BRIEFING_TTL;
 
                 if ( $stale && ! self::$empty_once ) {
                         $b = self::build_briefing();
@@ -126,7 +128,9 @@ final class Nexus_Learn {
                 }
 
                 $days  = self::window_days();
-                $since = gmdate( 'Y-m-d', time() - ( $days * DAY_IN_SECONDS ) );
+                // metric_date è un DATE sul "giorno locale" (sync GSC/GA4,
+                // v1.1.16 WA1): la finestra usa l'orologio del sito, non UTC.
+                $since = gmdate( 'Y-m-d', current_time( 'timestamp' ) - ( $days * DAY_IN_SECONDS ) );
 
                 $totals  = self::fetch_totals( $since );
                 $sources = self::fetch_sources( $since );
