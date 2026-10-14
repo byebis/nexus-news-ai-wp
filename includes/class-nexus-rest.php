@@ -70,7 +70,9 @@
  * v1.1.4 include sempre anche i campi capo redattore chief_status,
  * chief_note, chief_reviewed_at, chief_agent, chief_agent_name e
  * chief_rounds (stringa vuota o 0 quando il capo redattore non ha ancora
- * revisionato l'articolo).
+ * revisionato l'articolo). Dalla v1.1.15 (WC1) la LISTA GET /articles NON
+ * include il LONGTEXT content (solo summary + excerpt): il contenuto
+ * completo è sulla singola GET /articles/{id} (usata dalla modale dettaglio).
  *
  * SHAPE AGENTI (serialize_agent): dalla v1.1.4 ogni endpoint che restituisce
  * agenti (lista, status, model, create, update, clone) include sempre anche
@@ -3194,9 +3196,18 @@ class Nexus_Rest {
                 $rows  = Nexus_DB::articles( $args );
                 $total = Nexus_DB::count_articles( $args );
 
+                // v1.1.15 (WC1): la LISTA non include il LONGTEXT content (payload
+                // 10-50× più leggero): ogni riga porta già summary + excerpt
+                // (wp_trim_words 30 parole su summary o content). Il contenuto
+                // completo resta disponibile su GET /articles/{id} (rest_article_get)
+                // che la modale di dettaglio chiama comunque: nessun consumatore
+                // della lista (admin.js: loadQueueList e modal articoli per-agente)
+                // usa `content` se non come fallback su righe senza summary.
                 return rest_ensure_response(
                         array(
-                                'items'        => array_map( array( __CLASS__, 'serialize_article' ), $rows ),
+                                'items'        => array_map( function ( $a ) {
+                                        return self::serialize_article( $a, false );
+                                }, $rows ),
                                 'total'        => (int) $total,
                                 'page'         => (int) $args['page'],
                                 'per_page'     => (int) $args['per_page'],
