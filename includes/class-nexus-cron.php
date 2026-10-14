@@ -48,6 +48,9 @@ class Nexus_Cron {
          * presente = un tick è già in esecuzione → il tick sovrapposto salta
          * (log debug, non bloccante). Con la coda attiva non serve: il claim del
          * job è già atomico.
+         * v1.1.15 (WA11): il lock vive come opzione _transient_<key> con valore =
+         * timestamp di acquisizione (add_option atomico, TTL manuale — v.
+         * acquire_lock): niente più finestra di corsa nel check-then-set.
          */
         const TICK_LOCK = 'nexus_tick_lock';
 
@@ -135,6 +138,8 @@ class Nexus_Cron {
          * v1.1.13 (O1): sul percorso senza coda il tick è protetto da un mutex
          * transient (TICK_LOCK, non bloccante): un tick sovrapposto salta invece
          * di duplicare il lavoro AI. Rilascio nel finally anche su eccezione.
+         * v1.1.15 (WA11): l'acquisizione del mutex è ATOMICA (add_option
+         * check-and-set con TTL manuale, v. acquire_lock).
          *
          * @return void
          */
@@ -170,6 +175,12 @@ class Nexus_Cron {
                         }
                 }
 
+                // v1.1.15 (WA11) — guardia di ownership per il rilascio: il finally
+                // scatta anche sul percorso 'skip' (return dentro il try) e un tick
+                // saltato NON deve cancellare il lock del tick ancora in esecuzione
+                // (riaprirebbe la finestra di concorrenza che il mutex deve chiudere).
+                $lock_acquired = false;
+
                 try {
                         // v1.1.13 (O1) — mutex tick non bloccante: con enable_queue=0 due
                         // tick WP-Cron sovrapposti giravano cron_tick in parallelo
@@ -177,11 +188,14 @@ class Nexus_Cron {
                         // silenzioso con log debug; il rilascio è garantito nel finally a
                         // fine run anche su eccezione. Il percorso CON coda non è toccato
                         // (ha già il claim atomico del job unique).
-                        if ( get_transient( self::TICK_LOCK ) ) {
+                        // v1.1.15 (WA11) — acquisizione ATOMICA (add_option check-and-set,
+                        // v. acquire_lock): il vecchio get_transient+set_transient era
+                        // check-then-set con una finestra di corsa tra i due tick.
+                        if ( ! self::acquire_lock( self::TICK_LOCK, self::TICK_LOCK_TTL ) ) {
                                 self::debug_log( 'Tick già in esecuzione (mutex attivo): tick saltato.' );
                                 return;
                         }
-                        set_transient( self::TICK_LOCK, time(), self::TICK_LOCK_TTL );
+                        $lock_acquired = true;
 
                         Nexus_Pipeline::cron_tick();
                 } catch ( Exception $e ) {
@@ -190,8 +204,12 @@ class Nexus_Cron {
                         self::debug_log( 'Errore fatale durante cron tick: ' . $e->getMessage() );
                 } finally {
                         // Rilascio garantito del mutex (anche su eccezione): il TTL è la
-                        // rete di sicurezza solo per crash duri del processo.
-                        delete_transient( self::TICK_LOCK );
+                        // rete di sicurezza solo per crash duri del processo. Solo se il
+                        // lock è nostro ($lock_acquired): il tick saltato esce dal try
+                        // senza possedere il mutex.
+                        if ( $lock_acquired ) {
+                                self::release_lock( self::TICK_LOCK );
+                        }
                 }
         }
 
@@ -232,8 +250,9 @@ class Nexus_Cron {
                 wp_clear_scheduled_hook( self::HOOK_TICK );
 
                 // v1.1.13 (O1): nessun tick può più girare dopo la disattivazione:
-                // il mutex residuo non deve sopravvivere al plugin.
-                delete_transient( self::TICK_LOCK );
+                // il mutex residuo non deve sopravvivere al plugin. v1.1.15 (WA11):
+                // rilascio via helper (opzione _transient_ + eventuale timeout legacy).
+                self::release_lock( self::TICK_LOCK );
 
                 // v1.0.4 — deattiva anche la coda lavori (rimuove il runner e
                 // rimette in coda i lavori 'running' bloccati).
@@ -243,6 +262,48 @@ class Nexus_Cron {
         }
 
         /* ============ HELPER PRIVATI ============ */
+
+        /**
+         * v1.1.15 (WA11) — acquisizione ATOMICA del mutex: add_option fallisce se
+         * l'opzione esiste già (INSERT su chiave duplicata), quindi il
+         * check-and-set è un solo passo (il vecchio get_transient+set_transient
+         * era una finestra di corsa tra i due tick WP-Cron sovrapposti).
+         * Valore = timestamp di acquisizione: un lock più vecchio del TTL è orfano
+         * di un crash duro (il release in finally non è potuto girare) e viene
+         * RUBATO (delete + re-add). I lock legacy creati con set_transient (con
+         * opzione _transient_timeout_*) sono letti con la stessa regola.
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @param int    $ttl TTL in secondi oltre il quale il lock è rubabile.
+         * @return bool True se il lock è stato acquisito.
+         */
+        private static function acquire_lock( $key, $ttl ) {
+                $option = '_transient_' . $key;
+                $now    = time();
+                $held   = get_option( $option, false );
+
+                if ( false !== $held ) {
+                        if ( is_numeric( $held ) && ( $now - (int) $held ) > (int) $ttl ) {
+                                self::release_lock( $key );
+                        } else {
+                                return false;
+                        }
+                }
+
+                return (bool) add_option( $option, $now, '', 'no' );
+        }
+
+        /**
+         * v1.1.15 (WA11) — rilascio del mutex (idempotente; pulisce anche
+         * l'eventuale _transient_timeout_* lasciato dai lock legacy set_transient).
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @return void
+         */
+        private static function release_lock( $key ) {
+                delete_option( '_transient_' . $key );
+                delete_option( '_transient_timeout_' . $key );
+        }
 
         /**
          * Intervallo effettivo in secondi: collect_interval dalle impostazioni,

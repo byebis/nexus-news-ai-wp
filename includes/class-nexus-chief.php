@@ -489,14 +489,17 @@ class Nexus_Chief {
                 }
 
                 // Lock anti-concorrenza: coda e cron possono sovrapporsi sullo stesso articolo.
+                // v1.1.15 (WA11): acquisizione ATOMICA (add_option check-and-set, valore =
+                // timestamp, TTL LOCK_TTL con auto-guarigione dei lock orfani — v.
+                // acquire_lock): il vecchio get_transient+set_transient era check-then-set
+                // con una finestra di corsa tra i flussi concorrenti.
                 $lock_key = self::LOCK_PREFIX . absint( $article_id );
-                if ( get_transient( $lock_key ) ) {
+                if ( ! self::acquire_lock( $lock_key, self::LOCK_TTL ) ) {
                         $out['ok']      = true;
                         $out['skipped'] = true;
                         $out['message'] = "Revisione capo redattore gia' in corso per questo articolo.";
                         return $out;
                 }
-                set_transient( $lock_key, 1, self::LOCK_TTL );
 
                 self::$depth++;
 
@@ -507,10 +510,52 @@ class Nexus_Chief {
                         self::log( isset( $article->agent_id ) ? (int) $article->agent_id : 0, sprintf( 'Capo redattore: revisione articolo #%d fallita: %s', absint( $article_id ), self::clip( $e->getMessage(), 300 ) ), 'error' );
                 } finally {
                         self::$depth--;
-                        delete_transient( $lock_key );
+                        self::release_lock( $lock_key );
                 }
 
                 return $out;
+        }
+
+        /**
+         * v1.1.15 (WA11) — acquisizione ATOMICA del lock anti-concorrenza:
+         * add_option fallisce se l'opzione esiste già (INSERT su chiave duplicata),
+         * quindi il check-and-set è un solo passo (il vecchio
+         * get_transient+set_transient era check-then-set con finestra di corsa).
+         * Valore = timestamp di acquisizione: un lock più vecchio del TTL è orfano
+         * di un crash duro (il release in finally non è potuto girare) e viene
+         * RUBATO (delete + re-add). I lock legacy creati con set_transient (che
+         * aggiunge anche _transient_timeout_*) sono letti con la stessa regola.
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @param int    $ttl TTL in secondi oltre il quale il lock è rubabile.
+         * @return bool True se il lock è stato acquisito.
+         */
+        private static function acquire_lock( $key, $ttl ) {
+                $option = '_transient_' . $key;
+                $now    = time();
+                $held   = get_option( $option, false );
+
+                if ( false !== $held ) {
+                        if ( is_numeric( $held ) && ( $now - (int) $held ) > (int) $ttl ) {
+                                self::release_lock( $key );
+                        } else {
+                                return false;
+                        }
+                }
+
+                return (bool) add_option( $option, $now, '', 'no' );
+        }
+
+        /**
+         * v1.1.15 (WA11) — rilascio del lock (idempotente; pulisce anche
+         * l'eventuale _transient_timeout_* lasciato dai lock legacy set_transient).
+         *
+         * @param string $key Chiave del lock (senza prefisso _transient_).
+         * @return void
+         */
+        private static function release_lock( $key ) {
+                delete_option( '_transient_' . $key );
+                delete_option( '_transient_timeout_' . $key );
         }
 
         /**
