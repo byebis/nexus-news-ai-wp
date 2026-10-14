@@ -26,9 +26,10 @@
  *    aggiunto un embed {title, url, description, thumbnail:{url}}.
  *  - Limiti Discord rispettati: content max 2000 caratteri; embed description
  *    troncata a 300 (quindi sempre entro il limite Discord di 4096).
- *  - HTTP SOLO con wp_remote_post (timeout 20s), Content-Type application/json,
- *    body wp_json_encode con JSON_UNESCAPED_UNICODE. Discord conferma la consegna
- *    con 204 No Content (talvolta 200) → status 'published'.
+ *  - HTTP SOLO con wp_remote_post (timeout 20s, con UN retry automatico sui
+ *    transient rete/429/5xx — v1.1.15 WE1, cap attesa 60s), Content-Type
+ *    application/json, body wp_json_encode con JSON_UNESCAPED_UNICODE. Discord
+ *    conferma la consegna con 204 No Content (talvolta 200) → status 'published'.
  *  - Codici diversi da 200/204 → 'failed' con error descrittivo (HTTP code + body
  *    troncato a 200 caratteri). Nessuna eccezione propagata: qualunque problema
  *    → 'failed'. Il webhook è un segreto: NON viene MAI riportato completo nei
@@ -92,7 +93,10 @@ class Nexus_Social_Discord {
                         return self::result( 'failed', '', '', 'Impossibile preparare il payload JSON per Discord.', 'Pubblicazione Discord non riuscita.' );
                 }
 
-                $response = wp_remote_post(
+                // v1.1.15 (WE1): POST con UN retry su errori transitori (rete/429/5xx),
+                // attesa da Retry-After di Discord (cap 60s) — mai ripetuto su 204/200
+                // (niente messaggi doppiati sul canale).
+                $response = self::post_with_retry(
                         $webhook,
                         array(
                                 'timeout' => 20,
@@ -126,6 +130,26 @@ class Nexus_Social_Discord {
                         'Discord ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' ),
                         'Pubblicazione Discord non riuscita.'
                 );
+        }
+
+        /**
+         * v1.1.15 (WE1) — wp_remote_post con UN retry automatico su errori
+         * transitori (rete/HTTP 429/5xx): gira tramite Nexus_Notify::http_post_with_retry(),
+         * l'helper condiviso di WE1 (UNA sola implementazione del retry nel plugin;
+         * il rate limit di Discord porta l'attesa nell'header Retry-After).
+         * Con il modulo notify assente (caricamento parziale) fallback al
+         * wp_remote_post storico senza retry.
+         *
+         * @param string $url  Endpoint.
+         * @param array  $args Argomenti di wp_remote_post.
+         * @return array|WP_Error Risposta dell'ultimo tentativo.
+         */
+        private static function post_with_retry( $url, array $args ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        return Nexus_Notify::http_post_with_retry( $url, $args );
+                }
+
+                return wp_remote_post( $url, $args );
         }
 
         /**

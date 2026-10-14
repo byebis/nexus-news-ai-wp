@@ -47,17 +47,18 @@ class Nexus_Social_X {
         /** Base degli URL pubblici dei tweet. */
         const STATUS_URL = 'https://x.com/i/status/';
 
-        /** Limite totale di caratteri di un tweet. */
+        /** Limite del tweet in PUNTI ponderati (v1.1.15 WE2: CJK pesano 2, vedi tweet_weighted_length). */
         const MAX_CHARS = 280;
 
         /**
          * Pubblica un articolo su X (Twitter) creando un tweet con l'API v2.
          *
-         * Flusso: guard configurazione → costruzione testo (max 280 caratteri) →
-         * firma OAuth 1.0a HMAC-SHA256 a mano → wp_remote_post (timeout 20s) →
-         * interpretazione risposta. Nessuna eccezione propaga al chiamante:
-         * qualunque problema diventa uno status 'failed' con errore descrittivo
-         * e segreti mascherati.
+         * Flusso: guard configurazione → costruzione testo (280 punti ponderati,
+         * v1.1.15 WE2) → firma OAuth 1.0a HMAC-SHA256 a mano → wp_remote_post
+         * (timeout 20s) con UN retry automatico sui transient (rete/429/5xx,
+         * v1.1.15 WE1) → interpretazione risposta. Nessuna eccezione propaga al
+         * chiamante: qualunque problema diventa uno status 'failed' con errore
+         * descrittivo e segreti mascherati.
          *
          * @param array|object $article  Articolo Nexus (riga di nexus_articles).
          * @param array        $settings Impostazioni plugin (Nexus_DB::get_settings()).
@@ -112,7 +113,9 @@ class Nexus_Social_X {
                         return self::result( 'failed', '', '', 'json_encode del testo del tweet fallito.', '' );
                 }
 
-                $response = wp_remote_post(
+                // v1.1.15 (WE1): POST con UN retry su errori transitori (rete/429/5xx),
+                // attesa da Retry-After (cap 60s) — mai ripetuto su 2xx (niente doppi tweet).
+                $response = self::post_with_retry(
                         self::API_ENDPOINT,
                         array(
                                 'timeout'     => 20,
@@ -232,12 +235,33 @@ class Nexus_Social_X {
         }
 
         /**
-         * Testo del tweet: titolo + 2 frasi dal summary + source_url, max 280 caratteri.
+         * v1.1.15 (WE1) — wp_remote_post con UN retry automatico su errori
+         * transitori (rete/HTTP 429/5xx): gira tramite Nexus_Notify::http_post_with_retry(),
+         * l'helper condiviso di WE1 (UNA sola implementazione del retry nel plugin).
+         * Con il modulo notify assente (caricamento parziale) fallback al
+         * wp_remote_post storico senza retry.
+         *
+         * @param string $url  Endpoint.
+         * @param array  $args Argomenti di wp_remote_post.
+         * @return array|WP_Error Risposta dell'ultimo tentativo.
+         */
+        private static function post_with_retry( $url, array $args ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        return Nexus_Notify::http_post_with_retry( $url, $args );
+                }
+
+                return wp_remote_post( $url, $args );
+        }
+
+        /**
+         * Testo del tweet: titolo + 2 frasi dal summary + source_url, entro 280
+         * PUNTI ponderati (v1.1.15 WE2).
          *
          * Composizione: "Titolo — Frase 1 Frase 2" e, se presente, l'URL della
          * fonte su una riga a parte. L'URL non viene MAI troncato: se il totale
-         * sfora 280 si accorcia solo la parte testuale a (280 - len(url) - 4)
-         * caratteri + '…' (margine 4 = ritorno a capo + sicurezza puntini).
+         * sfora 280 punti si accorcia solo la parte testuale a
+         * (280 - punti(url) - 4) punti + '…' (margine 4 = ritorno a capo +
+         * sicurezza puntini).
          *
          * @param array|object $article Articolo Nexus.
          * @return string Testo pronto per il body JSON.
@@ -259,11 +283,19 @@ class Nexus_Social_X {
                         $text .= ( '' === $text ? '' : ' — ' ) . $summary;
                 }
 
-                // Budget caratteri: il calcolo include il ritorno a capo prima dell'URL.
-                $url_len = mb_strlen( $url );
-                if ( mb_strlen( $text ) + ( $url_len > 0 ? 1 + $url_len : 0 ) > self::MAX_CHARS ) {
-                        $limit = max( 1, self::MAX_CHARS - $url_len - 4 );
-                        $text  = trim( mb_substr( $text, 0, $limit ) ) . '…';
+                // v1.1.15 (WE2): budget in PUNTI ponderati — X conta i caratteri
+                // CJK/Hangul/fullwidth con peso 2 (limite reale: 140 caratteri per
+                // un testo tutto giapponese/cinese; il plugin traduce anche in zh/ja,
+                // translate:120-121). Il conteggio include il ritorno a capo prima
+                // dell'URL; l'URL resta conteggiato in modo conservativo (1 punto a
+                // carattere, come nella versione storica).
+                $url_points   = self::tweet_weighted_length( $url );
+                $text_points  = self::tweet_weighted_length( $text );
+                $total_points = $text_points + ( $url_points > 0 ? 1 + $url_points : 0 );
+
+                if ( $total_points > self::MAX_CHARS ) {
+                        $budget = max( 1, self::MAX_CHARS - $url_points - 4 );
+                        $text   = trim( self::clip_to_points( $text, $budget ) ) . '…';
                 }
 
                 if ( '' !== $url ) {
@@ -271,6 +303,91 @@ class Nexus_Social_X {
                 }
 
                 return $text;
+        }
+
+        /**
+         * v1.1.15 (WE2) — lunghezza PONDERATA alla maniera di X: i caratteri
+         * CJK/Hangul/fullwidth (range in char_points()) pesano 2, tutti gli altri 1.
+         * Il limite del tweet è 280 punti: un testo tutto CJK entra fino a 140
+         * caratteri, esattamente come lo conteggia il server X.
+         *
+         * @param string $text Testo UTF-8.
+         * @return int Punti totali.
+         */
+        private static function tweet_weighted_length( $text ) {
+                $text = (string) $text;
+                if ( '' === $text ) {
+                        return 0;
+                }
+
+                $chars = preg_split( '//u', $text, -1, PREG_SPLIT_NO_EMPTY );
+                if ( ! is_array( $chars ) ) {
+                        // UTF-8 invalido (regex /u fallita): fallback al conteggio semplice.
+                        return function_exists( 'mb_strlen' ) ? (int) mb_strlen( $text, 'UTF-8' ) : (int) strlen( $text );
+                }
+
+                $points = 0;
+                foreach ( $chars as $char ) {
+                        $points += self::char_points( $char );
+                }
+
+                return $points;
+        }
+
+        /**
+         * v1.1.15 (WE2) — peso di un SINGOLO carattere secondo il conteggio di X:
+         * 2 nei range CJK/Hangul/fullwidth (Hangul Jamo U+1100-11FF, radicals e
+         * punteggiatura CJK U+2E80-303F, kana/Bopomofo U+3040-318F, CJK compat/est.
+         * A U+3200-4DBF, CJK unificati U+4E00-9FFF, Hangul Jamo ext. U+A960-A97F,
+         * Hangul syllables U+AC00-D7FF, compat. ideografico U+F900-FAFF, forme
+         * verticali U+FE10-FE19, fullwidth/halfwidth U+FF00-FFEF, estensioni CJK
+         * supplementari U+20000-2FA1F), 1 per tutto il resto.
+         *
+         * @param string $char Un solo carattere UTF-8.
+         * @return int 1|2.
+         */
+        private static function char_points( $char ) {
+                $wide = preg_match(
+                        '/[\x{1100}-\x{11FF}\x{2E80}-\x{303F}\x{3040}-\x{318F}\x{3200}-\x{4DBF}\x{4E00}-\x{9FFF}\x{A960}-\x{A97F}\x{AC00}-\x{D7FF}\x{F900}-\x{FAFF}\x{FE10}-\x{FE19}\x{FF00}-\x{FFEF}\x{20000}-\x{2FA1F}]/u',
+                        (string) $char
+                );
+
+                return ( 1 === $wide ) ? 2 : 1;
+        }
+
+        /**
+         * v1.1.15 (WE2) — tronca un testo a un budget di PUNTI ponderati (CJK
+         * pesano 2) senza mai spezzare un carattere multibyte.
+         *
+         * @param string $text       Testo UTF-8.
+         * @param int    $max_points Budget in punti.
+         * @return string Testo entro il budget ('' se il budget è esaurito).
+         */
+        private static function clip_to_points( $text, $max_points ) {
+                $text       = (string) $text;
+                $max_points = max( 0, (int) $max_points );
+                if ( '' === $text || 0 === $max_points ) {
+                        return '';
+                }
+
+                $chars = preg_split( '//u', $text, -1, PREG_SPLIT_NO_EMPTY );
+                if ( ! is_array( $chars ) ) {
+                        // UTF-8 invalido: fallback storico (troncamento per caratteri).
+                        return function_exists( 'mb_substr' ) ? (string) mb_substr( $text, 0, $max_points, 'UTF-8' ) : (string) substr( $text, 0, $max_points );
+                }
+
+                $out    = '';
+                $points = 0;
+                foreach ( $chars as $char ) {
+                        $weight = self::char_points( $char );
+                        if ( $points + $weight > $max_points ) {
+                                break;
+                        }
+                        $out    .= $char;
+                        $points += $weight;
+                }
+
+                return $out;
         }
 
         /**

@@ -10,8 +10,9 @@
  *    summary già esistente (nessuna frase inventata) + link alla fonte
  *    (article->source_url, se presente; niente se assente);
  *  - POST JSON via wp_remote_post (timeout 20s, Content-Type application/json,
- *    body wp_json_encode con JSON_UNESCAPED_UNICODE). Nessun multipart: l'immagine
- *    viene passata come URL pubblico nel campo 'photo'.
+ *    body wp_json_encode con JSON_UNESCAPED_UNICODE) con UN retry automatico
+ *    sui transient rete/429/5xx (v1.1.15 WE1, cap attesa 60s). Nessun multipart:
+ *    l'immagine viene passata come URL pubblico nel campo 'photo'.
  *
  * CONTRATTO PUBBLICO (CONTRATTO v1.0.2 — "Contratto condiviso per i 4 canali social"):
  * Nexus_Social_Telegram::publish( $article, $settings ) → array(
@@ -136,7 +137,10 @@ class Nexus_Social_Telegram {
 
                 $endpoint = 'https://api.telegram.org/bot' . $token . '/' . ( $with_image ? 'sendPhoto' : 'sendMessage' );
 
-                $response = wp_remote_post(
+                // v1.1.15 (WE1): POST con UN retry su errori transitori (rete/429/5xx),
+                // attesa da parameters.retry_after della Bot API o da Retry-After (cap
+                // 60s) — mai ripetuto su risposta 2xx (niente messaggi doppiati).
+                $response = self::post_with_retry(
                         $endpoint,
                         array(
                                 'timeout' => 20,
@@ -169,6 +173,26 @@ class Nexus_Social_Telegram {
                 $post_id = isset( $result['message_id'] ) ? (string) $result['message_id'] : '';
 
                 return self::result( 'published', $post_id, '', '', 'Inviato in chat ' . $chat_id );
+        }
+
+        /**
+         * v1.1.15 (WE1) — wp_remote_post con UN retry automatico su errori
+         * transitori (rete/HTTP 429/5xx): gira tramite Nexus_Notify::http_post_with_retry(),
+         * l'helper condiviso di WE1 (UNA sola implementazione del retry nel plugin;
+         * il 429 della Bot API porta l'attesa nel body parameters.retry_after).
+         * Con il modulo notify assente (caricamento parziale) fallback al
+         * wp_remote_post storico senza retry.
+         *
+         * @param string $url  Endpoint.
+         * @param array  $args Argomenti di wp_remote_post.
+         * @return array|WP_Error Risposta dell'ultimo tentativo.
+         */
+        private static function post_with_retry( $url, array $args ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        return Nexus_Notify::http_post_with_retry( $url, $args );
+                }
+
+                return wp_remote_post( $url, $args );
         }
 
         /**

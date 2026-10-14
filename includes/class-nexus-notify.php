@@ -58,6 +58,17 @@
  * oltre soglia l'invio viene scartato in silenzio — protegge da flood di errori
  * a cascata verso i canali.
  *
+ * HELPER CONDIVISI (v1.1.15, WE1/WE7) — casa unica per i moduli di integrazione:
+ *  - Nexus_Notify::http_post_with_retry( $url, $args ): wp_remote_post con UN
+ *    retry automatico (max 2 tentativi) SOLO su errori transitori (rete/429/5xx),
+ *    attesa da Retry-After (secondi o data HTTP) o parameters.retry_after
+ *    (Telegram Bot API), SEMPRE cap 60s. Usato dai 4 canali social (X, Telegram,
+ *    LinkedIn, Discord) e dalla sync GSC/GA4 di Nexus_Metrics: UNA sola
+ *    implementazione del retry nel plugin.
+ *  - Nexus_Notify::brief_error( $wp_error_or_string, $cap ): messaggio d'errore
+ *    breve e sicuro per i log (URL redatti '[url]', pattern token mascherati);
+ *    usato qui e da Nexus_Metrics (cap 120, brief_error storico).
+ *
  * MESSAGGI: "📰 Nexus: {evento} — {dettaglio}" in italiano plain (sweep i18n
  * futuro); mai dati sensibili (token, chiavi, URL con query string).
  *
@@ -606,6 +617,113 @@ final class Nexus_Notify {
                 if ( $code < 200 || $code >= 300 || ! is_array( $data ) || empty( $data['ok'] ) ) {
                         self::log_failure( sprintf( 'Notifica Telegram ops fallita (HTTP %d).', $code ) );
                 }
+        }
+
+        /* ============ HELPER HTTP CONDIVISO (v1.1.15, WE1) ============ */
+
+        /**
+         * v1.1.15 (WE1) — POST HTTP con UN retry automatico (max 2 tentativi
+         * totali) SOLO su errori transitori: errore di rete (WP_Error), HTTP 429
+         * o HTTP >= 500. Casa unica del retry nel plugin: i 4 canali social
+         * (X, Telegram, LinkedIn, Discord) e la sync GSC/GA4 di Nexus_Metrics
+         * chiamano questo metodo invece di wp_remote_post.
+         *
+         * Attesa prima del retry (SEMPRE cap 60s):
+         *  - header 'Retry-After' della risposta (secondi oppure data HTTP);
+         *  - body JSON con parameters.retry_after (formato 429 della Bot API Telegram);
+         *  - default esponenziale breve: 5 secondi.
+         *
+         * SICUREZZA DOPPIO-POST: il retry avviene SOLO quando NON è arrivata una
+         * risposta 2xx (cioè PRIMA di ottenere qualunque id remoto): una 201/204/200
+         * torna subito al chiamante senza mai essere ripetuta. Gli altri 4xx (400,
+         * 401, 403, 404, 422 ...) NON sono transitori: stessi input darebbero lo
+         * stesso errore, nessun retry.
+         *
+         * @param string $url  Endpoint della richiesta.
+         * @param array  $args Argomenti di wp_remote_post (timeout, headers, body, ...).
+         * @return array|WP_Error Risposta dell'ULTIMO tentativo (array o WP_Error).
+         */
+        public static function http_post_with_retry( $url, array $args ) {
+                $response = wp_remote_post( $url, $args );
+
+                if ( ! self::http_transient_failure( $response ) ) {
+                        return $response; // successo, 2xx qualsiasi, o 4xx permanente.
+                }
+
+                // Attesa dal contratto del provider (cap 60s), poi UN secondo invio.
+                $wait = self::http_retry_wait_seconds( $response );
+                if ( $wait > 0 ) {
+                        sleep( $wait );
+                }
+
+                return wp_remote_post( $url, $args );
+        }
+
+        /**
+         * v1.1.15 (WE1) — la risposta è un fallimento transitorio che ammette retry?
+         *
+         * @param array|WP_Error $response Risposta di wp_remote_post.
+         * @return bool True su WP_Error (rete/timeout) o HTTP 429 / >= 500.
+         */
+        private static function http_transient_failure( $response ) {
+                if ( is_wp_error( $response ) ) {
+                        return true;
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+
+                return ( 429 === $code || $code >= 500 );
+        }
+
+        /**
+         * v1.1.15 (WE1) — secondi di attesa prima del retry (SEMPRE cap 60s).
+         *
+         * Ordine: 1) header 'Retry-After' (secondi o data HTTP); 2) body JSON
+         * parameters.retry_after (Telegram Bot API); 3) default 5s.
+         *
+         * @param array|WP_Error $response Risposta dell'ultimo tentativo.
+         * @return int Secondi di attesa (>= 1).
+         */
+        private static function http_retry_wait_seconds( $response ) {
+                $wait = 0.0;
+
+                if ( ! is_wp_error( $response ) ) {
+                        // 1) Header Retry-After: numerico ("30") o data HTTP
+                        //    ("Wed, 21 Oct 2015 07:28:00 GMT").
+                        $ra = wp_remote_retrieve_header( $response, 'retry-after' );
+                        if ( is_array( $ra ) ) {
+                                $ra = isset( $ra[0] ) ? $ra[0] : '';
+                        }
+                        $ra = trim( (string) $ra );
+
+                        if ( '' !== $ra ) {
+                                if ( is_numeric( $ra ) && (float) $ra > 0 ) {
+                                        $wait = (float) $ra;
+                                } else {
+                                        $ts = strtotime( $ra );
+                                        if ( false !== $ts && $ts > time() ) {
+                                                $wait = (float) ( $ts - time() );
+                                        }
+                                }
+                        }
+
+                        // 2) Solo se l'header non ha fornito un valore: il 429 della
+                        //    Bot API Telegram porta {"parameters":{"retry_after":N}}.
+                        if ( $wait <= 0 ) {
+                                $body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+                                if ( is_array( $body ) && isset( $body['parameters']['retry_after'] )
+                                        && is_numeric( (string) $body['parameters']['retry_after'] )
+                                        && (float) $body['parameters']['retry_after'] > 0 ) {
+                                        $wait = (float) $body['parameters']['retry_after'];
+                                }
+                        }
+                }
+
+                if ( $wait <= 0 ) {
+                        $wait = 5.0; // default esponenziale breve (contratto WE1).
+                }
+
+                return (int) min( 60, (int) ceil( $wait ) );
         }
 
         /* ============ HELPER ============ */

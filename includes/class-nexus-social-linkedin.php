@@ -37,7 +37,9 @@
  * - SEGRETI: il token non viene mai scritto nei log né negli errori (eventuale
  *   occorrenza nel corpo di risposta viene mascherata).
  * - Nessuna eccezione propagata: qualunque errore → 'failed' + descrizione.
- * - HTTP solo con wp_remote_post, timeout 20s, body json con JSON_UNESCAPED_UNICODE.
+ * - HTTP solo con wp_remote_post, timeout 20s (con UN retry automatico sui
+ *   transient rete/429/5xx, v1.1.15 WE1, cap attesa 60s), body json con
+ *   JSON_UNESCAPED_UNICODE.
  *
  * Text domain: 'nexus-news-ai'.
  *
@@ -140,7 +142,10 @@ class Nexus_Social_LinkedIn {
                                 return $result;
                         }
 
-                        $response = wp_remote_post(
+                        // v1.1.15 (WE1): POST con UN retry su errori transitori
+                        // (rete/429/5xx), attesa da Retry-After di LinkedIn (cap 60s) —
+                        // mai ripetuto su 2xx con id remoto (niente post doppiati).
+                        $response = self::post_with_retry(
                                 self::API_ENDPOINT,
                                 array(
                                         'timeout' => 20,
@@ -215,6 +220,25 @@ class Nexus_Social_LinkedIn {
                         $result['error']    = 'Errore inatteso durante la pubblicazione su LinkedIn: ' . $e->getMessage();
                         return $result;
                 }
+        }
+
+        /**
+         * v1.1.15 (WE1) — wp_remote_post con UN retry automatico su errori
+         * transitori (rete/HTTP 429/5xx): gira tramite Nexus_Notify::http_post_with_retry(),
+         * l'helper condiviso di WE1 (UNA sola implementazione del retry nel plugin).
+         * Con il modulo notify assente (caricamento parziale) fallback al
+         * wp_remote_post storico senza retry.
+         *
+         * @param string $url  Endpoint.
+         * @param array  $args Argomenti di wp_remote_post.
+         * @return array|WP_Error Risposta dell'ultimo tentativo.
+         */
+        private static function post_with_retry( $url, array $args ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        return Nexus_Notify::http_post_with_retry( $url, $args );
+                }
+
+                return wp_remote_post( $url, $args );
         }
 
         /**
