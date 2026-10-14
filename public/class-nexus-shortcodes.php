@@ -467,10 +467,21 @@ final class Nexus_Shortcodes {
                 $when     = ( ! empty( $article->published_at ) ) ? (string) $article->published_at : (string) ( $article->created_at ?? '' );
                 $time_ago = $when ? Nexus_Utils::time_ago_it( $when ) : '';
 
-                $content_words = trim( wp_strip_all_tags( (string) ( $article->content ?? '' ) ) );
-                $read_time     = ( '' !== $content_words )
-                        ? Nexus_Utils::reading_time_it( (string) $article->content )
-                        : sprintf( /* translators: %d: minuti di lettura. */ esc_html__( '%d min', 'nexus-news-ai' ), (int) ( $article->read_time ?? 3 ) );
+                /*
+                 * v1.1.15 (WD8): la colonna read_time (popolata alla pubblicazione)
+                 * fa da primaria — prima ogni card del magazine strip-pava e
+                 * ricontava il contenuto completo a ogni render. Il ricalcolo
+                 * strip+conteggio resta SOLO come fallback onesto per righe con
+                 * colonna assente o 0 (articoli storici).
+                 */
+                if ( (int) ( $article->read_time ?? 0 ) > 0 ) {
+                        $read_time = sprintf( /* translators: %d: minuti di lettura. */ esc_html__( '%d min', 'nexus-news-ai' ), (int) $article->read_time );
+                } else {
+                        $content_words = trim( wp_strip_all_tags( (string) ( $article->content ?? '' ) ) );
+                        $read_time     = ( '' !== $content_words )
+                                ? Nexus_Utils::reading_time_it( (string) $article->content )
+                                : sprintf( /* translators: %d: minuti di lettura. */ esc_html__( '%d min', 'nexus-news-ai' ), 3 );
+                }
 
                 $cat_color = self::color_attr( Nexus_Utils::category_color( $cat ) );
                 $avatar    = ( $agent && ! empty( $agent->avatar ) ) ? (string) $agent->avatar : '🤖';
