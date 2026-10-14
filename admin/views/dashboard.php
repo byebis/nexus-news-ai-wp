@@ -354,6 +354,24 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 <?php endif; ?>
         </div>
 
+        <?php
+        /*
+         * v1.1.14 (P3) — Card "Health check redazione": risultato dell'ultimo
+         * giro del cron orario Nexus_Health, letto da UNA opzione
+         * ('nexus_health_state') già in cache — ZERO query pesanti a view-time.
+         * Render server-side completo in Nexus_Health::render_card(): pallini
+         * stato ok/warn/err con token CSS, dettaglio breve per problemi attivi,
+         * timestamp ultimo giro, azione "Ricontrolla ora" (admin-post + nonce)
+         * e link alle pagine di risoluzione. Stati onesti: se il cron non ha
+         * mai girato la card lo dice ("primo controllo entro ~5 minuti").
+         * Nessun id/data-* consumato da admin.js: il JS esistente scrive solo
+         * sui nodi #nxa-stat-* e sui contenitori elencati nel docblock di testa.
+         */
+        if ( class_exists( 'Nexus_Health' ) && method_exists( 'Nexus_Health', 'render_card' ) ) {
+                Nexus_Health::render_card();
+        }
+        ?>
+
         <div class="nxa-section nxa-section-usage">
                 <h2><?php echo esc_html__( 'Uso AI (mese corrente)', 'nexus-news-ai' ); ?></h2>
                 <?php

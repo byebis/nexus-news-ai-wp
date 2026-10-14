@@ -1,0 +1,158 @@
+/**
+ * Nexus News AI — Stili card "Health check redazione" (Dashboard)
+ *
+ * Slug plugin: nexus-news-ai
+ * Versione:    1.1.14
+ *
+ * Scope: SOLO classi prefisso .nxa-health-* dentro la sezione
+ * .nxa-section-health (append in admin/views/dashboard.php, task P3).
+ * Nessun colore esadecimale/rgba: solo token var(--nxa-*) del foglio
+ * condiviso admin/css/nexus-admin.css (tema scuro incluso via flip token).
+ * Enqueue: Nexus_Health::enqueue_assets() (handle 'nexus-health-css',
+ * dipendente da nexus-admin-css, SOLO sull'hook toplevel_page_nexus-news).
+ * Mobile: media query 782px (impilamento righe in colonna).
+ */
+
+.nxa-section-health .nxa-health-card {
+  padding: var(--nxa-space-4);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background-color: var(--nxa-surface);
+}
+
+.nxa-health-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-2) var(--nxa-space-3);
+  margin: 0 0 var(--nxa-space-3);
+}
+
+.nxa-health-updated {
+  display: flex;
+  align-items: center;
+  gap: var(--nxa-space-2);
+  margin: 0;
+  margin-right: auto;
+  color: var(--nxa-text-body);
+}
+
+.nxa-health-justnow {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px var(--nxa-space-2);
+  border-radius: var(--nxa-radius-sm);
+  color: var(--nxa-ok-text);
+  background-color: var(--nxa-ok-bg);
+  border: 1px solid var(--nxa-ok-line);
+}
+
+.nxa-health-rerun {
+  white-space: nowrap;
+}
+
+.nxa-health-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nxa-health-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-2) var(--nxa-space-3);
+  padding: var(--nxa-space-2) 0;
+  border-top: 1px solid var(--nxa-hairline);
+}
+
+.nxa-health-item:first-child {
+  border-top: 0;
+}
+
+/* Pallino stato: colore dal check, mai dall'arbitrario. */
+.nxa-health-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--nxa-cat-soft);
+  border: 1px solid var(--nxa-cat-line);
+}
+
+.nxa-health-dot--ok {
+  background-color: var(--nxa-ok-bg);
+  border-color: var(--nxa-ok-line);
+  box-shadow: inset 0 0 0 2px var(--nxa-ok-text);
+}
+
+.nxa-health-dot--warn {
+  background-color: var(--nxa-warn-bg);
+  border-color: var(--nxa-warn-line);
+  box-shadow: inset 0 0 0 2px var(--nxa-warn-text);
+}
+
+.nxa-health-dot--err {
+  background-color: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
+  box-shadow: inset 0 0 0 2px var(--nxa-err-text);
+}
+
+.nxa-health-name {
+  flex: 0 0 auto;
+  min-width: 96px;
+  font-weight: 700;
+  color: var(--nxa-heading);
+}
+
+.nxa-health-detail {
+  flex: 1 1 240px;
+  color: var(--nxa-text-body);
+  overflow-wrap: anywhere;
+}
+
+.nxa-health-item--err .nxa-health-detail {
+  color: var(--nxa-err-text);
+}
+
+.nxa-health-item--warn .nxa-health-detail {
+  color: var(--nxa-warn-text);
+}
+
+.nxa-health-link {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--nxa-link);
+  text-decoration: none;
+}
+
+.nxa-health-link:hover,
+.nxa-health-link:focus {
+  color: var(--nxa-link-hover);
+  text-decoration: underline;
+}
+
+.nxa-health-empty {
+  margin: var(--nxa-space-3) 0 0;
+  color: var(--nxa-muted);
+}
+
+/* Mobile: righe impilate, link su riga propria. */
+@media (max-width: 782px) {
+  .nxa-section-health .nxa-health-card {
+    padding: var(--nxa-space-3);
+  }
+
+  .nxa-health-name {
+    min-width: 0;
+  }
+
+  .nxa-health-detail {
+    flex-basis: 100%;
+  }
+
+  .nxa-health-link {
+    margin-left: 0;
+  }
+}

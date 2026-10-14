@@ -695,7 +695,70 @@ final class Nexus_Notify {
                 }
                 Nexus_DB::insert_activity( 0, 'notify', self::clip( (string) $detail, 200 ), 'error' );
         }
+
+        /**
+         * v1.1.14 (P3): invio generico per messaggi di sistema fuori dalla
+         * pipeline (unico consumatore attuale: Nexus_Health per i check che
+         * entrano in warn/err). STESSA disciplina d'invio esistente: try/catch
+         * Throwable, clip del dettaglio, canali + rate limit dentro dispatch(),
+         * nessun segreto nei messaggi, nessuna eccezione propagata.
+         *
+         * Eventi ammessi: 'health' (nuovo) + i tre eventi storici. Per gli
+         * eventi storici vale il filtro notify_events (BC); per 'health' il
+         * messaggio parte sempre — notify_events governa gli eventi pipeline e
+         * l'anti-spam del modulo health vive a monte (confronto con lo stato
+         * precedente + re-notifica solo dopo 24h), mentre il tetto orario del
+         * rate limit resta attivo anche qui.
+         *
+         * @param string $event  Evento (health|error|pending|published).
+         * @param string $detail Dettaglio libero (clip a 300, niente segreti).
+         * @return void
+         */
+        public static function send_generic( $event, $detail ) {
+                try {
+                        $event = strtolower( trim( (string) $event ) );
+                        if ( ! in_array( $event, array( 'health', 'error', 'pending', 'published' ), true ) ) {
+                                return;
+                        }
+
+                        // v1.1.13.1 (Q4): lettura settings via helper condiviso guardato.
+                        $settings = ( class_exists( 'Nexus_Dedup' ) && method_exists( 'Nexus_Dedup', 'settings_guarded' ) )
+                                ? Nexus_Dedup::settings_guarded()
+                                : array();
+
+                        // Eventi storici: invariato il filtro lista; 'health' è un
+                        // evento di sistema fuori lista (vedi docblock).
+                        if ( 'health' !== $event && ! self::event_enabled( $event, $settings ) ) {
+                                return;
+                        }
+
+                        $detail = self::clip( (string) $detail, 300 );
+                        if ( '' === $detail ) {
+                                return;
+                        }
+
+                        if ( 'health' === $event ) {
+                                // build_message non ha label per i nuovi eventi: messaggio dedicato,
+                                // stesso formato "📰 Nexus: {evento} — {dettaglio}".
+                                $message = sprintf( '📰 Nexus: Health check — %s', $detail );
+                        } else {
+                                $message = self::build_message( $event, $detail );
+                        }
+
+                        self::dispatch( $message, $settings );
+                } catch ( \Throwable $e ) {
+                        // Le notifiche non devono MAI rompere il chiamante: silenzio totale.
+                        return;
+                }
+        }
 }
 
 // v1.1.12 (S7): self-init del modulo notifiche (bootstrap non toccato).
 add_action( 'nexus_modules_init', array( 'Nexus_Notify', 'init' ) );
+
+// v1.1.14 (P3): caricamento del modulo health check redazione. Il bootstrap
+// (nexus-news-ai.php) è FUORI dal perimetro P3, quindi il file nuovo si carica
+// qui in coda (append-only, nessuna riga esistente modificata): il require
+// avviene durante il caricamento del plugin, PRIMA di nexus_modules_init, così
+// Nexus_Health::init() si auto-registra in tempo (cron orario + admin + card).
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-health.php';
