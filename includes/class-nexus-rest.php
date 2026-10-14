@@ -77,7 +77,12 @@
  * SHAPE AGENTI (serialize_agent): dalla v1.1.4 ogni endpoint che restituisce
  * agenti (lista, status, model, create, update, clone) include sempre anche
  * ai_provider ('' = provider globale), role ('giornalista' default),
- * chief_scope ('' | global | category | term) e chief_term_id (int).
+ * chief_scope ('' | global | category | term) e chief_term_id (int). Dalla
+ * v1.1.15 (WC3/WC4) nessun endpoint emette segreti per-agente: search_key
+ * MAI (solo flag search_key_set) e mcp_servers_text SENZA token (righe
+ * 'nome|url', token solo in scrittura) + flag mcp_servers_set; il merge
+ * server-side mcp_servers_merge_tokens rende il round-trip dell'editor
+ * safe (i token non si cancellano risalvando la textarea precompilata).
  *
  * SHAPE DATE (v1.1.6, regola ZERO MOCK): nessun serializzatore emette la data
  * zero MySQL ('0000-00-00 00:00:00') o stringhe vuote come date: date_or_empty()
@@ -1617,10 +1622,26 @@ class Nexus_Rest {
          * chief_scope in ''|global|category|term (valore non riconosciuto → ''),
          * chief_term_id sempre intero positivo.
          *
-         * @param WP_REST_Request $request Request.
+         * v1.1.15 (WC3): mcp_servers_text è ROUND-TRIP SAFE con i token. La
+         * serializzazione (serialize_agent) emette le righe SENZA il 3° campo
+         * (token) e l'editor agente precompila la textarea con quel testo; al
+         * salvataggio ogni riga 'nome|url' (2 campi) riprende il token memorizzato
+         * per lo stesso nome|url (mcp_servers_merge_tokens). Regole complete:
+         *  - riga 'nome|url' e già presente in memoria con token → token preservato;
+         *  - riga 'nome|url' NUOVA (mai memorizzata) → nessun token;
+         *  - riga con 3° campo ESPLICITO (anche vuoto: 'nome|url|') → vince il
+         *    valore esplicito (set o cancellazione del token);
+         *  - righe commento (#) o malformate → passthrough (il parser runtime le
+         *    scarta; non contengono segreti);
+         *  - valore VUOTO → cancellazione esplicita di tutti i server.
+         * Il merge avviene SOLO in update (agente esistente passato a
+         * $current_agent): in create non c'è nulla da preservare.
+         *
+         * @param WP_REST_Request    $request       Request.
+         * @param object|null        $current_agent Agente corrente (update) o null (create).
          * @return array Campi pronti per insert/update.
          */
-        private static function agent_fields_from_request( $request ) {
+        private static function agent_fields_from_request( $request, $current_agent = null ) {
                 $fields = array();
 
                 if ( null !== $request->get_param( 'name' ) ) {
@@ -1685,14 +1706,27 @@ class Nexus_Rest {
                         $fields['search_provider'] = in_array( $sp, array( 'tavily', 'serper', 'brave' ), true ) ? $sp : '';
                 }
                 if ( null !== $request->get_param( 'mcp_servers_text' ) ) {
-                        $fields['mcp_servers_text'] = sanitize_textarea_field( (string) $request->get_param( 'mcp_servers_text' ) );
+                        $incoming = sanitize_textarea_field( (string) $request->get_param( 'mcp_servers_text' ) );
+
+                        // v1.1.15 (WC3): il token non viaggia mai in risposta, quindi la
+                        // UI lo mostra vuoto: il round-trip (prefill + PUT) NON deve
+                        // cancellare i token esistenti. Merge server-side (contratto nel
+                        // docblock): righe a 2 campi riprendono il token memorizzato.
+                        $stored = ( $current_agent && isset( $current_agent->mcp_servers_text ) ) ? (string) $current_agent->mcp_servers_text : '';
+
+                        $fields['mcp_servers_text'] = self::mcp_servers_merge_tokens( $incoming, $stored );
                 }
                 if ( null !== $request->get_param( 'search_key' ) ) {
-                        // v1.1.10: chiave di ricerca PERSONALE dell'agente. Viene
-                        // memorizzata IN CHIARO nella colonna search_key_hash (nome
-                        // colonnale storico: le chiavi search servono in chiaro a
-                        // runtime per chiamare le API — stesse ragioni delle prov_key
-                        // in nexus_settings; un hash sarebbe inutilizzabile). Max 64
+                        // v1.1.10: chiave di ricerca PERSONALE dell'agente. v1.1.15 (WC4,
+                        // docblock onesto): la chiave è memorizzata IN CHIARO nella colonna
+                        // search_key_hash (nome colonnale storico, NON un hash: le chiavi
+                        // search servono in chiaro a runtime per chiamare le API — stesse
+                        // ragioni delle prov_key in nexus_settings; un hash sarebbe
+                        // inutilizzabile). La cifratura della colonna è rimandata (verrà
+                        // gestita a livello db.php, fuori da questo perimetro). Di fronte
+                        // alla risposta REST la chiave NON VIENE MAI ESPOSTA: nessun
+                        // serializzatore (serialize_agent, export agenti) la legge; la
+                        // risposta porta SOLO il flag booleano search_key_set. Max 64
                         // caratteri (VARCHAR/CHAR(64)), charset prudente.
                         $sk = preg_replace( '/[^A-Za-z0-9_\-]/', '', trim( (string) $request->get_param( 'search_key' ) ) );
                         if ( '' !== $sk ) {
@@ -1708,6 +1742,117 @@ class Nexus_Rest {
                 }
 
                 return $fields;
+        }
+
+        /**
+         * Versione PUBBLICA del testo dei server MCP per-agente (v1.1.15, WC3):
+         * rimuove il 3° campo (token) da ogni riga 'nome|url|token', mantenendo
+         * 'nome|url'. Il token NON VIENE MAI emesso nelle risposte REST (stessa
+         * regola del setting globale, mascherato in GET /settings e /export da
+         * secret_settings_keys): la riga resta leggibile (nome e URL non sono
+         * segreti) e il flag mcp_servers_set dice alla UI se è configurato.
+         *
+         * Righe commento (#...) o senza '|' passano intatte: non contengono
+         * segreti e il parser runtime (Nexus_Tools::mcp_servers_from_text) le
+         * scarta da sole.
+         *
+         * @param string $text Testo memorizzato ('nome|url|tokenOpzionale' per riga).
+         * @return string Testo senza token ('nome|url' per riga).
+         */
+        private static function mcp_servers_text_public( $text ) {
+                $text    = (string) $text;
+                $lines   = preg_split( '/\r\n|\r|\n/', $text );
+                $out     = array();
+
+                foreach ( (array) $lines as $line ) {
+                        $line = trim( (string) $line );
+
+                        if ( '' === $line || 0 === strpos( $line, '#' ) || false === strpos( $line, '|' ) ) {
+                                $out[] = $line;
+                                continue;
+                        }
+
+                        $parts = explode( '|', $line );
+
+                        // Sempre e solo i primi due campi: qualunque terzo campo
+                        // (token) o oltre viene rimosso.
+                        $out[] = trim( (string) $parts[0] ) . '|' . trim( (string) $parts[1] );
+                }
+
+                return implode( "\n", $out );
+        }
+
+        /**
+         * Merge round-trip-safe del testo MCP in salvataggio (v1.1.15, WC3):
+         * riattacca i token memorizzati alle righe a 2 campi ('nome|url') che
+         * corrispondono a un server già presente, così l'editor (che precompila
+         * la textarea con il testo SENZA token di serialize_agent) non cancella
+         * i token al primo salvataggio. Contratto completo nel docblock di
+         * agent_fields_from_request; righe con 3° campo esplicito (anche vuoto)
+         * passano intatte: set o cancellazione volontaria del token.
+         *
+         * @param string $incoming Testo sanificato in arrivo dal client.
+         * @param string $stored  Testo memorizzato per l'agente ('' in create).
+         * @return string Testo da memorizzare.
+         */
+        private static function mcp_servers_merge_tokens( $incoming, $stored ) {
+                $incoming = (string) $incoming;
+
+                if ( '' === trim( $incoming ) ) {
+                        return $incoming; // cancellazione esplicita.
+                }
+
+                if ( '' === trim( (string) $stored ) ) {
+                        return $incoming; // nessun token da preservare.
+                }
+
+                // Token memorizzati: chiave 'nome|url' (trim) → token.
+                $tokens = array();
+                foreach ( preg_split( '/\r\n|\r|\n/', (string) $stored ) as $line ) {
+                        $line = trim( (string) $line );
+
+                        if ( '' === $line || 0 === strpos( $line, '#' ) || false === strpos( $line, '|' ) ) {
+                                continue;
+                        }
+
+                        $parts = explode( '|', $line );
+
+                        if ( 3 !== count( $parts ) ) {
+                                continue;
+                        }
+
+                        $token = trim( (string) $parts[2] );
+
+                        if ( '' !== $token ) {
+                                $tokens[ trim( (string) $parts[0] ) . '|' . trim( (string) $parts[1] ) ] = $token;
+                        }
+                }
+
+                if ( empty( $tokens ) ) {
+                        return $incoming;
+                }
+
+                $out = array();
+                foreach ( preg_split( '/\r\n|\r|\n/', $incoming ) as $line ) {
+                        $line = trim( (string) $line );
+
+                        if ( '' === $line || 0 === strpos( $line, '#' ) || false === strpos( $line, '|' ) ) {
+                                $out[] = $line;
+                                continue;
+                        }
+
+                        $parts = explode( '|', $line );
+
+                        if ( count( $parts ) >= 3 ) {
+                                $out[] = $line; // terzo campo esplicito: vince il client (set o clear).
+                                continue;
+                        }
+
+                        $key = trim( (string) $parts[0] ) . '|' . trim( (string) $parts[1] );
+                        $out[] = isset( $tokens[ $key ] ) ? $key . '|' . $tokens[ $key ] : $line;
+                }
+
+                return implode( "\n", $out );
         }
 
         /**
@@ -1758,7 +1903,7 @@ class Nexus_Rest {
                         return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
                 }
 
-                $fields = self::agent_fields_from_request( $request );
+                $fields = self::agent_fields_from_request( $request, $agent );
                 if ( ! $fields ) {
                         return self::err( 'nexus_rest_agent_no_fields', __( 'Nessun campo da aggiornare.', 'nexus-news-ai' ), 400 );
                 }
@@ -5148,8 +5293,15 @@ class Nexus_Rest {
                         // v1.1.10 (WP4): strumenti personali dell'agente. La chiave
                         // search NON viene mai restituita: solo il flag _set.
                         'search_provider' => (string) ( $agent->search_provider ?? '' ),
+                        // v1.1.15 (WC4): la chiave memorizzata in search_key_hash NON è
+                        // mai restituita (è in chiaro sul DB per necessità runtime, docblock
+                        // in agent_fields_from_request): solo il flag di presenza.
                         'search_key_set'  => ( 0 < strlen( (string) ( $agent->search_key_hash ?? '' ) ) ) ? 1 : 0,
-                        'mcp_servers_text' => (string) ( $agent->mcp_servers_text ?? '' ),
+                        // v1.1.15 (WC3): i server MCP per-agente escono SENZA token (righe
+                        // 'nome|url', stesse regole del setting globale mascherato) + flag
+                        // di presenza per la UI. Il token non è mai leggibile via REST.
+                        'mcp_servers_text' => self::mcp_servers_text_public( (string) ( $agent->mcp_servers_text ?? '' ) ),
+                        'mcp_servers_set'  => ( 0 < strlen( trim( (string) ( $agent->mcp_servers_text ?? '' ) ) ) ) ? 1 : 0,
                         'role'        => (string) ( $agent->role ?? 'giornalista' ),
                         'chief_scope' => (string) ( $agent->chief_scope ?? '' ),
                         'chief_term_id' => absint( $agent->chief_term_id ?? 0 ),
