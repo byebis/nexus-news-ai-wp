@@ -39,25 +39,25 @@
 defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap nexus-admin" data-page="activity">
-	<h1><?php esc_html_e( 'Feed attività', 'nexus-news-ai' ); ?></h1>
+        <h1><?php esc_html_e( 'Feed attività', 'nexus-news-ai' ); ?></h1>
 
-	<p class="nxa-page-subtitle"><?php esc_html_e( 'Cronologia del lavoro degli agenti: raccolte, valutazioni, riscritture e pubblicazioni.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'Cronologia del lavoro degli agenti: raccolte, valutazioni, riscritture e pubblicazioni.', 'nexus-news-ai' ); ?></p>
 
-	<!-- SKELETON: righe statiche di caricamento, rimpiazzate dal primo render di admin.js (GET /activity?limit=50). -->
-	<div id="nxa-activity-list" class="nxa-activity-feed nxa-table-wrap" aria-live="polite" aria-busy="true">
-		<p class="screen-reader-text"><?php esc_html_e( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-		<div class="nxa-skeleton"></div>
-	</div>
+        <!-- SKELETON: righe statiche di caricamento, rimpiazzate dal primo render di admin.js (GET /activity?limit=50). -->
+        <div id="nxa-activity-list" class="nxa-activity-feed nxa-table-wrap" aria-live="polite" aria-busy="true">
+                <p class="screen-reader-text"><?php esc_html_e( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+                <div class="nxa-skeleton"></div>
+        </div>
 
-	<noscript>
-		<div class="nxa-empty">
-			<span class="dashicons dashicons-warning" aria-hidden="true"></span>
-			<p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
-			<p><?php esc_html_e( 'Attiva JavaScript per visualizzare lo storico delle attività.', 'nexus-news-ai' ); ?></p>
-		</div>
-	</noscript>
+        <noscript>
+                <div class="nxa-empty">
+                        <span class="dashicons dashicons-warning" aria-hidden="true"></span>
+                        <p class="nxa-empty__title"><?php esc_html_e( 'JavaScript è disattivato', 'nexus-news-ai' ); ?></p>
+                        <p><?php esc_html_e( 'Attiva JavaScript per visualizzare lo storico delle attività.', 'nexus-news-ai' ); ?></p>
+                </div>
+        </noscript>
 </div>

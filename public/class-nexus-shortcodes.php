@@ -486,7 +486,7 @@ final class Nexus_Shortcodes {
                 /* Copertina */
                 $out .= '<div class="nxa-card-media" data-category="' . esc_attr( $cat ) . '">';
                 if ( $image_url ) {
-                        $out .= '<img class="nxa-card-img" src="' . esc_url( $image_url ) . '" alt="' . esc_attr( $title ) . '" loading="lazy" />'; 
+                        $out .= '<img class="nxa-card-img" src="' . esc_url( $image_url ) . '" alt="' . esc_attr( $title ) . '" loading="lazy" />';
                 } else {
                         $out .= '<div class="nxa-card-cover" style="background-image:linear-gradient(135deg,' . esc_attr( $cat_color ) . '33 0%,' . esc_attr( $cat_color ) . '66 100%)">';
                         $out .= '<span class="nxa-card-avatar" aria-hidden="true">' . esc_html( $avatar ) . '</span>';
