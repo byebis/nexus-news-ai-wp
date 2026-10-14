@@ -10,6 +10,7 @@
  *
  * ROUTE ADMIN (permission_callback: current_user_can('manage_options')):
  *   GET    /nexus/v1/agents
+ *   GET    /nexus/v1/agents/{id}/diagnostics        diagnostica per-agente "Perché non vedo articoli?" {agent, gates, cron, runs, last_errors, verdict a CODICI strutturati} (v1.1.16, WC2)
  *   POST   /nexus/v1/agents/{id}/status            body {status: active|paused|error}
  *   GET    /nexus/v1/articles                      args: status, category, agent_id, search, page, per_page
  *   GET    /nexus/v1/articles/{id}
@@ -267,6 +268,25 @@ class Nexus_Rest {
                                 array(
                                         'methods'             => WP_REST_Server::DELETABLE,
                                         'callback'            => array( __CLASS__, 'rest_agent_delete' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => $id_arg,
+                                ),
+                        )
+                );
+
+                // v1.1.16 (WC2): diagnostica per-agente «Perché non vedo articoli?» —
+                // gates (toggles e cap giornaliero letti dalla pipeline, post_status/
+                // enable_wp_posts come li legge il publisher), stato cron, ultime 5
+                // run (tabella agent_runs, modulo WB-DB: se non c'è ancora si degrada
+                // a [] senza fatal), ultimi 5 errori e verdict a CODICI strutturati
+                // (il rendering IT/EN è della UI: qui nessuna stringa localizzata).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/agents/(?P<id>[0-9]+)/diagnostics',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_agent_diagnostics' ),
                                         'permission_callback' => $admin_permission,
                                         'args'                => $id_arg,
                                 ),
@@ -2013,6 +2033,454 @@ class Nexus_Rest {
                                 'name'    => (string) $agent->name,
                         )
                 );
+        }
+
+        /**
+         * GET /agents/{id}/diagnostics — diagnostica per-agente (v1.1.16, WC2).
+         *
+         * Risponde a «perché non vedo articoli?» con DATI e CODICI, senza
+         * stringhe localizzate (il rendering IT/EN è della UI, contratto WE-UI).
+         *
+         * Shape (contratto, campi sempre presenti):
+         *   agent:  {id, name, status, last_run (RFC3339|''), mode} — mode è il
+         *            setting globale della pipeline (nessuna colonna per-agente).
+         *   gates:  {auto_collect, auto_evaluate, auto_rewrite, auto_publish,
+         *            mode, post_status, enable_wp_posts, cap_reached, cap_limit,
+         *            cap_today, budget_exceeded, search_key_missing,
+         *            sources_count, sources_active}
+         *   cron:   {never_ran, next_run (RFC3339|''), lag_seconds|null, interval}
+         *   runs:   [{id, status, triggered_by, started_at, finished_at,
+         *             duration_ms, articles_created, candidates, sources_ok,
+         *             sources_err, error, steps}] — ultime 5 da Nexus_DB::
+         *             get_agent_runs() (modulo WB-DB: metodo o tabella assenti →
+         *             [] SENZA fatal)
+         *   last_errors: [{action, detail, created_at}] — prime 5 delle ultime
+         *             10 activity status='error' dell'agente (stessa tabella
+         *             dell'endpoint /activity)
+         *   verdict: [{level: ok|warn|err, code, params}] ORDINATO PER GRAVITÀ
+         *             (err → warn → ok). Codici: never_ran_cron, cron_late,
+         *             no_sources, source_errors, cap_reached, budget_exceeded,
+         *             post_status_publish, mode_semi_autonomous,
+         *             auto_publish_off, search_key_missing, generation_failing,
+         *             last_run_failed, ok_ready.
+         *
+         * Letture in REPLICA (nessuna logica esistente modificata):
+         * - toggles e cap giornaliero: pipeline (auto_collect :1098, cap
+         *   :1104-1120 — STESSA query COUNT su created_at di oggi);
+         * - post_status/enable_wp_posts: publisher (:325-327 whitelist
+         *   publish|draft|pending; enable_wp_posts :123);
+         * - search_key_missing: sources (:856-869 — chiave letta dalle
+         *   impostazioni del plugin, stessa fonte di Nexus_Sources::setting_value);
+         * - cron: hook 'nexus_cron_tick' con wp_next_scheduled (come /health);
+         *   lag SOLO dal dato affidabile "evento schedulato nel passato".
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_agent_diagnostics( $request ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_agent' ) ) {
+                        return self::err(
+                                'nexus_rest_db_missing',
+                                __( 'Il modulo database non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                502
+                        );
+                }
+
+                $id    = absint( $request->get_param( 'id' ) );
+                $agent = Nexus_DB::get_agent( $id );
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $settings = Nexus_DB::get_settings();
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+
+                /* ---- Gates (replica in lettura di pipeline + publisher) ---- */
+
+                $mode = isset( $settings['mode'] ) ? trim( (string) $settings['mode'] ) : 'semi_autonomous';
+                if ( '' === $mode ) {
+                        $mode = 'semi_autonomous';
+                }
+
+                $auto_collect  = ! empty( $settings['auto_collect'] );
+                $auto_evaluate = ! empty( $settings['auto_evaluate'] );
+                $auto_rewrite  = ! empty( $settings['auto_rewrite'] );
+                $auto_publish  = ! empty( $settings['auto_publish'] );
+
+                // post_status: STESSA whitelist e stesso default del publisher (:325-327).
+                $post_status = isset( $settings['post_status'] ) ? sanitize_key( (string) $settings['post_status'] ) : 'publish';
+                if ( ! in_array( $post_status, array( 'publish', 'draft', 'pending' ), true ) ) {
+                        $post_status = 'publish';
+                }
+                $enable_wp_posts = ! empty( $settings['enable_wp_posts'] );
+
+                // Cap giornaliero: STESSA query del pipeline (:1113-1115) — COUNT(*)
+                // su created_at >= inizio del giorno locale (current_time).
+                global $wpdb;
+                $cap_limit = max( 1, absint( isset( $settings['max_articles_per_day'] ) ? $settings['max_articles_per_day'] : 10 ) );
+                $cap_today = 0;
+                $tables    = method_exists( 'Nexus_DB', 'tables' ) ? Nexus_DB::tables() : array();
+                if ( ! empty( $tables['articles'] ) ) {
+                        $today_start = substr( current_time( 'mysql' ), 0, 10 ) . ' 00:00:00';
+                        $cap_today   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$tables['articles']} WHERE created_at >= %s", $today_start ) );
+                }
+                $cap_reached = $cap_today >= $cap_limit;
+
+                // Budget mensile: STESSO controllo del pipeline (Nexus_AI_Engine::
+                // budget_exceeded, read-only). budget_action=warn NON blocca le
+                // fasi (pipeline:2133-2137): il verdict err budget_exceeded c'è
+                // solo con azione 'stop'.
+                $budget_exceeded = false;
+                if ( class_exists( 'Nexus_AI_Engine' ) && method_exists( 'Nexus_AI_Engine', 'budget_exceeded' ) ) {
+                        try {
+                                $budget_exceeded = (bool) Nexus_AI_Engine::budget_exceeded();
+                        } catch ( Throwable $e ) {
+                                $budget_exceeded = false;
+                        }
+                }
+                $budget_action = isset( $settings['budget_action'] ) ? (string) $settings['budget_action'] : 'stop';
+
+                /* ---- Fonti della redazione dell'agente ---- */
+
+                $sources = array();
+                if ( class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'sources_for_agent' ) ) {
+                        $fetched = Nexus_Redazioni::sources_for_agent( $id );
+                        if ( is_array( $fetched ) ) {
+                                $sources = $fetched;
+                        }
+                }
+
+                // search_key_missing (replica sources:856-869): l'agente ha fonti di
+                // tipo search E la chiave di ricerca non è impostata → le fonti
+                // search vengono ignorate in silenzio. La chiave si legge dalle
+                // impostazioni del plugin (stessa fonte di Nexus_Sources::
+                // setting_value, NON get_option: i settings vivono in Nexus_DB).
+                $search_provider = isset( $settings['tools_search_provider'] ) ? sanitize_key( (string) $settings['tools_search_provider'] ) : '';
+                if ( '' === $search_provider ) {
+                        $search_provider = 'tavily';
+                }
+                $search_key        = isset( $settings['tools_search_key'] ) ? trim( (string) $settings['tools_search_key'] ) : '';
+                $has_search_source = false;
+                foreach ( $sources as $src ) {
+                        if ( is_array( $src ) && 'search' === sanitize_key( (string) ( isset( $src['type'] ) ? $src['type'] : '' ) ) ) {
+                                $has_search_source = true;
+                                break;
+                        }
+                }
+                $search_key_missing = $has_search_source && '' === $search_key;
+
+                // sources_active: fonti realmente utilizzabili dalla raccolta —
+                // tipo con adapter (Nexus_Sources::fetch_{type}) e, per le search,
+                // provider != 'none' e chiave presente (altrimenti l'adapter le
+                // salta: sources:856-869).
+                $sources_count  = count( $sources );
+                $sources_active = 0;
+                foreach ( $sources as $src ) {
+                        if ( ! is_array( $src ) ) {
+                                continue;
+                        }
+                        $type   = sanitize_key( (string) ( isset( $src['type'] ) ? $src['type'] : '' ) );
+                        $usable = '' !== $type && class_exists( 'Nexus_Sources' ) && method_exists( 'Nexus_Sources', 'fetch_' . $type );
+                        if ( 'search' === $type && ( '' === $search_key || 'none' === $search_provider ) ) {
+                                $usable = false;
+                        }
+                        if ( $usable ) {
+                                $sources_active++;
+                        }
+                }
+
+                /* ---- Cron (read-only, stesso hook di /health e Nexus_Cron) ---- */
+
+                $cron_next = wp_next_scheduled( 'nexus_cron_tick' );
+                $never_ran = ( false === $cron_next || (int) $cron_next <= 0 );
+                $next_rfc  = '';
+                $lag       = null;
+                if ( ! $never_ran ) {
+                        // wp_next_scheduled() è un timestamp UNIX: si converte al fuso
+                        // del sito per la risposta (stesso formato degli altri datetime).
+                        $next_ts = (int) $cron_next;
+                        try {
+                                $next_dt  = new DateTimeImmutable( '@' . $next_ts );
+                                $next_rfc = $next_dt->setTimezone( wp_timezone() )->format( DATE_RFC3339 );
+                        } catch ( Throwable $e ) {
+                                $next_rfc = '';
+                        }
+                        // Evento schedulato nel passato = WP-Cron non ha ancora fatto il
+                        // giro (dato affidabile, letto dal cron stesso): lag positivo.
+                        if ( $next_ts < time() ) {
+                                $lag = time() - $next_ts;
+                        }
+                }
+                // Intervallo: collect_interval normalizzato come fa Nexus_Cron
+                // (MIN_INTERVAL = 300s).
+                $interval = max( 300, absint( isset( $settings['collect_interval'] ) ? $settings['collect_interval'] : 3600 ) );
+
+                /* ---- Run (modulo WB-DB, degrada a [] senza fatal) ---- */
+
+                $runs_rows = array();
+                if ( method_exists( 'Nexus_DB', 'get_agent_runs' ) ) {
+                        try {
+                                $rows = Nexus_DB::get_agent_runs( $id, 5 );
+                                if ( is_array( $rows ) ) {
+                                        $runs_rows = $rows;
+                                }
+                        } catch ( Throwable $e ) {
+                                $runs_rows = array(); // es. tabella non ancora migrata.
+                        }
+                }
+
+                $runs_out = array();
+                foreach ( $runs_rows as $row ) {
+                        $arr   = is_array( $row ) ? $row : (array) $row;
+                        $steps = new stdClass();
+                        if ( isset( $arr['steps'] ) && is_string( $arr['steps'] ) && '' !== trim( (string) $arr['steps'] ) ) {
+                                $decoded = json_decode( (string) $arr['steps'], true );
+                                if ( is_array( $decoded ) && ! empty( $decoded ) ) {
+                                        $steps = $decoded;
+                                }
+                        } elseif ( isset( $arr['steps'] ) && is_array( $arr['steps'] ) && ! empty( $arr['steps'] ) ) {
+                                $steps = $arr['steps'];
+                        }
+                        // PB1 chiama la colonna 'trigger'; il contratto diagnostica vuole
+                        // 'triggered_by': lettura difensiva di entrambi i nomi.
+                        $triggered = '';
+                        if ( isset( $arr['triggered_by'] ) ) {
+                                $triggered = (string) $arr['triggered_by'];
+                        } elseif ( isset( $arr['trigger'] ) ) {
+                                $triggered = (string) $arr['trigger'];
+                        }
+                        $runs_out[] = array(
+                                'id'               => isset( $arr['id'] ) ? (int) $arr['id'] : 0,
+                                'status'           => isset( $arr['status'] ) ? (string) $arr['status'] : '',
+                                'triggered_by'     => $triggered,
+                                'started_at'       => isset( $arr['started_at'] ) ? self::date_or_empty( $arr['started_at'] ) : '',
+                                'finished_at'      => isset( $arr['finished_at'] ) ? self::date_or_empty( $arr['finished_at'] ) : '',
+                                'duration_ms'      => isset( $arr['duration_ms'] ) ? (int) $arr['duration_ms'] : 0,
+                                'articles_created' => isset( $arr['articles_created'] ) ? (int) $arr['articles_created'] : 0,
+                                'candidates'       => isset( $arr['candidates'] ) ? (int) $arr['candidates'] : 0,
+                                'sources_ok'       => isset( $arr['sources_ok'] ) ? (int) $arr['sources_ok'] : 0,
+                                'sources_err'      => isset( $arr['sources_err'] ) ? (int) $arr['sources_err'] : 0,
+                                'error'            => isset( $arr['error'] ) ? (string) $arr['error'] : '',
+                                'steps'            => $steps,
+                        );
+                }
+
+                /* ---- Ultimi errori dell'agente (stessa tabella di /activity) ---- */
+
+                $errors_rows    = self::diagnostics_agent_errors( $id, 10 );
+                $last_errors    = array();
+                $gen_fail_count = 0;
+                foreach ( $errors_rows as $row ) {
+                        $action = (string) ( isset( $row->action ) ? $row->action : '' );
+                        // Le fasi generative fallite loggano con action 'rewriting'
+                        // (pipeline:713,720): è il segnale "generazione che fallisce".
+                        if ( 'rewriting' === $action ) {
+                                $gen_fail_count++;
+                        }
+                        if ( count( $last_errors ) < 5 ) {
+                                $last_errors[] = array(
+                                        'action'     => $action,
+                                        'detail'     => (string) ( isset( $row->detail ) ? $row->detail : '' ),
+                                        'created_at' => self::date_or_empty( isset( $row->created_at ) ? $row->created_at : '' ),
+                                );
+                        }
+                }
+
+                // Errori fonti: con agent_runs si usano i contatori della run
+                // (attribuiti all'agente); finché il modulo WB-DB non c'è, gli
+                // errori fonte sono loggati con agent_id=0 (sources:1605-1607,
+                // action 'source_error') e si conta tra le ultime 20 righe globali.
+                $source_err_count = 0;
+                foreach ( $runs_out as $run_row ) {
+                        $source_err_count += (int) $run_row['sources_err'];
+                }
+                if ( empty( $runs_out ) ) {
+                        $source_err_count = self::diagnostics_source_error_count();
+                }
+
+                /* ---- Verdict: SOLO codici strutturati (rendering lato UI) ---- */
+
+                $verdict_err  = array();
+                $verdict_warn = array();
+
+                if ( 0 === $sources_count ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'no_sources', 'params' => new stdClass() );
+                }
+                if ( $source_err_count > 0 ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'source_errors', 'params' => array( 'count' => $source_err_count ) );
+                }
+                if ( $cap_reached ) {
+                        $verdict_err[] = array( 'level' => 'err', 'code' => 'cap_reached', 'params' => array( 'limit' => $cap_limit, 'today' => $cap_today ) );
+                }
+                if ( $budget_exceeded && 'stop' === $budget_action ) {
+                        $verdict_err[] = array( 'level' => 'err', 'code' => 'budget_exceeded', 'params' => array( 'action' => 'stop' ) );
+                }
+                if ( $search_key_missing ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'search_key_missing', 'params' => array( 'provider' => $search_provider ) );
+                }
+
+                // Cron: hook VOLUTAMENTE spento (auto_collect off) NON è un problema
+                // (stessa regola della watchlist di Nexus_Health).
+                if ( $auto_collect ) {
+                        if ( $never_ran ) {
+                                $verdict_warn[] = array( 'level' => 'warn', 'code' => 'never_ran_cron', 'params' => array( 'interval' => $interval ) );
+                        } elseif ( null !== $lag && $lag > 0 ) {
+                                $verdict_warn[] = array( 'level' => 'warn', 'code' => 'cron_late', 'params' => array( 'lag_seconds' => $lag ) );
+                        }
+                }
+
+                // Dove finiscono gli articoli: in semi_autonomous si fermano in Coda
+                // Approvazioni; in autonomous con auto_publish spento la fase di
+                // pubblicazione salta (articoli bloccati in attesa per sempre).
+                if ( 'autonomous' !== $mode ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'mode_semi_autonomous', 'params' => new stdClass() );
+                } elseif ( ! $auto_publish ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'auto_publish_off', 'params' => new stdClass() );
+                }
+                if ( $enable_wp_posts && 'publish' === $post_status ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'post_status_publish', 'params' => new stdClass() );
+                }
+
+                if ( $gen_fail_count > 0 ) {
+                        $verdict_err[] = array( 'level' => 'err', 'code' => 'generation_failing', 'params' => array( 'count' => $gen_fail_count ) );
+                }
+
+                // Run fallita (telemetria WB) o, finché il modulo non c'è, agente in
+                // stato 'error' (v1.1.16 PB4 lo rende vivo): ultimo giro non riuscito.
+                $last_run_failed = false;
+                $last_run_error  = '';
+                if ( ! empty( $runs_out ) ) {
+                        $first = $runs_out[0];
+                        if ( in_array( $first['status'], array( 'failed', 'partial' ), true ) ) {
+                                $last_run_failed = true;
+                                $last_run_error  = self::diagnostics_clip( $first['error'], 200 );
+                        }
+                }
+                if ( ! $last_run_failed && 'error' === (string) $agent->status ) {
+                        $last_run_failed = true;
+                }
+                if ( $last_run_failed ) {
+                        $params = new stdClass();
+                        if ( '' !== $last_run_error ) {
+                                $params = array( 'error' => $last_run_error );
+                        }
+                        $verdict_err[] = array( 'level' => 'err', 'code' => 'last_run_failed', 'params' => $params );
+                }
+
+                if ( empty( $verdict_err ) && empty( $verdict_warn ) ) {
+                        $verdict = array( array( 'level' => 'ok', 'code' => 'ok_ready', 'params' => new stdClass() ) );
+                } else {
+                        // Ordinato per gravità: err prima di warn prima di ok.
+                        $verdict = array_merge( $verdict_err, $verdict_warn );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'agent'       => array(
+                                        'id'       => (int) $agent->id,
+                                        'name'     => (string) $agent->name,
+                                        'status'   => (string) $agent->status,
+                                        'last_run' => self::date_or_empty( isset( $agent->last_run ) ? $agent->last_run : '' ),
+                                        'mode'     => $mode,
+                                ),
+                                'gates'       => array(
+                                        'auto_collect'       => $auto_collect,
+                                        'auto_evaluate'      => $auto_evaluate,
+                                        'auto_rewrite'       => $auto_rewrite,
+                                        'auto_publish'       => $auto_publish,
+                                        'mode'               => $mode,
+                                        'post_status'        => $post_status,
+                                        'enable_wp_posts'    => $enable_wp_posts,
+                                        'cap_reached'        => $cap_reached,
+                                        'cap_limit'          => $cap_limit,
+                                        'cap_today'          => $cap_today,
+                                        'budget_exceeded'    => $budget_exceeded,
+                                        'search_key_missing' => $search_key_missing,
+                                        'sources_count'      => $sources_count,
+                                        'sources_active'     => $sources_active,
+                                ),
+                                'cron'        => array(
+                                        'never_ran'   => $never_ran,
+                                        'next_run'    => $next_rfc,
+                                        'lag_seconds' => $lag,
+                                        'interval'    => $interval,
+                                ),
+                                'runs'        => $runs_out,
+                                'last_errors' => $last_errors,
+                                'verdict'     => $verdict,
+                        )
+                );
+        }
+
+        /**
+         * Ultimi errori di un agente da nexus_activity_logs (la STESSA tabella
+         * dell'endpoint /activity): lettura diretta perché /activity non filtra
+         * per status. Ordine id DESC (più recenti prima).
+         *
+         * @param int $agent_id Agent ID.
+         * @param int $limit    Numero massimo di righe (clamp 1..50).
+         * @return array Righe oggetto (array vuoto su errore DB).
+         */
+        private static function diagnostics_agent_errors( $agent_id, $limit = 10 ) {
+                global $wpdb;
+
+                $limit  = min( 50, max( 1, absint( $limit ) ) );
+                $tables = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) ? Nexus_DB::tables() : array();
+                if ( empty( $tables['activity_logs'] ) ) {
+                        return array();
+                }
+                $table = $tables['activity_logs'];
+
+                $sql  = "SELECT id, agent_id, action, detail, status, created_at FROM {$table}"
+                        . ' WHERE agent_id = %d AND status = %s'
+                        . ' ORDER BY id DESC LIMIT %d';
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql, absint( $agent_id ), 'error', $limit ) );
+
+                return is_array( $rows ) ? $rows : array();
+        }
+
+        /**
+         * Conteggio difensivo degli errori fonte GLOBALI recenti (action
+         * 'source_error'): finché gli errori fonte non sono attribuiti
+         * all'agente (agent_id=0, sources:1605-1607) è l'unico segnale
+         * disponibile e vale per TUTTA la testata, non per il singolo agente.
+         * Si conta tra le ultime 20 righe 'source_error' (limite fisso al posto
+         * di una finestra temporale: created_at è scritto in current_time('mysql')
+         * e confrontare orologi misti sarebbe meno onesto del limite).
+         *
+         * @return int
+         */
+        private static function diagnostics_source_error_count() {
+                global $wpdb;
+
+                $tables = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) ? Nexus_DB::tables() : array();
+                if ( empty( $tables['activity_logs'] ) ) {
+                        return 0;
+                }
+                $table = $tables['activity_logs'];
+
+                $sql = "SELECT COUNT(*) FROM ( SELECT id FROM {$table} WHERE action = %s AND status = %s ORDER BY id DESC LIMIT 20 ) AS recent";
+                $n   = $wpdb->get_var( $wpdb->prepare( $sql, 'source_error', 'error' ) );
+
+                return $n ? (int) $n : 0;
+        }
+
+        /**
+         * Clip difensiva locale (stessa semantica di Nexus_Pipeline::clip):
+         * mb_substr quando disponibile, substr altrimenti.
+         *
+         * @param string $text Testo.
+         * @param int    $max  Lunghezza massima.
+         * @return string
+         */
+        private static function diagnostics_clip( $text, $max ) {
+                $text = (string) $text;
+                if ( function_exists( 'mb_substr' ) ) {
+                        return trim( mb_substr( $text, 0, (int) $max ) );
+                }
+                return trim( substr( $text, 0, (int) $max ) );
         }
 
         /**
