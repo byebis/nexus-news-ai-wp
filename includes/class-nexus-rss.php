@@ -168,7 +168,9 @@ class Nexus_Rss {
          * fetch_for_agent (title, description clip 400, link, source) così che
          * Nexus_Redazioni::sources_items_for_agent restituisca item identici a
          * quelli dei feed di categoria e collect li consumi allo stesso modo.
-         * Difensivo: feed in errore, vuoto o fetch_feed assente → array().
+         * Difensivo: URL non consentita dalla SSRF guard (v1.1.15 WB3,
+         * Nexus_Tools::assert_safe_url: DNS + IP privati, fail-closed), feed
+         * in errore, vuoto o fetch_feed assente → array().
          *
          * @param string $feed_url  URL del feed.
          * @param int    $max_items Numero massimo di item da estrarre dal feed.
@@ -178,6 +180,20 @@ class Nexus_Rss {
                 $feed_url  = trim( (string) $feed_url );
                 $max_items = max( 1, (int) $max_items );
                 if ( '' === $feed_url || ! function_exists( 'fetch_feed' ) ) {
+                        return array();
+                }
+
+                // v1.1.15 (WB3): SSRF guard prima del fetch (stesso pattern di
+                // Nexus_Tools::read_feed e discover_feeds): SimplePie non ha
+                // guardie SSRF proprie e le URL dei feed arrivano da configurazione
+                // utente/redazioni. assert_safe_url normalizza e blocca schemi non
+                // http(s), host invalidi e IP privati/riservati (DNS incluso).
+                // Guardie class_exists/method_exists come nell'adapter web di
+                // Nexus_Sources (mai fatal); fetch_feed_items non ha fallback
+                // alternativo, quindi senza guardia disponibile si rinuncia al
+                // fetch (fail-closed: array() vuoto onesto).
+                if ( ! class_exists( 'Nexus_Tools' ) || ! method_exists( 'Nexus_Tools', 'assert_safe_url' )
+                        || is_wp_error( Nexus_Tools::assert_safe_url( $feed_url ) ) ) {
                         return array();
                 }
 
