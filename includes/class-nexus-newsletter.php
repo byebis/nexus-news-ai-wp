@@ -600,11 +600,13 @@ JS;
          * - guard enable_newsletter != 1 → false (l'evento è comunque deschedulato dall'autosync);
          * - articoli 'published' (ultimi 20) → filtro in PHP su published_at ultimi 7 giorni
          *   (recent_digest_articles(), estratto in v1.1.14 per il riuso nell'anteprima);
-         * - 0 articoli → false;
+         * - 0 articoli → log attività 'Digest saltato: nessun articolo' (v1.1.15 WE5:
+         *   niente più fallimenti silenziosi) + false;
          * - destinatari: newsletter_recipients (comma, sanitize_email, UNIQUE) + copia
          *   garantita (v1.1.14: preferenza admin Nexus_Digest, default admin_email) +
          *   subscriber 'confirmed' CON digest_optin = 1 (v1.1.14, P5: niente invio a
-         *   chi ha rinunciato al solo digest) → nessuno → false;
+         *   chi ha rinunciato al solo digest) → nessuno → log 'Digest saltato:
+         *   nessun destinatario' (v1.1.15 WE5) + false;
          * - enable_digest == 1 → UNA chiamata Nexus_AI_Engine::chat (solo testo IT:
          *   intro 2 frasi + un paragrafo per articolo), con fallback lista manuale
          *   titoli+link se la chat fallisce o non è disponibile;
@@ -613,6 +615,10 @@ JS;
          * - wp_mail HTML (max-width 600px): footer con link disiscrizione per-subscriber
          *   (?nexus_unsub={token}) + link gestione solo-digest (?nexus_unsub={token}
          *   &nexus_digest=0), footer generico per i destinatari fissi;
+         * - v1.1.15 (WE5): OGNI wp_mail false viene loggato con le email MASCHERATE
+         *   (mask_email: 'm***@dominio.tld', niente PII completa) e il contatore
+         *   $failed entra nel log finale (' — invii falliti: N' solo quando > 0:
+         *   la riga storica 'Digest inviato a N destinatari' resta identica altrimenti);
          * - log attività best-effort ('Digest inviato a N destinatari').
          *
          * @return bool True se almeno una email è stata inviata.
@@ -632,6 +638,9 @@ JS;
                         $recent = self::recent_digest_articles();
 
                         if ( ! $recent ) {
+                                // v1.1.15 (WE5): lo skip NON è più silenzioso — una riga onesta
+                                // su activity log (canale 'newsletter' esistente, niente schema nuovo).
+                                self::log_digest_notice( 'Digest saltato: nessun articolo' );
                                 return false;
                         }
 
@@ -640,6 +649,8 @@ JS;
                         $subscribers = self::digest_subscribers();
 
                         if ( ! $recipients && ! $subscribers ) {
+                                // v1.1.15 (WE5): anche lo skip 0 destinatari lascia traccia in log.
+                                self::log_digest_notice( 'Digest saltato: nessun destinatario' );
                                 return false;
                         }
 
@@ -661,11 +672,21 @@ JS;
                         $subject = sprintf( __( 'Digest Nexus — settimana del %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
                         $headers = self::mail_headers();
                         $sent    = 0;
+                        $failed  = 0; // v1.1.15 (WE5): invii falliti, riportati nel log finale.
 
                         if ( $recipients ) {
                                 $body = self::build_digest_html( $intro_html, $items, '', $sections_html );
                                 if ( wp_mail( array_values( $recipients ), $subject, $body, $headers ) ) {
                                         $sent += count( $recipients );
+                                } else {
+                                        // v1.1.15 (WE5): fallimento wp_mail NON più silenzioso — le email
+                                        // dei destinatari fissi vengono loggate SOLO mascherate (mask_email).
+                                        $masked = array();
+                                        foreach ( array_values( $recipients ) as $email ) {
+                                                $masked[] = self::mask_email( $email );
+                                        }
+                                        self::log_digest_notice( 'Digest: invio fallito a ' . implode( ', ', $masked ) );
+                                        $failed += count( $recipients );
                                 }
                         }
 
@@ -682,16 +703,30 @@ JS;
                                 $body    = self::build_digest_html( $intro_html, $items, $token, $sections_html );
                                 if ( wp_mail( $email, $subject, $body, self::mail_headers( $unsub ) ) ) {
                                         $sent++;
+                                } else {
+                                        // v1.1.15 (WE5): fallimento loggato con email MASCHERATA
+                                        // (m***@dominio.tld): niente PII completa nei log.
+                                        self::log_digest_notice( 'Digest: invio fallito a ' . self::mask_email( $email ) );
+                                        $failed++;
                                 }
                         }
 
                         /* ---------- Log attività best-effort ---------- */
                         try {
                                 if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                        $detail = sprintf( 'Digest inviato a %d destinatari', $sent );
+
+                                        // v1.1.15 (WE5): il contatore dei falliti entra nel log finale SOLO
+                                        // quando serve (suffisso additivo: la riga storica resta identica
+                                        // quando $failed = 0, il pattern i18n esistente non si rompe).
+                                        if ( $failed > 0 ) {
+                                                $detail .= sprintf( ' — invii falliti: %d', $failed );
+                                        }
+
                                         Nexus_DB::insert_activity(
                                                 0,
                                                 'newsletter',
-                                                sprintf( 'Digest inviato a %d destinatari', $sent ),
+                                                $detail,
                                                 $sent > 0 ? 'success' : 'error'
                                         );
                                 }
@@ -727,6 +762,52 @@ JS;
                 } catch ( Throwable $e ) {
                         /* Silenzio. */
                 }
+        }
+
+        /**
+         * v1.1.15 (WE5) — log attività di un DIGEST SALTATO o di un invio fallito:
+         * STESSA via del log esistente del modulo (Nexus_DB::insert_activity,
+         * action 'newsletter' — nessuna modifica allo schema, nessun canale nuovo).
+         * Messaggio ripulito e tagliato a 200 caratteri; le email nei messaggi
+         * arrivano GIÀ mascherate (mask_email): nessuna PII completa nel log.
+         * Status 'info' per gli skip (non sono errori), il chiamante decide.
+         *
+         * @param string $message Messaggio (email già mascherate).
+         * @return void
+         */
+        private static function log_digest_notice( $message ) {
+                try {
+                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                $message = sanitize_text_field( (string) $message );
+                                $message = function_exists( 'mb_substr' ) ? mb_substr( $message, 0, 200 ) : substr( $message, 0, 200 );
+
+                                Nexus_DB::insert_activity( 0, 'newsletter', $message, 'info' );
+                        }
+                } catch ( Exception $e ) {
+                        /* Silenzio: il log non deve mai bloccare il cron. */
+                } catch ( Throwable $e ) {
+                        /* Silenzio: il log non deve mai bloccare il cron. */
+                }
+        }
+
+        /**
+         * v1.1.15 (WE5) — maschera un indirizzo email per i log (es.
+         * 'mario.rossi@esempio.it' → 'm***@esempio.it'): primo carattere della
+         * parte locale + '***' + dominio. Formato non riconoscibile → segnaposto
+         * senza PII ('[email]').
+         *
+         * @param string $email Indirizzo email.
+         * @return string Email mascherata.
+         */
+        private static function mask_email( $email ) {
+                $email = trim( (string) $email );
+                $at    = strrpos( $email, '@' );
+
+                if ( false === $at || 0 === $at || $at + 1 >= strlen( $email ) ) {
+                        return '[email]';
+                }
+
+                return substr( $email, 0, 1 ) . '***@' . substr( $email, $at + 1 );
         }
 
         /* ============ BLOCCHI DEL DIGEST (v1.1.14, P5 — estratti per il riuso nell'anteprima) ============ */

@@ -67,6 +67,18 @@
  * log o error_log; i messaggi d'errore sono brevi e senza URL completi (brief_error()).
  * Nessuna eccezione non catturata: run_sync() incassa Exception/Throwable e logga.
  *
+ * v1.1.15 (WE4) — AFFIDABILITÀ E PERFORMANCE HTTP/DB:
+ *  - RETRY: le richieste GSC/GA4 (per-pagina, GA4 batched e search queries) girano
+ *    via google_post_with_recovery(): UN retry automatico su errori transitori
+ *    (rete/429/5xx) con attesa da Retry-After, cap 60s — UNA sola implementazione
+ *    nel plugin, l'helper condiviso Nexus_Notify::http_post_with_retry di WE1;
+ *  - 401: su risposta 401 viene tentato UN re-accesso al token
+ *    (Nexus_Google_Auth::get_access_token(), usa il refresh_token se necessario):
+ *    se il token cambia, la richiesta parte UNA seconda volta col token rinnovato;
+ *  - UPSERT BATCHED: upsert_metric_rows() scrive le righe metriche in INSERT
+ *    multi-row (chunk di 100) ... ON DUPLICATE KEY UPDATE: niente più migliaia di
+ *    round-trip DB riga-per-riga; upsert_metric_row() resta come delega a 1 riga.
+ *
  * v1.1.14 (P2) — SEARCH QUERIES GSC (opportunità di ricerca):
  * Stessa chiamata searchAnalytics (endpoint GSC_ENDPOINT), dimension 'query':
  * UNA richiesta per GIORNO della finestra dati (oggi-2 → oggi-4: dal più
@@ -384,6 +396,10 @@ final class Nexus_Metrics {
                 // post_metric, idempotente all'upsert). Le righe che non
                 // matchano nessun post recente vengono SCARTATE: nessuna
                 // replica sito-wide, il dato mancante è onesto.
+                // v1.1.15 (WE4): le righe valide vengono raccolte e scritte con
+                // l'upsert BATCHED upsert_metric_rows() (chunk di 100, INSERT
+                // multi-row): niente più un round-trip DB per riga.
+                $gsc_upsert = array();
                 foreach ( $gsc_rows as $row ) {
                         $row_post_id = self::resolve_post_by_page( $row['page'], $gsc_map['exact'], $gsc_map['ci'] );
 
@@ -397,19 +413,25 @@ final class Nexus_Metrics {
                                 break;
                         }
 
-                        $written = self::upsert_metric_row(
-                                $row_post_id,
-                                $row['date'],
-                                'gsc',
-                                $row['clicks'],
-                                $row['impressions'],
-                                $row['position'],
-                                0
+                        $gsc_upsert[] = array(
+                                'post_id'     => $row_post_id,
+                                'date'        => $row['date'],
+                                'source'      => 'gsc',
+                                'clicks'      => $row['clicks'],
+                                'impressions' => $row['impressions'],
+                                'position'    => $row['position'],
+                                'views'       => 0,
                         );
+                }
 
-                        if ( $written ) {
-                                $rows_gsc++;
-                        } else {
+                if ( ! empty( $gsc_upsert ) ) {
+                        $written = self::upsert_metric_rows( $gsc_upsert );
+
+                        if ( $written > 0 ) {
+                                $rows_gsc += $written;
+                        }
+
+                        if ( $written < count( $gsc_upsert ) ) {
                                 $errors++;
                                 $last_error = 'Scrittura metrica GSC fallita (DB).';
                         }
@@ -430,6 +452,9 @@ final class Nexus_Metrics {
                         // non richieste, nota onesta a log (nessun dato fittizio).
                         $ga4_capped = max( 0, count( $variants ) - self::GA4_MAX_REQUESTS * self::GA4_FILTER_VALUES );
                         $chunks     = array_slice( $chunks, 0, self::GA4_MAX_REQUESTS );
+
+                        // v1.1.15 (WE4): righe valide raccolte e scritte in batch a fine ciclo.
+                        $ga4_upsert = array();
 
                         foreach ( $chunks as $chunk ) {
                                 if ( self::budget_exceeded( $start_ts ) ) {
@@ -457,14 +482,28 @@ final class Nexus_Metrics {
                                                 continue;
                                         }
 
-                                        $written = self::upsert_metric_row( $row_post_id, $row['date'], 'ga4', 0, 0, 0.0, $row['views'] );
+                                        $ga4_upsert[] = array(
+                                                'post_id'     => $row_post_id,
+                                                'date'        => $row['date'],
+                                                'source'      => 'ga4',
+                                                'clicks'      => 0,
+                                                'impressions' => 0,
+                                                'position'    => 0.0,
+                                                'views'       => $row['views'],
+                                        );
+                                }
+                        }
 
-                                        if ( $written ) {
-                                                $rows_ga4++;
-                                        } else {
-                                                $errors++;
-                                                $last_error = 'Scrittura metrica GA4 fallita (DB).';
-                                        }
+                        if ( ! empty( $ga4_upsert ) ) {
+                                $written = self::upsert_metric_rows( $ga4_upsert );
+
+                                if ( $written > 0 ) {
+                                        $rows_ga4 += $written;
+                                }
+
+                                if ( $written < count( $ga4_upsert ) ) {
+                                        $errors++;
+                                        $last_error = 'Scrittura metrica GA4 fallita (DB).';
                                 }
                         }
                 }
@@ -522,6 +561,80 @@ final class Nexus_Metrics {
         /* ============ API REMOTE ============ */
 
         /**
+         * v1.1.15 (WE4) — POST verso le API Google con recovery a due livelli:
+         *  1) RETRY TRANSITORIO: UN retry automatico (max 2 tentativi) su errore di
+         *     rete (WP_Error), HTTP 429 o HTTP >= 500, con attesa da Retry-After
+         *     (secondi o data HTTP), cap 60s — tramite l'helper condiviso
+         *     Nexus_Notify::http_post_with_retry() di WE1 (UNA sola implementazione
+         *     nel plugin); fallback wp_remote_post diretto senza retry se il modulo
+         *     notify non è caricato (caricamenti parziali);
+         *  2) 401: UN tentativo di re-accesso al token (refresh_access_token():
+         *     Nexus_Google_Auth::get_access_token(), che usa il refresh_token se
+         *     necessario); SOLO se il token cambia la richiesta parte UNA seconda
+         *     volta con l'Authorization rinnovato (stesso token = stesso esito, nessun
+         *     secondo round-trip inutile).
+         *
+         * Le chiamate GSC/GA4 sono LETTURE idempotenti: nessun rischio di duplicati.
+         * Il token NON viene mai loggato né inserito nei messaggi d'errore.
+         *
+         * @param string $url   Endpoint Google (property inclusa).
+         * @param array  $args  Args wp_remote_post (headers con Authorization Bearer, body, ...).
+         * @param string $token Token usato nella richiesta (per valutare il re-refresh).
+         * @return array|WP_Error Risposta finale.
+         */
+        private static function google_post_with_recovery( $url, array $args, $token ) {
+                // 1) Retry transitorio (rete/429/5xx), cap attesa 60s.
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        $response = Nexus_Notify::http_post_with_retry( $url, $args );
+                } else {
+                        $response = wp_remote_post( $url, $args );
+                }
+
+                if ( is_wp_error( $response ) || 401 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+                        return $response;
+                }
+
+                // 2) 401: UN re-accesso al token e, solo se rinnovato davvero, un secondo invio.
+                $fresh = self::refresh_access_token();
+
+                if ( '' === $fresh || $fresh === (string) $token ) {
+                        return $response;
+                }
+
+                if ( isset( $args['headers']['Authorization'] ) ) {
+                        $args['headers']['Authorization'] = 'Bearer ' . $fresh;
+                }
+
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'http_post_with_retry' ) ) {
+                        return Nexus_Notify::http_post_with_retry( $url, $args );
+                }
+
+                return wp_remote_post( $url, $args );
+        }
+
+        /**
+         * v1.1.15 (WE4) — UN tentativo di re-accesso al token Google (guardie
+         * class_exists/method_exists come nel resto del modulo; get_access_token()
+         * usa il refresh_token quando quello in cache è scaduto). Il token NON
+         * viene mai loggato né restituito fuori da qui.
+         *
+         * @return string Token rinnovato ('' se non disponibile).
+         */
+        private static function refresh_access_token() {
+                if ( ! class_exists( 'Nexus_Google_Auth' ) || ! method_exists( 'Nexus_Google_Auth', 'get_access_token' ) ) {
+                        return '';
+                }
+
+                $fresh = Nexus_Google_Auth::get_access_token();
+
+                if ( is_wp_error( $fresh ) || ! is_string( $fresh ) || '' === $fresh ) {
+                        return '';
+                }
+
+                return $fresh;
+        }
+
+        /**
          * Richiesta GSC Search Analytics (dimensioni 'date' + 'page': righe
          * per-pagina REALI, ultimi 3 giorni completi con lag GSC: oggi-4 →
          * oggi-2).
@@ -546,16 +659,20 @@ final class Nexus_Metrics {
                         )
                 );
 
-                $response = wp_remote_post(
+                $args = array(
+                        'timeout' => self::HTTP_TIMEOUT,
+                        'headers' => array(
+                                'Authorization' => 'Bearer ' . $token,
+                                'Content-Type'  => 'application/json; charset=utf-8',
+                        ),
+                        'body'    => $body,
+                );
+
+                // v1.1.15 (WE4): retry transitorio (rete/429/5xx) + re-accesso token su 401.
+                $response = self::google_post_with_recovery(
                         self::GSC_ENDPOINT . rawurlencode( $site_url ) . '/searchAnalytics/query',
-                        array(
-                                'timeout' => self::HTTP_TIMEOUT,
-                                'headers' => array(
-                                        'Authorization' => 'Bearer ' . $token,
-                                        'Content-Type'  => 'application/json; charset=utf-8',
-                                ),
-                                'body'    => $body,
-                        )
+                        $args,
+                        $token
                 );
 
                 if ( is_wp_error( $response ) ) {
@@ -679,16 +796,20 @@ final class Nexus_Metrics {
                         )
                 );
 
-                $response = wp_remote_post(
+                $args = array(
+                        'timeout' => self::HTTP_TIMEOUT,
+                        'headers' => array(
+                                'Authorization' => 'Bearer ' . $token,
+                                'Content-Type'  => 'application/json; charset=utf-8',
+                        ),
+                        'body'    => $body,
+                );
+
+                // v1.1.15 (WE4): retry transitorio (rete/429/5xx) + re-accesso token su 401.
+                $response = self::google_post_with_recovery(
                         self::GA4_ENDPOINT . rawurlencode( $property ) . ':runReport',
-                        array(
-                                'timeout' => self::HTTP_TIMEOUT,
-                                'headers' => array(
-                                        'Authorization' => 'Bearer ' . $token,
-                                        'Content-Type'  => 'application/json; charset=utf-8',
-                                ),
-                                'body'    => $body,
-                        )
+                        $args,
+                        $token
                 );
 
                 if ( is_wp_error( $response ) ) {
@@ -980,11 +1101,10 @@ final class Nexus_Metrics {
         /* ============ PERSISTENZA ============ */
 
         /**
-         * Upsert di una riga metrica su wp_nexus_metrics.
-         *
-         * INSERT ... ON DUPLICATE KEY UPDATE sulla UNIQUE post_metric
-         * (post_id, metric_date, source): re-run della sync sovrascrive i
-         * valori del giorno senza duplicare righe. synced_at = now (locale).
+         * Upsert di UNA riga metrica su wp_nexus_metrics (retrocompatibilità:
+         * v1.1.15 WE4 delega al batched upsert_metric_rows() con 1 riga, che fa
+         * la stessa INSERT ... ON DUPLICATE KEY UPDATE sulla UNIQUE post_metric
+         * (post_id, metric_date, source) del metodo storico).
          *
          * @param int    $post_id      ID del post WordPress.
          * @param string $metric_date  Data metrica (YYYY-MM-DD, già validata).
@@ -996,30 +1116,98 @@ final class Nexus_Metrics {
          * @return bool True se la scrittura è andata a buon fine.
          */
         private static function upsert_metric_row( $post_id, $metric_date, $source, $clicks, $impressions, $position, $views ) {
-                global $wpdb;
-
-                $table = self::metrics_table();
-
-                $sql = "INSERT INTO {$table} ( post_id, metric_date, source, clicks, impressions, position, views, synced_at ) "
-                        . 'VALUES ( %d, %s, %s, %d, %d, %f, %d, %s ) '
-                        . 'ON DUPLICATE KEY UPDATE clicks = VALUES( clicks ), impressions = VALUES( impressions ), '
-                        . 'position = VALUES( position ), views = VALUES( views ), synced_at = VALUES( synced_at )';
-
-                $result = $wpdb->query(
-                        $wpdb->prepare(
-                                $sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
-                                absint( $post_id ),
-                                $metric_date,
-                                sanitize_key( $source ),
-                                absint( $clicks ),
-                                absint( $impressions ),
-                                round( (float) $position, 2 ),
-                                absint( $views ),
-                                current_time( 'mysql' )
-                        )
+                $rows = array(
+                        array(
+                                'post_id'     => $post_id,
+                                'date'        => $metric_date,
+                                'source'      => $source,
+                                'clicks'      => $clicks,
+                                'impressions' => $impressions,
+                                'position'    => $position,
+                                'views'       => $views,
+                        ),
                 );
 
-                return false !== $result;
+                return self::upsert_metric_rows( $rows ) > 0;
+        }
+
+        /**
+         * v1.1.15 (WE4) — upsert BATCHED di righe metriche su wp_nexus_metrics:
+         * INSERT multi-row "VALUES (...),(...)" ... ON DUPLICATE KEY UPDATE sulla
+         * UNIQUE post_metric (post_id, metric_date, source), a CHUNK di 100 righe
+         * (1 round-trip DB per chunk invece che per riga: la sync con ~150 righe
+         * GSC+GA4 passa da centinaia di query a 2). Re-run della sync sovrascrive
+         * i valori del giorno senza duplicare righe; synced_at = now (locale).
+         *
+         * SICUREZZA: placeholder completi per OGNI riga (%d/%s/%f) costruiti
+         * dinamicamente e passati a $wpdb->prepare con l'array dei valori; i valori
+         * passano per le stesse normalizzazioni del metodo singolo (absint /
+         * sanitize_key / round). La tabella arriva da metrics_table() (allowlist
+         * interna Nexus_DB, mai input utente).
+         *
+         * Nota onesta: $wpdb->query su ON DUPLICATE KEY UPDATE ritorna 1 per INSERT
+         * e 2 per UPDATE — per questo le righe scritte vengono contate con
+         * count($chunk) e NON con il valore di ritorno di query(); un chunk fallito
+         * (false) conta come 0 e i suoi errori emergono dal confronto col totale.
+         *
+         * @param array $rows Righe da scrivere: ognuna array con chiavi
+         *                    post_id (int), date (Y-m-d), source ('gsc'|'ga4'),
+         *                    clicks (int), impressions (int), position (float), views (int).
+         * @return int Numero di righe incluse in chunk scritti con successo.
+         */
+        private static function upsert_metric_rows( array $rows ) {
+                global $wpdb;
+
+                if ( empty( $rows ) ) {
+                        return 0;
+                }
+
+                $table   = self::metrics_table();
+                $written = 0;
+
+                foreach ( array_chunk( $rows, 100 ) as $chunk ) {
+                        $placeholders = array();
+                        $params       = array();
+
+                        foreach ( $chunk as $row ) {
+                                if ( ! is_array( $row ) ) {
+                                        continue;
+                                }
+
+                                $placeholders[] = '( %d, %s, %s, %d, %d, %f, %d, %s )';
+
+                                $params[] = absint( isset( $row['post_id'] ) ? $row['post_id'] : 0 );
+                                $params[] = (string) ( isset( $row['date'] ) ? $row['date'] : '' );
+                                $params[] = sanitize_key( isset( $row['source'] ) ? $row['source'] : '' );
+                                $params[] = absint( isset( $row['clicks'] ) ? $row['clicks'] : 0 );
+                                $params[] = absint( isset( $row['impressions'] ) ? $row['impressions'] : 0 );
+                                $params[] = round( (float) ( isset( $row['position'] ) ? $row['position'] : 0 ), 2 );
+                                $params[] = absint( isset( $row['views'] ) ? $row['views'] : 0 );
+                                $params[] = current_time( 'mysql' );
+                        }
+
+                        if ( empty( $placeholders ) ) {
+                                continue;
+                        }
+
+                        $sql = "INSERT INTO {$table} ( post_id, metric_date, source, clicks, impressions, position, views, synced_at ) "
+                                . 'VALUES ' . implode( ', ', $placeholders ) . ' '
+                                . 'ON DUPLICATE KEY UPDATE clicks = VALUES( clicks ), impressions = VALUES( impressions ), '
+                                . 'position = VALUES( position ), views = VALUES( views ), synced_at = VALUES( synced_at )';
+
+                        $result = $wpdb->query(
+                                $wpdb->prepare(
+                                        $sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi per ogni riga, tabella da allowlist interna.
+                                        $params
+                                )
+                        );
+
+                        if ( false !== $result ) {
+                                $written += count( $placeholders );
+                        }
+                }
+
+                return $written;
         }
 
         /**
@@ -1164,10 +1352,21 @@ final class Nexus_Metrics {
          * Rende un messaggio d'errore breve e sicuro per i log: niente URL
          * completi (sostituiti con '[url]'), niente token, max 120 caratteri.
          *
-         * @param mixed $message Messaggio grezzo (string|WP_Error message).
+         * v1.1.15 (WE7): il formato è PROMOSO a helper condiviso pubblico
+         * Nexus_Notify::brief_error() (stesso redact: URL '[url]', pattern di
+         * token noti mascherati, sanitize, cap con suffisso '...'); qui la
+         * delega mantiene il cap storico 120. Fallback locale identico al
+         * comportamento storico se il modulo notify non è caricato (ordine di
+         * bootstrap: metrics carica PRIMA di notify).
+         *
+         * @param mixed $message Messaggio grezzo (string|WP_Error).
          * @return string
          */
         private static function brief_error( $message ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'brief_error' ) ) {
+                        return Nexus_Notify::brief_error( $message, 120 );
+                }
+
                 $message = is_string( $message ) ? $message : '';
                 $message = preg_replace( '#https?://[^\s]+#i', '[url]', $message );
                 $message = trim( (string) sanitize_text_field( $message ) );
@@ -1336,16 +1535,22 @@ final class Nexus_Metrics {
                         )
                 );
 
-                $response = wp_remote_post(
+                $args = array(
+                        'timeout' => self::HTTP_TIMEOUT,
+                        'headers' => array(
+                                'Authorization' => 'Bearer ' . $token,
+                                'Content-Type'  => 'application/json; charset=utf-8',
+                        ),
+                        'body'    => $body,
+                );
+
+                // v1.1.15 (WE4): stesso trattamento di fetch_gsc_rows/fetch_ga4_rows
+                // (retry transitorio + re-accesso token su 401) per coerenza: il ciclo
+                // query è 3 richieste a run, la stessa fragilità va coperta uguale.
+                $response = self::google_post_with_recovery(
                         self::GSC_ENDPOINT . rawurlencode( $site_url ) . '/searchAnalytics/query',
-                        array(
-                                'timeout' => self::HTTP_TIMEOUT,
-                                'headers' => array(
-                                        'Authorization' => 'Bearer ' . $token,
-                                        'Content-Type'  => 'application/json; charset=utf-8',
-                                ),
-                                'body'    => $body,
-                        )
+                        $args,
+                        $token
                 );
 
                 if ( is_wp_error( $response ) ) {

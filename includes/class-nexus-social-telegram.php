@@ -172,6 +172,14 @@ class Nexus_Social_Telegram {
                 $result  = isset( $data['result'] ) && is_array( $data['result'] ) ? $data['result'] : array();
                 $post_id = isset( $result['message_id'] ) ? (string) $result['message_id'] : '';
 
+                // v1.1.15 (WE6): risposta ok SENZA message_id = esito non verificabile →
+                // 'failed' con errore descrittivo, coerente con X (HTTP 201 senza data.id)
+                // e LinkedIn (2xx senza id). Un 'published' con id vuoto romperebbe il
+                // contratto del canale (post_id sempre valorizzato in caso di successo).
+                if ( '' === trim( $post_id ) ) {
+                        return self::failed( 'Telegram non ha restituito message_id.', $token );
+                }
+
                 return self::result( 'published', $post_id, '', '', 'Inviato in chat ' . $chat_id );
         }
 

@@ -457,7 +457,10 @@ final class Nexus_Notify {
                 );
 
                 if ( is_wp_error( $response ) ) {
-                        self::log_failure( 'Webhook notifica fallito (errore di connessione).' ); // niente dettagli WP_Error (potrebbero contenere l'URL).
+                        // v1.1.15 (WE7): dettaglio WP_Error ora incluso passando dal redact
+                        // condiviso (URL con eventuali token rimossi): l'indizio utile (es.
+                        // timeout cURL) arriva in log senza esporre l'endpoint.
+                        self::log_failure( 'Webhook notifica fallito (errore di connessione): ' . self::brief_error( $response, 120 ) );
                         return;
                 }
 
@@ -604,8 +607,10 @@ final class Nexus_Notify {
                 );
 
                 if ( is_wp_error( $response ) ) {
-                        // Nessun dettaglio WP_Error: può contenere l'endpoint col token.
-                        self::log_failure( 'Notifica Telegram ops fallita (errore di connessione).' );
+                        // v1.1.15 (WE7): dettaglio WP_Error tramite brief_error — l'endpoint
+                        // col token viene redatto come '[url]', l'indizio (es. timeout)
+                        // arriva in log senza segreti.
+                        self::log_failure( 'Notifica Telegram ops fallita (errore di connessione): ' . self::brief_error( $response, 120 ) );
                         return;
                 }
 
@@ -724,6 +729,63 @@ final class Nexus_Notify {
                 }
 
                 return (int) min( 60, (int) ceil( $wait ) );
+        }
+
+        /**
+         * v1.1.15 (WE7) — helper PUBBLICO condiviso per i messaggi d'errore dei
+         * moduli di integrazione: rende un WP_Error (o una stringa) breve e sicuro
+         * per i log. Redact (in ordine):
+         *  - qualunque URL sostituito con '[url]' (gli endpoint con token — es.
+         *    Bot API Telegram, webhook Discord — non devono MAI comparire interi);
+         *  - pattern di token/chiavi noti mascherati: bot token Telegram
+         *    (forma '123456:ABC...') e header 'Bearer ...';
+         *  - tag HTML e whitespace ripuliti (sanitize_text_field).
+         * Cap caratteri (default 200, suffisso '...' come il brief_error storico
+         * di Nexus_Metrics, che da oggi delega a questo metodo con cap 120).
+         *
+         * @param mixed $wp_error_or_string WP_Error oppure messaggio grezzo.
+         * @param int   $cap                Lunghezza massima (default 200, minimo 20).
+         * @return string Messaggio breve senza segreti/URL ('errore sconosciuto' se vuoto).
+         */
+        public static function brief_error( $wp_error_or_string, $cap = 200 ) {
+                if ( is_wp_error( $wp_error_or_string ) ) {
+                        $message = $wp_error_or_string->get_error_message();
+                } else {
+                        $message = is_string( $wp_error_or_string ) ? $wp_error_or_string : '';
+                }
+
+                $message = wp_strip_all_tags( (string) $message );
+
+                // Redact 1: qualunque URL con schema (token nell'endpoint o nella query).
+                $clean = preg_replace( '#[a-z][a-z0-9+.\-]*://[^\s]+#i', '[url]', $message );
+                if ( is_string( $clean ) ) {
+                        $message = $clean;
+                }
+
+                // Redact 2: bot token Telegram (formato <bot_id>:<chiave alfanumerica>).
+                $clean = preg_replace( '/\b\d{6,}:[A-Za-z0-9_\-]{20,}\b/', '[token]', $message );
+                if ( is_string( $clean ) ) {
+                        $message = $clean;
+                }
+
+                // Redact 3: token Bearer (Authorization o body di risposta).
+                $clean = preg_replace( '/(Bearer\s+)[A-Za-z0-9._\-]{8,}/i', '$1[token]', $message );
+                if ( is_string( $clean ) ) {
+                        $message = $clean;
+                }
+
+                $message = trim( (string) sanitize_text_field( $message ) );
+
+                if ( '' === $message ) {
+                        return 'errore sconosciuto';
+                }
+
+                $cap = max( 20, (int) $cap );
+                if ( strlen( $message ) > $cap ) {
+                        $message = substr( $message, 0, max( 1, $cap - 3 ) ) . '...';
+                }
+
+                return $message;
         }
 
         /* ============ HELPER ============ */
