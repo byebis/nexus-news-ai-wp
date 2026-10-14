@@ -3909,6 +3909,13 @@ class Nexus_Rest {
          * righe di attività 'collecting' di oggi per agente (un run della
          * pipeline parte sempre dalla raccolta).
          *
+         * v1.1.15 (WC6): il payload completo è cachato in un transient globale
+         * di 3 secondi ('nexus_live_payload', filtro dev 'nexus_live_cache_ttl',
+         * 0 = cache disattivata): il dashboard polla ogni ~5s e senza cache ogni
+         * poll rieseguiva le stesse query. Nessun dato per-utente nel payload
+         * (endpoint manage_options): chiave globale lecita. Cache bustata SOLO
+         * dalla TTL (scelta dichiarata: nessuna invalidazione complessa).
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
@@ -3921,6 +3928,24 @@ class Nexus_Rest {
                                 __( 'Il modulo database non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
                                 502
                         );
+                }
+
+                // v1.1.15 (WC6): cache BREVE (3s, filtro dev 'nexus_live_cache_ttl') sul
+                // payload completo: il dashboard polla ogni ~5s e ogni poll rieseguiva
+                // agents() + live_last_actions() + live_today_counts() (3+ query raggruppate).
+                // Il payload NON contiene nulla di per-utente (agenti/runtime/contatori del
+                // DB e dell'option runtime; endpoint admin-only manage_options): la chiave
+                // è globale. updated_at porta il momento REALE della costruzione (onestà:
+                // il dato cachato è dichiarato come tale dalla sua stessa timestamp).
+                // Solo la TTL busta la cache (nessuna invalidazione complessa, deciso:
+                // i contatori hanno granularità di secondi, 3s di ritardo non è percepibile).
+                $ttl = (int) apply_filters( 'nexus_live_cache_ttl', 3 );
+
+                if ( $ttl > 0 ) {
+                        $cached = get_transient( 'nexus_live_payload' );
+                        if ( is_array( $cached ) ) {
+                                return rest_ensure_response( $cached );
+                        }
                 }
 
                 $agent_rows = Nexus_DB::agents();
@@ -3995,17 +4020,21 @@ class Nexus_Rest {
                         }
                 }
 
-                return rest_ensure_response(
-                        array(
-                                'updated_at' => gmdate( 'c' ),
-                                'agents'     => $agents_out,
-                                'redazioni'  => $redazioni_out,
-                                'testata'    => array(
-                                        'running' => $running,
-                                        'total'   => count( $agent_rows ),
-                                ),
-                        )
+                $out = array(
+                        'updated_at' => gmdate( 'c' ),
+                        'agents'     => $agents_out,
+                        'redazioni'  => $redazioni_out,
+                        'testata'    => array(
+                                'running' => $running,
+                                'total'   => count( $agent_rows ),
+                        ),
                 );
+
+                if ( $ttl > 0 ) {
+                        set_transient( 'nexus_live_payload', $out, max( 1, $ttl ) );
+                }
+
+                return rest_ensure_response( $out );
         }
 
         /**
