@@ -28,6 +28,14 @@
  *                                              dalla categoria, author Person/Organization secondo l'entità
  *                                              risolta) + Twitter Card (twitter:card/title/description/
  *                                              image) affiancate agli OG esistenti.
+ *                                              v1.1.15 (WF4): con Yoast SEO o RankMath attivi i meta
+ *                                              classici (description, OG, Twitter, og:locale) NON vengono
+ *                                              stampati (duplicherebbero quelli del plugin SEO: la
+ *                                              replicazione dei valori NEI loro meta fatta in optimize()
+ *                                              resta il canale di compat); restano il JSON-LD NewsArticle
+ *                                              (i plugin SEO non producono un NewsArticle completo) e, solo
+ *                                              con driver multilingua 'nexus', i link hreflang. Filtro
+ *                                              nexus_seo_head_enabled (default true) per disattivare il bail-out.
  * Nexus_SEO::filter_title( $title )          — hook pre_get_document_title: su single nexus_article usa
  *                                              _nexus_seo_title se presente, altrimenti "Titolo | Nome sito"
  *                                              (separatore ' | ').
@@ -224,6 +232,22 @@ class Nexus_SEO {
          * twitter:image STESSA immagine in evidenza di og:image (nessun tag
          * twitter esisteva prima: nessun duplicato introdotto).
          *
+         * v1.1.15 (WF4) — bail-out con Yoast SEO / RankMath: quando uno dei
+         * due plugin SEO è attivo (e il filtro nexus_seo_head_enabled è al
+         * default true) NON vengono stampati i meta classici (description,
+         * Open Graph, Twitter Card, og:locale) perché i plugin SEO li
+         * producono già: la duplicazione era reale (stessa description/OG
+         * due volte nell'head). La replicazione dei valori NEI meta dei
+         * plugin SEO fatta in optimize() resta il canale di compat corretto.
+         * Restano SEMPRE: il blocco JSON-LD NewsArticle (i plugin SEO non
+         * producono un NewsArticle completo con autore/publisher Nexus:
+         * nessun duplicato, valore aggiunto) e i link hreflang solo con
+         * driver multilingua 'nexus' (Polylang/WPML emettono i propri
+         * hreflang: con quei driver i nostri sarebbero duplicati; con il
+         * driver nexus nessun altro li produce). og:locale/og:locale:alternate
+         * restano fuori dal bail-out: con Yoast/RankMath og:locale è già
+         * prodotto dal plugin SEO.
+         *
          * @return void
          */
         public static function print_head_meta() {
@@ -323,57 +347,70 @@ class Nexus_SEO {
                         return;
                 }
 
+                // v1.1.15 (WF4): bail-out meta classici con Yoast SEO / RankMath
+                // (vedi docblock). Il filtro nexus_seo_head_enabled (default true)
+                // disattiva il bail-out per chi vuole forzare l'output storico.
+                $third_party_seo = self::third_party_seo_active();
+                $bailout         = $third_party_seo && apply_filters( 'nexus_seo_head_enabled', true );
+
                 echo "\n" . '<!-- SEO Nexus News AI -->' . "\n";
 
-                // Meta description.
-                if ( '' !== $seo_description ) {
-                        echo '<meta name="description" content="' . esc_attr( $seo_description ) . '">' . "\n";
-                }
+                if ( ! $bailout ) {
 
-                // Open Graph base.
-                if ( '' !== $seo_title ) {
-                        echo '<meta property="og:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
-                }
-                if ( '' !== $seo_description ) {
-                        echo '<meta property="og:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
-                }
-                echo '<meta property="og:type" content="article">' . "\n";
-                if ( '' !== $permalink ) {
-                        echo '<meta property="og:url" content="' . esc_url( $permalink ) . '">' . "\n";
-                }
-                if ( '' !== $image_url ) {
-                        echo '<meta property="og:image" content="' . esc_url( $image_url ) . '">' . "\n";
-                }
-                if ( '' !== $published ) {
-                        echo '<meta property="article:published_time" content="' . esc_attr( $published ) . '">' . "\n";
-                }
-                if ( '' !== $modified ) {
-                        echo '<meta property="article:modified_time" content="' . esc_attr( $modified ) . '">' . "\n";
-                }
+                        // Meta description.
+                        if ( '' !== $seo_description ) {
+                                echo '<meta name="description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                        }
 
-                // v1.1.14 (P6): Twitter Card. twitter:image usa la STESSA immagine
-                // in evidenza di og:image (featured image, fallback image_url
-                // dell'articolo Nexus): nessun tag twitter esisteva prima.
-                if ( '' !== $image_url ) {
-                        echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
-                } else {
-                        echo '<meta name="twitter:card" content="summary">' . "\n";
-                }
-                if ( '' !== $seo_title ) {
-                        echo '<meta name="twitter:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
-                }
-                if ( '' !== $seo_description ) {
-                        echo '<meta name="twitter:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
-                }
-                if ( '' !== $image_url ) {
-                        echo '<meta name="twitter:image" content="' . esc_url( $image_url ) . '">' . "\n";
+                        // Open Graph base.
+                        if ( '' !== $seo_title ) {
+                                echo '<meta property="og:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
+                        }
+                        if ( '' !== $seo_description ) {
+                                echo '<meta property="og:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                        }
+                        echo '<meta property="og:type" content="article">' . "\n";
+                        if ( '' !== $permalink ) {
+                                echo '<meta property="og:url" content="' . esc_url( $permalink ) . '">' . "\n";
+                        }
+                        if ( '' !== $image_url ) {
+                                echo '<meta property="og:image" content="' . esc_url( $image_url ) . '">' . "\n";
+                        }
+                        if ( '' !== $published ) {
+                                echo '<meta property="article:published_time" content="' . esc_attr( $published ) . '">' . "\n";
+                        }
+                        if ( '' !== $modified ) {
+                                echo '<meta property="article:modified_time" content="' . esc_attr( $modified ) . '">' . "\n";
+                        }
+
+                        // v1.1.14 (P6): Twitter Card. twitter:image usa la STESSA immagine
+                        // in evidenza di og:image (featured image, fallback image_url
+                        // dell'articolo Nexus): nessun tag twitter esisteva prima.
+                        if ( '' !== $image_url ) {
+                                echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
+                        } else {
+                                echo '<meta name="twitter:card" content="summary">' . "\n";
+                        }
+                        if ( '' !== $seo_title ) {
+                                echo '<meta name="twitter:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
+                        }
+                        if ( '' !== $seo_description ) {
+                                echo '<meta name="twitter:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                        }
+                        if ( '' !== $image_url ) {
+                                echo '<meta name="twitter:image" content="' . esc_url( $image_url ) . '">' . "\n";
+                        }
+
                 }
 
                 // v1.1.2 Multilingua nativo (CONTRATTO-v1.1.2.md): sulle single di tipo
                 // 'post' con più di una lingua pubblicata emette hreflang alternati e
                 // og:locale + og:locale:alternate. Guard: Nexus_Multilang presente;
                 // classe assente, non-singular o poche lingue: output invariato, mai fatale.
-                if ( class_exists( 'Nexus_Multilang' ) && 'post' === $post->post_type ) {
+                // v1.1.15 (WF4): con plugin SEO attivo i link hreflang restano SOLO con
+                // driver 'nexus' (Polylang/WPML emettono i propri hreflang: i nostri
+                // sarebbero duplicati); con driver nexus nessun altro li produce.
+                if ( class_exists( 'Nexus_Multilang' ) && 'post' === $post->post_type && ( ! $bailout || 'nexus' === Nexus_Multilang::driver() ) ) {
                         $translations = Nexus_Multilang::translations_of( $post_id );
 
                         // Solo traduzioni davvero pubblicate, con permalink utilizzabile.
@@ -410,32 +447,38 @@ class Nexus_SEO {
                                 }
 
                                 // Mappa codice lingua: locale Open Graph (fuori mappa: codice così com'è).
-                                $locale_map = array(
-                                        'it' => 'it_IT',
-                                        'en' => 'en_US',
-                                        'es' => 'es_ES',
-                                        'fr' => 'fr_FR',
-                                        'de' => 'de_DE',
-                                        'pt' => 'pt_PT',
-                                        'ar' => 'ar_AR',
-                                        'zh' => 'zh_CN',
-                                        'ja' => 'ja_JP',
-                                );
+                                // v1.1.15 (WF4): og:locale e og:locale:alternate SOLO senza bail-out:
+                                // con Yoast/RankMath og:locale è già prodotto dal plugin SEO.
+                                if ( ! $bailout ) {
 
-                                // og:locale del post corrente.
-                                $current_lang   = sanitize_key( (string) Nexus_Multilang::lang_of_post( $post_id ) );
-                                $current_locale = isset( $locale_map[ $current_lang ] ) ? $locale_map[ $current_lang ] : $current_lang;
-                                if ( '' !== $current_locale ) {
-                                        echo '<meta property="og:locale" content="' . esc_attr( $current_locale ) . '">' . "\n";
-                                }
+                                        $locale_map = array(
+                                                'it' => 'it_IT',
+                                                'en' => 'en_US',
+                                                'es' => 'es_ES',
+                                                'fr' => 'fr_FR',
+                                                'de' => 'de_DE',
+                                                'pt' => 'pt_PT',
+                                                'ar' => 'ar_AR',
+                                                'zh' => 'zh_CN',
+                                                'ja' => 'ja_JP',
+                                        );
 
-                                // og:locale:alternate per le altre lingue pubblicate.
-                                foreach ( array_keys( $published_translations ) as $lang ) {
-                                        if ( $lang === $current_lang ) {
-                                                continue;
+                                        // og:locale del post corrente.
+                                        $current_lang   = sanitize_key( (string) Nexus_Multilang::lang_of_post( $post_id ) );
+                                        $current_locale = isset( $locale_map[ $current_lang ] ) ? $locale_map[ $current_lang ] : $current_lang;
+                                        if ( '' !== $current_locale ) {
+                                                echo '<meta property="og:locale" content="' . esc_attr( $current_locale ) . '">' . "\n";
                                         }
-                                        $alternate_locale = isset( $locale_map[ $lang ] ) ? $locale_map[ $lang ] : $lang;
-                                        echo '<meta property="og:locale:alternate" content="' . esc_attr( $alternate_locale ) . '">' . "\n";
+
+                                        // og:locale:alternate per le altre lingue pubblicate.
+                                        foreach ( array_keys( $published_translations ) as $lang ) {
+                                                if ( $lang === $current_lang ) {
+                                                        continue;
+                                                }
+                                                $alternate_locale = isset( $locale_map[ $lang ] ) ? $locale_map[ $lang ] : $lang;
+                                                echo '<meta property="og:locale:alternate" content="' . esc_attr( $alternate_locale ) . '">' . "\n";
+                                        }
+
                                 }
                         }
                 }
@@ -510,6 +553,31 @@ class Nexus_SEO {
                 }
 
                 echo '<!-- /SEO Nexus News AI -->' . "\n";
+        }
+
+        /**
+         * True se un plugin SEO terzo (Yoast SEO o RankMath) è attivo.
+         *
+         * Check allineati ai guard già usati in optimize() per la replicazione
+         * dei valori nei meta dei plugin SEO (WPSEO_Options / RankMath).
+         * WPSEO_VERSION è definito da Yoast appena caricato (copre anche
+         * variazioni del check classe); RankMath carica la classe \RankMath:
+         * da namespace globale class_exists( 'RankMath' ) e class_exists(
+         * '\RankMath' ) risolvono allo stesso FQCN (entrambi espliciti per
+         * robustezza e per chiarezza del namespace).
+         *
+         * @return bool
+         */
+        private static function third_party_seo_active() {
+                if ( defined( 'WPSEO_VERSION' ) || class_exists( 'WPSEO_Options' ) ) {
+                        return true;
+                }
+
+                if ( class_exists( 'RankMath' ) || class_exists( '\RankMath' ) ) {
+                        return true;
+                }
+
+                return false;
         }
 
         /**
