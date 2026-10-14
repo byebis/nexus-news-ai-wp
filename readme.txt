@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.16
+Stable tag: 1.1.17
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -109,6 +109,10 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.17 =
+* TEST DI GENERAZIONE ONESTO («PONG ONESTO»): il test del provider AI esegue la mini chat completion di verifica con max_tokens 1024 invece di 8: prima i modelli reasoning (tipici di OpenRouter :free) consumavano intero il budget nel ragionamento PRIMA di emettere contenuto e il test restituiva «risposta vuota» su qualunque modello, con il doppio messaggio fuorviante «troncata per max_tokens». Lo stato del provider ora mostra ENTRAMBI gli esiti: verde solo se anche la generazione risponde («Generazione OK: modello, ms», con nota «risposta troncata» quando il testo resta mozzato), rosso con l'errore azionabile del motore se fallisce, più l'avviso quando il modello configurato non è nell'elenco del provider (finora il dato vero finiva solo nel log attività).
+* ERRORI «VUOTO» PIÙ CHIARI + AUTO-RETRY: se il modello restituisce contenuto vuoto con finish_reason=length (token esauriti prima del contenuto) il motore ritenta UNA volta con max_tokens raddoppiato (cap 8000) e, se fallisce ancora, l'errore distingue i due casi reali — token esauriti prima del contenuto (tipico dei modelli reasoning) vs risposta davvero vuota — con il dettaglio «solo ragionamento (N caratteri)» quando il modello popola il campo reasoning/reasoning_content; corretta anche la grammatica del log di troncamento («aumenta max_tokens»). Le traduzioni EN dei messaggi vecchi già registrate restano valide.
 
 = 1.1.16 =
 * AGENTI VISIBILI — TELEMETRIA RUN COMPLETA: ogni esecuzione di ogni agente è ora registrata nella nuova tabella nexus_agent_runs (schema v8 idempotente): inizio, fine, durata, passi (raccolta/valutazione/riscrittura/pubblicazione), candidati raccolti, articoli creati, fonti ok/err, ultimo errore. Lo stato «errore» dell'agente è VIVO: una run fallita segna l'agente in errore (ripristinato al primo successo) e la health mostra quante run fallite nelle ultime 24 ore; gli errori delle fonti sono attribuiti all'agente invece di restare anonimi. Nuovo drawer «Cosa sta facendo» sulla card di ogni agente: step runtime in diretta, ultime run con esiti, checklist «Perché non vedi articoli?» con diagnosi completa (nessuna fonte, cap giornaliero raggiunto, chiave di ricerca mancante, cron non ancora partito, destinazione articoli, budget) e attività per-agente.
