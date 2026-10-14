@@ -67,6 +67,26 @@
  * log o error_log; i messaggi d'errore sono brevi e senza URL completi (brief_error()).
  * Nessuna eccezione non catturata: run_sync() incassa Exception/Throwable e logga.
  *
+ * v1.1.14 (P2) — SEARCH QUERIES GSC (opportunità di ricerca):
+ * Stessa chiamata searchAnalytics (endpoint GSC_ENDPOINT), dimension 'query':
+ * UNA richiesta per GIORNO della finestra dati (oggi-2 → oggi-4: dal più
+ * recente al più vecchio, rowLimit GSC_ROW_LIMIT per giorno) → righe
+ * sito-wide indipendenti dai post, upsert idempotente sulla nuova tabella
+ * wp_nexus_search_queries (schema v6, UNIQUE query_day su query + query_date).
+ * La colonna top_url resta NULL: la risposta query-dimension non porta
+ * pagine (colonna riservata a un futuro sync con dimension 'page').
+ * ISOLAMENTO (contratto del task): il ciclo query gira DOPO il sync
+ * per-pagina/GA4 (che così non può essere interrotto da un errore query) e
+ * il suo esito viaggia in un suffisso additivo del log finale; nel ramo
+ * "nessun articolo recente" le query vengono comunque raccolte (sito-wide,
+ * non dipendono dai post). Errori dei due percorsi restano SEPARATI dai
+ * contatori per-pagina (onestà: nessun doppio conteggio).
+ * GLUE (debito documentato): il file include/class-nexus-opportunities.php
+ * (endpoint REST "assegna a un agente" + dati della sezione opportunità)
+ * viene richiesto QUI in fondo, perché il bootstrap non è nel perimetro del
+ * task: al prossimo integratore basta spostare il require_once in
+ * nexus-news-ai.php ed eliminare la riga in fondo a questo file.
+ *
  * @package Nexus_News_AI
  */
 
@@ -292,7 +312,23 @@ final class Nexus_Metrics {
                 $post_ids = self::recent_post_ids();
 
                 if ( empty( $post_ids ) ) {
-                        self::log_activity( 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0, gsc non attribuite 0, ga4 non attribuite 0) — nessun articolo recente.', 'info' );
+                        // v1.1.14 (P2): anche senza articoli recenti le search
+                        // queries sito-wide vengono raccolte (non dipendono dai
+                        // post); un errore qui è confinato nel suffisso di log.
+                        $q_res = self::maybe_sync_gsc_queries( $token, $gsc_site, microtime( true ) );
+
+                        $detail = 'Metriche sincronizzate: 0 righe (gsc 0, ga4 0, gsc non attribuite 0, ga4 non attribuite 0) — nessun articolo recente.';
+                        $status = 'info';
+
+                        if ( $q_res['ran'] ) {
+                                $detail .= self::queries_log_suffix( $q_res );
+
+                                if ( $q_res['errors'] > 0 ) {
+                                        $status = 'error';
+                                }
+                        }
+
+                        self::log_activity( $detail, $status );
                         return;
                 }
 
@@ -463,6 +499,21 @@ final class Nexus_Metrics {
                 if ( $errors > 0 ) {
                         $status  = 'error';
                         $detail .= ' — errori: ' . $errors . ' (ultimo: ' . $last_error . ')';
+                }
+
+                // v1.1.14 (P2) — SEARCH QUERIES GSC: DOPO per-pagina/GA4 (un
+                // fallimento qui non tocca le righe già scritte); il budget di
+                // tempo è interno al metodo (se esaurito, esce senza tentare e
+                // senza suffisso). Gli errori query NON entrano nel contatore
+                // $errors delle per-pagina: viaggiano nel suffisso dedicato.
+                $q_res = self::maybe_sync_gsc_queries( $token, $gsc_site, $start_ts );
+
+                if ( $q_res['ran'] ) {
+                        $detail .= self::queries_log_suffix( $q_res );
+
+                        if ( $q_res['errors'] > 0 ) {
+                                $status = 'error';
+                        }
                 }
 
                 self::log_activity( $detail, $status );
@@ -1143,7 +1194,300 @@ final class Nexus_Metrics {
                         error_log( '[Nexus News AI][Metrics] ' . $message );
                 }
         }
+
+        /* ============ SEARCH QUERIES GSC (v1.1.14, P2) ============ */
+
+        /**
+         * Wrapper del ciclo di sync delle search queries GSC (chiamato da
+         * do_sync in ENTRAMBI i rami: con e senza articoli recenti).
+         *
+         * NON lancia mai eccezioni (incassa Exception/Throwable nei contatori,
+         * stesso contratto di run_sync): un fallimento del ciclo query non può
+         * interrompere il resto della sincronizzazione né il cron. Se il
+         * budget di tempo è già esaurito esce SENZA tentare (ran = false).
+         *
+         * @param string $token    Access token OAuth (mai loggato).
+         * @param string $site_url Property Search Console (URL esatto).
+         * @param float  $start_ts microtime(true) d'inizio run (budget condiviso).
+         * @return array{ran:bool,rows:int,days:int,errors:int,last_error:string,truncated:int}
+         */
+        private static function maybe_sync_gsc_queries( $token, $site_url, $start_ts ) {
+                $out = array(
+                        'ran'        => false,
+                        'rows'       => 0,
+                        'days'       => 0,
+                        'errors'     => 0,
+                        'last_error' => '',
+                        'truncated'  => 0,
+                );
+
+                if ( ! is_string( $token ) || '' === $token || ! is_string( $site_url ) || '' === $site_url ) {
+                        return $out;
+                }
+
+                if ( self::budget_exceeded( $start_ts ) ) {
+                        return $out;
+                }
+
+                try {
+                        $out['ran'] = true;
+
+                        // Un giorno per richiesta (dimension 'query', rowLimit
+                        // dedicato per giorno): dal più recente al più vecchio,
+                        // così il giorno più utile atterra per primo anche se il
+                        // budget si esaurisce a metà ciclo.
+                        for ( $offset = self::GSC_END_OFFSET; $offset <= self::GSC_START_OFFSET; $offset++ ) {
+                                if ( self::budget_exceeded( $start_ts ) ) {
+                                        break;
+                                }
+
+                                $date = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) - $offset * DAY_IN_SECONDS );
+                                $res  = self::fetch_gsc_query_rows( $token, $site_url, $date );
+
+                                $out['days']++;
+
+                                if ( '' !== $res['error'] ) {
+                                        $out['errors']++;
+                                        $out['last_error'] = $res['error'];
+                                        continue;
+                                }
+
+                                if ( ! empty( $res['truncated'] ) ) {
+                                        $out['truncated'] = 1;
+                                }
+
+                                foreach ( $res['rows'] as $row ) {
+                                        $written = self::upsert_search_query_row(
+                                                $row['query'],
+                                                $date,
+                                                $row['clicks'],
+                                                $row['impressions'],
+                                                $row['position']
+                                        );
+
+                                        if ( $written ) {
+                                                $out['rows']++;
+                                        } else {
+                                                $out['errors']++;
+                                                $out['last_error'] = 'Scrittura query GSC fallita (DB).';
+                                        }
+                                }
+                        }
+                } catch ( Exception $e ) {
+                        $out['errors']++;
+                        $out['last_error'] = self::brief_error( $e->getMessage() );
+                } catch ( Throwable $e ) {
+                        $out['errors']++;
+                        $out['last_error'] = self::brief_error( $e->getMessage() );
+                }
+
+                return $out;
+        }
+
+        /**
+         * Suffisso additivo del log finale per il ciclo query (chiamato SOLO
+         * quando ran = true): ' — query GSC: N righe (giorni D[, troncate a
+         * rowLimit X])' + eventuale nota errori (ultimo messaggio breve).
+         *
+         * @param array $q Contatori ritornati da maybe_sync_gsc_queries().
+         * @return string
+         */
+        private static function queries_log_suffix( $q ) {
+                $suffix = ' — query GSC: ' . (int) ( isset( $q['rows'] ) ? $q['rows'] : 0 )
+                        . ' righe (giorni ' . (int) ( isset( $q['days'] ) ? $q['days'] : 0 );
+
+                if ( ! empty( $q['truncated'] ) ) {
+                        $suffix .= ', troncate a rowLimit ' . self::GSC_ROW_LIMIT;
+                }
+
+                $suffix .= ')';
+
+                $errors = isset( $q['errors'] ) ? (int) $q['errors'] : 0;
+
+                if ( $errors > 0 ) {
+                        $suffix .= ' — errori query: ' . $errors . ' (ultimo: ' . (string) ( isset( $q['last_error'] ) ? $q['last_error'] : '' ) . ')';
+                }
+
+                return $suffix;
+        }
+
+        /**
+         * Richiesta GSC Search Analytics per UN singolo giorno con dimension
+         * 'query' (stesso endpoint di fetch_gsc_rows): righe sito-wide
+         * (query, clicks, impressions, position) senza info di pagina.
+         *
+         * rowLimit = GSC_ROW_LIMIT per richiesta: avendo UN giorno per
+         * richiesta il cap copre fino a 1000 query/giorno (la richiesta unica
+         * con dimensioni date+query condividerebbe lo stesso cap su 3 giorni).
+         *
+         * @param string $token    Access token OAuth (mai loggato).
+         * @param string $site_url Property Search Console (URL esatto).
+         * @param string $date     Giorno richiesto (Y-m-d, già validato).
+         * @return array { rows: array, truncated: bool, error: string } — error '' = OK;
+         *               rows: lista { query: string, clicks: int, impressions: int, position: float }.
+         */
+        private static function fetch_gsc_query_rows( $token, $site_url, $date ) {
+                $body = wp_json_encode(
+                        array(
+                                'startDate'  => $date,
+                                'endDate'    => $date,
+                                'dimensions' => array( 'query' ),
+                                'rowLimit'   => self::GSC_ROW_LIMIT,
+                        )
+                );
+
+                $response = wp_remote_post(
+                        self::GSC_ENDPOINT . rawurlencode( $site_url ) . '/searchAnalytics/query',
+                        array(
+                                'timeout' => self::HTTP_TIMEOUT,
+                                'headers' => array(
+                                        'Authorization' => 'Bearer ' . $token,
+                                        'Content-Type'  => 'application/json; charset=utf-8',
+                                ),
+                                'body'    => $body,
+                        )
+                );
+
+                if ( is_wp_error( $response ) ) {
+                        return array(
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console query: ' . self::brief_error( $response->get_error_message() ),
+                        );
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+
+                if ( $code < 200 || $code >= 300 ) {
+                        return array(
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console query: risposta HTTP ' . $code,
+                        );
+                }
+
+                $data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+
+                if ( ! is_array( $data ) ) {
+                        return array(
+                                'rows'      => array(),
+                                'truncated' => false,
+                                'error'     => 'Search Console query: risposta non valida.',
+                        );
+                }
+
+                $rows = array();
+
+                if ( isset( $data['rows'] ) && is_array( $data['rows'] ) ) {
+                        foreach ( $data['rows'] as $row ) {
+                                // Con dimension 'query': keys[0] = stringa di ricerca.
+                                if ( ! is_array( $row ) || ! isset( $row['keys'][0] ) ) {
+                                        continue;
+                                }
+
+                                // Trim + clip a 191 caratteri: la colonna query è
+                                // VARCHAR(191) (entra nell'indice UNIQUE su utf8mb4).
+                                $query = trim( (string) $row['keys'][0] );
+
+                                if ( '' === $query ) {
+                                        continue;
+                                }
+
+                                if ( function_exists( 'mb_substr' ) ) {
+                                        $query = mb_substr( $query, 0, 191 );
+                                } else {
+                                        $query = substr( $query, 0, 191 );
+                                }
+
+                                $rows[] = array(
+                                        'query'       => $query,
+                                        'clicks'      => isset( $row['clicks'] ) ? absint( $row['clicks'] ) : 0,
+                                        'impressions' => isset( $row['impressions'] ) ? absint( $row['impressions'] ) : 0,
+                                        'position'    => isset( $row['position'] ) ? round( (float) $row['position'], 2 ) : 0.0,
+                                );
+                        }
+                }
+
+                // rowLimit raggiunto: probabilmente ci sono più query oltre la
+                // prima pagina (nota a log, nessuna richiesta aggiuntiva).
+                $truncated = ( count( $rows ) >= self::GSC_ROW_LIMIT );
+
+                return array(
+                        'rows'      => $rows,
+                        'truncated' => $truncated,
+                        'error'     => '',
+                );
+        }
+
+        /**
+         * Upsert di una riga search query su wp_nexus_search_queries.
+         *
+         * INSERT ... ON DUPLICATE KEY UPDATE sulla UNIQUE query_day (query,
+         * query_date): re-run della sync sovrascrive i valori del giorno senza
+         * duplicare righe. synced_at = now (locale). La colonna top_url NON è
+         * scritta: la risposta query-dimension non include pagine → resta NULL
+         * (onestà del dato; nessun URL inventato).
+         *
+         * @param string $query      Stringa di ricerca (già trimmata/clippata).
+         * @param string $query_date Giorno locale (Y-m-d, già validato).
+         * @param int    $clicks     Click Search Console.
+         * @param int    $impressions Impression Search Console.
+         * @param float  $position   Posizione media Search Console.
+         * @return bool True se la scrittura è andata a buon fine.
+         */
+        private static function upsert_search_query_row( $query, $query_date, $clicks, $impressions, $position ) {
+                global $wpdb;
+
+                $table = self::search_queries_table();
+
+                $sql = "INSERT INTO {$table} ( query, query_date, clicks, impressions, position, synced_at ) "
+                        . 'VALUES ( %s, %s, %d, %d, %f, %s ) '
+                        . 'ON DUPLICATE KEY UPDATE clicks = VALUES( clicks ), impressions = VALUES( impressions ), '
+                        . 'position = VALUES( position ), synced_at = VALUES( synced_at )';
+
+                $result = $wpdb->query(
+                        $wpdb->prepare(
+                                $sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+                                (string) $query,
+                                (string) $query_date,
+                                absint( $clicks ),
+                                absint( $impressions ),
+                                round( (float) $position, 2 ),
+                                current_time( 'mysql' )
+                        )
+                );
+
+                return false !== $result;
+        }
+
+        /**
+         * Nome tabella search queries, con guardie sulle API di Nexus_DB
+         * (stesso pattern di metrics_table()): Nexus_DB::tables()['search_queries']
+         * con fallback su $wpdb->prefix . 'nexus_search_queries'.
+         *
+         * @return string
+         */
+        private static function search_queries_table() {
+                global $wpdb;
+
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
+                        $tables = Nexus_DB::tables();
+                        if ( isset( $tables['search_queries'] ) && is_string( $tables['search_queries'] ) && '' !== $tables['search_queries'] ) {
+                                return $tables['search_queries'];
+                        }
+                }
+
+                return $wpdb->prefix . 'nexus_search_queries';
+        }
 }
 
 // v1.1.12: init self-registrato sull'action del bootstrap (nessuna modifica al file principale).
 add_action( 'nexus_modules_init', array( 'Nexus_Metrics', 'init' ) );
+
+// v1.1.14 (P2) — GLUE (debito documentato in testa al file): il modulo
+// opportunità di ricerca (endpoint REST "assegna a un agente" + dati della
+// sezione Analytics) non può toccare il bootstrap (perimetro del task): viene
+// richiesto qui, PRIMA di plugins_loaded, così la classe è definita sia per
+// le rotte REST sia per il render della vista. Al prossimo integratore:
+// spostare QUESTA riga in nexus-news-ai.php (dopo class-nexus-metrics.php).
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-opportunities.php';

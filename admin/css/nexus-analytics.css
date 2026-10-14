@@ -402,3 +402,96 @@
     align-items: flex-start;
   }
 }
+/* -------------------------------------------------------------------------
+ * Opportunità di ricerca (1.1.14, task P2) — pannello server-side con dati
+ * reali dalle search queries GSC (nexus_search_queries, schema v6). Nuove
+ * SOLO classi .nxa-an-opp-*: nessun selettore esistente toccato (note,
+ * meta e ordine RICICLANO .nxa-an-ins-note/.nxa-an-ins-meta/.nxa-an-ins-order
+ * della card Insight; la cella azione riusa .button di WordPress).
+ * Solo token var(--nxa-*): tema scuro body.nexus-theme-dark ereditato dal
+ * flip dei token, nessun colore esadecimale locale. Media query 782px.
+ * ---------------------------------------------------------------------- */
+.nxa-an-opp {
+  padding: var(--nxa-space-4) var(--nxa-space-5);
+}
+.nxa-an-opp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-3);
+  margin: 0 0 var(--nxa-space-2);
+}
+.nxa-an-opp-period {
+  margin: 0;
+}
+.nxa-an-opp-period .button {
+  margin-left: 4px;
+}
+.nxa-an-opp-how {
+  margin: 0 0 var(--nxa-space-2);
+}
+.nxa-an-opp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--nxa-space-5);
+  margin: var(--nxa-space-3) 0 0;
+}
+.nxa-an-opp-col {
+  min-width: 0;
+}
+.nxa-an-opp-col h3 {
+  margin: 0 0 var(--nxa-space-1);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--nxa-text);
+}
+.nxa-an-opp-col .nxa-an-ins-meta {
+  margin: 0 0 var(--nxa-space-2);
+}
+.nxa-an-opp-table th,
+.nxa-an-opp-table td {
+  vertical-align: top;
+}
+.nxa-an-opp-table td.nxa-an-opp-action {
+  min-width: 260px;
+  white-space: normal;
+}
+.nxa-an-opp-agent {
+  max-width: 150px;
+  min-height: 30px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-color: var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background-color: var(--nxa-surface);
+  color: var(--nxa-text);
+}
+.nxa-an-opp-agent:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+.nxa-an-opp-status {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--nxa-muted);
+}
+.nxa-an-opp-status-error {
+  color: var(--nxa-err-text);
+}
+/* Mobile: la griglia impila le due liste in colonna e la testa rientra. */
+@media (max-width: 782px) {
+  .nxa-an-opp {
+    padding: var(--nxa-space-3) var(--nxa-space-4);
+  }
+  .nxa-an-opp-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .nxa-an-opp-agent {
+    max-width: 130px;
+  }
+}

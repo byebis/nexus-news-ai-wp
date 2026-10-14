@@ -56,6 +56,18 @@
  *   (righe "nome|url|tokenOpzionale").
  *   update_settings() itera default_settings(): le chiavi nuove sono subito
  *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ * v1.1.14 (P2) — OPPORTUNITÀ DI RICERCA (schema v6):
+ *   Nuova tabella nexus_search_queries: SEARCH QUERIES GSC sito-wide,
+ *   una riga per (query, query_date) — UNIQUE query_day, KEY query_date
+ *   (stessa convenzione "giorno locale" di nexus_metrics). Popolata dal
+ *   sync GSC di Nexus_Metrics (dimension 'query', stessa finestra lag dei
+ *   dati per-pagina); colonna top_url nullable riservata a un futuro sync
+ *   con dimension pagina (la risposta query-dimension non porta pagine).
+ *   La retention giornaliera la pulisce con la STESSA finestra/filtro dev
+ *   delle metriche (nexus_metrics_retention_days): la tabella cresce ~1k
+ *   righe/giorno al massimo (rowLimit GSC) e senza pulizia violerebbe il
+ *   contratto zero-crescita v1.1.13. tables() include la tabella → la
+ *   disinstallazione (drop_tables) la rimuove automaticamente.
  * v1.1.13 (O2) — RETENTION ZERO-CRESCITA (schema v5):
  *   Cron giornaliero self-scheduled 'nexus_retention_cleanup' (bootstrap via
  *   'nexus_modules_init' a fondo file, stesso pattern dei moduli v1.1.12):
@@ -102,7 +114,13 @@ class Nexus_DB {
         // v1.1.12 — schema v4: nexus_metrics (feedback performance GSC/GA4)
         // v1.1.13 — schema v5: KEY created_at su nexus_publish_logs (il DELETE
         //           batched del cron di retention non fa più full-scan a ogni colpo)
-        const DB_REVISION     = 5;
+        // v1.1.14 — schema v6: nexus_search_queries (search queries GSC sito-wide,
+        //           UNIQUE query_day su query + query_date, KEY query_date).
+        //           NB: il bump della REVISION (5 → 6) innesca install() anche a
+        //           NEXUS_VERSION invariata (maybe_upgrade controlla "versione
+        //           diversa OR revisione minore"), quindi la migration gira su
+        //           installazioni esistenti senza attendere il bump di release.
+        const DB_REVISION     = 6;
 
         /* ============ RETENTION (v1.1.13, O2) ============ */
 
@@ -315,6 +333,7 @@ class Nexus_DB {
                 $jobs    = $wpdb->prefix . 'nexus_jobs';
                 $revs    = $wpdb->prefix . 'nexus_article_revisions';
                 $metrics = $wpdb->prefix . 'nexus_metrics'; // v1.1.12 schema v4
+                $squery  = $wpdb->prefix . 'nexus_search_queries'; // v1.1.14 schema v6
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -505,6 +524,27 @@ class Nexus_DB {
                                 UNIQUE KEY post_metric (post_id, metric_date, source),
                                 KEY metric_date (metric_date)
                         ) {$charset};",
+                        // v1.1.14 (schema v6) — search queries GSC sito-wide: una
+                        // riga per (query, query_date). Popolata dal sync di
+                        // Nexus_Metrics (dimension 'query', un giorno per richiesta,
+                        // rowLimit GSC_ROW_LIMIT, upsert idempotente). top_url è
+                        // nullable: la risposta query-dimension non include pagine
+                        // (colonna riservata a un eventuale sync con dimension
+                        // 'page'). query VARCHAR(191): entra nell'indice UNIQUE
+                        // anche su utf8mb4 (limite 767 byte per indice).
+                        "CREATE TABLE {$squery} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                query VARCHAR(191) NOT NULL,
+                                query_date DATE NOT NULL,
+                                clicks INT UNSIGNED NOT NULL DEFAULT 0,
+                                impressions INT UNSIGNED NOT NULL DEFAULT 0,
+                                position DECIMAL(6,2) NOT NULL DEFAULT 0,
+                                top_url TEXT NULL,
+                                synced_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                UNIQUE KEY query_day (query, query_date),
+                                KEY query_date (query_date)
+                        ) {$charset};",
                 );
         }
 
@@ -685,6 +725,7 @@ class Nexus_DB {
                         'jobs'          => $wpdb->prefix . 'nexus_jobs',
                         'revisions'     => $wpdb->prefix . 'nexus_article_revisions',
                         'metrics'       => $wpdb->prefix . 'nexus_metrics', // v1.1.12 schema v4
+                        'search_queries' => $wpdb->prefix . 'nexus_search_queries', // v1.1.14 schema v6
                 );
         }
 
@@ -1873,6 +1914,7 @@ class Nexus_DB {
 
                 $deleted_logs       = 0;
                 $deleted_metrics    = 0;
+                $deleted_queries    = 0; // v1.1.14 (P2): search queries GSC (stessa finestra metriche).
                 $deleted_transients = 0;
                 $budget_hit         = false;
 
@@ -1938,6 +1980,37 @@ class Nexus_DB {
                         }
                 }
 
+                // 2-bis) SEARCH QUERIES GSC (v1.1.14, P2): nexus_search_queries
+                //    con query_date più vecchie della STESSA finestra delle
+                //    metriche (filtro dev nexus_metrics_retention_days, default
+                //    365 giorni): stesso ciclo batched, il DELETE usa l'indice
+                //    KEY query_date (schema v6). Senza pulizia la tabella
+                //    crescerebbe ~1k righe/giorno al massimo (rowLimit GSC).
+                if ( ! $budget_hit && ! empty( $t['search_queries'] ) ) {
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$t['search_queries']} WHERE query_date < %s LIMIT %d",
+                                        $met_cutoff,
+                                        self::RETENTION_BATCH
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        break;
+                                }
+
+                                $deleted_queries += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH ) {
+                                        break;
+                                }
+                        }
+                }
+
                 // 3) Transient scaduti del plugin (stesso budget di tempo).
                 if ( ! $budget_hit ) {
                         $completed = self::purge_expired_transients( $start, $deleted_transients );
@@ -1947,7 +2020,7 @@ class Nexus_DB {
                 }
 
                 // Log finale solo se onesto raccontarlo (niente righe "0" quotidiane).
-                $total = $deleted_logs + $deleted_metrics + $deleted_transients;
+                $total = $deleted_logs + $deleted_metrics + $deleted_queries + $deleted_transients;
 
                 if ( $total > 0 || $budget_hit ) {
                         $detail = sprintf(
@@ -1959,6 +2032,13 @@ class Nexus_DB {
                                 $met_days,
                                 self::RETENTION_BATCH
                         );
+
+                        // v1.1.14 (P2): le righe query non entrano nel template
+                        // storico (i suoi argomenti restano gli stessi): nota
+                        // additiva SOLO quando c'è qualcosa di rimosso.
+                        if ( $deleted_queries > 0 ) {
+                                $detail .= ' — query GSC: ' . $deleted_queries . ' righe rimosse';
+                        }
 
                         if ( $budget_hit ) {
                                 $detail .= ' — budget tempo raggiunto, si completa al prossimo giro';
