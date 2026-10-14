@@ -58,6 +58,22 @@
  * lookup, interlink window/candidates, evergreen max per run, notify max
  * per hour/telegram chat).
  *
+ * Dalla v1.1.15 (WF1): la disinstallazione è MULTISITE-AWARE. Su una rete
+ * WordPress la pulizia per-blog (post CPT + meta, eventi cron, registro
+ * ruoli, tabelle col prefisso del sito, opzioni, transients) gira su TUTTI
+ * i siti della rete: get_sites() con number => 0 (nessun limite implicito)
+ * e fields => 'ids', un switch_to_blog per sito con restore_current_blog
+ * SEMPRE eseguito (anche in caso di eccezione, via try/catch). Le tabelle
+ * utenti CONDIVISE (utenti bot degli agenti, user meta redazione) vengono
+ * invece pulite UNA sola volta fuori dal loop. Il ramo single-site mantiene
+ * il comportamento storico passando per la STESSA funzione per-blog
+ * riusabile nexus_uninstall_clean_current_blog(). Nota multisite: il
+ * registro ruoli è per-sito (option {prefix}user_roles), quindi il ruolo
+ * "Giornalista AI" viene rimosso DENTRO la pulizia per-blog; le famiglie
+ * transient nexus_ai_models_* e nexus_oauth_state_* (ex nexus_uninstall_
+ * delete_bot_users) sono passate a nexus_uninstall_delete_transients() che
+ * ora gira per-blog.
+ *
  * @package Nexus_News_AI
  */
 
@@ -103,12 +119,16 @@ function nexus_uninstall_delete_options() {
 }
 
 /**
- * Rimuove gli utenti bot degli agenti e il ruolo "Giornalista AI" (v1.1.0).
+ * Rimuove gli utenti bot degli agenti (v1.1.0).
  *
  * Gli utenti bot sono identificati dal login canonico 'nexus_agent_{id}'
  * (Nexus_Native::ensure_bot_user): cancellazione diretta via $wpdb per non
  * dipendere da wp_delete_user (non sempre caricato in uninstall) e dalle
- * classi del plugin. Vengono rimossi anche i transients di cache modelli.
+ * classi del plugin. Le tabelle users/usermeta sono CONDIVISE su multisite:
+ * questa funzione gira UNA sola volta, fuori dal loop per-blog (v1.1.15 WF1).
+ * Il ruolo dedicato è rimosso da nexus_uninstall_remove_role() (per-blog,
+ * vedi nota multisite nel docblock di testa) e le famiglie transient
+ * nexus_ai_models_* / nexus_oauth_state_* da nexus_uninstall_delete_transients().
  *
  * @return void
  */
@@ -127,28 +147,22 @@ function nexus_uninstall_delete_bot_users() {
                         $wpdb->delete( $wpdb->users, array( 'ID' => $bot_id ), array( '%d' ) );
                 }
         }
+}
 
-        // Ruolo dedicato (se il registro ruoli è disponibile).
+/**
+ * Rimuove il ruolo dedicato "Giornalista AI" (v1.1.0).
+ *
+ * v1.1.15 (WF1): estratto da nexus_uninstall_delete_bot_users() perché su
+ * multisite il registro ruoli NON è network-wide: vive nell'option
+ * {prefix}user_roles del singolo sito, quindi remove_role va eseguito
+ * DENTRO la pulizia per-blog (dopo switch_to_blog), sito per sito.
+ *
+ * @return void
+ */
+function nexus_uninstall_remove_role() {
         if ( function_exists( 'remove_role' ) ) {
                 remove_role( 'nexus_ai_journalist' );
         }
-
-        // Transients cache modelli AI (v1.0.7) + voci di scadenza.
-        $like_transient = $wpdb->esc_like( '_transient_nexus_ai_models_' ) . '%';
-        $like_timeout   = $wpdb->esc_like( '_transient_timeout_nexus_ai_models_' ) . '%';
-        // v1.1.10: stati OAuth one-shot (WP10) + cache modelli per-provider (WP12) +
-        // stato cursori/cooldown fonti (WP2) — stesso pattern di prefisso.
-        $like_transient2 = $wpdb->esc_like( '_transient_nexus_oauth_state_' ) . '%';
-        $like_timeout2   = $wpdb->esc_like( '_transient_timeout_nexus_oauth_state_' ) . '%';
-        $wpdb->query(
-                $wpdb->prepare(
-                        "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s",
-                        $like_transient,
-                        $like_timeout,
-                        $like_transient2,
-                        $like_timeout2
-                )
-        );
 }
 
 /**
@@ -163,8 +177,10 @@ function nexus_uninstall_delete_bot_users() {
  * provider, chiave + suffisso _cooldown). Tutte hanno TTL: qui vengono
  * rimosse subito per lasciare l'installazione davvero pulita. I singoli
  * transients nominati (prezzi AI, conteggio CPT legacy, featured viste,
- * token Reddit) vengono rimossi esplicitamente. nexus_ai_models_* e
- * nexus_oauth_state_* sono già puliti da nexus_uninstall_delete_bot_users().
+ * token Reddit) vengono rimossi esplicitamente. Dalla v1.1.15 (WF1) entrano
+ * anche nexus_ai_models_ e nexus_oauth_state_ (cache modelli AI e stati
+ * OAuth one-shot, prima puliti da nexus_uninstall_delete_bot_users()): sono
+ * option del blog corrente, quindi vanno pulite per-blog su multisite.
  *
  * @return void
  */
@@ -182,6 +198,8 @@ function nexus_uninstall_delete_transients() {
                 'nexus_oauth_rl_',   // v1.1.10 — rate limit OAuth OpenRouter.
                 'nexus_ai_breaker_', // v1.1.9 — circuit breaker provider (+ _cooldown).
                 'nexus_notify_rl_',  // v1.1.12 (S7) — rate limit orario notifiche.
+                'nexus_ai_models_',  // v1.1.15 (WF1) — cache modelli AI (ex bot users).
+                'nexus_oauth_state_', // v1.1.15 (WF1) — stati OAuth one-shot (WP10).
         );
 
         foreach ( $prefixes as $prefix ) {
@@ -299,6 +317,8 @@ function nexus_uninstall_drop_tables_direct() {
  * L'assegnazione utente→redazione (restrict per ramo) è legata al plugin:
  * disinstallando, ogni utente torna a pieni permessi secondo il proprio
  * ruolo WP. I termini redazione restano (struttura nativa, vedi header).
+ * La tabella usermeta è CONDIVISA su multisite: una sola passata, fuori
+ * dal loop per-blog (v1.1.15 WF1).
  *
  * @return void
  */
@@ -307,26 +327,56 @@ function nexus_uninstall_delete_user_meta() {
         $wpdb->delete( $wpdb->usermeta, array( 'meta_key' => 'nexus_redazione_id' ), array( '%s' ) );
 }
 
-/* ---------------- 0) Post WordPress reali (CPT nexus_article, v1.0.1) ---------------- */
+/**
+ * Drop delle tabelle wp_nexus_* del sito corrente.
+ *
+ * Percorso preferenziale: Nexus_DB::drop_tables() (fa il drop di tutte le
+ * tabelle di Nexus_DB::tables() col prefisso del blog corrente — dopo
+ * switch_to_blog $wpdb->prefix è quello del sito selezionato — e cancella
+ * le opzioni DB runtime). Fallback: drop diretto via $wpdb se la classe non
+ * è caricabile.
+ *
+ * @return void
+ */
+function nexus_uninstall_drop_plugin_tables() {
+        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'drop_tables' ) ) {
+                Nexus_DB::drop_tables();
 
-nexus_uninstall_delete_wp_posts();
+                return;
+        }
 
-/* ---------------- 0b) Utenti bot agenti + ruolo + cache modelli (v1.1.0) ---------------- */
+        nexus_uninstall_drop_tables_direct();
+}
 
-nexus_uninstall_delete_bot_users();
+/**
+ * Pulizia COMPLETA del blog corrente (per-blog, v1.1.15 WF1).
+ *
+ * Funzione riusabile da ENTRAMBI i rami: multisite (una chiamata per sito,
+ * dentro switch_to_blog/restore_current_blog) e single-site (una sola
+ * chiamata, comportamento storico). Copre tutto ciò che vive nel blog
+ * corrente: post CPT + meta, eventi cron (la option cron è per-sito),
+ * registro ruoli (option {prefix}user_roles, per-sito), tabelle wp_nexus_*
+ * col prefisso corrente, opzioni e transients. Le tabelle utenti condivise
+ * (utenti bot, user meta redazione) NON sono qui: una sola passata dopo il
+ * loop, vedi nexus_uninstall_delete_bot_users()/delete_user_meta().
+ *
+ * @return void
+ */
+function nexus_uninstall_clean_current_blog() {
+        nexus_uninstall_delete_wp_posts();
+        nexus_uninstall_clear_cron_events();
+        nexus_uninstall_remove_role();
+        nexus_uninstall_drop_plugin_tables();
+        nexus_uninstall_delete_options();
+        nexus_uninstall_delete_transients();
+}
 
-/* ---------------- 0c) User meta redazione utente (v1.1.1) ---------------- */
+/* ---------------- 0) Carica Nexus_DB se possibile (una sola volta) ---------------- */
 
-nexus_uninstall_delete_user_meta();
-
-/* ---------------- 1) Eventi cron (newsletter + ping, v1.0.2) ---------------- */
-
-nexus_uninstall_clear_cron_events();
-
-/* ---------------- 2) Try via Nexus_DB ---------------- */
-
+// Il percorso Nexus_DB è preferenziale (drop_tables + opzioni DB runtime);
+// se il file non è raggiungibile si passa alle query DROP dirette dentro
+// nexus_uninstall_drop_plugin_tables().
 $candidates = array();
-$loaded     = false;
 
 if ( defined( 'WP_PLUGIN_DIR' ) ) {
         $candidates[] = WP_PLUGIN_DIR . '/' . dirname( WP_UNINSTALL_PLUGIN ) . '/includes/class-nexus-db.php';
@@ -337,27 +387,55 @@ $candidates[] = __DIR__ . '/includes/class-nexus-db.php';
 foreach ( array_unique( $candidates ) as $db_class_file ) {
         if ( file_exists( $db_class_file ) ) {
                 require_once $db_class_file;
-                $loaded = true;
                 break;
         }
 }
 
-if ( $loaded && class_exists( 'Nexus_DB' ) ) {
-        // Nexus_DB::drop_tables() fa il drop delle 11 tabelle wp_nexus_* (inclusa
-        // nexus_subscribers dalla v1.0.2, nexus_usage_logs e nexus_translations
-        // dalla v1.0.3, nexus_jobs dalla v1.0.4, nexus_metrics dalla v1.1.12) e
-        // cancella le opzioni nexus_settings, nexus_db_version, nexus_wire_runs,
-        // nexus_db_revision, nexus_agent_runtime e nexus_native_migration.
-        Nexus_DB::drop_tables();
+/* ---------------- 1) Pulizia per-blog (multisite: TUTTI i siti della rete) ---------------- */
 
-        // Le opzioni fuori da Nexus_DB e i transients non sono gestiti dalla
-        // classe: li rimuoviamo qui.
-        nexus_uninstall_delete_options();
-        nexus_uninstall_delete_transients();
+if ( is_multisite() ) {
+        // v1.1.15 (WF1): su multisite la pulizia per-blog gira su TUTTI i siti.
+        // get_sites() con number => 0 = NESSUN limite implicito (il default di
+        // get_sites è 100 siti); fields => 'ids' evita di istanziare WP_Site.
+        // switch_to_blog/restore_current_blog SEMPRE in coppia: il restore è
+        // fuori dal try/catch, quindi avviene anche a pulizia fallita.
+        $site_ids = get_sites( array( 'number' => 0, 'fields' => 'ids' ) );
+
+        foreach ( (array) $site_ids as $site_id ) {
+                $site_id = (int) $site_id;
+
+                if ( $site_id < 1 ) {
+                        continue;
+                }
+
+                $switched = switch_to_blog( $site_id );
+
+                if ( ! $switched ) {
+                        continue;
+                }
+
+                try {
+                        nexus_uninstall_clean_current_blog();
+                } catch ( Exception $e ) {
+                        // Pulizia best-effort per sito: un errore su un blog non
+                        // blocca gli altri né lascia lo switch pendente.
+                } catch ( Throwable $e ) {
+                        // Idem per errori PHP 7+.
+                }
+
+                restore_current_blog();
+        }
 } else {
-        /* ---------------- 3) Fallback: query dirette ---------------- */
+        /* ---------------- Ramo single-site: stesso percorso per-blog ---------------- */
 
-        nexus_uninstall_drop_tables_direct();
-        nexus_uninstall_delete_options();
-        nexus_uninstall_delete_transients();
+        nexus_uninstall_clean_current_blog();
 }
+
+/* ---------------- 2) Tabelle utenti CONDIVISE (una sola passata, fuori dal loop) ---------------- */
+
+// Su multisite users/usermeta sono network-wide: utenti bot e user meta
+// redazione vengono rimossi UNA sola volta, qui (v1.1.15 WF1 — prima la
+// pulizia toccava solo il blog corrente lasciando post/tabelle/opzioni
+// orfane su tutti gli altri siti della rete).
+nexus_uninstall_delete_bot_users();
+nexus_uninstall_delete_user_meta();
