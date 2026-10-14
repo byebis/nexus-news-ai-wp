@@ -29,6 +29,9 @@
  * Nexus_DB::drop_tables()              — usato da uninstall.php
  * Nexus_DB::bump_job_failure()         — incremento atomico tentativi job (v1.1.9)
  * Nexus_DB::insert_article_revision()  — snapshot articolo pre-modifica (v1.1.9)
+ * Nexus_DB::insert_agent_run()         — apre una run agente, ritorna run_id (v1.1.16)
+ * Nexus_DB::finish_agent_run()         — chiude la run: esito + durata + telemetria (v1.1.16)
+ * Nexus_DB::get_agent_runs()           — ultime run di un agente (v1.1.16)
  *
  * v1.1.4 — NUOVE COLONNE (contratto T-02):
  *   nexus_agents:  ai_provider (provider AI dedicato dell'agente, '' = provider globale
@@ -56,6 +59,29 @@
  *   (righe "nome|url|tokenOpzionale").
  *   update_settings() itera default_settings(): le chiavi nuove sono subito
  *   persistibili senza modifiche ulteriori (la whitelist REST è di T-05).
+ * v1.1.16 (PB) — TELEMETRIA RUN AGENTI (schema v8):
+ *   Nuova tabella nexus_agent_runs: UNA RIGA PER OGNI GIRO della pipeline di
+ *   un agente (tick cron, run manuale, wire). Prima di v1.1.16 il risultato
+ *   del tick veniva scartato dal queue runner e degli errori restava solo un
+ *   troncone in activity_logs: impossibile rispondere a «cosa ha fatto
+ *   l'agente X». Colonne chiave: triggered_by ('cron'|'manual'|'wire' — NON
+ *   'trigger': TRIGGER è parola riservata MySQL), status ('running'|'ok'|
+ *   'failed'|'partial'), started_at/finished_at, duration_ms, steps (JSON
+ *   raccolto dalla pipeline, decodifica a carico del consumer), contatori
+ *   articles_created/candidates/sources_ok/sources_err, error (TEXT, clip
+ *   1000). Indici: KEY agent_started (agent_id, started_at) per «ultime N run
+ *   per agente», KEY status. Tabella NUOVA → CREATE TABLE in schema(): la
+ *   crea dbDelta da install()/maybe_upgrade al bump DB_REVISION 7→8 (stesso
+ *   percorso delle tabelle v4/v6); nessuna ALTER su tabelle esistenti, quindi
+ *   la migration è rientrante (secondo giro = zero DDL). tables() include la
+ *   tabella → drop_tables() la rimuove automaticamente alla disinstallazione.
+ *   Contratto per pipeline/queue (WD-PIPE) e REST/UI (WC-API):
+ *   $run_id = Nexus_DB::insert_agent_run( $agent_id, $triggered_by );
+ *   $ok     = Nexus_DB::finish_agent_run( $run_id, $status, $args );
+ *     // $args: steps, articles_created, candidates, sources_ok, sources_err, error
+ *   $rows   = Nexus_DB::get_agent_runs( $agent_id, $limit ); // righe ARRAY_A
+ *   job_stats(): nuova chiave 'dead' (dead letter di requeue_stale) — le
+ *   chiavi esistenti restano invariate (contratto con la UI).
  * v1.1.14 (P2) — OPPORTUNITÀ DI RICERCA (schema v6):
  *   Nuova tabella nexus_search_queries: SEARCH QUERIES GSC sito-wide,
  *   una riga per (query, query_date) — UNIQUE query_day, KEY query_date
@@ -124,7 +150,12 @@ class Nexus_DB {
         //           nexus_articles (ORDER BY whitelisted di articles(), stats
         //           'today' e analytics usavano full-scan su tabella LONGTEXT;
         //           migrate_schema_v7 è idempotente con guard information_schema).
-        const DB_REVISION     = 7;
+        // v1.1.16 — schema v8: nexus_agent_runs (telemetria run per agente: una
+        //           riga per ogni giro pipeline — cron/manual/wire — con esito,
+        //           durata, step JSON e contatori). Tabella NUOVA: la crea dbDelta
+        //           da schema() a install()/maybe_upgrade (stesso percorso v4/v6);
+        //           nessuna ALTER su tabelle esistenti → nessuna migration manuale.
+        const DB_REVISION     = 8;
 
         /* ============ RETENTION (v1.1.13, O2) ============ */
 
@@ -338,6 +369,7 @@ class Nexus_DB {
                 $revs    = $wpdb->prefix . 'nexus_article_revisions';
                 $metrics = $wpdb->prefix . 'nexus_metrics'; // v1.1.12 schema v4
                 $squery  = $wpdb->prefix . 'nexus_search_queries'; // v1.1.14 schema v6
+                $runs    = $wpdb->prefix . 'nexus_agent_runs'; // v1.1.16 schema v8
 
                 return array(
                         "CREATE TABLE {$agents} (
@@ -551,6 +583,32 @@ class Nexus_DB {
                                 PRIMARY KEY  (id),
                                 UNIQUE KEY query_day (query, query_date),
                                 KEY query_date (query_date)
+                        ) {$charset};",
+                        // v1.1.16 (schema v8) — run degli agenti: una riga per ogni giro
+                        // della pipeline (tick cron, run manuale, wire). Nasce 'running'
+                        // da insert_agent_run() e viene chiusa da finish_agent_run() con
+                        // esito e telemetria: prima di v1.1.16 il risultato del tick era
+                        // scartato dal queue runner. 'triggered_by' e non 'trigger':
+                        // TRIGGER è parola riservata MySQL. steps = JSON raccolto dalla
+                        // pipeline (decodifica a carico del consumer), error clip 1000.
+                        "CREATE TABLE {$runs} (
+                                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                                agent_id BIGINT UNSIGNED NOT NULL,
+                                triggered_by VARCHAR(20) NOT NULL DEFAULT 'cron',
+                                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                                started_at DATETIME NOT NULL,
+                                finished_at DATETIME NULL DEFAULT NULL,
+                                duration_ms INT UNSIGNED NOT NULL DEFAULT 0,
+                                steps LONGTEXT NULL DEFAULT NULL,
+                                articles_created INT UNSIGNED NOT NULL DEFAULT 0,
+                                candidates INT UNSIGNED NOT NULL DEFAULT 0,
+                                sources_ok INT UNSIGNED NOT NULL DEFAULT 0,
+                                sources_err INT UNSIGNED NOT NULL DEFAULT 0,
+                                error TEXT NULL DEFAULT NULL,
+                                created_at DATETIME NOT NULL,
+                                PRIMARY KEY  (id),
+                                KEY agent_started (agent_id, started_at),
+                                KEY status (status)
                         ) {$charset};",
                 );
         }
@@ -770,6 +828,7 @@ class Nexus_DB {
                         'revisions'     => $wpdb->prefix . 'nexus_article_revisions',
                         'metrics'       => $wpdb->prefix . 'nexus_metrics', // v1.1.12 schema v4
                         'search_queries' => $wpdb->prefix . 'nexus_search_queries', // v1.1.14 schema v6
+                        'agent_runs'     => $wpdb->prefix . 'nexus_agent_runs', // v1.1.16 schema v8
                 );
         }
 
@@ -1353,7 +1412,12 @@ class Nexus_DB {
                 global $wpdb;
                 $t = self::tables()['usage_logs'];
                 if ( 'week' === $period ) {
-                        $since = gmdate( 'Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS );
+                        // v1.1.16 (PA2): orologio WordPress come il ramo 'month' sotto.
+                        // created_at di usage_logs è scritto con current_time('mysql'):
+                        // confrontarlo con un since derivato da time() (UTC) spostava la
+                        // finestra di tutto l'offset del sito (Roma +2h = 2 ore di uso AI
+                        // persi in coda e 2 ore storiere in testa alla finestra).
+                        $since = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - 7 * DAY_IN_SECONDS );
                 } elseif ( 'all' === $period ) {
                         $since = '';
                 } else {
@@ -1495,6 +1559,125 @@ class Nexus_DB {
                         ? $wpdb->prepare( "SELECT * FROM {$table} WHERE agent_id = %d ORDER BY id DESC LIMIT %d", $agent, $limit )
                         : $wpdb->prepare( "SELECT * FROM {$table} ORDER BY id DESC LIMIT %d", $limit );
                 return $wpdb->get_results( $sql );
+        }
+
+        /* ============ AGENT RUNS (v1.1.16, PB) ============ */
+
+        /**
+         * Apre una run per un agente: una riga 'running' in nexus_agent_runs che
+         * registra il giro di pipeline che sta per partire. La riga va SEMPRE
+         * chiusa con finish_agent_run(): mentre è 'running' la run è viva, una
+         * run mai chiusa è un tick morto senza esito (così visibile in UI).
+         *
+         * @param int    $agent_id     ID agente.
+         * @param string $triggered_by 'cron' | 'manual' | 'wire' (default 'cron';
+         *                             ogni altro valore degrada a 'cron').
+         * @return int ID della run, 0 su fallimento.
+         */
+        public static function insert_agent_run( $agent_id, $triggered_by = 'cron' ) {
+                global $wpdb;
+                $trigger = sanitize_key( (string) $triggered_by );
+                if ( ! in_array( $trigger, array( 'cron', 'manual', 'wire' ), true ) ) {
+                        $trigger = 'cron';
+                }
+                $now = current_time( 'mysql' );
+                $ok  = $wpdb->insert(
+                        self::tables()['agent_runs'],
+                        array(
+                                'agent_id'     => absint( $agent_id ),
+                                'triggered_by' => $trigger,
+                                'status'       => 'running',
+                                'started_at'   => $now,
+                                'created_at'   => $now,
+                        ),
+                        array( '%d', '%s', '%s', '%s', '%s' )
+                );
+                return $ok ? (int) $wpdb->insert_id : 0;
+        }
+
+        /**
+         * Chiude una run con esito e telemetria (v1.1.16, PB2/PB3).
+         *
+         * Aggiorna SEMPRE status, finished_at (current_time('mysql')) e
+         * duration_ms (millisecondi tra started_at — letta dalla riga — e
+         * finished_at, mai negativo: stesso orologio current_time su entrambi i
+         * lati, il delta resta corretto anche con timezone spostato). Gli altri
+         * campi vengono scritti SOLO se presenti in $args:
+         *  - steps          array → JSON (wp_json_encode), oppure stringa già pronta;
+         *  - articles_created, candidates, sources_ok, sources_err → interi ≥ 0;
+         *  - error          testo troncato a 1000 caratteri (stesso clip di
+         *                   last_error dei job).
+         *
+         * @param int    $run_id ID run (ritorno di insert_agent_run).
+         * @param string $status 'ok' | 'failed' | 'partial' ('running' non è un
+         *                       esito di chiusura: la riga lo è già).
+         * @param array  $args   Telemetria facoltativa (vedi sopra).
+         * @return bool
+         */
+        public static function finish_agent_run( $run_id, $status, $args = array() ) {
+                global $wpdb;
+                $run_id = absint( $run_id );
+                if ( ! $run_id ) {
+                        return false;
+                }
+                $status = sanitize_key( (string) $status );
+                if ( ! in_array( $status, array( 'ok', 'failed', 'partial' ), true ) ) {
+                        return false;
+                }
+                $table = self::tables()['agent_runs'];
+                $row   = $wpdb->get_row( $wpdb->prepare( "SELECT started_at FROM {$table} WHERE id = %d", $run_id ), ARRAY_A );
+                if ( ! $row || empty( $row['started_at'] ) ) {
+                        return false;
+                }
+                $finished = current_time( 'mysql' );
+                $data     = array(
+                        'status'      => $status,
+                        'finished_at' => $finished,
+                        'duration_ms' => max( 0, (int) ( ( strtotime( $finished ) - strtotime( (string) $row['started_at'] ) ) * 1000 ) ),
+                );
+                $formats = array( '%s', '%s', '%d' );
+                $args    = (array) $args;
+                if ( array_key_exists( 'steps', $args ) ) {
+                        $steps         = $args['steps'];
+                        $data['steps'] = is_array( $steps ) ? (string) wp_json_encode( $steps ) : (string) $steps;
+                        $formats[]     = '%s';
+                }
+                foreach ( array( 'articles_created', 'candidates', 'sources_ok', 'sources_err' ) as $nxa_count ) {
+                        if ( array_key_exists( $nxa_count, $args ) ) {
+                                $data[ $nxa_count ] = absint( $args[ $nxa_count ] );
+                                $formats[]          = '%d';
+                        }
+                }
+                if ( array_key_exists( 'error', $args ) ) {
+                        $data['error'] = mb_substr( (string) $args['error'], 0, 1000 );
+                        $formats[]     = '%s';
+                }
+                // 0 righe toccate = valori già uguali: non è un fallimento (false lo è).
+                return false !== $wpdb->update( $table, $data, array( 'id' => $run_id ), $formats, array( '%d' ) );
+        }
+
+        /**
+         * Ultime run di un agente, dalla più recente (v1.1.16, PB1).
+         *
+         * Ordinate started_at DESC (tiebreaker id DESC: run aperte nello stesso
+         * secondo restano deterministiche), LIMIT intero 1..200 (come activity()).
+         * Nessuna decodifica JSON: 'steps' resta la stringa del DB, la decodifica
+         * è a carico del consumer (REST/UI). Se la tabella non esiste (es. update
+         * a metà, get_results false/null) ritorna array().
+         *
+         * @param int $agent_id ID agente.
+         * @param int $limit    Max run ritornate (1-200, default 5).
+         * @return array
+         */
+        public static function get_agent_runs( $agent_id, $limit = 5 ) {
+                global $wpdb;
+                $table = self::tables()['agent_runs'];
+                $rows  = $wpdb->get_results( $wpdb->prepare(
+                        "SELECT * FROM {$table} WHERE agent_id = %d ORDER BY started_at DESC, id DESC LIMIT %d",
+                        absint( $agent_id ),
+                        min( 200, max( 1, absint( $limit ) ) )
+                ), ARRAY_A );
+                return is_array( $rows ) ? $rows : array();
         }
 
         /* ============ PUBLISH / APPROVAL LOGS ============ */
@@ -1920,13 +2103,16 @@ class Nexus_DB {
         /**
          * Statistiche coda: conteggi per stato.
          *
-         * @return array {pending, running, complete, failed, cancelled, total}
+         * @return array {pending, running, complete, failed, cancelled, dead, total}
          */
         public static function job_stats() {
                 global $wpdb;
                 $t     = self::tables()['jobs'];
                 $rows  = $wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$t} GROUP BY status" ); // phpcs:ignore
-                $stats = array( 'pending' => 0, 'running' => 0, 'complete' => 0, 'failed' => 0, 'cancelled' => 0, 'total' => 0 );
+                // v1.1.16 (PD6): conteggio 'dead' (dead letter scritti da requeue_stale,
+                // class-nexus-queue) — le chiavi preesistenti NON cambiano nome/posizione
+                // (contratto con la UI).
+                $stats = array( 'pending' => 0, 'running' => 0, 'complete' => 0, 'failed' => 0, 'cancelled' => 0, 'dead' => 0, 'total' => 0 );
                 foreach ( (array) $rows as $row ) {
                         if ( isset( $stats[ $row->status ] ) ) {
                                 $stats[ $row->status ] = (int) $row->n;
