@@ -74,6 +74,18 @@
  * delete_bot_users) sono passate a nexus_uninstall_delete_transients() che
  * ora gira per-blog.
  *
+ * Dalla v1.1.15 (WF2): il contratto di cancellazione è COMPLETO per 1.1.15.
+ * (a) il fallback DROP copre la 12ª tabella nexus_search_queries (v1.1.14,
+ * schema v6); (b) entrano le opzioni dei moduli 1.1.14 mai rimosse prima
+ * d'ora (stato health, slot/movimenti calendario, preferenze digest, flag
+ * opt-in digest, stato flush delle due sitemap); (c) vengono cancellati i
+ * cron orfani nexus_cron_tick, nexus_calendar_tick, nexus_health_tick e
+ * nexus_ml_autotranslate (solo stringhe hook letterali: in uninstall le
+ * classi non sono caricate e wp_clear_scheduled_hook non le richiede);
+ * (d) entra la famiglia transient nexus_pubapi_rl_ (rate limit API
+ * pubblica); (e) entrano i meta multilingua del driver nexus _nexus_lang,
+ * _nexus_trid e _nexus_source_post_id (v1.1.2).
+ *
  * @package Nexus_News_AI
  */
 
@@ -116,6 +128,15 @@ function nexus_uninstall_delete_options() {
         delete_option( 'nexus_evergreen_max_per_run' );
         delete_option( 'nexus_notify_max_per_hour' );
         delete_option( 'nexus_notify_telegram_chat' );
+        // v1.1.15 (WF2) — opzioni dei moduli 1.1.14 mai rimosse prima d'ora:
+        // nessuna vive dentro nexus_settings, sono chiavi dedicate dei moduli.
+        delete_option( 'nexus_health_state' );          // v1.1.14 — stato health check
+        delete_option( 'nexus_calendar_slots' );        // v1.1.14 — slot calendario (globali + per agente)
+        delete_option( 'nexus_calendar_moves' );        // v1.1.14 — log spostamenti calendario
+        delete_option( 'nexus_digest_prefs' );          // v1.1.14 — preferenze digest settimanale
+        delete_option( 'nexus_digest_optin_v1' );       // v1.1.14 — flag migrazione opt-in digest
+        delete_option( 'nexus_news_sitemap_flushed' );  // v1.1.14 — stato flush news/images sitemap
+        delete_option( 'nexus_video_sitemap_flushed' ); // v1.1.14 — stato flush video sitemap
 }
 
 /**
@@ -180,7 +201,8 @@ function nexus_uninstall_remove_role() {
  * token Reddit) vengono rimossi esplicitamente. Dalla v1.1.15 (WF1) entrano
  * anche nexus_ai_models_ e nexus_oauth_state_ (cache modelli AI e stati
  * OAuth one-shot, prima puliti da nexus_uninstall_delete_bot_users()): sono
- * option del blog corrente, quindi vanno pulite per-blog su multisite.
+ * option del blog corrente, quindi vanno pulite per-blog su multisite. Dalla
+ * v1.1.15 (WF2) entra anche nexus_pubapi_rl_ (rate limit API pubblica).
  *
  * @return void
  */
@@ -200,6 +222,7 @@ function nexus_uninstall_delete_transients() {
                 'nexus_notify_rl_',  // v1.1.12 (S7) — rate limit orario notifiche.
                 'nexus_ai_models_',  // v1.1.15 (WF1) — cache modelli AI (ex bot users).
                 'nexus_oauth_state_', // v1.1.15 (WF1) — stati OAuth one-shot (WP10).
+                'nexus_pubapi_rl_',  // v1.1.15 (WF2) — rate limit API pubblica (nexus-public/v1).
         );
 
         foreach ( $prefixes as $prefix ) {
@@ -259,6 +282,12 @@ function nexus_uninstall_delete_wp_posts() {
         delete_post_meta_by_key( '_nexus_interlinked' );
         delete_post_meta_by_key( '_nexus_interlink_ids' );
         delete_post_meta_by_key( '_nexus_evergreen_at' );
+        // v1.1.15 (WF2) — meta multilingua del driver nexus (v1.1.2): lingua,
+        // chiave gruppo di traduzione e sorgente. I meta DI Polylang/WPML non
+        // vengono toccati: qui si puliscono solo i meta interni del plugin.
+        delete_post_meta_by_key( '_nexus_lang' );
+        delete_post_meta_by_key( '_nexus_trid' );
+        delete_post_meta_by_key( '_nexus_source_post_id' );
 }
 
 /**
@@ -267,7 +296,13 @@ function nexus_uninstall_delete_wp_posts() {
  * nexus_weekly_digest è l'evento ricorrente del digest settimanale della
  * newsletter; nexus_ping_article è schedulato come evento singolo con
  * l'ID del post come argomento: wp_clear_scheduled_hook rimuove TUTTI gli
- * eventi con quel hook, qualunque sia l'argomento.
+ * eventi con quel hook, qualunque sia l'argomento. Dalla v1.1.15 (WF2)
+ * entrano anche i cron orfani dei moduli 1.1.13/1.1.14: nexus_cron_tick
+ * (tick pipeline), nexus_calendar_tick (riallineamento slot calendario),
+ * nexus_health_tick (health check orario) e nexus_ml_autotranslate
+ * (eventi singoli per lingua delle traduzioni post-publish). In uninstall
+ * le classi dei moduli NON sono caricate: si usano SOLO le stringhe hook
+ * letterali — wp_clear_scheduled_hook non richiede la classe registrata.
  *
  * @return void
  */
@@ -282,11 +317,19 @@ function nexus_uninstall_clear_cron_events() {
         wp_clear_scheduled_hook( 'nexus_evergreen_refresh' );
         // v1.1.13 (O2) — cron giornaliero di retention/cleanup.
         wp_clear_scheduled_hook( 'nexus_retention_cleanup' );
+        // v1.1.15 (WF2) — cron orfani mai cancellati prima d'ora.
+        wp_clear_scheduled_hook( 'nexus_cron_tick' );        // tick pipeline (class-nexus-cron.php)
+        wp_clear_scheduled_hook( 'nexus_calendar_tick' );    // riallineamento slot calendario
+        wp_clear_scheduled_hook( 'nexus_health_tick' );      // health check orario
+        wp_clear_scheduled_hook( 'nexus_ml_autotranslate' ); // traduzioni post-publish (per lingua)
 }
 
 /**
- * Drop diretto delle 11 tabelle wp_nexus_* (fallback se Nexus_DB non caricabile:
- * le 10 storiche + nexus_metrics della v1.1.12, schema v4).
+ * Drop diretto delle 12 tabelle wp_nexus_* (fallback se Nexus_DB non
+ * caricabile): le 11 della v1.1.12 (le 10 storiche + nexus_metrics, schema
+ * v4) + nexus_search_queries della v1.1.14 (schema v6) — la 12ª mancava
+ * dal fallback e restava orfana sul DB alla disinstallazione (v1.1.15 WF2).
+ * La lista è allineata a Nexus_DB::tables() (fonte verità, 12 voci).
  *
  * @return void
  */
@@ -305,6 +348,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_jobs',         // v1.0.4 — coda lavori Scala & Pro
                 $prefix . 'nexus_article_revisions', // v1.1.9 — snapshot capo redattore
                 $prefix . 'nexus_metrics',      // v1.1.12 — metriche performance GSC/GA4 (schema v4)
+                $prefix . 'nexus_search_queries', // v1.1.14 — search queries GSC (schema v6, WF2)
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
