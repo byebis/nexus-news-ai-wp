@@ -327,11 +327,12 @@ function nexus_uninstall_clear_cron_events() {
 }
 
 /**
- * Drop diretto delle 12 tabelle wp_nexus_* (fallback se Nexus_DB non
+ * Drop diretto delle 13 tabelle wp_nexus_* (fallback se Nexus_DB non
  * caricabile): le 11 della v1.1.12 (le 10 storiche + nexus_metrics, schema
  * v4) + nexus_search_queries della v1.1.14 (schema v6) — la 12ª mancava
- * dal fallback e restava orfana sul DB alla disinstallazione (v1.1.15 WF2).
- * La lista è allineata a Nexus_DB::tables() (fonte verità, 12 voci).
+ * dal fallback e restava orfana sul DB alla disinstallazione (v1.1.15 WF2)
+ * + nexus_agent_runs della v1.1.16 (schema v8, telemetria run agenti).
+ * La lista è allineata a Nexus_DB::tables() (fonte verità, 13 voci).
  *
  * @return void
  */
@@ -351,6 +352,7 @@ function nexus_uninstall_drop_tables_direct() {
                 $prefix . 'nexus_article_revisions', // v1.1.9 — snapshot capo redattore
                 $prefix . 'nexus_metrics',      // v1.1.12 — metriche performance GSC/GA4 (schema v4)
                 $prefix . 'nexus_search_queries', // v1.1.14 — search queries GSC (schema v6, WF2)
+                $prefix . 'nexus_agent_runs',    // v1.1.16 — telemetria run agenti (schema v8)
         );
         foreach ( $tables as $table ) {
                 $wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
