@@ -2460,7 +2460,7 @@ class Nexus_Rest {
                 if ( is_wp_error( $response ) ) {
                         return self::err(
                                 'nexus_rest_ai_models_unreachable',
-                                __( 'Errore di connessione al provider AI: ', 'nexus-news-ai' ) . $response->get_error_message(),
+                                __( 'Errore di connessione al provider AI: ', 'nexus-news-ai' ) . self::brief_error( $response ),
                                 502
                         );
                 }
@@ -3179,7 +3179,7 @@ class Nexus_Rest {
                                         array(
                                                 'ok'       => false,
                                                 'provider' => $provider,
-                                                'error'    => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . $acc->get_error_message(),
+                                                'error'    => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . self::brief_error( $acc ),
                                         )
                                 );
                         }
@@ -3245,7 +3245,7 @@ class Nexus_Rest {
                                         'ok'         => false,
                                         'provider'   => $provider,
                                         'latency_ms' => $latency_ms,
-                                        'error'      => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . $response->get_error_message() . __( ' Se l’endpoint è in rete locale o sull’host di WordPress verifica che sia attivo e raggiungibile.', 'nexus-news-ai' ),
+                                        'error'      => __( 'Provider non raggiungibile: ', 'nexus-news-ai' ) . self::brief_error( $response ) . __( ' Se l’endpoint è in rete locale o sull’host di WordPress verifica che sia attivo e raggiungibile.', 'nexus-news-ai' ),
                                 )
                         );
                 }
@@ -4616,6 +4616,23 @@ class Nexus_Rest {
          * ======================================================================= */
 
         /**
+         * v1.1.15 (contratto WE7): messaggio d'errore di rete per l'utente REST
+         * senza segreti né URL con token (i token Telegram/opzionali vivono
+         * negli endpoint): delega a Nexus_Notify::brief_error (redact + cap
+         * 200), fallback locale difensivo se il modulo non fosse caricato.
+         *
+         * @param mixed $wp_error_or_string WP_Error o stringa.
+         * @return string
+         */
+        private static function brief_error( $wp_error_or_string ) {
+                if ( class_exists( 'Nexus_Notify' ) && method_exists( 'Nexus_Notify', 'brief_error' ) ) {
+                        return Nexus_Notify::brief_error( $wp_error_or_string, 200 );
+                }
+                $msg = is_wp_error( $wp_error_or_string ) ? $wp_error_or_string->get_error_message() : (string) $wp_error_or_string;
+                return function_exists( 'mb_substr' ) ? mb_substr( $msg, 0, 200 ) : substr( $msg, 0, 200 );
+        }
+
+        /**
          * WP_Error pronto con status HTTP.
          *
          * @param string $code    Codice errore.
@@ -4736,7 +4753,7 @@ class Nexus_Rest {
                                 'agent_id'   => (int) $agent->id,
                                 'agent_name' => (string) $agent->name,
                                 'success'    => ! is_wp_error( $res ),
-                                'result'     => is_wp_error( $res ) ? $res->get_error_message() : $res,
+                                'result'     => is_wp_error( $res ) ? self::brief_error( $res ) : $res,
                         );
                 }
 

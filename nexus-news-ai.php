@@ -45,6 +45,12 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';
 // senza questa riga le fonti full=1 ("contenuto completo") restano dead code
 // (guardie/estrazione usate dal dispatcher fonti in class-nexus-sources.php).
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-readability.php';
+// v1.1.15 (contratto WB): Nexus_Sources non era mai richiesto dal bootstrap
+// (nessun autoloader nel repo): class_exists('Nexus_Sources') era sempre
+// false e il dispatcher multi-fonte degradava sempre su Nexus_Rss —
+// fetch_web/maybe_full_content restavano dead code alla radice. Sicuro solo
+// DOPO l'inversione della guardia binario/SVG di fetch_web (stessa release).
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-sources.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-telegram.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-discord.php';

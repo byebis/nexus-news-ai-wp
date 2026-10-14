@@ -223,6 +223,8 @@ function nexus_uninstall_delete_transients() {
                 'nexus_ai_models_',  // v1.1.15 (WF1) — cache modelli AI (ex bot users).
                 'nexus_oauth_state_', // v1.1.15 (WF1) — stati OAuth one-shot (WP10).
                 'nexus_pubapi_rl_',  // v1.1.15 (WF2) — rate limit API pubblica (nexus-public/v1).
+                'nexus_image_sitemap_cache', // v1.1.15 (WF6) — cache XML sitemap immagini (TTL 2h).
+                'nexus_video_sitemap_cache', // v1.1.15 (WF6) — cache XML video sitemap (TTL 2h).
         );
 
         foreach ( $prefixes as $prefix ) {

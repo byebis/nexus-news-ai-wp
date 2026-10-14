@@ -119,6 +119,16 @@ final class Nexus_Video_Sitemap {
          * @return void
          */
         public static function init() {
+                // v1.1.15 (glue, replica WF6d della news sitemap): seeding dello
+                // stato di flush — un'installazione fresca faceva leggere
+                // register_rewrite() il default -1 e causava un
+                // flush_rewrite_rules fantasma al primo request anche a modulo
+                // SPENTO. Seeminando 0 il flush avviene solo alla vera
+                // transizione enabled↔disabled: nessun flush al seeding.
+                if ( false === get_option( self::OPTION_FLUSHED ) ) {
+                        update_option( self::OPTION_FLUSHED, 0 );
+                }
+
                 add_filter( 'query_vars', array( __CLASS__, 'add_query_var' ) );
                 add_action( 'init', array( __CLASS__, 'register_rewrite' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'render_sitemap' ) );
