@@ -162,48 +162,79 @@ for ( $cal_i = 0; $cal_i < 7; $cal_i++ ) {
         <?php else : ?>
 
                 <div class="nxa-cal-grid" role="grid" aria-label="<?php esc_attr_e( 'Calendario mensile degli articoli programmati', 'nexus-news-ai' ); ?>">
-                        <?php foreach ( $cal_week as $cal_label ) : ?>
-                                <div class="nxa-cal-weekday" role="columnheader"><?php echo esc_html( $cal_label ); ?></div>
-                        <?php endforeach; ?>
+                        <?php
+                        // v1.1.15 (WD4): ARIA richiede grid > row > gridcell — prima le
+                        // columnheader/gridcell erano figlie DIRETTE della grid (pattern
+                        // invalido). Le settimane sono avvolte in role="row"; i giorni
+                        // rilevanti (oggi o con articoli) sono focusabili con aria-label.
+                        ?>
+                        <div class="nxa-cal-week" role="row">
+                                <?php foreach ( $cal_week as $cal_label ) : ?>
+                                        <div class="nxa-cal-weekday" role="columnheader"><?php echo esc_html( $cal_label ); ?></div>
+                                <?php endforeach; ?>
+                        </div>
 
-                        <?php for ( $cal_i = 0; $cal_i < $cal_offset; $cal_i++ ) : ?>
-                                <div class="nxa-cal-day nxa-cal-day--pad" aria-hidden="true"></div>
-                        <?php endfor; ?>
+                        <?php
+                        $cal_row_pads = (int) $cal_offset; // Celle vuote prima del giorno 1 (solo prima settimana).
+                        $cal_row_day  = 1;
+                        ?>
+                        <?php while ( $cal_row_day <= $cal_days ) : ?>
+                                <?php $cal_row_last = min( $cal_row_day + ( 7 - $cal_row_pads ) - 1, $cal_days ); ?>
+                                <div class="nxa-cal-week" role="row">
+                                        <?php for ( $cal_i = 0; $cal_i < $cal_row_pads; $cal_i++ ) : ?>
+                                                <div class="nxa-cal-day nxa-cal-day--pad" role="gridcell" aria-hidden="true"></div>
+                                        <?php endfor; ?>
 
-                        <?php for ( $cal_d = 1; $cal_d <= $cal_days; $cal_d++ ) : ?>
-                                <?php
-                                $cal_day_dt  = $cal_start->modify( '+' . ( $cal_d - 1 ) . ' days' );
-                                $cal_day_key = $cal_day_dt->format( 'Y-m-d' );
-                                $cal_day     = isset( $items[ $cal_day_key ] ) ? $items[ $cal_day_key ] : array();
-                                $cal_is_today = ( $cal_day_key === $cal_today );
-                                ?>
-                                <div class="nxa-cal-day<?php echo $cal_is_today ? ' nxa-cal-day--today' : ''; ?>" role="gridcell">
-                                        <span class="nxa-cal-daynum"><?php echo esc_html( (string) $cal_d ); ?></span>
+                                        <?php for ( $cal_d = $cal_row_day; $cal_d <= $cal_row_last; $cal_d++ ) : ?>
+                                                <?php
+                                                $cal_day_dt  = $cal_start->modify( '+' . ( $cal_d - 1 ) . ' days' );
+                                                $cal_day_key = $cal_day_dt->format( 'Y-m-d' );
+                                                $cal_day     = isset( $items[ $cal_day_key ] ) ? $items[ $cal_day_key ] : array();
+                                                $cal_is_today = ( $cal_day_key === $cal_today );
+                                                $cal_day_num  = count( $cal_day );
+                                                $cal_day_date = esc_html( wp_date( 'j F Y', $cal_day_dt->getTimestamp() ) );
+                                                $cal_day_label = '';
+                                                if ( $cal_day_num > 0 ) {
+                                                        /* translators: 1: data completa (es. 12 marzo 2026), 2: numero di articoli programmati. */
+                                                        $cal_day_label = sprintf( esc_html__( '%1$s: %2$d articoli programmati', 'nexus-news-ai' ), $cal_day_date, $cal_day_num );
+                                                } elseif ( $cal_is_today ) {
+                                                        /* translators: 1: data completa (es. 12 marzo 2026). */
+                                                        $cal_day_label = sprintf( esc_html__( 'Oggi, %1$s: nessun articolo programmato', 'nexus-news-ai' ), $cal_day_date );
+                                                }
+                                                ?>
+                                                <div class="nxa-cal-day<?php echo $cal_is_today ? ' nxa-cal-day--today' : ''; ?>" role="gridcell"<?php echo '' !== $cal_day_label ? ' tabindex="0" aria-label="' . esc_attr( $cal_day_label ) . '"' : ''; ?>>
+                                                        <span class="nxa-cal-daynum"><?php echo esc_html( (string) $cal_d ); ?></span>
 
-                                        <?php if ( empty( $cal_day ) ) : ?>
-                                                <span class="nxa-cal-noday"><?php esc_html_e( 'Nessun articolo', 'nexus-news-ai' ); ?></span>
-                                        <?php else : ?>
-                                                <ul class="nxa-cal-items">
-                                                        <?php foreach ( $cal_day as $cal_item ) : ?>
-                                                                <li class="nxa-cal-item" data-category="<?php echo esc_attr( strtolower( (string) $cal_item['category'] ) ); ?>">
-                                                                        <span class="nxa-cal-dot" aria-hidden="true"></span>
-                                                                        <span class="nxa-cal-item-time"><?php echo esc_html( (string) $cal_item['time'] ); ?></span>
-                                                                        <?php $cal_edit = get_edit_post_link( $cal_item['id'], 'raw' ); ?>
-                                                                        <?php if ( $cal_edit ) : ?>
-                                                                                <a class="nxa-cal-item-title" href="<?php echo esc_url( $cal_edit ); ?>"
-                                                                                        title="<?php echo esc_attr( '' !== $cal_item['agent'] ? $cal_item['agent'] : __( 'Agente non collegato', 'nexus-news-ai' ) ); ?>"><?php echo esc_html( (string) $cal_item['title'] ); ?></a>
-                                                                        <?php else : ?>
-                                                                                <span class="nxa-cal-item-title"><?php echo esc_html( (string) $cal_item['title'] ); ?></span>
-                                                                        <?php endif; ?>
-                                                                        <?php if ( $cal_item['is_legacy'] ) : ?>
-                                                                                <span class="nxa-cal-legacy"><?php esc_html_e( 'legacy', 'nexus-news-ai' ); ?></span>
-                                                                        <?php endif; ?>
-                                                                </li>
-                                                        <?php endforeach; ?>
-                                                </ul>
-                                        <?php endif; ?>
+                                                        <?php if ( empty( $cal_day ) ) : ?>
+                                                                <span class="nxa-cal-noday"><?php esc_html_e( 'Nessun articolo', 'nexus-news-ai' ); ?></span>
+                                                        <?php else : ?>
+                                                                <ul class="nxa-cal-items">
+                                                                        <?php foreach ( $cal_day as $cal_item ) : ?>
+                                                                                <li class="nxa-cal-item" data-category="<?php echo esc_attr( strtolower( (string) $cal_item['category'] ) ); ?>">
+                                                                                        <span class="nxa-cal-dot" aria-hidden="true"></span>
+                                                                                        <span class="nxa-cal-item-time"><?php echo esc_html( (string) $cal_item['time'] ); ?></span>
+                                                                                        <?php $cal_edit = get_edit_post_link( $cal_item['id'], 'raw' ); ?>
+                                                                                        <?php if ( $cal_edit ) : ?>
+                                                                                                <a class="nxa-cal-item-title" href="<?php echo esc_url( $cal_edit ); ?>"
+                                                                                                        title="<?php echo esc_attr( '' !== $cal_item['agent'] ? $cal_item['agent'] : __( 'Agente non collegato', 'nexus-news-ai' ) ); ?>"><?php echo esc_html( (string) $cal_item['title'] ); ?></a>
+                                                                                        <?php else : ?>
+                                                                                                <span class="nxa-cal-item-title"><?php echo esc_html( (string) $cal_item['title'] ); ?></span>
+                                                                                        <?php endif; ?>
+                                                                                        <?php if ( $cal_item['is_legacy'] ) : ?>
+                                                                                                <span class="nxa-cal-legacy"><?php esc_html_e( 'legacy', 'nexus-news-ai' ); ?></span>
+                                                                                        <?php endif; ?>
+                                                                                </li>
+                                                                        <?php endforeach; ?>
+                                                                </ul>
+                                                        <?php endif; ?>
+                                                </div>
+                                        <?php endfor; ?>
                                 </div>
-                        <?php endfor; ?>
+                                <?php
+                                $cal_row_day  = $cal_row_last + 1;
+                                $cal_row_pads = 0;
+                                ?>
+                        <?php endwhile; ?>
                 </div>
 
                 <?php if ( $truncated ) : ?>

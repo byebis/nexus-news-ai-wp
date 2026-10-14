@@ -286,6 +286,8 @@ defined( 'ABSPATH' ) || exit;
                 function toast(message, tipo) {
                         if (!toastEl) {
                                 toastEl = document.createElement('div');
+                                /* a11y: annuncio live, stesso pattern di redazioni.php e dello stack admin.js. */
+                                toastEl.setAttribute('role', 'status');
                                 document.body.appendChild(toastEl);
                         }
                         toastEl.className = 'nxa-jb-toast ' + (tipo === 'error' ? 'nxa-jb-toast--error' : 'nxa-jb-toast--success');
