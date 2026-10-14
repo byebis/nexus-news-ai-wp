@@ -282,6 +282,8 @@ function nexus_i18n_extra_dict() {
             'Diagnostica AI' => 'AI diagnostics',
             'Diagnostica del sistema, esportazione e importazione della configurazione, gestione dell\'API pubblica.' => 'System diagnostics, configuration export and import, public API management.',
             'Digest AI' => 'AI digest',
+            'Digest saltato: nessun articolo' => 'Digest skipped: no articles',
+            'Digest saltato: nessun destinatario' => 'Digest skipped: no recipients',
             'Digest settimanale — contenuti e anteprima' => 'Weekly digest — content and preview',
             'Digest testuale generato con l\'AI' => 'Text digest generated with AI',
             'Dimensione immagini' => 'Image size',
@@ -803,6 +805,7 @@ function nexus_i18n_extra_dict() {
             'Tagline del sito' => 'Site tagline',
             // v1.1.13.1 (Q3): badge connessioni (settings-sistema.php) — nome di servizio identico in EN.
             'Telegram:' => 'Telegram:',
+            'Telegram non ha restituito message_id.' => 'Telegram did not return a message_id.',
             'Tema da sviluppare' => 'Topic to develop',
             'Tema da sviluppare (es. l\'impatto dell\'AI sulle notizie elettorali)' => 'Topic to develop (e.g. the impact of AI on election news)',
             'Tema del pannello' => 'Panel theme',
@@ -1799,6 +1802,26 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
  */
 function nexus_i18n_extra_patterns() {
     return array(
+        /* ---- v1.1.15 (WD10): stringhe log introdotte/alterate da WE5/WE6/WE7
+         * (digest, telegram, notify) — prefissi compositi da concatenazione
+         * PHP e contatore fallimenti. IN CIMA: copertura deterministica prima
+         * di qualunque frammento generico (regola v1.1.6/v1.1.14). ---- */
+        array(
+            're'  => 'Digest: invio fallito a ',
+            'tpl' => 'Digest: delivery failed to ',
+        ),
+        array(
+            're'  => ' — invii falliti: (\\d+)',
+            'tpl' => ' — failed deliveries: $1',
+        ),
+        array(
+            're'  => 'Webhook notifica fallito \\(errore di connessione\\): ',
+            'tpl' => 'Notification webhook failed (connection error): ',
+        ),
+        array(
+            're'  => 'Notifica Telegram ops fallita \\(errore di connessione\\): ',
+            'tpl' => 'Telegram ops notification failed (connection error): ',
+        ),
         /* ---- v1.1.15 (WD2): due compositi spostati IN CIMA — i frammenti
          * generici pre-esistenti li spezzavano prima che firassero (regola
          * v1.1.6/v1.1.14: le frasi intere prima dei frammenti). Stringhe
