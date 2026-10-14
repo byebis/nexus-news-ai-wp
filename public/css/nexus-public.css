@@ -74,6 +74,36 @@
   --nxp-link: #6d28d9;
   --nxp-link-hover: #4c1d95;
   --nxp-focus: #0891b2;
+  /* Accento: tinte trasparenti, glow, glass e testi sopra accento (v1.1.15 WD5) */
+  --nxp-on-accent: #ffffff;
+  --nxp-glass: rgba(255, 255, 255, 0.92);
+  --nxp-glass-strong: rgba(255, 255, 255, 0.94);
+  --nxp-glass-dim: rgba(255, 255, 255, 0.65);
+  --nxp-accent-1-faint: rgba(124, 58, 237, 0.06);
+  --nxp-accent-1-soft: rgba(124, 58, 237, 0.1);
+  --nxp-accent-1-soft-2: rgba(124, 58, 237, 0.12);
+  --nxp-accent-1-ring: rgba(124, 58, 237, 0.15);
+  --nxp-accent-1-line: rgba(124, 58, 237, 0.28);
+  --nxp-accent-1-line-strong: rgba(124, 58, 237, 0.35);
+  --nxp-accent-1-line-deep: rgba(124, 58, 237, 0.5);
+  --nxp-accent-1-line-pressed: rgba(124, 58, 237, 0.55);
+  --nxp-accent-1-glow: rgba(124, 58, 237, 0.28);
+  --nxp-accent-1-glow-strong: rgba(124, 58, 237, 0.36);
+  --nxp-accent-2-line: rgba(6, 182, 212, 0.45);
+  --nxp-accent-text: #5b21b6;
+  --nxp-selection: rgba(124, 58, 237, 0.18);
+  /* Stati/overlay aggiuntivi */
+  --nxp-err-faint: rgba(239, 68, 68, 0.08);
+  --nxp-overlay: rgba(15, 23, 42, 0.55);
+  --nxp-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.12);
+  /* Gradienti compositi (hero, skeleton) */
+  --nxp-hero-grad: linear-gradient(100deg, #4c1d95 0%, #7c3aed 46%, #0e7490 100%);
+  --nxp-hero-glow-1: radial-gradient(720px 260px at 12% -30%, rgba(124, 58, 237, 0.09), transparent 60%);
+  --nxp-hero-glow-2: radial-gradient(560px 240px at 96% -20%, rgba(6, 182, 212, 0.08), transparent 55%);
+  --nxp-skeleton-grad: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
+  --nxp-skeleton-ph: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.08));
+  /* Stampa */
+  --nxp-border-print: #d4d4d8;
   /* Raggi */
   --nxp-radius: 14px;
   --nxp-radius-sm: 10px;
@@ -154,7 +184,7 @@
 
 .nxa-magazine ::selection,
 .nexus-single ::selection {
-  background: rgba(124, 58, 237, 0.18);
+  background: var(--nxp-selection);
 }
 
 /* -------------------------------------------------------------------------
@@ -167,8 +197,8 @@
   border: 1px solid var(--nxp-border);
   border-radius: var(--nxp-radius-lg);
   background:
-    radial-gradient(720px 260px at 12% -30%, rgba(124, 58, 237, 0.09), transparent 60%),
-    radial-gradient(560px 240px at 96% -20%, rgba(6, 182, 212, 0.08), transparent 55%),
+    var(--nxp-hero-glow-1),
+    var(--nxp-hero-glow-2),
     var(--nxp-surface);
   box-shadow: var(--nxp-shadow);
   margin-bottom: clamp(20px, 3vw, 30px);
@@ -185,8 +215,8 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--nxp-accent-1);
-  background: rgba(124, 58, 237, 0.1);
-  border: 1px solid rgba(124, 58, 237, 0.28);
+  background: var(--nxp-accent-1-soft);
+  border: 1px solid var(--nxp-accent-1-line);
 }
 
 .nxa-hero-title {
@@ -200,7 +230,7 @@
 
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .nxa-hero-title {
-    background: linear-gradient(100deg, #4c1d95 0%, #7c3aed 46%, #0e7490 100%);
+    background: var(--nxp-hero-grad);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -306,16 +336,16 @@
 .nxa-cat-btn.is-active,
 .nxa-cat-btn[aria-pressed="true"],
 .nxa-cat-btn.nxa-active {
-  color: #fff;
+  color: var(--nxp-on-accent);
   background: var(--nxp-accent-grad);
   border-color: transparent;
-  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.28);
+  box-shadow: 0 6px 16px var(--nxp-accent-1-glow);
 }
 
 .nxa-cat-btn.is-active .nxa-cat-dot,
 .nxa-cat-btn[aria-pressed="true"] .nxa-cat-dot,
 .nxa-cat-btn.nxa-active .nxa-cat-dot {
-  background: #fff;
+  background: var(--nxp-on-accent);
 }
 
 .nxa-cat-btn:active {
@@ -357,7 +387,7 @@
 
 .nxa-card:hover {
   transform: translateY(-3px);
-  border-color: rgba(124, 58, 237, 0.35);
+  border-color: var(--nxp-accent-1-line-strong);
   box-shadow: var(--nxp-shadow);
 }
 
@@ -417,7 +447,7 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--nxp-cat, var(--nxp-text));
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--nxp-glass);
   border: 1px solid var(--nxp-cat-line, var(--nxp-border));
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -436,7 +466,7 @@
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #fff;
+  color: var(--nxp-on-accent);
   background: var(--nxp-accent-grad);
 }
 
@@ -601,13 +631,13 @@
   border: none;
   border-radius: 999px;
   background: var(--nxp-accent-grad);
-  color: #fff;
+  color: var(--nxp-on-accent);
   font-family: inherit;
   font-size: 0.92rem;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.28);
+  box-shadow: 0 8px 20px var(--nxp-accent-1-glow);
   transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
 }
 
@@ -615,7 +645,7 @@
 .nxa-load-more:hover {
   transform: translateY(-2px);
   filter: brightness(1.06);
-  box-shadow: 0 12px 26px rgba(124, 58, 237, 0.36);
+  box-shadow: 0 12px 26px var(--nxp-accent-1-glow-strong);
 }
 
 .nxa-btn-load-more:active,
@@ -692,7 +722,7 @@
 }
 
 .nxa-wire-item:hover {
-  border-color: rgba(6, 182, 212, 0.45);
+  border-color: var(--nxp-accent-2-line);
 }
 
 .nxa-wire-item-main {
@@ -862,7 +892,7 @@
 .nexus-news-input:focus {
   outline: none; /* l'anello qui sotto e' l'indicatore di focus visibile */
   border-color: var(--nxp-accent-1);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+  box-shadow: 0 0 0 3px var(--nxp-accent-1-ring);
 }
 
 .nexus-news-button {
@@ -871,20 +901,20 @@
   border: none;
   border-radius: var(--nxp-radius-sm);
   background: var(--nxp-accent-grad);
-  color: #fff;
+  color: var(--nxp-on-accent);
   font-family: inherit;
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.4;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.28);
+  box-shadow: 0 6px 16px var(--nxp-accent-1-glow);
   transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
 }
 
 .nexus-news-button:hover {
   transform: translateY(-1px);
   filter: brightness(1.06);
-  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.36);
+  box-shadow: 0 10px 22px var(--nxp-accent-1-glow-strong);
 }
 
 .nexus-news-button:active {
@@ -945,7 +975,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--nxp-overlay);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   animation: nxp-fade-in 0.2s ease both;
@@ -993,18 +1023,18 @@
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--nxp-border);
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--nxp-glass-strong);
   color: var(--nxp-text-body);
   font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--nxp-shadow-sm);
   transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .nxa-modal-close:hover {
   color: var(--nxp-err-text);
-  background: rgba(239, 68, 68, 0.08);
+  background: var(--nxp-err-faint);
   border-color: var(--nxp-err-line);
 }
 
@@ -1024,7 +1054,7 @@
   font-size: 64px;
   line-height: 1;
   background-color: var(--nxp-surface-3);
-  background-image: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.08));
+  background-image: var(--nxp-skeleton-ph);
 }
 
 .nxa-modal-content {
@@ -1041,8 +1071,8 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--nxp-link);
-  background: rgba(124, 58, 237, 0.1);
-  border: 1px solid rgba(124, 58, 237, 0.28);
+  background: var(--nxp-accent-1-soft);
+  border: 1px solid var(--nxp-accent-1-line);
 }
 
 .nxa-modal-title {
@@ -1175,8 +1205,8 @@
 }
 
 .nxa-reaction-btn:hover {
-  border-color: rgba(124, 58, 237, 0.5);
-  background: rgba(124, 58, 237, 0.06);
+  border-color: var(--nxp-accent-1-line-deep);
+  background: var(--nxp-accent-1-faint);
 }
 
 .nxa-reaction-btn:active {
@@ -1187,9 +1217,9 @@
 .nxa-reaction-btn.nxa-pressed,
 .nxa-reaction-btn.is-active,
 .nxa-reaction-btn[aria-pressed="true"] {
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.12);
-  color: #5b21b6;
+  border-color: var(--nxp-accent-1-line-pressed);
+  background: var(--nxp-accent-1-soft-2);
+  color: var(--nxp-accent-text);
 }
 
 .nxa-reaction-emoji {
@@ -1211,8 +1241,8 @@
 .nxa-reaction-btn.nxa-pressed .nxa-reaction-count,
 .nxa-reaction-btn.is-active .nxa-reaction-count,
 .nxa-reaction-btn[aria-pressed="true"] .nxa-reaction-count {
-  color: #5b21b6;
-  background: rgba(255, 255, 255, 0.65);
+  color: var(--nxp-accent-text);
+  background: var(--nxp-glass-dim);
 }
 
 .nxa-reaction-hint {
@@ -1254,7 +1284,7 @@
 }
 
 .nxa-modal-skel .nxa-skel {
-  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
+  background: var(--nxp-skeleton-grad);
   background-size: 200% 100%;
   border-radius: 8px;
 }
@@ -1378,7 +1408,7 @@ body.nxa-noscroll {
   padding: 4px 12px;
   border-radius: 999px;
   background: var(--nxp-accent-grad);
-  color: #fff;
+  color: var(--nxp-on-accent);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1784,7 +1814,7 @@ body.nxa-noscroll {
 
   .nxa-card {
     box-shadow: none;
-    border: 1px solid #d4d4d8;
+    border: 1px solid var(--nxp-border-print);
     break-inside: avoid;
   }
 
