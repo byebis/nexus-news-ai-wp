@@ -37,6 +37,14 @@
  *     get_access_token() in errore (WP_Error). Il risultato (anche l'eventuale
  *     refresh di rete) resta in cache nell'opzione stato: la chiamata avviene
  *     SOLO dentro il giro orario del cron, MAI a view-time.
+ *  6. agents — Salute per-agente (v1.1.16, WD3): per ogni agente ATTIVO
+ *     (a) zero fonti configurate (né fonti redazione del term_id né RSS
+ *     globali di fallback) → warn; (b) run fallite nelle ultime 24h su
+ *     wp_nexus_agent_runs (schema v8, query diretta raggruppata con $wpdb) →
+ *     err con conteggio; (c) mai eseguito (last_run NULL) da oltre 24h dalla
+ *     creazione → info (compare nel dettaglio senza cambiare lo stato: la
+ *     card usa solo ok/warn/err). Il check cron copre GIÀ nexus_cron_tick a
+ *     livello globale (cron_watchlist): nessuna duplicazione qui.
  *
  * NOTIFICHE: quando UN check NUOVO entra in warn/err (confronto con lo stato
  * precedente; re-notifica dello stesso stato solo dopo 24h — NOTIFY_REPEAT)
@@ -262,6 +270,7 @@ final class Nexus_Health {
                         $checks = array(
                                 'feeds'  => self::run_check( 'feeds' ),
                                 'jobs'   => self::run_check( 'jobs' ),
+                                'agents' => self::run_check( 'agents' ), // v1.1.16 (WD3): chiave NUOVA, additive.
                                 'budget' => self::run_check( 'budget' ),
                                 'cron'   => self::run_check( 'cron' ),
                                 'token'  => self::run_check( 'token' ),
@@ -298,7 +307,7 @@ final class Nexus_Health {
          * Esegue UN check con isolamento totale: un'eccezione diventa uno stato
          * 'err' onesto ("controllo non riuscito") senza bloccare gli altri.
          *
-         * @param string $key Chiave del check (feeds|jobs|budget|cron|token).
+         * @param string $key Chiave del check (feeds|jobs|agents|budget|cron|token).
          * @return array Risultato del check.
          */
         private static function run_check( $key ) {
@@ -308,6 +317,9 @@ final class Nexus_Health {
                         }
                         if ( 'jobs' === $key ) {
                                 return self::check_jobs();
+                        }
+                        if ( 'agents' === $key ) {
+                                return self::check_agents(); // v1.1.16 (WD3).
                         }
                         if ( 'budget' === $key ) {
                                 return self::check_budget();
@@ -825,6 +837,161 @@ final class Nexus_Health {
                 return $result;
         }
 
+        /* ============ CHECK 6 — SALUTE PER-AGENTE (v1.1.16, WD3) ============ */
+
+        /**
+         * Salute per-agente degli agenti ATTIVI, su tre segnali:
+         *  (a) zero fonti configurate → warn: un agente senza fonti redazione E
+         *      senza RSS globali di fallback produce solo evergreen (o nulla);
+         *  (b) run fallite nelle ultime 24h su wp_nexus_agent_runs → err con
+         *      conteggio per agente (una riga per agente: niente doppioni);
+         *  (c) mai eseguito (last_run NULL) da oltre 24h dalla creazione → info:
+         *      compare nel dettaglio ma NON cambia lo stato (la card usa solo
+         *      ok/warn/err).
+         *
+         * Il check cron (CHECK 4) copre GIÀ nexus_cron_tick a livello globale:
+         * qui nessuna duplicazione, il focus è per-agente.
+         *
+         * @return array
+         */
+        private static function check_agents() {
+                $result = array(
+                        'status'     => 'ok',
+                        'active'     => 0,
+                        'no_sources' => array(), // Nomi agente (warn).
+                        'failed'     => array(), // Array di array( name, count ) (err).
+                        'never_ran'  => array(), // Nomi agente (info).
+                );
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'agents' ) ) {
+                        return $result;
+                }
+
+                try {
+                        $agents = (array) Nexus_DB::agents();
+                } catch ( \Throwable $e ) {
+                        return $result; // Check neutro: mai fatale.
+                }
+
+                $failed_map = self::agent_failed_runs_24h();
+
+                foreach ( $agents as $agent ) {
+                        if ( ! is_object( $agent ) || 'active' !== (string) $agent->status ) {
+                                continue; // Mandato WD3: solo agenti attivi.
+                        }
+
+                        $result['active']++;
+                        $name = (string) $agent->name;
+
+                        // (b) run fallite nelle ultime 24h → err (segnale unico per agente).
+                        $aid = isset( $agent->id ) ? (int) $agent->id : 0;
+                        if ( $aid > 0 && isset( $failed_map[ $aid ] ) && $failed_map[ $aid ] > 0 ) {
+                                $result['failed'][] = array(
+                                        'name'  => $name,
+                                        'count' => (int) $failed_map[ $aid ],
+                                );
+                                continue; // Un agente già in errore non si ripete negli altri sotto-segnali.
+                        }
+
+                        // (a) zero fonti configurate → warn.
+                        if ( ! self::agent_has_sources( $agent ) ) {
+                                $result['no_sources'][] = $name;
+                        }
+
+                        // (c) mai eseguito (last_run NULL) da > 24h dalla creazione → info.
+                        if ( empty( $agent->last_run ) ) {
+                                $created = isset( $agent->created_at ) ? strtotime( (string) $agent->created_at ) : 0;
+                                if ( $created > 0 && ( current_time( 'timestamp' ) - $created ) > DAY_IN_SECONDS ) {
+                                        $result['never_ran'][] = $name;
+                                }
+                        }
+                }
+
+                if ( ! empty( $result['failed'] ) ) {
+                        $result['status'] = 'err';
+                } elseif ( ! empty( $result['no_sources'] ) ) {
+                        $result['status'] = 'warn';
+                }
+
+                return $result;
+        }
+
+        /**
+         * Run fallite nelle ultime 24h per agente: UNA query raggruppata su
+         * wp_nexus_agent_runs (schema v8, PB1). Guard difensive: su
+         * installazioni non ancora migrate (metodo DB o tabella assenti) il
+         * check resta neutro.
+         *
+         * Finestra in ORARIO WORDPRESS (le colonne DATETIME del plugin sono in
+         * ora locale, direttiva cliente): stesso pattern già usato da
+         * article_hosts_in_window (gmdate su current_time('timestamp')).
+         *
+         * @return array Mappa agent_id => numero di run con status 'failed'.
+         */
+        private static function agent_failed_runs_24h() {
+                global $wpdb;
+
+                $map = array();
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' )
+                        || ! method_exists( 'Nexus_DB', 'insert_agent_run' ) ) {
+                        return $map; // Schema v8 (PB1) non ancora presente: niente da leggere.
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['agent_runs'] ) ) {
+                        return $map;
+                }
+
+                $since = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp' ) - DAY_IN_SECONDS );
+
+                // phpcs:ignore WordPress.DB -- query mirata raggruppata; result set piccolo (una riga per agente).
+                $rows = $wpdb->get_results(
+                        $wpdb->prepare(
+                                "SELECT agent_id, COUNT(*) AS failed_runs FROM {$tables['agent_runs']}
+                                 WHERE status = %s AND started_at >= %s
+                                 GROUP BY agent_id",
+                                'failed',
+                                $since
+                        )
+                );
+
+                foreach ( (array) $rows as $row ) {
+                        $map[ (int) $row->agent_id ] = (int) $row->failed_runs;
+                }
+
+                return $map;
+        }
+
+        /**
+         * L'agente ha ALMENO una fonte utilizzabile? Fonti della redazione
+         * (term meta, OGNI tipo: rss/site/youtube/telegram/reddit/search/mcp/web)
+         * OPPURE fonti RSS globali — stessa regola di fallback di
+         * Nexus_Sources::fetch_for_agent (v1.1.11 R1).
+         *
+         * @param object $agent Agente.
+         * @return bool
+         */
+        private static function agent_has_sources( $agent ) {
+                $term_id = (int) ( isset( $agent->term_id ) ? $agent->term_id : 0 );
+
+                if ( $term_id > 0 && class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'sources_for_term' ) ) {
+                        $sources = Nexus_Redazioni::sources_for_term( $term_id );
+                        if ( is_array( $sources ) && ! empty( $sources ) ) {
+                                return true;
+                        }
+                }
+
+                if ( class_exists( 'Nexus_Rss' ) && method_exists( 'Nexus_Rss', 'global_sources' ) ) {
+                        $global = Nexus_Rss::global_sources();
+                        if ( is_array( $global ) && ! empty( $global ) ) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
+
         /* ============ NOTIFICHE (ANTI-SPAM) ============ */
 
         /**
@@ -888,7 +1055,8 @@ final class Nexus_Health {
         private static function notify_new( $pending_map, $checks ) {
                 $parts = array();
 
-                foreach ( array( 'feeds', 'jobs', 'budget', 'cron', 'token' ) as $key ) {
+                // v1.1.16 (WD3): 'agents' entra nella lista dei check notificabili.
+                foreach ( array( 'feeds', 'jobs', 'agents', 'budget', 'cron', 'token' ) as $key ) {
                         if ( empty( $pending_map[ $key ] ) ) {
                                 continue;
                         }
@@ -948,6 +1116,26 @@ final class Nexus_Health {
                         $hooks = isset( $check['hooks'] ) && is_array( $check['hooks'] ) ? implode( ', ', array_slice( $check['hooks'], 0, 3 ) ) : '';
 
                         return sprintf( 'Lavori running bloccati da oltre %1$d ore: %2$d%3$s', $hours, $count, '' !== $hooks ? ' (' . $hooks . ')' : '' );
+                }
+
+                if ( 'agents' === $key ) {
+                        // v1.1.16 (WD3): run agente fallite nelle ultime 24 ore.
+                        $failed = isset( $check['failed'] ) && is_array( $check['failed'] ) ? $check['failed'] : array();
+                        if ( empty( $failed ) ) {
+                                return '';
+                        }
+                        $labels = array();
+                        foreach ( array_slice( $failed, 0, 5 ) as $entry ) {
+                                if ( ! is_array( $entry ) || empty( $entry['name'] ) ) {
+                                        continue;
+                                }
+                                $labels[] = sprintf( '%s (×%d)', $entry['name'], (int) ( isset( $entry['count'] ) ? $entry['count'] : 0 ) );
+                        }
+                        if ( empty( $labels ) ) {
+                                return '';
+                        }
+
+                        return sprintf( 'Run agente fallite nelle ultime 24 ore: %s', implode( ', ', $labels ) );
                 }
 
                 if ( 'budget' === $key ) {
@@ -1042,6 +1230,11 @@ final class Nexus_Health {
                                         <?php
                                         self::render_row( 'feeds', __( 'Feed RSS', 'nexus-news-ai' ), isset( $checks['feeds'] ) ? $checks['feeds'] : array(), $never_ran, __( 'Fonti', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-redazioni' ) );
                                         self::render_row( 'jobs', __( 'Agenti', 'nexus-news-ai' ), isset( $checks['jobs'] ) ? $checks['jobs'] : array(), $never_ran, __( 'Coda lavori', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-jobs' ) );
+                                        // v1.1.16 (WD3): riga NUOVA "Run agenti" — salute per-agente
+                                        // (fonti assenti, run fallite 24h, mai eseguito). Link alla
+                                        // pagina Agenti; il nome riga è diverso dalla riga jobs
+                                        // (anch'essa etichettata "Agenti": parla dei LAVORI in coda).
+                                        self::render_row( 'agents', __( 'Run agenti', 'nexus-news-ai' ), isset( $checks['agents'] ) ? $checks['agents'] : array(), $never_ran, __( 'Agenti', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-agents' ) );
                                         self::render_row( 'budget', __( 'Budget AI', 'nexus-news-ai' ), isset( $checks['budget'] ) ? $checks['budget'] : array(), $never_ran, __( 'Impostazioni', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-settings' ) );
                                         self::render_row( 'cron', __( 'Cron', 'nexus-news-ai' ), isset( $checks['cron'] ) ? $checks['cron'] : array(), $never_ran, __( 'Impostazioni', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-settings' ) );
                                         self::render_row( 'token', __( 'Token Google', 'nexus-news-ai' ), isset( $checks['token'] ) ? $checks['token'] : array(), $never_ran, __( 'Sistema Google', 'nexus-news-ai' ), admin_url( 'admin.php?page=nexus-settings&tab=sistema' ) );
@@ -1142,6 +1335,48 @@ final class Nexus_Health {
                                 $count,
                                 $hours
                         );
+                }
+
+                if ( 'agents' === $key ) {
+                        // v1.1.16 (WD3): dettaglio della salute per-agente.
+                        $active     = isset( $check['active'] ) ? (int) $check['active'] : 0;
+                        $failed     = isset( $check['failed'] ) && is_array( $check['failed'] ) ? $check['failed'] : array();
+                        $no_sources = isset( $check['no_sources'] ) && is_array( $check['no_sources'] ) ? $check['no_sources'] : array();
+                        $never_ran  = isset( $check['never_ran'] ) && is_array( $check['never_ran'] ) ? $check['never_ran'] : array();
+
+                        if ( 0 === $active && empty( $failed ) && empty( $no_sources ) && empty( $never_ran ) ) {
+                                return __( 'Nessun agente attivo da monitorare.', 'nexus-news-ai' );
+                        }
+
+                        if ( empty( $failed ) && empty( $no_sources ) && empty( $never_ran ) ) {
+                                return __( 'Agenti attivi: nessun problema nelle ultime 24 ore.', 'nexus-news-ai' );
+                        }
+
+                        $parts = array();
+
+                        if ( ! empty( $failed ) ) {
+                                // Err: run fallite con conteggio per agente ("Nome ×N": il
+                                // conteggio viaggia senza nuove stringhe da tradurre).
+                                $labels = array();
+                                foreach ( $failed as $entry ) {
+                                        if ( ! is_array( $entry ) || empty( $entry['name'] ) ) {
+                                                continue;
+                                        }
+                                        $labels[] = sprintf( '%s ×%d', $entry['name'], (int) ( isset( $entry['count'] ) ? $entry['count'] : 0 ) );
+                                }
+                                $parts[] = self::problem_list( $labels, __( 'Run fallite nelle ultime 24 ore:', 'nexus-news-ai' ) );
+                        }
+
+                        if ( ! empty( $no_sources ) ) {
+                                $parts[] = self::problem_list( $no_sources, __( 'Agenti attivi senza fonti configurate:', 'nexus-news-ai' ) );
+                        }
+
+                        if ( ! empty( $never_ran ) ) {
+                                // Info: non cambia lo stato della riga, compare nel dettaglio.
+                                $parts[] = self::problem_list( $never_ran, __( 'Mai eseguiti (creati da oltre 24 ore):', 'nexus-news-ai' ) );
+                        }
+
+                        return implode( ' ', $parts );
                 }
 
                 if ( 'budget' === $key ) {
