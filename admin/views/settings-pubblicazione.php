@@ -372,6 +372,13 @@ $social_platforms = array(
                                                                 <p class="description"><?php esc_html_e( "Se attivo, l'introduzione del digest settimanale viene scritta dall'AI (elenco titoli e link comunque incluso).", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Contenuti e anteprima', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <?php /* v1.1.14 (P5): solo testo, nessun input (non interferisce col salvataggio REST della form principale). Le preferenze del digest (sezioni performance/uso AI/errori, copia garantita, anteprima) vivono nella card dedicata IN FONDO alla pagina: opzione WP indipendente nexus_digest_prefs (contratto opzioni 1.1.13), salvata con un form admin_post proprio fuori dalla form #nxa-settings-form. */ ?>
+                                                                <p class="description"><?php esc_html_e( 'Sezioni performance, uso AI ed errori del digest, copia garantita e anteprima si gestiscono nella card "Digest settimanale" in fondo alla pagina (salvataggio dedicato).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
                                         </tbody>
                                 </table>
                         </div>
@@ -490,4 +497,99 @@ $social_platforms = array(
                         <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva impostazioni', 'nexus-news-ai' ); ?></button>
                 </p>
         </form>
+
+        <?php /* v1.1.14 (P5) — CARD DIGEST SETTIMANALE: preferenze + anteprima.
+         * Fuori dalla form #nxa-settings-form (form annidate = HTML invalido e
+         * admin.js la intercetta): due form admin_post PROPIE con nonce dedicati,
+         * opzione WP indipendente nexus_digest_prefs (contratto opzioni 1.1.13).
+         * Guardia class_exists: la card degrada a nulla se il modulo non è caricato. */ ?>
+        <?php if ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'digest_prefs' ) ) : ?>
+                <?php Nexus_Digest::render_admin_notice(); ?>
+                <?php
+                $nxa_digest_prefs = Nexus_Digest::digest_prefs();
+                $nxa_digest_admin = (string) get_bloginfo( 'admin_email' );
+                $nxa_digest_total = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'count_subscribers' ) ) ? (int) Nexus_DB::count_subscribers( 'confirmed' ) : 0;
+                $nxa_digest_optin = method_exists( 'Nexus_Digest', 'optin_subscribers_count' ) ? (int) Nexus_Digest::optin_subscribers_count() : 0;
+                ?>
+                <div id="nxa-digest-card" style="margin:24px 0 8px;padding:16px 20px;border:1px solid var(--nxa-border,#dcdcde);border-radius:var(--nxa-radius-sm,8px);background:var(--nxa-surface-2,#ffffff);">
+                        <h2 style="margin-top:0;"><?php esc_html_e( 'Digest settimanale — contenuti e anteprima', 'nexus-news-ai' ); ?></h2>
+                        <p class="description"><?php esc_html_e( "Queste preferenze usano un salvataggio dedicato: premi il pulsante qui sotto, non il pulsante 'Salva impostazioni' del tab.", 'nexus-news-ai' ); ?></p>
+                        <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+                                <input type="hidden" name="action" value="nexus_digest_save" />
+                                <?php wp_nonce_field( Nexus_Digest::ACTION_SAVE, 'nexus_digest_save_nonce' ); ?>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Sezione performance', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-digest-show-performance">
+                                                                        <input type="checkbox" name="digest_show_performance" id="nxa-digest-show-performance" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_performance'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Includi i top articoli della settimana', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Click e viste dei migliori articoli (Search Console / Analytics 4). Se i dati non ci sono ancora, la sezione è omessa.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Sezione uso AI', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-digest-show-ai-usage">
+                                                                        <input type="checkbox" name="digest_show_ai_usage" id="nxa-digest-show-ai-usage" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_ai_usage'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Includi il riepilogo uso AI', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Chiamate, token e costo stimato della settimana (quando tracciati). Nessuna chiamata nella settimana: sezione omessa.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Sezione errori', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-digest-show-errors">
+                                                                        <input type="checkbox" name="digest_show_errors" id="nxa-digest-show-errors" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_errors'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Includi gli errori della settimana', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'Conteggi per tipo di errori interni (attività e lavori falliti). Disattiva di default: gli errori interni non vengono mostrati agli iscritti.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-digest-recipient"><?php esc_html_e( 'Copia garantita', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="digest_recipient" id="nxa-digest-recipient" value="<?php echo esc_attr( $nxa_digest_prefs['digest_recipient'] ); ?>" placeholder="<?php echo esc_attr( $nxa_digest_admin ); ?>" class="regular-text code" />
+                                                                <p class="description">
+                                                                        <?php
+                                                                        printf(
+                                                                                /* Traduttori: %s = email amministratore del sito. */
+                                                                                esc_html__( 'Email che riceve sempre una copia del digest (vuoto = %s).', 'nexus-news-ai' ),
+                                                                                esc_html( $nxa_digest_admin )
+                                                                        );
+                                                                        ?>
+                                                                </p>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                                <p>
+                                        <button type="submit" class="button button-primary"><?php esc_html_e( 'Salva preferenze digest', 'nexus-news-ai' ); ?></button>
+                                </p>
+                        </form>
+                        <hr />
+                        <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+                                <input type="hidden" name="action" value="nexus_digest_preview" />
+                                <?php wp_nonce_field( Nexus_Digest::ACTION_PREVIEW, 'nexus_digest_preview_nonce' ); ?>
+                                <p>
+                                        <?php
+                                        printf(
+                                                /* Traduttori: %1$d = iscritti confermati totali, %2$d = iscritti che riceveranno il digest. */
+                                                esc_html__( 'Iscritti confermati: %1$d. Riceveranno il prossimo digest: %2$d.', 'nexus-news-ai' ),
+                                                (int) $nxa_digest_total,
+                                                (int) $nxa_digest_optin
+                                        );
+                                        ?>
+                                </p>
+                                <p class="description"><?php esc_html_e( 'Un iscritto può rinunciare al solo digest dal link "Non ricevere il digest" in fondo alle email.', 'nexus-news-ai' ); ?></p>
+                                <p>
+                                        <button type="submit" class="button"><?php esc_html_e( 'Invia anteprima a me', 'nexus-news-ai' ); ?></button>
+                                        <span class="description"><?php esc_html_e( 'Invia alla tua email una copia di prova del digest di questa settimana.', 'nexus-news-ai' ); ?></span>
+                                </p>
+                        </form>
+                </div>
+        <?php endif; ?>
 </div>

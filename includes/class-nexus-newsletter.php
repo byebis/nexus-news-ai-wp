@@ -18,7 +18,27 @@
  *   viene allineato automaticamente a enable_newsletter a ogni init() (autosync).
  * - Dipendenze usate SOLO con guard class_exists/method_exists (mai fatale):
  *   Nexus_DB (subscribers, get_subscriber*, insert_subscriber, update_subscriber,
- *   articles, get_settings, insert_activity) e Nexus_AI_Engine::chat.
+ *   articles, get_settings, insert_activity, usage_stats) e Nexus_AI_Engine::chat.
+ *
+ * v1.1.14 (P5) — digest settimanale potenziato:
+ * - Nexus_Digest (richiesto qui, vedi file) aggiunge all'email le sezioni
+ *   performance / uso AI / errori, SOLO se i dati esistono (mai blocchi finti);
+ * - OPT-IN DIGEST su nexus_subscribers: migration idempotente di questa classe
+ *   aggiunge la colonna digest_optin TINYINT(1) NOT NULL DEFAULT 1 (la conferma
+ *   double opt-in promette esplicitamente il digest settimanale, quindi gli
+ *   iscritti confermati sono già opt-in; il flag permette di rinunciare al SOLO
+ *   digest via link footer ?nexus_unsub={token}&nexus_digest=0 senza
+ *   disiscriversi). L'invio salta chi ha digest_optin = 0 (NIENTE invio a chi
+ *   non ha optato); colonna assente (migrazione fallita) → comportamento legacy.
+ *   NOTA coordinatore: la colonna NON è in Nexus_DB::schema() (file fuori
+ *   perimetro P5): dbDelta PRESERVA le colonne extra; da aggiungere allo schema
+ *   in una release futura per uniformità;
+ * - destinatari fissi del digest = newsletter_recipients + copia garantita
+ *   (preferenza admin Nexus_Digest, default email amministratore);
+ * - anteprima: Nexus_Digest::handle_preview (admin_post, capability+nonce) usa
+ *   Nexus_Newsletter::build_preview_email() e mail_headers() (ora pubbliche):
+ *   l'UNICO invio fuori dal cron, sempre da azione admin esplicita.
+ * - Il cron NON cambia orari né hook: resta 'nexus_weekly_digest' su 'weekly'.
  *
  * Sicurezza (v1.1.9, WP2):
  * - TOKEN HASHATI: in DB viaggia SOLO lo sha256 hex (64 char, colonna VARCHAR(64))
@@ -36,6 +56,11 @@
  */
 
 defined( 'ABSPATH' ) || exit;
+
+/* v1.1.14 (P5): builder dei contenuti extra del digest + handler admin
+ * (preferenze + anteprima). Richiesto QUI perché il bootstrap principale
+ * nexus-news-ai.php è fuori dal perimetro dell'agente digest. */
+require_once __DIR__ . '/class-nexus-digest.php';
 
 class Nexus_Newsletter {
 
@@ -59,6 +84,13 @@ class Nexus_Newsletter {
          * per iscritti 'pending' con created_at entro questa finestra.
          */
         const CONFIRM_TTL = 604800; // 7 * DAY_IN_SECONDS.
+
+        /**
+         * Flag opzione della migration della colonna digest_optin (v1.1.14, P5):
+         * opzione WP 'nexus_digest_optin_v1' impostata dopo il primo check/ALTER
+         * riuscito (zero costo a regime; fallimento = flag NON impostato → retry).
+         */
+        const OPTIN_MIGRATION_FLAG = 'nexus_digest_optin_v1';
 
         /**
          * Contatore form renderizzati nella pagina (per id univoci dell'input email).
@@ -87,6 +119,14 @@ class Nexus_Newsletter {
                 add_action( self::HOOK_DIGEST, array( __CLASS__, 'send_weekly_digest' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'handle_query_vars' ) );
                 add_shortcode( 'nexus_subscribe', array( __CLASS__, 'render_subscribe_form' ) );
+
+                /* v1.1.14 (P5): handler admin del digest (preferenze + anteprima). */
+                if ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'init' ) ) {
+                        Nexus_Digest::init();
+                }
+
+                /* v1.1.14 (P5): migration idempotente colonna digest_optin (flag opzione: zero costo a regime). */
+                self::ensure_digest_optin_column();
 
                 self::sync_schedule();
         }
@@ -357,6 +397,34 @@ class Nexus_Newsletter {
 
                 $already = ( 'unsubscribed' === (string) $subscriber->status );
 
+                /* ---------- v1.1.14 (P5): gestione SOLO-digest ----------
+                 * Parametro AGGIUNTO al link di disiscrizione esistente
+                 * (?nexus_unsub={token}&nexus_digest=0|1): NON disiscrive, aggiorna
+                 * solo la preferenza digest (digest_optin) e mostra la pagina di
+                 * esito. La disiscrizione completa resta il percorso predefinito
+                 * (link senza parametro, rotta REST e flow storici invariati). */
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- il token È la credenziale (come nexus_unsub).
+                $digest_pref = isset( $_GET['nexus_digest'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_digest'] ) ) : '';
+                if ( '0' === $digest_pref || '1' === $digest_pref ) {
+                        $updated = self::set_subscriber_digest_optin( (int) $subscriber->id, '1' === $digest_pref );
+
+                        if ( ! $updated ) {
+                                self::render_notice_page(
+                                        __( 'Servizio non disponibile', 'nexus-news-ai' ),
+                                        __( 'Impossibile aggiornare la preferenza digest: riprova più tardi.', 'nexus-news-ai' ),
+                                        503
+                                );
+                        }
+
+                        self::render_notice_page(
+                                __( 'Preferenze aggiornate', 'nexus-news-ai' ),
+                                '1' === $digest_pref
+                                        ? __( 'Da ora riceverai di nuovo il digest settimanale.', 'nexus-news-ai' )
+                                        : __( 'Da ora non riceverai più il digest settimanale: la tua iscrizione alla newsletter resta attiva.', 'nexus-news-ai' ),
+                                200
+                        );
+                }
+
                 if ( ! $already ) {
                         Nexus_DB::update_subscriber( (int) $subscriber->id, array( 'status' => 'unsubscribed' ) );
                 }
@@ -530,15 +598,21 @@ JS;
          *
          * Pipeline:
          * - guard enable_newsletter != 1 → false (l'evento è comunque deschedulato dall'autosync);
-         * - articoli 'published' (ultimi 20) → filtro in PHP su published_at ultimi 7 giorni;
+         * - articoli 'published' (ultimi 20) → filtro in PHP su published_at ultimi 7 giorni
+         *   (recent_digest_articles(), estratto in v1.1.14 per il riuso nell'anteprima);
          * - 0 articoli → false;
-         * - destinatari: newsletter_recipients (comma, sanitize_email, UNIQUE) + subscriber
-         *   'confirmed' → nessuno → false;
+         * - destinatari: newsletter_recipients (comma, sanitize_email, UNIQUE) + copia
+         *   garantita (v1.1.14: preferenza admin Nexus_Digest, default admin_email) +
+         *   subscriber 'confirmed' CON digest_optin = 1 (v1.1.14, P5: niente invio a
+         *   chi ha rinunciato al solo digest) → nessuno → false;
          * - enable_digest == 1 → UNA chiamata Nexus_AI_Engine::chat (solo testo IT:
          *   intro 2 frasi + un paragrafo per articolo), con fallback lista manuale
          *   titoli+link se la chat fallisce o non è disponibile;
+         * - v1.1.14: sezioni extra (performance / uso AI / errori) via Nexus_Digest,
+         *   SOLO se i dati esistono; il cron NON cambia orari né hook;
          * - wp_mail HTML (max-width 600px): footer con link disiscrizione per-subscriber
-         *   (?nexus_unsub={token}), footer generico per i destinatari fissi;
+         *   (?nexus_unsub={token}) + link gestione solo-digest (?nexus_unsub={token}
+         *   &nexus_digest=0), footer generico per i destinatari fissi;
          * - log attività best-effort ('Digest inviato a N destinatari').
          *
          * @return bool True se almeno una email è stata inviata.
@@ -555,97 +629,32 @@ JS;
                         }
 
                         /* ---------- Articoli degli ultimi 7 giorni (filtro in PHP) ---------- */
-                        $recent = array();
-                        if ( method_exists( 'Nexus_DB', 'articles' ) ) {
-                                $articles = Nexus_DB::articles(
-                                        array(
-                                                'status'   => 'published',
-                                                'per_page' => 20,
-                                                'orderby'  => 'published_at',
-                                                'order'    => 'desc',
-                                        )
-                                );
-
-                                $cutoff = time() - 7 * DAY_IN_SECONDS;
-                                foreach ( (array) $articles as $article ) {
-                                        $ts = ( ! empty( $article->published_at ) ) ? strtotime( (string) $article->published_at ) : 0;
-                                        if ( $ts && $ts >= $cutoff ) {
-                                                $recent[] = $article;
-                                        }
-                                }
-                        }
+                        $recent = self::recent_digest_articles();
 
                         if ( ! $recent ) {
                                 return false;
                         }
 
-                        /* ---------- Destinatari: recipients fissi + subscriber confermati ---------- */
-                        $recipients = array();
-                        foreach ( explode( ',', (string) ( $settings['newsletter_recipients'] ?? '' ) ) as $raw ) {
-                                $email = sanitize_email( trim( (string) $raw ) );
-                                if ( $email && is_email( $email ) ) {
-                                        $recipients[ strtolower( $email ) ] = $email;
-                                }
-                        }
-
-                        $subscribers = self::confirmed_subscribers();
+                        /* ---------- Destinatari: recipients fissi + copia admin + subscriber opt-in digest ---------- */
+                        $recipients  = self::fixed_digest_recipients( $settings );
+                        $subscribers = self::digest_subscribers();
 
                         if ( ! $recipients && ! $subscribers ) {
                                 return false;
                         }
 
                         /* ---------- Lista articoli (titolo + link) ---------- */
-                        $items = array();
-                        foreach ( $recent as $article ) {
-                                $items[] = array(
-                                        'title'    => wp_strip_all_tags( (string) $article->title ),
-                                        'url'      => self::article_link( $article ),
-                                        'category' => (string) $article->category,
-                                );
-                        }
+                        $items = self::digest_items( $recent );
 
                         /* ---------- Testo digest: AI (enable_digest=1) con fallback manuale ---------- */
-                        $intro_html = '';
-                        if ( isset( $settings['enable_digest'] ) && (int) $settings['enable_digest'] === 1
-                                && class_exists( 'Nexus_AI_Engine' ) && method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
+                        $intro_html = self::digest_intro_html( $recent, $settings );
 
-                                $titles = array();
-                                foreach ( $recent as $article ) {
-                                        $cat = ( '' !== trim( (string) $article->category ) ) ? ' [' . (string) $article->category . ']' : '';
-                                        $titles[] = '- ' . wp_strip_all_tags( (string) $article->title ) . $cat;
-                                }
-
-                                /* UNA SOLA chiamata AI: solo testo, niente JSON/markdown/link. */
-                                $result = Nexus_AI_Engine::chat(
-                                        array(
-                                                array(
-                                                        'role'    => 'system',
-                                                        'content' => "Sei il caporedattore di una newsletter italiana di un giornale online. Rispondi SOLO con testo italiano semplice: niente JSON, niente markdown, niente elenchi puntati, niente link.",
-                                                ),
-                                                array(
-                                                        'role'    => 'user',
-                                                        'content' => "Scrivi il testo del digest settimanale della newsletter.\n"
-                                                                . "Struttura obbligatoria: due frasi di introduzione, poi un breve paragrafo per ciascun articolo (titolo dell'articolo seguito da una frase di commento).\n"
-                                                                . "Non inventare articoli, non aggiungere link, non usare markdown.\n\n"
-                                                                . "Articoli pubblicati negli ultimi 7 giorni:\n" . implode( "\n", $titles ),
-                                                ),
-                                        ),
-                                        array(
-                                                'temperature' => 0.6,
-                                                'max_tokens'  => 1200,
-                                        )
-                                );
-
-                                if ( is_array( $result ) && ! empty( $result['ok'] ) && '' !== trim( (string) ( $result['content'] ?? '' ) ) ) {
-                                        $intro_html = self::text_to_paragraphs( (string) $result['content'] );
-                                }
-                        }
-
-                        /* Fallback: lista manuale titoli+link (o AI non disponibile/abilitata). */
-                        if ( '' === $intro_html ) {
-                                $intro_html = '<p style="margin:0 0 14px;line-height:1.6;">'
-                                        . esc_html( sprintf( __( 'Ecco gli articoli pubblicati negli ultimi 7 giorni: %d in totale.', 'nexus-news-ai' ), count( $items ) ) )
-                                        . '</p>';
+                        /* ---------- Sezioni extra (v1.1.14, P5): performance / uso AI / errori ----------
+                         * Costruite UNA volta per tutti i destinatari; ogni sezione esiste
+                         * solo se i dati esistono (onestà, vedi Nexus_Digest::sections_html). */
+                        $sections_html = '';
+                        if ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'sections_html' ) ) {
+                                $sections_html = (string) Nexus_Digest::sections_html();
                         }
 
                         /* ---------- Invio ---------- */
@@ -654,7 +663,7 @@ JS;
                         $sent    = 0;
 
                         if ( $recipients ) {
-                                $body = self::build_digest_html( $intro_html, $items, '' );
+                                $body = self::build_digest_html( $intro_html, $items, '', $sections_html );
                                 if ( wp_mail( array_values( $recipients ), $subject, $body, $headers ) ) {
                                         $sent += count( $recipients );
                                 }
@@ -670,7 +679,7 @@ JS;
                                 // diretta sull'hash senza riscriverlo).
                                 $token   = (string) ( $subscriber->token ?? '' );
                                 $unsub   = '' !== $token ? home_url( '/?nexus_unsub=' . rawurlencode( $token ) ) : '';
-                                $body    = self::build_digest_html( $intro_html, $items, $token );
+                                $body    = self::build_digest_html( $intro_html, $items, $token, $sections_html );
                                 if ( wp_mail( $email, $subject, $body, self::mail_headers( $unsub ) ) ) {
                                         $sent++;
                                 }
@@ -718,6 +727,212 @@ JS;
                 } catch ( Throwable $e ) {
                         /* Silenzio. */
                 }
+        }
+
+        /* ============ BLOCCHI DEL DIGEST (v1.1.14, P5 — estratti per il riuso nell'anteprima) ============ */
+
+        /**
+         * Articoli 'published' degli ultimi 7 giorni (ultimi 20 per published_at,
+         * filtro in PHP su published_at). Estratto da send_weekly_digest in
+         * v1.1.14: comportamento IDENTICO al percorso cron storico, riusato da
+         * Nexus_Newsletter::build_preview_email per l'anteprima admin.
+         *
+         * @return array
+         */
+        private static function recent_digest_articles() {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'articles' ) ) {
+                        return array();
+                }
+
+                $articles = Nexus_DB::articles(
+                        array(
+                                'status'   => 'published',
+                                'per_page' => 20,
+                                'orderby'  => 'published_at',
+                                'order'    => 'desc',
+                        )
+                );
+
+                $cutoff = time() - 7 * DAY_IN_SECONDS;
+                $recent = array();
+                foreach ( (array) $articles as $article ) {
+                        $ts = ( ! empty( $article->published_at ) ) ? strtotime( (string) $article->published_at ) : 0;
+                        if ( $ts && $ts >= $cutoff ) {
+                                $recent[] = $article;
+                        }
+                }
+
+                return $recent;
+        }
+
+        /**
+         * Destinatari FISSI del digest (v1.1.14, P5): le email di
+         * newsletter_recipients + la copia garantita al gestore del sito
+         * (preferenza Nexus_Digest::admin_copy_recipient, default email
+         * amministratore). Dedup per email lowercase.
+         *
+         * @param array $settings Impostazioni Nexus_DB::get_settings().
+         * @return array Mappa lowercase => email.
+         */
+        private static function fixed_digest_recipients( $settings ) {
+                $recipients = array();
+                foreach ( explode( ',', (string) ( isset( $settings['newsletter_recipients'] ) ? $settings['newsletter_recipients'] : '' ) ) as $raw ) {
+                        $email = sanitize_email( trim( (string) $raw ) );
+                        if ( $email && is_email( $email ) ) {
+                                $recipients[ strtolower( $email ) ] = $email;
+                        }
+                }
+
+                /* Copia garantita (v1.1.14): l'admin vede sempre cosa ricevono gli iscritti. */
+                if ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'admin_copy_recipient' ) ) {
+                        $copy = Nexus_Digest::admin_copy_recipient();
+                        if ( $copy && is_email( $copy ) ) {
+                                $recipients[ strtolower( $copy ) ] = $copy;
+                        }
+                }
+
+                return $recipients;
+        }
+
+        /**
+         * Iscritti destinatari del DIGEST (v1.1.14, P5): status 'confirmed' CON
+         * flag digest_optin attivo (colonna aggiunta da ensure_digest_optin_column).
+         *
+         * Semantica dell'opt-in: la conferma double opt-in promette ESPlicitamente
+         * il digest settimanale ("Da ora riceverai il digest settimanale..."), quindi
+         * l'opt-in per il digest ESISTE già per ogni iscritto confermato e la colonna
+         * nasce a 1; il flag serve per RINUNCIARE al solo digest senza disiscriversi
+         * (link "Non ricevere il digest" nel footer + ?nexus_unsub={token}&nexus_digest=0).
+         * NIENTE invio a chi ha digest_optin = 0. Colonna assente (migrazione
+         * fallita): comportamento legacy documentato (tutti i confermati).
+         *
+         * @return array
+         */
+        public static function digest_subscribers() {
+                $all = self::confirmed_subscribers();
+                if ( ! $all ) {
+                        return array();
+                }
+
+                $out = array();
+                foreach ( $all as $subscriber ) {
+                        $optin = isset( $subscriber->digest_optin ) ? (int) $subscriber->digest_optin : 1;
+                        if ( 1 === $optin ) {
+                                $out[] = $subscriber;
+                        }
+                }
+
+                return $out;
+        }
+
+        /**
+         * Lista articoli per l'email digest: title, url, category.
+         *
+         * @param array $recent Righe nexus_articles 'published' della settimana.
+         * @return array
+         */
+        private static function digest_items( $recent ) {
+                $items = array();
+                foreach ( (array) $recent as $article ) {
+                        $items[] = array(
+                                'title'    => wp_strip_all_tags( (string) $article->title ),
+                                'url'      => self::article_link( $article ),
+                                'category' => (string) $article->category,
+                        );
+                }
+
+                return $items;
+        }
+
+        /**
+         * Introduzione del digest: testo AI (enable_digest=1) con fallback
+         * manuale. Estratta da send_weekly_digest in v1.1.14 (comportamento
+         * identico; in più con 0 articoli l'AI NON viene chiamata e il fallback
+         * è una nota onesta — raggiungibile solo dall'anteprima, perché il cron
+         * esce prima con 0 articoli).
+         *
+         * @param array $recent   Righe articoli della settimana.
+         * @param array $settings Impostazioni Nexus_DB::get_settings().
+         * @return string HTML sicuro ('' mai: c'è sempre il fallback).
+         */
+        private static function digest_intro_html( $recent, $settings ) {
+                $items = self::digest_items( $recent );
+
+                $intro_html = '';
+                if ( $recent && isset( $settings['enable_digest'] ) && (int) $settings['enable_digest'] === 1
+                        && class_exists( 'Nexus_AI_Engine' ) && method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
+
+                        $titles = array();
+                        foreach ( (array) $recent as $article ) {
+                                $cat = ( '' !== trim( (string) $article->category ) ) ? ' [' . (string) $article->category . ']' : '';
+                                $titles[] = '- ' . wp_strip_all_tags( (string) $article->title ) . $cat;
+                        }
+
+                        /* UNA SOLA chiamata AI: solo testo, niente JSON/markdown/link. */
+                        $result = Nexus_AI_Engine::chat(
+                                array(
+                                        array(
+                                                'role'    => 'system',
+                                                'content' => "Sei il caporedattore di una newsletter italiana di un giornale online. Rispondi SOLO con testo italiano semplice: niente JSON, niente markdown, niente elenchi puntati, niente link.",
+                                        ),
+                                        array(
+                                                'role'    => 'user',
+                                                'content' => "Scrivi il testo del digest settimanale della newsletter.\n"
+                                                        . "Struttura obbligatoria: due frasi di introduzione, poi un breve paragrafo per ciascun articolo (titolo dell'articolo seguito da una frase di commento).\n"
+                                                        . "Non inventare articoli, non aggiungere link, non usare markdown.\n\n"
+                                                        . "Articoli pubblicati negli ultimi 7 giorni:\n" . implode( "\n", $titles ),
+                                        ),
+                                ),
+                                array(
+                                        'temperature' => 0.6,
+                                        'max_tokens'  => 1200,
+                                )
+                        );
+
+                        if ( is_array( $result ) && ! empty( $result['ok'] ) && '' !== trim( (string) ( isset( $result['content'] ) ? $result['content'] : '' ) ) ) {
+                                $intro_html = self::text_to_paragraphs( (string) $result['content'] );
+                        }
+                }
+
+                /* Fallback: lista manuale titoli+link (o AI non disponibile/abilitata). */
+                if ( '' === $intro_html ) {
+                        if ( ! $items ) {
+                                /* Solo anteprima (il cron esce prima con 0 articoli): nota onesta. */
+                                $intro_html = '<p style="margin:0 0 14px;line-height:1.6;">'
+                                        . esc_html__( 'Nessun articolo pubblicato negli ultimi 7 giorni: il digest reale non viene inviato.', 'nexus-news-ai' )
+                                        . '</p>';
+                        } else {
+                                $intro_html = '<p style="margin:0 0 14px;line-height:1.6;">'
+                                        . esc_html( sprintf( __( 'Ecco gli articoli pubblicati negli ultimi 7 giorni: %d in totale.', 'nexus-news-ai' ), count( $items ) ) )
+                                        . '</p>';
+                        }
+                }
+
+                return $intro_html;
+        }
+
+        /**
+         * Oggetto + corpo dell'ANTEPRIMA digest (v1.1.14, P5) per
+         * Nexus_Digest::handle_preview (admin_post, capability+nonce).
+         * Stessi blocchi del digest reale (intro AI se abilitata, articoli,
+         * sezioni extra) con banner ANTEPRIMA e footer generico (nessun link
+         * per-subscriber). A differenza del cron NON esce con 0 articoli: mostra
+         * la nota onesta, così l'admin vede come sarà l'email.
+         *
+         * @param array $settings Impostazioni Nexus_DB::get_settings().
+         * @return array{subject:string, body:string}
+         */
+        public static function build_preview_email( $settings ) {
+                $recent   = self::recent_digest_articles();
+                $items    = self::digest_items( $recent );
+                $intro    = self::digest_intro_html( $recent, $settings );
+                $sections = ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'sections_html' ) ) ? (string) Nexus_Digest::sections_html() : '';
+                $subject  = sprintf( __( 'Digest Nexus — settimana del %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
+
+                return array(
+                        'subject' => sprintf( __( 'Anteprima — %s', 'nexus-news-ai' ), $subject ),
+                        'body'    => self::build_digest_html( $intro, $items, '', $sections, true ),
+                );
         }
 
         /* ========================= DEATTIVAZIONE ========================= */
@@ -914,10 +1129,13 @@ JS;
          * X-Mailer del plugin e, quando esiste l'URL di disiscrizione, header
          * List-Unsubscribe (v1.1.9: richiesto dalle migliori pratiche antispam).
          *
+         * v1.1.14 (P5): da private a PUBLIC — riusato da Nexus_Digest::handle_preview
+         * per l'invio dell'anteprima (stessi header del digest reale).
+         *
          * @param string $list_unsub_url URL di disiscrizione per il destinatario ('' = header omesso).
          * @return array
          */
-        private static function mail_headers( $list_unsub_url = '' ) {
+        public static function mail_headers( $list_unsub_url = '' ) {
                 $from_name = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
                 $from_mail = get_bloginfo( 'admin_email' );
                 $version   = defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '1.1.9';
@@ -993,17 +1211,159 @@ JS;
                 return $all;
         }
 
+        /* ============ MIGRATION E PREFERENZA DIGEST (v1.1.14, P5) ============ */
+
+        /**
+         * Migration SICURA e idempotente: aggiunge la colonna digest_optin
+         * TINYINT(1) NOT NULL DEFAULT 1 a nexus_subscribers SE manca.
+         *
+         * Sicurezza:
+         * - check con SHOW COLUMNS (prepato) + flag opzione OPTIN_MIGRATION_FLAG:
+         *   a regime il costo è una get_option (autoload no), mai un ALTER;
+         * - l'ALTER avviene SOLO se la colonna manca; table name dalla whitelist
+         *   Nexus_DB::tables() (nessun input utente); avvolto in try/catch;
+         * - fallimento → log attività onesto + flag NON impostato (retry alla
+         *   prossima richiesta), il sito continua a funzionare;
+         * - DEFAULT 1: la conferma double opt-in promette ESPlicitamente il
+         *   digest settimanale, quindi gli iscritti confermati sono già opt-in
+         *   per il digest (nessuna involontaria esclusione di iscritti storici);
+         *   il flag serve a RINUNCIARE al solo digest (link nel footer email).
+         *
+         * NOTA coordinatore: la colonna NON è in Nexus_DB::schema() (file fuori
+         * perimetro P5) — dbDelta PRESERVA le colonne extra già presenti, quindi
+         * l'aggiornamento del plugin NON la rimuove; aggiungerla allo schema
+         * canonico in una release futura per uniformità.
+         *
+         * @return bool True se la colonna è presente (o appena creata).
+         */
+        private static function ensure_digest_optin_column() {
+                static $done = null;
+                if ( null !== $done ) {
+                        return $done;
+                }
+
+                if ( get_option( self::OPTIN_MIGRATION_FLAG ) ) {
+                        $done = true;
+                        return $done;
+                }
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return false;
+                }
+
+                global $wpdb;
+                $tables = Nexus_DB::tables();
+                $table  = ( isset( $tables['subscribers'] ) && is_string( $tables['subscribers'] ) ) ? $tables['subscribers'] : '';
+                if ( '' === $table ) {
+                        return false;
+                }
+
+                /* Colonna già presente (es. migration riuscita in un ambiente precedente
+                 * con flag perso): registra il flag, zero ALTER. */
+                $exists = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'digest_optin' ) );
+                if ( $exists ) {
+                        update_option( self::OPTIN_MIGRATION_FLAG, 1, false );
+                        $done = true;
+                        return $done;
+                }
+
+                $altered = false;
+                try {
+                        $altered = (bool) $wpdb->query( "ALTER TABLE {$table} ADD COLUMN digest_optin TINYINT(1) NOT NULL DEFAULT 1" );
+                } catch ( Exception $e ) {
+                        $altered = false;
+                } catch ( Throwable $e ) {
+                        $altered = false;
+                }
+
+                if ( $altered ) {
+                        update_option( self::OPTIN_MIGRATION_FLAG, 1, false );
+                        try {
+                                if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                        Nexus_DB::insert_activity( 0, 'newsletter', 'Migrazione digest: colonna digest_optin aggiunta agli iscritti.', 'success' );
+                                }
+                        } catch ( Exception $e ) {
+                                /* Best-effort. */
+                        } catch ( Throwable $e ) {
+                                /* Best-effort. */
+                        }
+                        $done = true;
+                } else {
+                        /* Fallimento onesto: log + nessun flag → retry alla prossima richiesta. */
+                        self::log_digest_error( 'Migrazione digest fallita: impossibile aggiungere la colonna digest_optin (' . sanitize_text_field( (string) $wpdb->last_error ) . ').' );
+                        $done = false;
+                }
+
+                return $done;
+        }
+
+        /**
+         * Aggiorna SOLO la preferenza digest di un iscritto (colonna digest_optin).
+         *
+         * La scrittura avviene QUI (non via Nexus_DB::update_subscriber, la cui
+         * whitelist colonne è fuori perimetro): la tabella viene dalla whitelist
+         * Nexus_DB::tables() e il valore è un interno (id absint + int 0/1);
+         * $wpdb->update prepara i valori. Usata dal link di gestione nel footer
+         * email (?nexus_unsub={token}&nexus_digest=0|1).
+         *
+         * @param int  $subscriber_id ID iscritto.
+         * @param bool $optin         True = riceve il digest, false = rinuncia al solo digest.
+         * @return bool True se aggiornato (o nessun cambiamento), false su errore.
+         */
+        private static function set_subscriber_digest_optin( $subscriber_id, $optin ) {
+                global $wpdb;
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return false;
+                }
+
+                if ( ! self::ensure_digest_optin_column() ) {
+                        return false;
+                }
+
+                $tables = Nexus_DB::tables();
+                $table  = ( isset( $tables['subscribers'] ) && is_string( $tables['subscribers'] ) ) ? $tables['subscribers'] : '';
+                if ( '' === $table ) {
+                        return false;
+                }
+
+                $result = $wpdb->update(
+                        $table,
+                        array( 'digest_optin' => $optin ? 1 : 0 ),
+                        array( 'id' => absint( $subscriber_id ) ),
+                        array( '%d' ),
+                        array( '%d' )
+                );
+
+                return false !== $result;
+        }
+
         /**
          * Corpo HTML del digest (inline-style, max-width 600px).
          *
-         * @param string $intro_html Paragrafi di introduzione (già HTML sicuro).
-         * @param array  $items      Lista articoli: title, url, category.
-         * @param string $token      Token subscriber per il footer di disiscrizione ('' = footer generico).
+         * v1.1.14 (P5): nuovi parametri facoltativi APPEND-STYLE — $extra_sections
+         * (HTML delle sezioni performance/uso AI/errori da Nexus_Digest, inserito
+         * dopo la lista articoli, prima del footer) e $is_preview (banner di
+         * anteprima per l'invio admin di prova). Il chiamante cron non li passa:
+         * comportamento storico invariato.
+         *
+         * @param string $intro_html     Paragrafi di introduzione (già HTML sicuro).
+         * @param array  $items          Lista articoli: title, url, category.
+         * @param string $token          Token subscriber per il footer di disiscrizione ('' = footer generico).
+         * @param string $extra_sections HTML extra (sezioni Nexus_Digest, già sicuro).
+         * @param bool   $is_preview     True = banner ANTEPRIMA in testa (solo invii admin).
          * @return string
          */
-        private static function build_digest_html( $intro_html, $items, $token ) {
+        private static function build_digest_html( $intro_html, $items, $token, $extra_sections = '', $is_preview = false ) {
                 $out  = '';
                 $out .= '<div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;">';
+
+                if ( $is_preview ) {
+                        $out .= '<p style="margin:0 0 16px;padding:10px 12px;border:2px dashed #4f46e5;border-radius:8px;color:#4f46e5;font-weight:bold;font-size:13px;line-height:1.5;">'
+                                . esc_html__( 'ANTEPRIMA — email di prova: non è stata inviata agli iscritti.', 'nexus-news-ai' )
+                                . '</p>';
+                }
+
                 $out .= '<h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;">📰 ' . esc_html__( 'Digest settimanale', 'nexus-news-ai' ) . ' — ' . esc_html( get_bloginfo( 'name' ) ) . '</h1>';
 
                 $out .= $intro_html;
@@ -1021,12 +1381,23 @@ JS;
                         $out .= '</ul>';
                 }
 
+                /* v1.1.14 (P5): sezioni extra (performance / uso AI / errori). Ogni
+                 * sezione esiste SOLO se i dati esistono (onestà, Nexus_Digest). */
+                if ( '' !== (string) $extra_sections ) {
+                        $out .= (string) $extra_sections;
+                }
+
                 $out .= '<hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />';
 
                 if ( '' !== $token ) {
                         $unsub_url = home_url( '/?nexus_unsub=' . rawurlencode( $token ) );
-                        $out      .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0;">'
+                        // v1.1.14 (P5): link di gestione SOLO-digest (rinuncia al digest
+                        // mantenendo l'iscrizione); la disiscrizione completa resta disponibile.
+                        $digest_off_url = home_url( '/?nexus_unsub=' . rawurlencode( $token ) . '&nexus_digest=0' );
+                        $out           .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0;">'
                                 . esc_html__( 'Ricevi questa email perché sei iscritto alla newsletter.', 'nexus-news-ai' ) . ' '
+                                . '<a href="' . esc_url( $digest_off_url ) . '" style="color:#6b7280;">' . esc_html__( 'Non ricevere il digest', 'nexus-news-ai' ) . '</a>'
+                                . ' · '
                                 . '<a href="' . esc_url( $unsub_url ) . '" style="color:#6b7280;">' . esc_html__( 'Disiscriviti', 'nexus-news-ai' ) . '</a>.'
                                 . '</p>';
                 } else {
