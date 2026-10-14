@@ -1483,6 +1483,12 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Connessione non riuscita' => 'Connection failed',
             'Connessione…' => 'Connecting…',
             'Connesso via login web: la chiave è stata salvata.' => 'Connected via web login: the key has been saved.',
+            /* v1.1.17 («Pong Onesto») — esito del test provider (frammenti JS,
+             * tradotti client-side via nxaT/mappa esatta). */
+            'Generazione OK' => 'Generation OK',
+            'Generazione fallita' => 'Generation failed',
+            'risposta troncata' => 'truncated response',
+            'Attenzione: il modello impostato non è nella lista modelli di questo provider.' => 'Warning: the configured model is not in this provider\'s model list.',
             'Direzione' => 'Leadership',
             'Divulgativo ma preciso, con spiegazioni chiare' => 'Accessible but precise, with clear explanations',
             'Eliminare definitivamente? Gli agenti che lo usavano mostreranno un errore finché non riassegni un provider.' => 'Delete permanently? Agents that were using it will show an error until you reassign a provider.',
@@ -3509,12 +3515,28 @@ function nexus_i18n_extra_patterns() {
             'tpl' => 'The AI service returned HTTP error $1.',
         ),
         array(
-            're'  => 'Risposta del modello (.+) troncata per max_tokens \(finish_reason=length\): aumento max_tokens se il problema persiste\.',
+            're'  => 'Risposta del modello (.+) troncata per max_tokens \(finish_reason=length\): aument(o|a) max_tokens se il problema persiste\.',
             'tpl' => 'Response from model $1 truncated due to max_tokens (finish_reason=length): increase max_tokens if the problem persists.',
         ),
         array(
             're'  => 'Il modello AI \((.+)\) ha restituito una risposta vuota\.',
             'tpl' => 'The AI model ($1) returned an empty response.',
+        ),
+        /* v1.1.17 («Pong Onesto») — errori «vuoto» distinti del motore: token
+         * esauriti prima del contenuto (modelli reasoning) vs vuoto vero con
+         * altro finish_reason; i vecchi messaggi qui sopra restano per le righe
+         * attività già in database. */
+        array(
+            're'  => 'Il modello AI \((.+)\) ha restituito una risposta vuota: max_tokens esauriti prima del contenuto \(tipico dei modelli reasoning\)\. Aumenta max_tokens e riprova\.',
+            'tpl' => 'The AI model ($1) returned an empty response: max_tokens ran out before any content (typical of reasoning models). Increase max_tokens and try again.',
+        ),
+        array(
+            're'  => 'Il modello AI \((.+)\) ha restituito una risposta vuota \(finish_reason=(\w+)\)\. Riprova; se persiste, prova un altro modello\.',
+            'tpl' => 'The AI model ($1) returned an empty response (finish_reason=$2). Try again; if it persists, try a different model.',
+        ),
+        array(
+            're'  => ' Il modello ha prodotto solo ragionamento \((\d+) caratteri\) senza contenuto finale\.',
+            'tpl' => ' The model produced only reasoning ($1 characters) with no final content.',
         ),
         array(
             're'  => 'Errore di connessione al servizio AI: (.+)$',
@@ -3840,7 +3862,7 @@ function nexus_i18n_extra_patterns() {
             'tpl' => 'Response from model ',
         ),
         array(
-            're'  => ' troncata per max_tokens \(finish_reason=length\): aumento max_tokens se il problema persiste\.',
+            're'  => ' troncata per max_tokens \(finish_reason=length\): aument(o|a) max_tokens se il problema persiste\.',
             'tpl' => ' truncated for max_tokens (finish_reason=length): increase max_tokens if the problem persists.',
         ),
         array(

@@ -28,6 +28,12 @@
  *     ×1.5 (cap 8000); se tronca ancora il testo torna col flag 'truncated'
  *     (mai pubblicazione in silenzio di testo mozzato). PROMESSA IMPLEMENTATA
  *     DAVVERO dalla v1.1.15 (WE3): prima era solo nel docblock.
+ *   - v1.1.17 («Pong Onesto»): risposta VUOTA con finish_reason=length
+ *     (token esauriti PRIMA del contenuto, tipico dei modelli reasoning —
+ *     caso reale OpenRouter :free) → UN solo tentativo extra con max_tokens
+ *     ×2 (cap 8000) e errore finale onesto e azionabile (distingue i due
+ *     casi: token esauriti vs risposta davvero vuota, con dettaglio del
+ *     solo-ragionamento quando il modello popola message.reasoning).
  *   - json_mode (contratto Task 4.8): $opts['json_mode'] (bool, default false).
  *     (a) response_format json_object SOLO per i provider che lo supportano
  *     (per-provider: vedi Nexus_Providers::supports_json_object(); per i
@@ -582,6 +588,32 @@ class Nexus_AI_Engine {
                         }
                 }
 
+                // v1.1.17 («Pong Onesto») — risposta VUOTA con finish_reason=length:
+                // i token sono finiti PRIMA del contenuto (tipico dei modelli reasoning
+                // su OpenRouter, caso reale segnalato dall'utente: test di generazione
+                // e rewrite con modelli :free). UN solo tentativo extra con max_tokens
+                // ×2 (cap 8000) sulla STESSA destinazione dell'ultima chiamata
+                // (primaria, retry json_mode o fallback chain): la condizione usa il
+                // marker 'empty_length' del risultato (non lo stato statico, che può
+                // essere stantio dopo un errore HTTP), quindi nessun falso retry.
+                // Se anche il tentativo extra resta vuoto vince l'errore arricchito
+                // già prodotto dal motore (azione: aumenta max_tokens o cambia modello).
+                if ( empty( $result['ok'] ) && ! empty( $result['empty_length'] ) ) {
+                        $bumped_empty = (int) min( 8000, (int) ceil( $max_tokens * 2 ) );
+
+                        if ( $bumped_empty > $max_tokens && '' !== $used_endpoint && is_array( $used_headers ) ) {
+                                $bumped_empty_body = self::build_request_body( $used_model, $normalized, $temperature, $bumped_empty, $used_json_active );
+
+                                if ( false !== $bumped_empty_body ) {
+                                        $second = self::execute_request( $used_endpoint, $used_headers, $bumped_empty_body, $used_model, $agent_id, $action, $used_provider );
+
+                                        if ( ! empty( $second['ok'] ) ) {
+                                                $result = $second;
+                                        }
+                                }
+                        }
+                }
+
                 // v1.1.15 (WE3) — contratto v1.1.9 onorato: per le fasi generative
                 // (rewrite|translate|digest) una risposta TRONCATA (finish_reason=length)
                 // ha UN solo tentativo extra con max_tokens ×1.5 (cap 8000), riusando
@@ -923,7 +955,7 @@ class Nexus_AI_Engine {
                         : 'stop';
                 if ( 'length' === self::$last_finish_reason && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
                         try {
-                                Nexus_DB::insert_activity( $agent_id, 'ai_truncated', 'Risposta del modello ' . $model . ' troncata per max_tokens (finish_reason=length): aumento max_tokens se il problema persiste.', 'warning' );
+                                Nexus_DB::insert_activity( $agent_id, 'ai_truncated', 'Risposta del modello ' . $model . ' troncata per max_tokens (finish_reason=length): aumenta max_tokens se il problema persiste.', 'warning' );
                         } catch ( Throwable $e ) {
                                 // logging mai bloccante
                         }
@@ -938,9 +970,36 @@ class Nexus_AI_Engine {
 
                 $content = isset( $data['choices'][0]['message']['content'] ) ? (string) $data['choices'][0]['message']['content'] : '';
                 if ( '' === trim( $content ) ) {
-                        // Risposta parzialmente valida: i token potrebbero essere stati comunque consumati.
-                        $fail['error']     = 'Il modello AI (' . $model . ') ha restituito una risposta vuota.';
+                        // v1.1.17 («Pong Onesto») — errore ONESTO e azionabile: NON tutti i
+                        // «vuoti» sono uguali. Con finish_reason=length i token sono finiti
+                        // PRIMA del contenuto (tipico dei modelli reasoning di OpenRouter,
+                        // caso reale: test di generazione con max_tokens basso su :free);
+                        // con altri finish_reason il modello ha davvero risposto vuoto.
+                        // Dettaglio aggiuntivo quando il modello ha prodotto SOLO
+                        // ragionamento (message.reasoning / reasoning_content, formato
+                        // OpenRouter/DeepSeek): il chiamante capisce che il modello vivo
+                        // c'è, ma non ha emesso contenuto finale.
+                        if ( 'length' === self::$last_finish_reason ) {
+                                $fail['error'] = 'Il modello AI (' . $model . ') ha restituito una risposta vuota: max_tokens esauriti prima del contenuto (tipico dei modelli reasoning). Aumenta max_tokens e riprova.';
+                        } else {
+                                $fail['error'] = 'Il modello AI (' . $model . ') ha restituito una risposta vuota (finish_reason=' . self::$last_finish_reason . '). Riprova; se persiste, prova un altro modello.';
+                        }
+                        $reasoning = '';
+                        if ( isset( $data['choices'][0]['message']['reasoning'] ) && is_string( $data['choices'][0]['message']['reasoning'] ) ) {
+                                $reasoning = trim( $data['choices'][0]['message']['reasoning'] );
+                        } elseif ( isset( $data['choices'][0]['message']['reasoning_content'] ) && is_string( $data['choices'][0]['message']['reasoning_content'] ) ) {
+                                $reasoning = trim( $data['choices'][0]['message']['reasoning_content'] );
+                        }
+                        if ( '' !== $reasoning ) {
+                                $fail['error'] .= ' Il modello ha prodotto solo ragionamento (' . (string) strlen( $reasoning ) . ' caratteri) senza contenuto finale.';
+                        }
                         $fail['http_code'] = $code;
+                        if ( 'length' === self::$last_finish_reason ) {
+                                // v1.1.17: marker per il tentativo extra (chat()) — la coppia
+                                // vuoto+length è l'UNICA condizione che merita un retry a monte:
+                                // distinguerla qui evita retry guidati da stati statici stantii.
+                                $fail['empty_length'] = true;
+                        }
                         if ( null !== $usage ) {
                                 $fail['usage'] = $usage;
                         }

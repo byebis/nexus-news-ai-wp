@@ -3778,7 +3778,34 @@
                                                         message += ' su $' + num( data.account.limit ).toFixed( 2 );
                                                 }
                                         }
-                                        setProviderStatus( testProvider, message, 'ok' );
+                                        /*
+                                         * v1.1.17 («Pong Onesto») — esito ONESTO del test di generazione
+                                         * (WC3): dalla v1.1.16 il server esegue una mini chat completion
+                                         * vera e porta generation_test + model_in_provider_list, ma il
+                                         * client li IGNORAVA (caso reale segnalato: test sempre verde
+                                         * «Connesso» mentre la generazione falliva con «risposta vuota»
+                                         * sui modelli OpenRouter :free — il dato vero finiva solo nel
+                                         * log attività). Ora lo stato del provider mostra ENTRAMBI gli
+                                         * esiti: verde SOLO se anche la generazione risponde; altrimenti
+                                         * rosso col messaggio d'errore azionabile del motore. Il flag
+                                         * 'truncated' (risposta valida ma mozzata) resta una NOTA: la
+                                         * generazione funziona, serve più max_tokens per i testi lunghi.
+                                         */
+                                        var statusClass = 'ok';
+                                        var genTest = ( data.generation_test && typeof data.generation_test === 'object' ) ? data.generation_test : null;
+                                        if ( genTest ) {
+                                                if ( genTest.ok ) {
+                                                        message += ' · ' + nxaT( 'Generazione OK' ) + ' (' + String( genTest.model_used || '' ) + ', ' + num( genTest.latency_ms ) + ' ms' + ( genTest.truncated ? ', ' + nxaT( 'risposta troncata' ) : '' ) + ')';
+                                                } else {
+                                                        var genErr = String( genTest.error || '' ).trim();
+                                                        message += ' · ' + nxaT( 'Generazione fallita' ) + ': ' + ( genErr !== '' ? genErr : nxaT( 'errore sconosciuto' ) );
+                                                        statusClass = 'err';
+                                                }
+                                        }
+                                        if ( data.model_in_provider_list === false ) {
+                                                message += ' · ' + nxaT( 'Attenzione: il modello impostato non è nella lista modelli di questo provider.' );
+                                        }
+                                        setProviderStatus( testProvider, message, statusClass );
                                 } ).catch( function ( err ) {
                                         setProviderStatus( testProvider, ( err && err.message ) ? err.message : 'Test non riuscito', 'err' );
                                 } ).then( function () {

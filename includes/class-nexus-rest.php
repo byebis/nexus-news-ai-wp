@@ -50,7 +50,7 @@
  *   POST   /nexus/v1/ai/oauth/start                 body {provider}: avvia il login web OAuth PKCE (solo provider con oauth=true nel catalog), risposta {ok, auth_url} (v1.1.10)
  *   POST   /nexus/v1/ai/oauth/callback              body {state, code}: scambia il codice con la chiave di provisioning SALVATA server-side, risposta {ok} — MAI la chiave (v1.1.10)
  *   POST   /nexus/v1/ai/disconnect/{provider}       svuota prov_key_{provider} (cancellazione VOLUTA, log 'oauth_disconnected'), risposta {ok, provider} (v1.1.10)
- *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10) — dalla v1.1.10 (F2b) funziona anche per i provider personalizzati cust_* (endpoint e chiave DALL'ENTRY, body base_url ignorato) — dalla v1.1.16 (WC3) il ramo ok aggiunge generation_test {ok, model_used, latency_ms, error} (mini chat completion VERA, max_tokens 8, stessa risoluzione della generazione) e model_in_provider_list (bool)
+ *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10) — dalla v1.1.10 (F2b) funziona anche per i provider personalizzati cust_* (endpoint e chiave DALL'ENTRY, body base_url ignorato) — dalla v1.1.16 (WC3) il ramo ok aggiunge generation_test {ok, model_used, latency_ms, error} (mini chat completion VERA, stessa risoluzione della generazione) e model_in_provider_list (bool) — dalla v1.1.17 («Pong Onesto») la mini completion usa max_tokens 1024 (8 era troppo poco: i modelli reasoning bruciano i token PRIMA del contenuto e il test dava «risposta vuota» su ogni modello OpenRouter :free) e generation_test aggiunge 'truncated' (bool, risposta valida ma mozzata)
  *   GET    /nexus/v1/ai/custom-providers           elenco provider personalizzati {id, label, base_url, auth, has_key}: api_key MAI in chiaro (v1.1.10, F2b)
  *   POST   /nexus/v1/ai/custom-providers           body {id?, label, base_url, api_key?}: upsert (id assente = nuovo 'cust_'+8hex tornato nella risposta; api_key vuota su update NON cancella — pattern segreti), risposta {ok, id, provider} (v1.1.10, F2b)
  *   DELETE /nexus/v1/ai/custom-providers/{id}      rimozione definitiva (gli agenti che lo usavano ricevono errore onesto, MAI fallback legacy), risposta {ok, id} (v1.1.10, F2b)
@@ -3527,11 +3527,23 @@ class Nexus_Rest {
          *
          * v1.1.16 (WC3) — TEST DI GENERAZIONE VERO: GET /models ok NON prova la
          * generazione (test verde, generazione poteva comunque fallire). Sul ramo
-         * di successo viene ESEGUITA una mini chat completion (max_tokens 8,
-         * prompt 'ping') con la STESSA risoluzione provider/chiave/modello della
-         * generazione reale (Nexus_AI_Engine::chat → Nexus_Providers::resolve).
+         * di successo viene ESEGUITA una mini chat completion (prompt 'ping') con
+         * la STESSA risoluzione provider/chiave/modello della generazione reale
+         * (Nexus_AI_Engine::chat → Nexus_Providers::resolve).
+         *
+         * v1.1.17 («Pong Onesto») — max_tokens del test: 1024. Dalla v1.1.16 era
+         * 8 e per QUESTO il test dava «risposta vuota» su tutti i modelli OpenRouter
+         * :free (segnalazione utente reale): i modelli reasoning consumano intero
+         * il budget di token nel ragionamento PRIMA di emettere contenuto, quindi
+         * con 8 token il content arrivava vuoto con finish_reason=length. 1024
+         * dà spazio a reasoning + risposta breve a costo quasi nullo; se anche
+         * così il modello resta vuoto il motore (v1.1.17) ritenta UNA volta con
+         * max_tokens ×2 (2048) prima di fallire con errore azionabile.
+         *
          * Si AGGIUNGONO alla response (i campi esistenti non cambiano):
-         *   generation_test: {ok, model_used, latency_ms, error}
+         *   generation_test: {ok, model_used, latency_ms, error, truncated}
+         *     — 'truncated' (v1.1.17) = risposta valida ma mozzata per
+         *       max_tokens (finish_reason=length sull'ultimo tentativo ok).
          *   model_in_provider_list: bool — il modello che verrebbe usato
          *     (settings ai_model, default 'openai/gpt-4o-mini') è nella lista
          *     modelli del provider. (null solo quando la lista non è disponibile;
@@ -3796,10 +3808,12 @@ class Nexus_Rest {
                 /*
                  * v1.1.16 (WC3) — TEST DI GENERAZIONE VERO.
                  * Una /models 200 non dice nulla sulla chat completion: qui sotto una
-                 * mini chiamata reale (max_tokens 8, prompt 'ping') con la STESSA
-                 * risoluzione della generazione vera: Nexus_AI_Engine::chat() con
-                 * opts['provider'] (resolve() gestisce catalogo, cust_* e chiavi).
-                 * MAI fatal: try/catch Throwable → l'errore finisce in generation_test.
+                 * mini chiamata reale (prompt 'ping', max_tokens 1024 — v1.1.17
+                 * «Pong Onesto»: 8 era troppo poco per i modelli reasoning, vedi
+                 * docblock sopra) con la STESSA risoluzione della generazione vera:
+                 * Nexus_AI_Engine::chat() con opts['provider'] (resolve() gestisce
+                 * catalogo, cust_* e chiavi). MAI fatal: try/catch Throwable →
+                 * l'errore finisce in generation_test.
                  */
                 $model_used = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
                 if ( '' === $model_used ) {
@@ -3816,7 +3830,7 @@ class Nexus_Rest {
                 } else {
                         $gen_opts = array(
                                 'provider'    => $provider,
-                                'max_tokens'  => 8,
+                                'max_tokens'  => 1024, // v1.1.17: era 8 — i modelli reasoning bruciano i token prima del contenuto.
                                 'temperature' => 0,
                                 'agent_id'    => 0,
                                 'action'      => 'provider_test_generation',
@@ -3859,6 +3873,10 @@ class Nexus_Rest {
                         'model_used' => $model_used,
                         'latency_ms' => $gen_latency_ms,
                         'error'      => $gen_error,
+                        // v1.1.17 («Pong Onesto»): risposta valida ma mozzata per max_tokens
+                        // (flag additivo del motore, presente solo su ok). Il client lo mostra
+                        // come nota, non come fallimento: la generazione FUNZIONA.
+                        'truncated'  => ( is_array( $gen ) && ! empty( $gen['truncated'] ) ),
                 );
                 // La lista modelli è disponibile in QUESTO ramo ($models non vuoto):
                 // bool pieno (null riservato ai rami in cui la lista non c'è).
