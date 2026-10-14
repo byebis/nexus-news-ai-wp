@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.13.1
+ * Version:     1.1.14
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.13.1' );
+define( 'NEXUS_VERSION', '1.1.14' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -66,6 +66,14 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-interlink.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-news-sitemap.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-evergreen.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-notify.php';
+// v1.1.14 — pacchetti redazione che impara/organizzazione (P1-P6): file nuovi,
+// init self-registrato via action 'nexus_modules_init' (stesso pattern 1.1.12).
+// NB: class-nexus-digest.php è richiesto da class-nexus-newsletter.php,
+// class-nexus-video-sitemap.php da class-nexus-news-sitemap.php.
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-google-wizard.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-health.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-opportunities.php';
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-calendar.php';
 require_once NEXUS_PLUGIN_DIR . 'public/class-nexus-shortcodes.php';
 
 register_activation_hook( __FILE__, array( 'Nexus_DB', 'install' ) );
