@@ -1625,6 +1625,14 @@ class Nexus_DB {
 
         /**
          * Aggiorna un lavoro (solo colonne ammesse).
+         *
+         * v1.1.15 (WA1): started_at/completed_at sono DATETIME nullable — un valore
+         * null (= "azzera la data") viene scritto come NULL letterale (stesso
+         * pattern di update_article per published_at). Prima una stringa vuota
+         * generava su MySQL strict (default >= 5.7) "ERROR 1292 Incorrect datetime
+         * value": $wpdb->update falliva, il job restava 'running' per sempre e la
+         * dead letter era irraggiungibile (requeue_stale ribumpava attempts
+         * all'infinito senza poter mai chiudere la riga).
          */
         public static function update_job( $id, $fields ) {
                 global $wpdb;
@@ -1636,10 +1644,18 @@ class Nexus_DB {
                         return false;
                 }
                 $allowed['updated_at'] = current_time( 'mysql' );
-                $int_fields = array( 'priority', 'attempts', 'max_attempts' );
-                $formats    = array();
+                $int_fields   = array( 'priority', 'attempts', 'max_attempts' );
+                $nonce_fields = array( 'started_at', 'completed_at' );
+                $formats      = array();
                 foreach ( $allowed as $k => $v ) {
-                        $formats[] = in_array( $k, $int_fields, true ) ? '%d' : '%s';
+                        if ( in_array( $k, $int_fields, true ) ) {
+                                $formats[] = '%d';
+                        } elseif ( in_array( $k, $nonce_fields, true ) && null === $v ) {
+                                $formats[] = 'NULL';
+                                $allowed[ $k ] = null;
+                        } else {
+                                $formats[] = '%s';
+                        }
                 }
                 return $wpdb->update( self::tables()['jobs'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
         }
@@ -1670,6 +1686,32 @@ class Nexus_DB {
                         return 0;
                 }
                 return (int) $wpdb->get_var( $wpdb->prepare( "SELECT attempts FROM {$table} WHERE id = %d", absint( $id ) ) );
+        }
+
+        /**
+         * v1.1.15 (WA2) — Heartbeat di un job in esecuzione: rinfresca started_at
+         * SOLO se la riga è ancora 'running' (UPDATE condizionale, atomico).
+         *
+         * I job lunghi (pipeline_cron_tick: N agenti per tick) toccano il heartbeat
+         * a ogni confine di fase via Nexus_Queue::heartbeat(), così il reaper
+         * requeue_stale — che seleziona su started_at — estende da solo la finestra
+         * dei job vivi senza nuove colonne né migration. La guardia status='running'
+         * impedisce di toccare una riga nel frattempo rimessa in coda dal reaper.
+         *
+         * @param int $id ID del job.
+         * @return int Righe toccate (0 = job non più running o inesistente).
+         */
+        public static function touch_job_heartbeat( $id ) {
+                global $wpdb;
+                $table = self::tables()['jobs'];
+                $now   = current_time( 'mysql' );
+                $wpdb->query( $wpdb->prepare(
+                        "UPDATE {$table} SET started_at = %s, updated_at = %s WHERE id = %d AND status = 'running'",
+                        $now,
+                        $now,
+                        absint( $id )
+                ) ); // phpcs:ignore WordPress.DB
+                return (int) $wpdb->rows_affected;
         }
 
         /**

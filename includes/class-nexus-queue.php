@@ -55,6 +55,10 @@
  *   job già claimati ma non avviati tornano 'pending' con claim_token azzerato
  *   (break graceful, nessun job orfano in 'running').
  *   Ritorna array('processed'=>int,'failed'=>int,'requeued'=>int).
+ *   v1.1.15 (WA2): durante l'esecuzione l'ID del job corrente resta in contesto
+ *   (heartbeat() rinfresca started_at a chiamata della pipeline); sul 'complete'
+ *   attempts NON può mai regredire (max tra claim-time+1 e valore corrente nel
+ *   DB: requeue_stale può aver bumpato mentre il job era ancora in esecuzione).
  *   Manutenzione: ogni 20 batch (o 1 volta su 20) → cleanup_jobs(7) + requeue_stale(30).
  *
  * Nexus_Queue::handle_runner()
@@ -64,8 +68,9 @@
  * Nexus_Queue::retry( $job_id )
  *   Lavoro con status failed|cancelled|complete (NON 'dead': quella è la via
  *   d'uscita dedicata reset_dead) → status 'pending', scheduled_at adesso,
- *   started_at/completed_at svuotati (stringa vuota: Nexus_DB::update_job non
- *   gestisce NULL), last_error '' e claim_token ''. v1.1.9: max_attempts viene
+ *   started_at/completed_at azzerati a NULL (v1.1.15 WA1: MySQL strict rifiuta
+ *   la stringa vuota in colonne DATETIME), last_error '' e claim_token ''.
+ *   v1.1.9: max_attempts viene
  *   RICALCOLATO come max_attempts += attempts (decisione documentata nel
  *   metodo: preserva lo storico dei fallimenti e ripristina un ciclo completo
  *   di tentativi con backoff pieno). Anti-TOCTOU: update + verifica post con
@@ -88,6 +93,12 @@
  *   status 'pending' con scheduled_at = now e claim_token azzerato. Elabora
  *   al massimo 100 job per passata (i successivi al giro dopo). Log attività
  *   'error' quando ci sono dead letter. Ritorna int (job gestiti).
+ *
+ * Nexus_Queue::heartbeat()  [v1.1.15 WA2]
+ *   Heartbeat del job in esecuzione da QUESTO runner: rinfresca started_at
+ *   (solo se la riga è ancora 'running'). Chiamato dalla pipeline a ogni
+ *   confine di fase: il reaper basato su started_at estende da solo la
+ *   finestra dei job vivi. Fuori dalla coda è un no-op.
  *
  * Nexus_Queue::deactivate()
  *   Deattivazione: wp_clear_scheduled_hook('nexus_queue_runner') + requeue_stale(30)
@@ -151,6 +162,16 @@ class Nexus_Queue {
         const STALE_MINUTES = 30;
 
         /**
+         * Soglia stale (minuti) dedicata ai job 'pipeline_cron_tick' (v1.1.15
+         * WA2): un tick esegue N agenti in serie (budget per tick, WA5) e può
+         * durare legittimamente più di STALE_MINUTES — con heartbeat a confini
+         * di fase la finestra base basta, la soglia estesa è la rete di sicurezza
+         * per i tick con heartbeat perso. Regolabile via filtro
+         * 'nexus_queue_stale_cutoff' (secondi, hook).
+         */
+        const STALE_TICK_MINUTES = 120;
+
+        /**
          * Budget tempo di DEFAULT per un batch, in secondi (usato se il setting
          * 'queue_time_budget' non è impostato). Protegge da batch che saturano
          * la finestra utile del runner WP-Cron o del worker CLI.
@@ -182,6 +203,15 @@ class Nexus_Queue {
          * @var int
          */
         private static $batch_count = 0;
+
+        /**
+         * ID del job attualmente in esecuzione da QUESTO runner (contesto per
+         * heartbeat(), v1.1.15 WA2). 0 = nessun job in esecuzione (o chiamata
+         * fuori dalla coda: REST/CLI dirette).
+         *
+         * @var int
+         */
+        private static $current_job_id = 0;
 
         /* ============ BOOTSTRAP ============ */
 
@@ -491,12 +521,24 @@ class Nexus_Queue {
                                 }
                         }
 
-                        try {
-                                call_user_func_array( $callable, array_values( $args ) );
+                        self::$current_job_id = $job_id;
 
-                                // La riga è stata claimata da QUESTO runner (claim_token
-                                // dedicato): qui la scrittura diretta di attempts è sicura.
+                        try {
+                                $result = call_user_func_array( $callable, array_values( $args ) );
+
+                                // v1.1.15 (WA2-d): attempts MAI regrediti. Il valore
+                                // claim-time+1 può essere indietro rispetto al DB se
+                                // requeue_stale ha bumpato attempts mentre il job era
+                                // ancora in esecuzione: si scrive il max tra i due.
+                                // NOTE: se il job era stato rimesso 'pending' dal reaper,
+                                // la scrittura 'complete' qui sotto ne impedisce la
+                                // doppia esecuzione al prossimo runner (il lavoro è
+                                // davvero stato fatto).
                                 $attempts = isset( $job->attempts ) ? ( (int) $job->attempts + 1 ) : 1;
+                                $fresh    = self::get_job_safe( $job_id );
+                                if ( $fresh && isset( $fresh->attempts ) && (int) $fresh->attempts > $attempts ) {
+                                        $attempts = (int) $fresh->attempts;
+                                }
 
                                 self::update_job_safe( $job_id, array(
                                         'status'       => 'complete',
@@ -517,6 +559,10 @@ class Nexus_Queue {
                                 // 'stolen': un altro runner ha già ripreso il job
                                 // (bump_job_failure = 0) → nessuna scrittura, il job
                                 // non è né nostro né fallito: non lo contiamo.
+                        } finally {
+                                // Il contesto heartbeat vale solo per il job corrente:
+                                // azzerato su OGNI percorso d'uscita.
+                                self::$current_job_id = 0;
                         }
                 }
 
@@ -607,7 +653,7 @@ class Nexus_Queue {
                         $ok = self::update_job_safe( $job_id, array(
                                 'status'       => 'pending',
                                 'scheduled_at' => current_time( 'mysql' ),
-                                'started_at'   => '',
+                                'started_at'   => null, // v1.1.15 (WA1): NULL, non '' (MySQL strict).
                                 'claim_token'  => '',
                         ) );
 
@@ -741,6 +787,35 @@ class Nexus_Queue {
         /* ============ GESTIONE SINGOLI LAVORI ============ */
 
         /**
+         * v1.1.15 (WA2) — Heartbeat del job in esecuzione da QUESTO runner:
+         * rinfresca started_at del job corrente (solo se la riga è ancora
+         * 'running': UPDATE condizionale in Nexus_DB::touch_job_heartbeat).
+         *
+         * La pipeline lo chiama a ogni confine di fase (collect/evaluate/rewrite/
+         * publish, per-agent nel cron_tick): i job lunghi restano così "freschi"
+         * agli occhi del reaper requeue_stale, che seleziona su started_at —
+         * nessuna colonna nuova, la finestra dei job vivi si estende da sola.
+         * Fuori dalla coda (REST/CLI dirette, esecuzione sincrona) è un no-op:
+         * il contesto $current_job_id vale solo dentro run_batch.
+         *
+         * @return void
+         */
+        public static function heartbeat() {
+                $job_id = self::$current_job_id;
+
+                if ( $job_id <= 0 || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'touch_job_heartbeat' ) ) {
+                        return;
+                }
+
+                try {
+                        Nexus_DB::touch_job_heartbeat( $job_id );
+                } catch ( Throwable $e ) {
+                        // Mai fatale: un heartbeat perso non interrompe la fase corrente.
+                        self::debug_log( 'Heartbeat job #' . $job_id . ' fallito: ' . $e->getMessage() );
+                }
+        }
+
+        /**
          * Rimette in coda un lavoro terminato (failed|cancelled|complete).
          *
          * v1.1.9 — decisione su attempts (punto 8 del piano):
@@ -780,8 +855,8 @@ class Nexus_Queue {
                 $ok = self::update_job_safe( $job_id, array(
                         'status'       => 'pending',
                         'scheduled_at' => current_time( 'mysql' ),
-                        'started_at'   => '',
-                        'completed_at' => '',
+                        'started_at'   => null,   // v1.1.15 (WA1): NULL, non '' (MySQL strict).
+                        'completed_at' => null,   // v1.1.15 (WA1): NULL, non '' (MySQL strict).
                         'last_error'   => '',
                         'claim_token'  => '',
                         'max_attempts' => max( 1, $max + $attempts ),
@@ -849,8 +924,8 @@ class Nexus_Queue {
                         'status'       => 'pending',
                         'attempts'     => 0,
                         'scheduled_at' => current_time( 'mysql' ),
-                        'started_at'   => '',
-                        'completed_at' => '',
+                        'started_at'   => null,   // v1.1.15 (WA1): NULL, non '' (MySQL strict).
+                        'completed_at' => null,   // v1.1.15 (WA1): NULL, non '' (MySQL strict).
                         'last_error'   => '',
                         'claim_token'  => '',
                 ) );
@@ -877,6 +952,13 @@ class Nexus_Queue {
          * al bump fallisse resterebbe 'running' con il nuovo attempts: verrebbe
          * ripreso dalla prossima passata (log onesto in debug_log).
          *
+         * v1.1.15 (WA2) — soglia stale PER-HOOK e heartbeat: la WHERE SQL
+         * pre-seleziona oltre la soglia base ($minutes), poi il taglio vero avviene
+         * per-hook in PHP (filtro 'nexus_queue_stale_cutoff'; i job
+         * 'pipeline_cron_tick' hanno default STALE_TICK_MINUTES). Prima del bump si
+         * rilegge la riga: se un heartbeat ha rinfrescato started_at nel frattempo
+         * (job vivo) il job viene saltato — il reaper non tocca i claim recenti.
+         *
          * @param int $minutes Età massima in minuti dell'esecuzione (default 30).
          * @return int Numero di lavori gestiti (rimessi in coda + dead letter).
          */
@@ -890,32 +972,53 @@ class Nexus_Queue {
                 $minutes = max( 1, absint( $minutes ) );
                 $table   = Nexus_DB::tables()['jobs'];
                 $now     = current_time( 'mysql' );
-                $cutoff  = gmdate( 'Y-m-d H:i:s', strtotime( $now ) - $minutes * 60 );
+                $now_ts  = strtotime( $now );
+                $cutoff  = gmdate( 'Y-m-d H:i:s', $now_ts - $minutes * 60 );
 
-                // Solo gli ID: il destino di ogni riga si decide per-job (bump +
-                // dead letter). Cap per passata per non impalare una request su
-                // backlog enormi: la manutenzione gira spesso, il resto al giro dopo.
-                $ids = $wpdb->get_col( $wpdb->prepare(
-                        "SELECT id FROM {$table}
+                // id + hook + started_at (non solo id): la soglia stale è per-hook e
+                // confrontabile con started_at. Cap per passata per non impalare una
+                // request su backlog enormi: la manutenzione gira spesso, il resto al
+                // giro dopo. ORDER BY started_at: prima i più vecchi.
+                $rows = $wpdb->get_results( $wpdb->prepare(
+                        "SELECT id, hook, started_at FROM {$table}
                                 WHERE status = 'running' AND started_at IS NOT NULL AND started_at <> '' AND started_at < %s
-                                ORDER BY id ASC LIMIT %d",
+                                ORDER BY started_at ASC, id ASC LIMIT %d",
                         $cutoff,
                         self::STALE_MAX_PER_PASS
                 ) );
 
-                $requeued = 0;
-                $dead     = 0;
+                $requeued    = 0;
+                $dead        = 0;
+                $dead_cutoff = 0;
 
-                foreach ( (array) $ids as $job_id ) {
-                        $job_id = absint( $job_id );
+                foreach ( (array) $rows as $row ) {
+                        $job_id = isset( $row->id ) ? absint( $row->id ) : 0;
 
                         if ( $job_id <= 0 ) {
                                 continue;
                         }
 
+                        $hook = sanitize_key( isset( $row->hook ) ? (string) $row->hook : '' );
+
+                        // v1.1.15 (WA2): soglia stale per-hook (il filtro può solo
+                        // estendere: la pre-selezione SQL è già avvenuta a $minutes).
+                        $stale_seconds = self::stale_cutoff_seconds( $minutes * 60, $hook );
+                        $stale_minutes = max( 1, (int) ceil( $stale_seconds / 60 ) );
+
+                        // v1.1.15 (WA2): il reaper rispetta il claim del runner — tra la
+                        // SELECT e questo punto un heartbeat può aver rinfrescato
+                        // started_at (job vivo): si rilegge la riga e si prosegue solo se
+                        // è ANCORA 'running' e ANCORA oltre soglia. bump_job_failure
+                        // (guardia status='running') fa il resto in modo atomico.
                         $job = self::get_job_safe( $job_id );
 
-                        if ( null === $job ) {
+                        if ( null === $job || ! isset( $job->status ) || 'running' !== (string) $job->status ) {
+                                continue;
+                        }
+
+                        $fresh_started = isset( $job->started_at ) ? strtotime( (string) $job->started_at ) : 0;
+
+                        if ( $fresh_started && ( $now_ts - $fresh_started ) < $stale_seconds ) {
                                 continue;
                         }
 
@@ -924,7 +1027,7 @@ class Nexus_Queue {
                         // bump atomico + guardia di stato: 0 = un altro runner è già
                         // intervenuto sul job → non lo tocchiamo.
                         try {
-                                $attempts = (int) Nexus_DB::bump_job_failure( $job_id, sprintf( 'timeout: job bloccato >%dmin', $minutes ) );
+                                $attempts = (int) Nexus_DB::bump_job_failure( $job_id, sprintf( 'timeout: job bloccato >%dmin', $stale_minutes ) );
                         } catch ( Throwable $e ) {
                                 self::debug_log( 'requeue_stale: bump_job_failure fallito sul job #' . $job_id . ': ' . $e->getMessage() );
                                 continue;
@@ -939,12 +1042,13 @@ class Nexus_Queue {
                                 $ok = self::update_job_safe( $job_id, array(
                                         'status'       => 'dead',
                                         'completed_at' => $now,
-                                        'started_at'   => '',
+                                        'started_at'   => null, // v1.1.15 (WA1): NULL, non '' (MySQL strict).
                                         'claim_token'  => '',
                                 ) );
 
                                 if ( $ok ) {
                                         $dead++;
+                                        $dead_cutoff = max( $dead_cutoff, $stale_minutes );
                                 } else {
                                         self::debug_log( 'requeue_stale: impossibile marcare dead il job #' . $job_id . ' (riprossima alla prossima passata).' );
                                 }
@@ -955,7 +1059,7 @@ class Nexus_Queue {
                         $ok = self::update_job_safe( $job_id, array(
                                 'status'       => 'pending',
                                 'scheduled_at' => $now,
-                                'started_at'   => '',
+                                'started_at'   => null, // v1.1.15 (WA1): NULL, non '' (MySQL strict).
                                 'claim_token'  => '',
                         ) );
 
@@ -969,14 +1073,37 @@ class Nexus_Queue {
                 if ( $dead > 0 ) {
                         // I dead letter sono eventi degni di attenzione umana: log attività
                         // in 'error' così compaiono nella dashboard, non solo nel debug.
-                        self::log_activity( sprintf( 'Dead letter: %d lavori bloccati (> %d min) marcati come dead.', $dead, $minutes ), 'error' );
+                        // La soglia riportata è quella EFFETTIVA (per-hook) più usata.
+                        self::log_activity( sprintf( 'Dead letter: %d lavori bloccati (> %d min) marcati come dead.', $dead, $dead_cutoff > 0 ? $dead_cutoff : $minutes ), 'error' );
                 }
 
                 if ( $requeued + $dead > 0 ) {
-                        self::debug_log( sprintf( 'Requeue stale: %d lavori rimessi in coda, %d in dead letter (> %d min).', $requeued, $dead, $minutes ) );
+                        self::debug_log( sprintf( 'Requeue stale: %d lavori rimessi in coda, %d in dead letter.', $requeued, $dead ) );
                 }
 
                 return $requeued + $dead;
+        }
+
+        /**
+         * v1.1.15 (WA2) — soglia stale per-hook in secondi: filtro
+         * 'nexus_queue_stale_cutoff' (default_seconds, hook). I job
+         * 'pipeline_cron_tick' girano N agenti per tick (budget per tick, WA5) e
+         * con heartbeat a confini di fase restano vivi alla soglia base; il default
+         * esteso STALE_TICK_MINUTES è la rete di sicurezza per tick con heartbeat
+         * perso. Valori <= 0 del filtro → default.
+         *
+         * @param int    $default_seconds Soglia base in secondi.
+         * @param string $hook            Hook logico del job.
+         * @return int
+         */
+        private static function stale_cutoff_seconds( $default_seconds, $hook ) {
+                if ( 'pipeline_cron_tick' === $hook ) {
+                        $default_seconds = max( (int) $default_seconds, self::STALE_TICK_MINUTES * 60 );
+                }
+
+                $seconds = (int) apply_filters( 'nexus_queue_stale_cutoff', (int) $default_seconds, $hook );
+
+                return $seconds > 0 ? $seconds : (int) $default_seconds;
         }
 
         /**

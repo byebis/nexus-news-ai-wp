@@ -181,6 +181,7 @@ class Nexus_Pipeline {
 
                 // v1.1.5: stato runtime per il pannello live "In redazione ora".
                 self::set_runtime( (int) $agent->id, 'collect', 'Raccoglie le fonti' );
+                self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 $category    = (string) $agent->category;
                 $personality = self::agent_personality( $agent );
@@ -442,6 +443,7 @@ class Nexus_Pipeline {
 
                 // v1.1.5: stato runtime per il pannello live (fase di valutazione).
                 self::set_runtime( (int) $article->agent_id, 'evaluate', 'Valuta i materiali', (int) $article_id, (string) $article->title );
+                self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di valutazione viene saltata.
                 if ( ! self::budget_allows( 'valutazione', (int) $article->agent_id ) ) {
@@ -551,6 +553,7 @@ class Nexus_Pipeline {
 
                 // v1.1.5: stato runtime per il pannello live (fase di scrittura).
                 self::set_runtime( (int) $article->agent_id, 'rewrite', 'Scrive l\'articolo', (int) $article_id, (string) $article->title );
+                self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 // Budget mensile (v1.0.3): con budget_action 'stop' la fase di riscrittura viene saltata.
                 if ( ! self::budget_allows( 'riscrittura', (int) $article->agent_id ) ) {
@@ -766,6 +769,7 @@ class Nexus_Pipeline {
 
                 // v1.1.5: stato runtime per il pannello live (fase di pubblicazione).
                 self::set_runtime( (int) $article->agent_id, 'publish', 'Pubblica', (int) $article_id, (string) $article->title );
+                self::heartbeat(); // v1.1.15 (WA2): job di coda vivo, started_at fresco.
 
                 $logs = Nexus_Publisher::publish( $article );
                 if ( empty( $logs ) ) {
@@ -1090,6 +1094,7 @@ class Nexus_Pipeline {
                         }
 
                         try {
+                                self::heartbeat(); // v1.1.15 (WA2): tick job vivo tra un agente e l'altro.
                                 $result        = self::run_full( (int) $agent->id );
                                 $result['agent'] = (string) $agent->name;
                                 $results[]     = $result;
@@ -1654,6 +1659,27 @@ class Nexus_Pipeline {
         public static function get_runtime() {
                 $runtime = get_option( self::RUNTIME_OPTION, array() );
                 return is_array( $runtime ) ? $runtime : array();
+        }
+
+        /**
+         * v1.1.15 (WA2) — Heartbeat del job di coda in esecuzione (se c'è):
+         * rinfresca started_at del job corrente del runner Nexus_Queue, così il
+         * reaper requeue_stale non riaccoda i job vivi (doppia esecuzione = doppio
+         * costo AI). Fuori dalla coda (REST/CLI dirette) è un no-op guarded:
+         * nessuna dipendenza obbligatoria da Nexus_Queue, mai fatale.
+         *
+         * @return void
+         */
+        private static function heartbeat() {
+                if ( ! class_exists( 'Nexus_Queue' ) || ! method_exists( 'Nexus_Queue', 'heartbeat' ) ) {
+                        return;
+                }
+
+                try {
+                        Nexus_Queue::heartbeat();
+                } catch ( Throwable $e ) {
+                        // Mai fatale: un heartbeat perso non interrompe la fase corrente.
+                }
         }
 
         /* ================= HELPER PRIVATI ================= */
