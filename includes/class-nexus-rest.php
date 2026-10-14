@@ -50,7 +50,7 @@
  *   POST   /nexus/v1/ai/oauth/start                 body {provider}: avvia il login web OAuth PKCE (solo provider con oauth=true nel catalog), risposta {ok, auth_url} (v1.1.10)
  *   POST   /nexus/v1/ai/oauth/callback              body {state, code}: scambia il codice con la chiave di provisioning SALVATA server-side, risposta {ok} — MAI la chiave (v1.1.10)
  *   POST   /nexus/v1/ai/disconnect/{provider}       svuota prov_key_{provider} (cancellazione VOLUTA, log 'oauth_disconnected'), risposta {ok, provider} (v1.1.10)
- *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10) — dalla v1.1.10 (F2b) funziona anche per i provider personalizzati cust_* (endpoint e chiave DALL'ENTRY, body base_url ignorato)
+ *   POST   /nexus/v1/ai/test/{provider}             body {base_url?} (solo custom): test connessione vivo (GET /models con models_auth del catalog + guardia SSRF G4 + account OpenRouter), risposta 200 {ok, models_count, sample, latency_ms, account?} | {ok:false, error} (v1.1.10) — dalla v1.1.10 (F2b) funziona anche per i provider personalizzati cust_* (endpoint e chiave DALL'ENTRY, body base_url ignorato) — dalla v1.1.16 (WC3) il ramo ok aggiunge generation_test {ok, model_used, latency_ms, error} (mini chat completion VERA, max_tokens 8, stessa risoluzione della generazione) e model_in_provider_list (bool)
  *   GET    /nexus/v1/ai/custom-providers           elenco provider personalizzati {id, label, base_url, auth, has_key}: api_key MAI in chiaro (v1.1.10, F2b)
  *   POST   /nexus/v1/ai/custom-providers           body {id?, label, base_url, api_key?}: upsert (id assente = nuovo 'cust_'+8hex tornato nella risposta; api_key vuota su update NON cancella — pattern segreti), risposta {ok, id, provider} (v1.1.10, F2b)
  *   DELETE /nexus/v1/ai/custom-providers/{id}      rimozione definitiva (gli agenti che lo usavano ricevono errore onesto, MAI fallback legacy), risposta {ok, id} (v1.1.10, F2b)
@@ -3525,6 +3525,20 @@ class Nexus_Rest {
          *   {ok: false, error: messaggio leggibile e tradotto} — chiave non valida
          *   (401/403), rate limit (429), endpoint non raggiungibile (rete).
          *
+         * v1.1.16 (WC3) — TEST DI GENERAZIONE VERO: GET /models ok NON prova la
+         * generazione (test verde, generazione poteva comunque fallire). Sul ramo
+         * di successo viene ESEGUITA una mini chat completion (max_tokens 8,
+         * prompt 'ping') con la STESSA risoluzione provider/chiave/modello della
+         * generazione reale (Nexus_AI_Engine::chat → Nexus_Providers::resolve).
+         * Si AGGIUNGONO alla response (i campi esistenti non cambiano):
+         *   generation_test: {ok, model_used, latency_ms, error}
+         *   model_in_provider_list: bool — il modello che verrebbe usato
+         *     (settings ai_model, default 'openai/gpt-4o-mini') è nella lista
+         *     modelli del provider. (null solo quando la lista non è disponibile;
+         *     in questo ramo lo è sempre.)
+         * Generazione fallita con modelli ok → resta HTTP 200 con
+         * generation_test.ok=false: il client mostra ENTRAMBI gli esiti.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
@@ -3779,6 +3793,77 @@ class Nexus_Rest {
                         $out['account'] = $account;
                 }
 
+                /*
+                 * v1.1.16 (WC3) — TEST DI GENERAZIONE VERO.
+                 * Una /models 200 non dice nulla sulla chat completion: qui sotto una
+                 * mini chiamata reale (max_tokens 8, prompt 'ping') con la STESSA
+                 * risoluzione della generazione vera: Nexus_AI_Engine::chat() con
+                 * opts['provider'] (resolve() gestisce catalogo, cust_* e chiavi).
+                 * MAI fatal: try/catch Throwable → l'errore finisce in generation_test.
+                 */
+                $model_used = isset( $settings['ai_model'] ) ? trim( (string) $settings['ai_model'] ) : '';
+                if ( '' === $model_used ) {
+                        $model_used = 'openai/gpt-4o-mini'; // stesso default di chat() (:409-411).
+                }
+
+                $gen_started = microtime( true );
+                $gen_ok      = false;
+                $gen_error   = '';
+
+                if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
+                        // Stile degli errori del motore (chat() non localizza i suoi errori).
+                        $gen_error = 'Il motore AI (Nexus_AI_Engine) non è disponibile: test di generazione non eseguibile.';
+                } else {
+                        $gen_opts = array(
+                                'provider'    => $provider,
+                                'max_tokens'  => 8,
+                                'temperature' => 0,
+                                'agent_id'    => 0,
+                                'action'      => 'provider_test_generation',
+                        );
+                        // Provider 'custom' legacy con base_url dal body (test dell'URL
+                        // PRIMA del salvataggio): la mini-completion deve colpire lo
+                        // STESSO URL appena provato, non quello salvato nelle impostazioni.
+                        if ( 'custom' === $provider && isset( $base_url ) && '' !== (string) $base_url ) {
+                                $gen_opts['base_url'] = untrailingslashit( (string) $base_url );
+                        }
+
+                        try {
+                                $gen = Nexus_AI_Engine::chat(
+                                        array(
+                                                array(
+                                                        'role'    => 'user',
+                                                        'content' => 'ping',
+                                                ),
+                                        ),
+                                        $gen_opts
+                                );
+                        } catch ( Throwable $e ) {
+                                $gen = array( 'ok' => false, 'error' => $e->getMessage() );
+                        }
+
+                        if ( is_array( $gen ) && ! empty( $gen['ok'] ) ) {
+                                $gen_ok = true;
+                        } else {
+                                $gen_error = ( is_array( $gen ) && isset( $gen['error'] ) ) ? trim( (string) $gen['error'] ) : '';
+                                if ( '' === $gen_error ) {
+                                        $gen_error = 'Test di generazione fallito senza messaggio dal provider.';
+                                }
+                        }
+                }
+                $gen_latency_ms = (int) round( ( microtime( true ) - $gen_started ) * 1000 );
+
+                // Campi NUOVI e additivi: i campi esistenti della response restano intatti.
+                $out['generation_test'] = array(
+                        'ok'         => $gen_ok,
+                        'model_used' => $model_used,
+                        'latency_ms' => $gen_latency_ms,
+                        'error'      => $gen_error,
+                );
+                // La lista modelli è disponibile in QUESTO ramo ($models non vuoto):
+                // bool pieno (null riservato ai rami in cui la lista non c'è).
+                $out['model_in_provider_list'] = in_array( $model_used, $models, true );
+
                 // Log attività onesto: mai la chiave, solo esito e numeri.
                 Nexus_DB::insert_activity(
                         0,
@@ -3786,6 +3871,27 @@ class Nexus_Rest {
                         sprintf( 'Test connessione provider %1$s riuscito: %2$d modelli in %3$d ms.', isset( $entry['label'] ) ? $entry['label'] : $provider, count( $models ), $latency_ms ),
                         'success'
                 );
+
+                // v1.1.16 (WC3): log distinto del test di generazione (esito onesto
+                // separato dal test /models: test verde su modelli con generazione
+                // rossa NON deve passare per un successo pieno).
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        if ( $gen_ok ) {
+                                Nexus_DB::insert_activity(
+                                        0,
+                                        'provider_test_generation',
+                                        sprintf( 'Test generazione provider %1$s riuscito (modello %2$s, %3$d ms).', isset( $entry['label'] ) ? $entry['label'] : $provider, $model_used, $gen_latency_ms ),
+                                        'success'
+                                );
+                        } else {
+                                Nexus_DB::insert_activity(
+                                        0,
+                                        'provider_test_generation',
+                                        sprintf( 'Test generazione provider %1$s fallito (modello %2$s): %3$s', isset( $entry['label'] ) ? $entry['label'] : $provider, $model_used, mb_substr( $gen_error, 0, 200 ) ),
+                                        'error'
+                                );
+                        }
+                }
 
                 return rest_ensure_response( $out );
         }
