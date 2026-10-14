@@ -226,12 +226,12 @@ defined( 'ABSPATH' ) || exit;
                                 <table class="widefat striped nxa-an-table" id="nxa-an-insight-top">
                                         <thead>
                                                 <tr>
-                                                        <th><?php echo esc_html__( 'Articolo', 'nexus-news-ai' ); ?></th>
-                                                        <th><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
-                                                        <th><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
-                                                        <th><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
-                                                        <th><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
-                                                        <th><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'Articolo', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="col"><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
                                                 </tr>
                                         </thead>
                                         <tbody>
@@ -420,12 +420,12 @@ defined( 'ABSPATH' ) || exit;
                                                                 <table class="widefat striped nxa-an-table nxa-an-opp-table">
                                                                         <thead>
                                                                                 <tr>
-                                                                                        <th><?php echo esc_html__( 'Query', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Azione', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Query', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Azione', 'nexus-news-ai' ); ?></th>
                                                                                 </tr>
                                                                         </thead>
                                                                         <tbody>
@@ -470,12 +470,12 @@ defined( 'ABSPATH' ) || exit;
                                                                 <table class="widefat striped nxa-an-table nxa-an-opp-table">
                                                                         <thead>
                                                                                 <tr>
-                                                                                        <th><?php echo esc_html__( 'Query', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
-                                                                                        <th><?php echo esc_html__( 'Azione', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Query', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Impressioni', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Click', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'CTR', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Posizione media', 'nexus-news-ai' ); ?></th>
+                                                                                        <th scope="col"><?php echo esc_html__( 'Azione', 'nexus-news-ai' ); ?></th>
                                                                                 </tr>
                                                                         </thead>
                                                                         <tbody>
@@ -650,9 +650,9 @@ defined( 'ABSPATH' ) || exit;
                         <table class="widefat striped nxa-an-table" id="nxa-an-platform">
                                 <thead>
                                         <tr>
-                                                <th><?php echo esc_html__( 'Piattaforma', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Falliti', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Piattaforma', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Falliti', 'nexus-news-ai' ); ?></th>
                                         </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -666,10 +666,10 @@ defined( 'ABSPATH' ) || exit;
                         <table class="widefat striped nxa-an-table" id="nxa-an-agents">
                                 <thead>
                                         <tr>
-                                                <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Creati', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Creati', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></th>
                                         </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -683,11 +683,11 @@ defined( 'ABSPATH' ) || exit;
                         <table class="widefat striped nxa-an-table" id="nxa-an-top">
                                 <thead>
                                         <tr>
-                                                <th><?php echo esc_html__( 'Titolo', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Reazioni', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Stato', 'nexus-news-ai' ); ?></th>
-                                                <th><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Titolo', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Viste', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Reazioni', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Stato', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Agente', 'nexus-news-ai' ); ?></th>
                                         </tr>
                                 </thead>
                                 <tbody></tbody>

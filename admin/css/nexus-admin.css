@@ -826,6 +826,22 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   margin: var(--nxa-space-6) 0 0;
 }
 
+/* v1.1.15 (WD7): card "Digest settimanale" nel tab Pubblicazione (markup
+ * settings-pubblicazione.php) — fuori dallo stile inline, stessi valori con
+ * i token del design system (nexus-admin-css e' enqueuato su ogni pagina
+ * nexus-*, i token su :root sono garantiti). */
+.nxa-digest-card {
+  margin: 24px 0 8px;
+  padding: 16px 20px;
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+}
+
+.nxa-digest-card h2 {
+  margin-top: 0;
+}
+
 /* -------------------------------------------------------------------------
  * 11b. Accordion impostazioni (v1.0.7) — contratto T-01 settings.php
  *      v1.1.5 "respira": niente card per ogni voce. Il toggle e' una RIGA

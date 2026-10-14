@@ -511,8 +511,8 @@ $social_platforms = array(
                 $nxa_digest_total = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'count_subscribers' ) ) ? (int) Nexus_DB::count_subscribers( 'confirmed' ) : 0;
                 $nxa_digest_optin = method_exists( 'Nexus_Digest', 'optin_subscribers_count' ) ? (int) Nexus_Digest::optin_subscribers_count() : 0;
                 ?>
-                <div id="nxa-digest-card" style="margin:24px 0 8px;padding:16px 20px;border:1px solid var(--nxa-border,#dcdcde);border-radius:var(--nxa-radius-sm,8px);background:var(--nxa-surface-2,#ffffff);">
-                        <h2 style="margin-top:0;"><?php esc_html_e( 'Digest settimanale — contenuti e anteprima', 'nexus-news-ai' ); ?></h2>
+                <div id="nxa-digest-card" class="nxa-digest-card">
+                        <h2><?php esc_html_e( 'Digest settimanale — contenuti e anteprima', 'nexus-news-ai' ); ?></h2>
                         <p class="description"><?php esc_html_e( "Queste preferenze usano un salvataggio dedicato: premi il pulsante qui sotto, non il pulsante 'Salva impostazioni' del tab.", 'nexus-news-ai' ); ?></p>
                         <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
                                 <input type="hidden" name="action" value="nexus_digest_save" />

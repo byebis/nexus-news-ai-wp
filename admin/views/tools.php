@@ -249,8 +249,8 @@ $queue_rows = array(
                         <table class="widefat striped nxa-tools-table">
                                 <thead>
                                         <tr>
-                                                <th><?php esc_html_e( 'Tabella', 'nexus-news-ai' ); ?></th>
-                                                <th><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Tabella', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></th>
                                         </tr>
                                 </thead>
                                 <tbody>
@@ -275,8 +275,8 @@ $queue_rows = array(
                         <table class="widefat striped nxa-tools-table">
                                 <thead>
                                         <tr>
-                                                <th><?php esc_html_e( 'Evento', 'nexus-news-ai' ); ?></th>
-                                                <th><?php esc_html_e( 'Prossima esecuzione', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Evento', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php esc_html_e( 'Prossima esecuzione', 'nexus-news-ai' ); ?></th>
                                         </tr>
                                 </thead>
                                 <tbody>

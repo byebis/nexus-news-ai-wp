@@ -180,6 +180,25 @@
 .nxa-jb-table td {
   overflow-wrap: anywhere;
 }
+/* v1.1.15 (WD7): spinner inline delle righe messaggio — fuori dallo stile
+   inline, stessa resa del vecchio style="float:none" (WP core floata il
+   .spinner a destra). */
+.nxa-jb-spinner {
+  float: none;
+}
+/* v1.1.15 (WD7): break 782px uniforme agli altri fogli (admin/analytics/
+ * wizard/tools/health) — la toolbar collassa in colonna invece di andare
+ * a capo a metà controllo. */
+@media (max-width: 782px) {
+  .nxa-jb-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .nxa-jb-auto-label {
+    white-space: normal;
+  }
+}
 @media (max-width: 600px) {
   .nxa-jb-err {
     max-width: 100%;

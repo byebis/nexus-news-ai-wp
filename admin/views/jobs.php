@@ -130,22 +130,22 @@ defined( 'ABSPATH' ) || exit;
                 <table class="widefat striped nxa-jb-table">
                         <thead>
                                 <tr>
-                                        <th><?php esc_html_e( 'ID', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Lavoro', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Priorità', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Tentativi', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Programmatore', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Iniziato', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Completato', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Errore', 'nexus-news-ai' ); ?></th>
-                                        <th><?php esc_html_e( 'Azioni', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'ID', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Lavoro', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Stato', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Priorità', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Tentativi', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Programmatore', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Iniziato', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Completato', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Errore', 'nexus-news-ai' ); ?></th>
+                                        <th scope="col"><?php esc_html_e( 'Azioni', 'nexus-news-ai' ); ?></th>
                                 </tr>
                         </thead>
                         <tbody id="nxa-jb-rows">
                                 <tr class="nxa-jb-message">
                                         <td colspan="10">
-                                                <span class="spinner is-active" style="float: none;"></span>
+                                                <span class="spinner is-active nxa-jb-spinner"></span>
                                                 <?php esc_html_e( 'Caricamento lavori…', 'nexus-news-ai' ); ?>
                                         </td>
                                 </tr>
@@ -310,7 +310,7 @@ defined( 'ABSPATH' ) || exit;
                                 return;
                         }
                         rowsBody.innerHTML = '<tr class="nxa-jb-message"><td colspan="10">' +
-                                (isLoading ? '<span class="spinner is-active" style="float: none;"></span> ' : '') +
+                                (isLoading ? '<span class="spinner is-active nxa-jb-spinner"></span> ' : '') +
                                 esc(text) + '</td></tr>';
                 }
 
