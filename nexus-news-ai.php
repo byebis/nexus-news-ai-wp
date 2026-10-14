@@ -41,6 +41,10 @@ require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-redazioni.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-caps.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-multilang.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';
+// v1.1.15 (WB1): Nexus_Readability non era mai richiesto dal bootstrap:
+// senza questa riga le fonti full=1 ("contenuto completo") restano dead code
+// (guardie/estrazione usate dal dispatcher fonti in class-nexus-sources.php).
+require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-readability.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-telegram.php';
 require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-discord.php';

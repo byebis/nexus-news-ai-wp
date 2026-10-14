@@ -1133,7 +1133,11 @@ class Nexus_Sources {
                 }
 
                 if ( class_exists( 'Nexus_Readability' ) ) {
-                        if ( method_exists( 'Nexus_Readability', 'is_svg_or_binary_guard' ) && Nexus_Readability::is_svg_or_binary_guard( $body ) ) {
+                        // v1.1.15 (WB1): polarità corretta — la guard ritorna TRUE =
+                        // HTML proseguibile, FALSE = binario/SVG/vuoto/plain (docblock
+                        // classe): bloccare SOLO quando ritorna FALSE, come già fatto
+                        // in maybe_full_content (stesso confronto negato).
+                        if ( method_exists( 'Nexus_Readability', 'is_svg_or_binary_guard' ) && ! Nexus_Readability::is_svg_or_binary_guard( $body ) ) {
                                 self::mark_failure( $key, 'web ' . self::clip( $url, 80 ) );
                                 return array();
                         }
