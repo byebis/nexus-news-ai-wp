@@ -27,13 +27,23 @@
  *      redirect con nexus_gsc_oauth=disconnected.
  *
  * SICUREZZA:
- * - Token nell'option 'nexus_gsc_token' CIFRATO: AES-256-CBC via openssl, chiave
- *   hash_hmac('sha256', 'nexus-gsc-token', wp_salt('auth'), true), IV random a
- *   ogni messaggio, payload JSON {access_token, refresh_token, expires_at,
- *   scopes, created_at} marcato con prefisso 'NEXGSC1:'. Se l'estensione openssl
+ * - Token nell'option 'nexus_gsc_token' CIFRATO (v1.1.15, WC5a): AES-256-GCM via
+ *   openssl (chiave hash_hmac('sha256', 'nexus-gsc-token', wp_salt('auth'), true),
+ *   IV random a ogni messaggio, TAG di autenticazione salvato nel payload),
+ *   payload JSON {access_token, refresh_token, expires_at, scopes, created_at}
+ *   marcato con prefisso 'NEXGSC2:'. FORMATO: 'NEXGSC2:' + base64( IV(12) . TAG(16) .
+ *   ciphertext ) — il GCM dà integrità oltre alla confidenzialità (CBC senza MAC
+ *   accettava payload manipolabili). LEGACY READ-ONLY: i valori 'NEXGSC1:'
+ *   (AES-256-CBC delle versioni precedenti) restano decifrabili; ogni
+ *   salvataggio (refresh o reconnect) riscrive in GCM. Se l'estensione openssl
  *   è assente → degrado DOCUMENTATO: payload JSON in chiaro + insert_activity di
  *   warning (host senza openssl; la lettura di un option cifrato senza openssl
  *   fallisce in modo sicuro e riporta token assente).
+ * - RINNOVO CON LOCK (v1.1.15, WC5b): get_access_token() acquisisce un lock
+ *   atomico (add_option 'nexus_gsc_refresh_lock', TTL 30s) prima di chiamare
+ *   Google; il processo che non ottiene il lock attende brevemente e riusa il
+ *   token fresco scritto dall'altro processo. Cron metriche e wizard simultanei
+ *   NON rinnovano più due volte.
  * - Nessun segreto in log o redirect: le reason di errore sono chiavi brevi
  *   sanitize_key (es. 'exchange', 'access_denied'); i messaggi WP_Error sono
  *   brevi e senza token; il client_secret non viene mai scritto nei log.
@@ -51,18 +61,47 @@ defined( 'ABSPATH' ) || exit;
 final class Nexus_Google_Auth {
 
         /**
+         * Id del lock correntemente posseduto da questo processo ('' = nessuno).
+         * Serve al rilascio per NON cancellare il lock di un altro processo
+         * (caso: nostro TTL scaduto, un altro ha ripreso il mutex).
+         *
+         * @var string
+         */
+        private static $refresh_lock_id = '';
+
+        /**
          * Option WP che contiene il token (cifrato o JSON in chiaro come fallback).
          */
         const OPTION_TOKEN = 'nexus_gsc_token';
 
         /**
-         * Prefisso che marca il valore dell'option come cifrato (AES-256-CBC):
-         * tutto ciò che segue è base64( IV . ciphertext ).
+         * LEGACY (v1.1.15, WC5a): prefisso AES-256-CBC delle versioni precedenti
+         * ('NEXGSC1:' + base64( IV(16) . ciphertext )). SOLO LETTURA: i valori
+         * esistenti restano decifrabili; ogni nuova scrittura usa NEXGSC2 (GCM).
          */
         const CIPHER_MARKER = 'NEXGSC1:';
 
         /**
-         * Cifratura del token (valori openssl accettati da PHP 7.4).
+         * Prefisso del formato CORRENTE (v1.1.15, WC5a): AES-256-GCM.
+         * Tutto ciò che segue è base64( IV(12) . TAG(16) . ciphertext ).
+         */
+        const CIPHER_MARKER_GCM = 'NEXGSC2:';
+
+        /**
+         * Metodo di cifratura CORRENTE (GCM: confidenzialità + integrità via tag).
+         * $tag by-ref di openssl_encrypt/decrypt è PHP 7.1+ (base minima dichiarata).
+         */
+        const CIPHER_METHOD_GCM = 'aes-256-gcm';
+
+        /** Lunghezza (byte) dell'IV GCM (12: raccomandazione NIST per GCM). */
+        const GCM_IV_BYTES = 12;
+
+        /** Lunghezza (byte) del TAG di autenticazione GCM (16 = 128 bit). */
+        const GCM_TAG_BYTES = 16;
+
+        /**
+         * LEGACY (v1.1.15, WC5a): metodo della versione precedente, usato SOLO
+         * per decifrare i valori NEXGSC1: già presenti nell'option.
          */
         const CIPHER_METHOD = 'aes-256-cbc';
 
@@ -97,6 +136,22 @@ final class Nexus_Google_Auth {
          * Durata di default (secondi) usata se la risposta token omette expires_in.
          */
         const DEFAULT_EXPIRES_IN = 3600;
+
+        /**
+         * Lock anti-doppio-rinnovo (v1.1.15, WC5b): option utilizzata come mutex
+         * (add_option è atomica: INSERT che fallisce se l'option esiste). Valore
+         * '<scadenza-epoch>|<id-random>' del holder; autoload disattivato.
+         */
+        const LOCK_OPTION = 'nexus_gsc_refresh_lock';
+
+        /** TTL del lock (secondi): un holder morto senza rilascio è recuperabile dopo. */
+        const LOCK_TTL = 30;
+
+        /** Attesa massima (secondi) del processo che NON ottiene il lock. */
+        const LOCK_WAIT_SECONDS = 5;
+
+        /** Intervallo di polling (microsecondi) durante l'attesa. */
+        const LOCK_POLL_MICRO = 250000;
 
         /**
          * Azioni admin-post (parametro action) e nonce associati.
@@ -258,6 +313,13 @@ final class Nexus_Google_Auth {
          * grant_type=refresh_token e ripersiste il payload (preservando il
          * refresh_token precedente se Google non lo rispedisce).
          *
+         * v1.1.15 (WC5b): il rinnovo è protetto da un LOCK atomico
+         * (add_option 'nexus_gsc_refresh_lock', TTL 30s, recupero dei lock morti):
+         * dopo l'acquisizione il payload viene RI-LETTO — se un altro processo ha
+         * appena completato il rinnovo si usa il suo token senza una seconda
+         * chiamata a Google. Chi non ottiene il lock attende fino a 5s e riusa il
+         * token fresco; il lock è rilasciato in finally (ogni caso d'uscita).
+         *
          * @return string|WP_Error Access token oppure WP_Error con messaggio breve
          *                        (nessun segreto nel messaggio).
          */
@@ -285,43 +347,85 @@ final class Nexus_Google_Auth {
                         return new WP_Error( 'nexus_gsc_oauth', 'Sessione Google scaduta: riavvia il collegamento per rinnovare il consenso offline.' );
                 }
 
-                $settings      = self::plugin_settings();
-                $client_id     = isset( $settings['gsc_oauth_client_id'] ) ? trim( (string) $settings['gsc_oauth_client_id'] ) : '';
-                $client_secret = isset( $settings['gsc_oauth_client_secret'] ) ? trim( (string) $settings['gsc_oauth_client_secret'] ) : '';
+                // ===== LOCK ANTI-DOPPIO-RINNOVO (v1.1.15, WC5b) =====
+                // Cron metriche e wizard possono arrivare simultanei: senza mutex
+                // entrambi rinnovavano (due chiamate a Google per lo stesso refresh).
+                // Acquisizione atomica via add_option (INSERT che fallisce se l'option
+                // esiste: primitiva atomica, non un transient). Chi NON ottiene il
+                // lock attende fino a 5s e riusa il token fresco dell'altro processo.
+                if ( ! self::acquire_refresh_lock() ) {
+                        $waited = self::wait_fresh_access_token();
 
-                if ( '' === $client_id || '' === $client_secret ) {
-                        return new WP_Error( 'nexus_gsc_oauth', 'Credenziali OAuth Google mancanti nelle Impostazioni: impossibile rinnovare il token.' );
+                        if ( '' !== $waited ) {
+                                return $waited;
+                        }
+
+                        // Ultimo tentativo: l'holder potrebbe aver appena rilasciato.
+                        if ( ! self::acquire_refresh_lock() ) {
+                                return new WP_Error( 'nexus_gsc_oauth', 'Rinnovo del token Google già in corso da un altro processo: riprova tra qualche secondo.' );
+                        }
                 }
 
-                $data = self::token_request(
-                        array(
-                                'grant_type'    => 'refresh_token',
-                                'refresh_token' => $refresh,
-                                'client_id'     => $client_id,
-                                'client_secret' => $client_secret,
-                        )
-                );
+                try {
+                        // Ri-lettura DOPO l'acquisizione del lock: mentre aspettavamo un
+                        // altro processo può aver COMPLETATO il rinnovo (token di nuovo
+                        // valido: usiamo quello senza chiamare Google) oppure un reconnect
+                        // può aver cambiato il payload (nuovo refresh_token da usare).
+                        $payload = self::load_payload();
+                        $fresh   = self::valid_access_token_from( $payload );
 
-                if ( is_wp_error( $data ) ) {
-                        return $data;
+                        if ( '' !== $fresh ) {
+                                return $fresh;
+                        }
+
+                        if ( ! is_array( $payload ) || '' === trim( (string) ( $payload['refresh_token'] ?? '' ) ) ) {
+                                return new WP_Error( 'nexus_gsc_oauth', 'Token Google non presente o non leggibile: collega Search Console dalle Impostazioni.' );
+                        }
+                        $refresh = trim( (string) $payload['refresh_token'] );
+
+                        $settings      = self::plugin_settings();
+                        $client_id     = isset( $settings['gsc_oauth_client_id'] ) ? trim( (string) $settings['gsc_oauth_client_id'] ) : '';
+                        $client_secret = isset( $settings['gsc_oauth_client_secret'] ) ? trim( (string) $settings['gsc_oauth_client_secret'] ) : '';
+
+                        if ( '' === $client_id || '' === $client_secret ) {
+                                return new WP_Error( 'nexus_gsc_oauth', 'Credenziali OAuth Google mancanti nelle Impostazioni: impossibile rinnovare il token.' );
+                        }
+
+                        $data = self::token_request(
+                                array(
+                                        'grant_type'    => 'refresh_token',
+                                        'refresh_token' => $refresh,
+                                        'client_id'     => $client_id,
+                                        'client_secret' => $client_secret,
+                                )
+                        );
+
+                        if ( is_wp_error( $data ) ) {
+                                return $data;
+                        }
+
+                        $new_access = isset( $data['access_token'] ) ? trim( (string) $data['access_token'] ) : '';
+                        if ( '' === $new_access ) {
+                                return new WP_Error( 'nexus_gsc_oauth', 'Google non ha restituito un nuovo access token.' );
+                        }
+
+                        $new_refresh = isset( $data['refresh_token'] ) ? trim( (string) $data['refresh_token'] ) : '';
+                        if ( '' === $new_refresh ) {
+                                $new_refresh = $refresh;
+                        }
+
+                        $old_scopes  = is_array( $payload ) && isset( $payload['scopes'] ) ? (string) $payload['scopes'] : self::default_scopes();
+                        $new_scopes  = isset( $data['scope'] ) ? (string) $data['scope'] : $old_scopes;
+                        $new_expires = isset( $data['expires_in'] ) ? (int) $data['expires_in'] : self::DEFAULT_EXPIRES_IN;
+
+                        self::save_payload( $new_access, $new_refresh, $new_expires, $new_scopes );
+
+                        return $new_access;
+                } finally {
+                        // Rilascio in OGNI caso di uscita (token rinnovato o errore):
+                        // mai un lock appeso fino a scadenza per un errore transitorio.
+                        self::release_refresh_lock();
                 }
-
-                $new_access = isset( $data['access_token'] ) ? trim( (string) $data['access_token'] ) : '';
-                if ( '' === $new_access ) {
-                        return new WP_Error( 'nexus_gsc_oauth', 'Google non ha restituito un nuovo access token.' );
-                }
-
-                $new_refresh = isset( $data['refresh_token'] ) ? trim( (string) $data['refresh_token'] ) : '';
-                if ( '' === $new_refresh ) {
-                        $new_refresh = $refresh;
-                }
-
-                $new_scopes  = isset( $data['scope'] ) ? (string) $data['scope'] : ( isset( $payload['scopes'] ) ? (string) $payload['scopes'] : self::default_scopes() );
-                $new_expires = isset( $data['expires_in'] ) ? (int) $data['expires_in'] : self::DEFAULT_EXPIRES_IN;
-
-                self::save_payload( $new_access, $new_refresh, $new_expires, $new_scopes );
-
-                return $new_access;
         }
 
         /**
@@ -365,6 +469,142 @@ final class Nexus_Google_Auth {
          */
         public static function get_redirect_uri() {
                 return admin_url( 'admin-post.php?action=' . self::ACTION_CALLBACK );
+        }
+
+        /* ============ LOCK ANTI-DOPPIO-RINNOVO (v1.1.15, WC5b) ============ */
+
+        /**
+         * Acquisisce il lock di rinnovo (atomica): true se ottenuto.
+         *
+         * Primitiva: add_option è un INSERT — fallisce se l'option esiste già,
+         * quindi SOLO un processo "entra". Valore '<scadenza-epoch>|<id-random>'.
+         * Recupero: un lock la cui scadenza è nel passato indica un holder morto
+         * senza rilascio (fatal, OOM, kill): viene rimosso e l'acquisizione
+         * ritentata (finestra di gara residua coperta dalla ri-lettura del
+         * payload: il peggiore scenario resta un solo rinnovo in più).
+         *
+         * @return bool
+         */
+        private static function acquire_refresh_lock() {
+                if ( ! self::try_add_refresh_lock() ) {
+                        if ( self::lock_expires_at() >= time() ) {
+                                return false; // holder vivo: non è nostro.
+                        }
+
+                        delete_option( self::LOCK_OPTION );
+
+                        if ( ! self::try_add_refresh_lock() ) {
+                                return false;
+                        }
+                }
+
+                return true;
+        }
+
+        /**
+         * Tentativo atomico di creazione del lock. Registra l'id-random del
+         * holder in $refresh_lock_id (solo se acquisito) per il rilascio.
+         *
+         * @return bool
+         */
+        private static function try_add_refresh_lock() {
+                self::$refresh_lock_id = wp_generate_password( 16, false );
+
+                $value = ( time() + self::LOCK_TTL ) . '|' . self::$refresh_lock_id;
+
+                if ( add_option( self::LOCK_OPTION, $value, '', 'no' ) ) {
+                        return true;
+                }
+
+                self::$refresh_lock_id = '';
+
+                return false;
+        }
+
+        /**
+         * Scadenza (epoch) del lock attualmente presente, 0 se assente.
+         *
+         * @return int
+         */
+        private static function lock_expires_at() {
+                $held  = (string) get_option( self::LOCK_OPTION, '' );
+                $parts = explode( '|', $held, 2 );
+
+                return (int) $parts[0];
+        }
+
+        /**
+         * Rilascio del lock SOLO se siamo ancora noi l'holder: se il nostro TTL
+         * è scaduto e un altro processo ha ripreso il mutex, NON cancelliamo il
+         * lock altrui. Nessun errore se il lock è già sparito.
+         *
+         * @return void
+         */
+        private static function release_refresh_lock() {
+                if ( '' === self::$refresh_lock_id ) {
+                        return;
+                }
+
+                $suffix = '|' . self::$refresh_lock_id;
+                $held   = (string) get_option( self::LOCK_OPTION, '' );
+
+                if ( '' !== $held && substr( $held, -strlen( $suffix ) ) === $suffix ) {
+                        delete_option( self::LOCK_OPTION );
+                }
+
+                self::$refresh_lock_id = '';
+        }
+
+        /**
+         * Token valido da un payload (o '' se il payload è assente/non valido o
+         * il token è scaduto): stessa regola di validità del fast-path di
+         * get_access_token (margine EXPIRY_SLACK di 60s).
+         *
+         * @param array|mixed $payload Payload dell'option (o null).
+         * @return string
+         */
+        private static function valid_access_token_from( $payload ) {
+                if ( ! is_array( $payload ) ) {
+                        return '';
+                }
+
+                $access  = isset( $payload['access_token'] ) ? trim( (string) $payload['access_token'] ) : '';
+                $expires = isset( $payload['expires_at'] ) ? (int) $payload['expires_at'] : 0;
+
+                if ( '' !== $access && $expires - self::EXPIRY_SLACK > time() ) {
+                        return $access;
+                }
+
+                return '';
+        }
+
+        /**
+         * Attesa limitata (max LOCK_WAIT_SECONDS) del processo che NON ha
+         * ottenuto il lock: poll ogni 250ms su payload e lock. Ritorna il token
+         * fresco appena l'altro processo completa il rinnovo, '' se l'attesa
+         * scade o il lock viene liberato senza rinnovo (il chiamante riprova
+         * l'acquisizione).
+         *
+         * @return string
+         */
+        private static function wait_fresh_access_token() {
+                $deadline = microtime( true ) + (float) self::LOCK_WAIT_SECONDS;
+
+                while ( microtime( true ) < $deadline ) {
+                        usleep( self::LOCK_POLL_MICRO );
+
+                        $token = self::valid_access_token_from( self::load_payload() );
+
+                        if ( '' !== $token ) {
+                                return $token;
+                        }
+
+                        if ( self::lock_expires_at() < time() ) {
+                                break; // lock liberato o scaduto: riprova nel chiamante.
+                        }
+                }
+
+                return '';
         }
 
         /* ============ HELPER PRIVATI (settings, log, redirect, guardie) ============ */
@@ -513,7 +753,7 @@ final class Nexus_Google_Auth {
                 return strtolower( trim( (string) parse_url( home_url(), PHP_URL_HOST ) ) );
         }
 
-        /* ============ PERSISTENZA TOKEN (cifratura AES-256-CBC) ============ */
+        /* ============ PERSISTENZA TOKEN (cifratura AES-256-GCM, v1.1.15 WC5a) ============ */
 
         /**
          * Chiave di cifratura: HMAC-SHA256 binario (32 byte) su wp_salt('auth').
@@ -555,12 +795,18 @@ final class Nexus_Google_Auth {
         }
 
         /**
-         * Cifra il payload JSON: AES-256-CBC, IV random a ogni messaggio, output
-         * CIPHER_MARKER . base64( IV . ciphertext ).
+         * Cifra il payload JSON (v1.1.15, WC5a): AES-256-GCM, IV random a ogni
+         * messaggio, output CIPHER_MARKER_GCM . base64( IV(12) . TAG(16) .
+         * ciphertext ). Il TAG di autenticazione dà integrità: un payload
+         * manipolato non viene decifrato (CBC senza MAC lo accettava).
          *
-         * Fallback DOCUMENTATO (host senza openssl): ritorna il JSON in chiaro con
-         * insert_activity di warning; la decifratura di un option cifrato su un
-         * host senza openssl fallisce in modo sicuro (token considerato assente).
+         * Ogni salvataggio (refresh o reconnect) riscrive così il token anche se
+         * era NEXGSC1 (CBC legacy): migrazione automatica al primo uso.
+         *
+         * Fallback DOCUMENTATO (host senza openssl o cifratura fallita): ritorna
+         * il JSON in chiaro con insert_activity di warning; la decifratura di un
+         * option cifrato su un host senza openssl fallisce in modo sicuro (token
+         * considerato assente).
          *
          * @param string $json Payload JSON del token.
          * @return string Valore da persistere nell'option.
@@ -572,31 +818,38 @@ final class Nexus_Google_Auth {
                         return $json;
                 }
 
-                $iv = openssl_random_pseudo_bytes( 16 );
+                $iv = openssl_random_pseudo_bytes( self::GCM_IV_BYTES );
 
-                if ( ! is_string( $iv ) || 16 !== strlen( $iv ) ) {
+                if ( ! is_string( $iv ) || self::GCM_IV_BYTES !== strlen( $iv ) ) {
                         self::log_activity( 'Generazione IV fallita: token salvato NON cifrato (degrado documentato)', 'warning' );
 
                         return $json;
                 }
 
-                $cipher = openssl_encrypt( $json, self::CIPHER_METHOD, self::cipher_key(), OPENSSL_RAW_DATA, $iv );
+                // GCM: $tag by-ref (PHP 7.1+), tag di autenticazione a 128 bit.
+                $tag    = '';
+                $cipher = openssl_encrypt( $json, self::CIPHER_METHOD_GCM, self::cipher_key(), OPENSSL_RAW_DATA, $iv, $tag );
 
-                if ( false === $cipher || '' === $cipher ) {
+                if ( false === $cipher || '' === $cipher || ! is_string( $tag ) || self::GCM_TAG_BYTES !== strlen( $tag ) ) {
                         self::log_activity( 'Cifratura token fallita: token salvato NON cifrato (degrado documentato)', 'warning' );
 
                         return $json;
                 }
 
-                return self::CIPHER_MARKER . base64_encode( $iv . $cipher );
+                return self::CIPHER_MARKER_GCM . base64_encode( $iv . $tag . $cipher );
         }
 
         /**
          * Legge e decifra il payload dell'option del token.
          *
-         * Riconosce il prefisso CIPHER_MARKER (valore cifrato) oppure il JSON in
-         * chiaro del fallback. Qualunque problema (option corrotta, openssl
-         * assente su valore cifrato, taglio/garbage) → null, senza eccezioni.
+         * Riconosce tre formati (v1.1.15, WC5a):
+         *  - CIPHER_MARKER_GCM 'NEXGSC2:' (corrente): base64( IV(12) . TAG(16) . ciphertext ),
+         *    AES-256-GCM — un tag mismatch (payload manomesso o corrotto) → null;
+         *  - CIPHER_MARKER 'NEXGSC1:' (LEGACY, sola lettura): base64( IV(16) .
+         *    ciphertext ), AES-256-CBC delle versioni precedenti;
+         *  - JSON in chiaro: fallback documentato per host senza openssl.
+         * Qualunque problema (option corrotta, openssl assente su valore cifrato,
+         * taglio/garbage) → null, senza eccezioni.
          *
          * @return array|null Payload {access_token, refresh_token, expires_at, scopes, created_at}.
          */
@@ -607,7 +860,34 @@ final class Nexus_Google_Auth {
                         return null;
                 }
 
-                // Valore cifrato: richiede openssl (senza → token inaccessibile, in modo sicuro).
+                // Formato corrente GCM: richiede openssl (senza → token inaccessibile, in modo sicuro).
+                if ( 0 === strpos( $stored, self::CIPHER_MARKER_GCM ) ) {
+                        if ( ! self::openssl_available() ) {
+                                return null;
+                        }
+
+                        $raw = base64_decode( substr( $stored, strlen( self::CIPHER_MARKER_GCM ) ), true );
+
+                        if ( ! is_string( $raw ) || strlen( $raw ) <= ( self::GCM_IV_BYTES + self::GCM_TAG_BYTES ) ) {
+                                return null;
+                        }
+
+                        $iv     = substr( $raw, 0, self::GCM_IV_BYTES );
+                        $tag    = substr( $raw, self::GCM_IV_BYTES, self::GCM_TAG_BYTES );
+                        $cipher = substr( $raw, self::GCM_IV_BYTES + self::GCM_TAG_BYTES );
+                        $json   = openssl_decrypt( $cipher, self::CIPHER_METHOD_GCM, self::cipher_key(), OPENSSL_RAW_DATA, $iv, $tag );
+
+                        if ( false === $json || '' === $json ) {
+                                return null; // tag mismatch: payload manomesso o corrotto.
+                        }
+
+                        $payload = json_decode( $json, true );
+
+                        return is_array( $payload ) ? $payload : null;
+                }
+
+                // LEGACY (v1.1.9-1.1.14): CBC senza MAC, sola lettura; il prossimo
+                // salvataggio riscrive il token in GCM.
                 if ( 0 === strpos( $stored, self::CIPHER_MARKER ) ) {
                         if ( ! self::openssl_available() ) {
                                 return null;
