@@ -2,11 +2,24 @@
 /**
  * Nexus News Sitemap — GOOGLE NEWS SITEMAP v1.1.12 (pacchetto S5).
  *
+ * v1.1.14 (P6): aggiunta la SITEMAP IMMAGINI su /nexus-images.xml (stesso
+ * meccanismo della news sitemap: stessa query var pattern, stessa rewrite
+ * controllata dal setting news_sitemap_enabled, stesso flush via option,
+ * stessa robots_txt). Il modulo Video Sitemap (file Nuovo
+ * class-nexus-video-sitemap.php, classe self-registrante) è caricato qui sotto:
+ * è l'unico punto di caricamento autorizzato dal task P6, il bootstrap resta
+ * intatto.
+ *
  * SCOPO:
  * Espone la sitemap Google News all'indirizzo /nexus-news-sitemap.xml per i
  * post WordPress REALI pubblicati dal plugin (post nativo 'post' + CPT legacy
  * 'nexus_article', stessa copertura dual-mode di Nexus_Ping via
  * Nexus_Native::query_post_types()) e pinga Google dopo ogni pubblicazione.
+ * Da v1.1.14 (P6) espone anche la sitemap immagini all'indirizzo
+ * /nexus-images.xml: articoli pubblicati con le LORO immagini (featured image
+ * gestita da Nexus_Image::ensure_featured() → attachment WP con metadati;
+ * immagini nel contenuto SOLO quando sono attachment della libreria media del
+ * sito, riconosciute dalla classe wp-image-{ID} nell'<img>).
  *
  * COMPORTAMENTO:
  * - Rewrite (hook 'init'): la rule nexus-news-sitemap\.xml$ →
@@ -44,6 +57,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// v1.1.14 (P6): carica il modulo Video Sitemap (classe self-registrante via
+// hook 'nexus_modules_init'). Questo require è l'unico punto di caricamento
+// autorizzato dal task P6: il bootstrap nexus-news-ai.php NON viene toccato.
+if ( defined( 'NEXUS_PLUGIN_DIR' ) ) {
+        require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-video-sitemap.php';
+}
+
 final class Nexus_News_Sitemap {
 
         /**
@@ -72,6 +92,24 @@ final class Nexus_News_Sitemap {
         const PING_ENDPOINT = 'https://www.google.com/ping?sitemap=';
 
         /**
+         * v1.1.14 (P6): query var che attiva il rendering della sitemap immagini
+         * su template_redirect.
+         */
+        const QUERY_VAR_IMAGES = 'nexus_image_sitemap';
+
+        /**
+         * v1.1.14 (P6): massimo numero di PAGINE nella sitemap immagini (stessa
+         * cap della news sitemap; query con LIMIT, orderby date DESC).
+         */
+        const MAX_POSTS_IMAGES = 1000;
+
+        /**
+         * v1.1.14 (P6): massimo numero di blocchi image:image per pagina
+         * (cap difensivo; il limite Google è 1000 per URL).
+         */
+        const MAX_IMAGES_PER_POST = 10;
+
+        /**
          * Bootstrap modulo (self-registrato su nexus_modules_init a fondo file).
          *
          * @return void
@@ -80,6 +118,7 @@ final class Nexus_News_Sitemap {
                 add_filter( 'query_vars', array( __CLASS__, 'add_query_var' ) );
                 add_action( 'init', array( __CLASS__, 'register_rewrite' ) );
                 add_action( 'template_redirect', array( __CLASS__, 'render_sitemap' ) );
+                add_action( 'template_redirect', array( __CLASS__, 'render_image_sitemap' ) );
                 add_action( 'nexus_pipeline_after_publish', array( __CLASS__, 'maybe_ping_google' ), 10, 3 );
                 add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 10, 2 );
         }
@@ -102,10 +141,16 @@ final class Nexus_News_Sitemap {
                 // disattivazione basta non aggiungerla.
                 if ( $enabled ) {
                         add_rewrite_rule( 'nexus-news-sitemap\.xml$', 'index.php?' . self::QUERY_VAR . '=1', 'top' );
+
+                        // v1.1.14 (P6): rule della sitemap immagini, stesso interruttore
+                        // (nessun setting dedicato: lo schema DB è fuori perimetro).
+                        add_rewrite_rule( 'nexus-images\.xml$', 'index.php?' . self::QUERY_VAR_IMAGES . '=1', 'top' );
                 }
 
                 // Flush controllato: solo se lo stato attuale differisce da quello
-                // per cui le rules sono state rigenerate l'ultima volta.
+                // per cui le rules sono state rigenerate l'ultima volta. L'option
+                // copre ENTRAMBE le rule (news + immagini): il gate è lo stesso
+                // setting, quindi la transizione enabled↔disabled è simultanea.
                 $state   = $enabled ? 1 : 0;
                 $flushed = (int) get_option( self::OPTION_FLUSHED, -1 );
 
@@ -125,6 +170,7 @@ final class Nexus_News_Sitemap {
          */
         public static function add_query_var( $vars ) {
                 $vars[] = self::QUERY_VAR;
+                $vars[] = self::QUERY_VAR_IMAGES;
 
                 return $vars;
         }
@@ -158,6 +204,50 @@ final class Nexus_News_Sitemap {
 
                 foreach ( self::query_recent_posts() as $post ) {
                         self::render_url_entry( $post );
+                }
+
+                echo '</urlset>' . "\n";
+                exit;
+        }
+
+        /**
+         * Hook 'template_redirect': serving dell'XML della SITEMAP IMMAGINI
+         * (v1.1.14, P6).
+         *
+         * - Richiesta diversa da nexus_image_sitemap=1 → esce subito (pagina normale).
+         * - Modulo disabilitato → 404 e terminazione.
+         * - Altrimenti: header XML + nocache_headers() + urlset (namespace image
+         *   1.1 di Google) con SOLO le pagine che hanno almeno un'immagine:
+         *   featured image (gestita dal plugin) + immagini nel contenuto quando
+         *   sono attachment del sito (classe wp-image-{ID} risolta).
+         *
+         * @return void
+         */
+        public static function render_image_sitemap() {
+                if ( 1 !== (int) get_query_var( self::QUERY_VAR_IMAGES ) ) {
+                        return;
+                }
+
+                if ( ! self::is_enabled() ) {
+                        status_header( 404 );
+                        nocache_headers();
+                        exit;
+                }
+
+                header( 'Content-Type: application/xml; charset=UTF-8' );
+                nocache_headers();
+
+                echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+                echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
+
+                foreach ( self::query_posts_for_images() as $post ) {
+                        $images = self::collect_post_images( $post );
+
+                        // Nessuna immagine raggiungibile → NESSUNA voce <url> per
+                        // il post (una entry senza image:image sarebbe inutile).
+                        if ( ! empty( $images ) ) {
+                                self::render_image_url_entry( $post, $images );
+                        }
                 }
 
                 echo '</urlset>' . "\n";
@@ -235,7 +325,9 @@ final class Nexus_News_Sitemap {
                         return $output;
                 }
 
-                return $output . "\nSitemap: " . home_url( '/nexus-news-sitemap.xml' );
+                return $output
+                        . "\nSitemap: " . home_url( '/nexus-news-sitemap.xml' )
+                        . "\nSitemap: " . home_url( '/nexus-images.xml' );
         }
 
         /**
@@ -310,6 +402,199 @@ final class Nexus_News_Sitemap {
                 );
 
                 return $query->posts;
+        }
+
+        /**
+         * v1.1.14 (P6): post candidati alla sitemap immagini: post WP reali
+         * (dual-mode, stessi tipi della news sitemap), pubblicati, max 1000,
+         * data DESC, NESSUN vincolo 48h (le immagini non hanno la finestra
+         * temporale di Google News). Query snella (no found rows, no term
+         * cache); la meta cache resta attiva perché serve _thumbnail_id per
+         * OGNI post: viene primata in una sola query aggiuntiva.
+         *
+         * @return WP_Post[]
+         */
+        private static function query_posts_for_images() {
+                $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
+                        ? Nexus_Native::query_post_types()
+                        : array( 'post', 'nexus_article' );
+
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => $types,
+                                'post_status'            => 'publish',
+                                'posts_per_page'         => self::MAX_POSTS_IMAGES,
+                                'orderby'                => 'date',
+                                'order'                  => 'DESC',
+                                'ignore_sticky_posts'    => true,
+                                'no_found_rows'          => true,
+                                'update_post_meta_cache' => true,
+                                'update_post_term_cache' => false,
+                        )
+                );
+
+                return $query->posts;
+        }
+
+        /**
+         * v1.1.14 (P6): raccoglie le immagini di un post (max MAX_IMAGES_PER_POST,
+         * dedup per URL):
+         * 1. FEATURED IMAGE — gestita dal plugin (Nexus_Image::ensure_featured
+         *    imposta _thumbnail_id su attachment WP): URL size 'full' + title
+         *    (post_title attachment) + caption (post_excerpt attachment).
+         * 2. IMMAGINI NEL CONTENUTO — SOLO quelle gestite dalla libreria media
+         *    del sito: <img> con classe wp-image-{ID} risolta su un attachment
+         *    reale con mime image/*. Le immagini remote hotlinkate nel contenuto
+         *    AI NON sono gestite dal plugin (Nexus_Image gestisce solo la
+         *    featured) e vengono ESCLUSE: nessuna finzione.
+         *
+         * @param WP_Post $post Post pubblicato.
+         * @return array[] Lista array{loc: string, title: string, caption: string}.
+         */
+        private static function collect_post_images( $post ) {
+                $images = array();
+                $seen   = array();
+
+                // 1) Featured image (attachment del sito, metadati reali).
+                $thumb_id = (int) get_post_thumbnail_id( $post );
+                if ( $thumb_id > 0 ) {
+                        $entry = self::attachment_image_entry( $thumb_id );
+
+                        if ( null !== $entry ) {
+                                $images[]              = $entry;
+                                $seen[ $entry['loc'] ] = true;
+                        }
+                }
+
+                // 2) Immagini nel contenuto: solo attachment del sito (wp-image-{ID}).
+                $content = (string) $post->post_content;
+
+                if ( '' !== $content && preg_match_all( '#<img\b[^>]*>#i', $content, $tags ) ) {
+                        foreach ( $tags[0] as $tag ) {
+                                if ( ! preg_match( '#\bwp-image-(\d{1,10})\b#i', (string) $tag, $m ) ) {
+                                        // Nessun id attachment: immagine non gestita → esclusa.
+                                        continue;
+                                }
+
+                                $attach_id = absint( $m[1] );
+                                if ( $attach_id < 1 ) {
+                                        continue;
+                                }
+
+                                $entry = self::attachment_image_entry( $attach_id );
+
+                                if ( null === $entry || isset( $seen[ $entry['loc'] ] ) ) {
+                                        continue;
+                                }
+
+                                $images[]              = $entry;
+                                $seen[ $entry['loc'] ] = true;
+
+                                if ( count( $images ) >= self::MAX_IMAGES_PER_POST ) {
+                                        break;
+                                }
+                        }
+                }
+
+                return $images;
+        }
+
+        /**
+         * v1.1.14 (P6): dati di un'immagine-attachment (URL size full, title,
+         * caption). Null se l'ID non è un attachment immagine reale del sito
+         * o non ha un URL utilizzabile.
+         *
+         * @param int $attach_id ID attachment.
+         * @return array|null array{loc: string, title: string, caption: string}|null
+         */
+        private static function attachment_image_entry( $attach_id ) {
+                $attachment = get_post( $attach_id );
+
+                if ( ! $attachment instanceof WP_Post || 'attachment' !== $attachment->post_type ) {
+                        return null;
+                }
+
+                // Solo mime image/*: allegati non immagine (PDF, video) esclusi.
+                if ( 0 !== strpos( (string) $attachment->post_mime_type, 'image/' ) ) {
+                        return null;
+                }
+
+                $url = wp_get_attachment_image_url( $attach_id, 'full' );
+                if ( ! is_string( $url ) || '' === $url ) {
+                        return null;
+                }
+
+                return array(
+                        'loc'     => $url,
+                        'title'   => self::xml_text( (string) $attachment->post_title ),
+                        'caption' => self::xml_text( (string) $attachment->post_excerpt ),
+                );
+        }
+
+        /**
+         * v1.1.14 (P6): emette il blocco <url> di un singolo post con le sue
+         * immagini (image:loc sempre; image:title/image:caption se disponibili).
+         * Tutti i valori escapati: URL con esc_url_raw + htmlspecialchars(ENT_XML1),
+         * testi con lo stesso escaping XML.
+         *
+         * @param WP_Post  $post   Post pubblicato.
+         * @param array[]  $images Lista array{loc,title,caption} (da collect_post_images).
+         * @return void
+         */
+        private static function render_image_url_entry( $post, $images ) {
+                $permalink = get_permalink( $post );
+
+                if ( ! is_string( $permalink ) || '' === $permalink || empty( $images ) ) {
+                        return;
+                }
+
+                echo '<url>' . "\n";
+                echo '<loc>' . self::xml_escape( esc_url_raw( $permalink ) ) . '</loc>' . "\n";
+
+                foreach ( $images as $image ) {
+                        if ( ! is_array( $image ) || empty( $image['loc'] ) ) {
+                                continue;
+                        }
+
+                        echo '<image:image>' . "\n";
+                        echo '<image:loc>' . self::xml_escape( esc_url_raw( (string) $image['loc'] ) ) . '</image:loc>' . "\n";
+
+                        if ( ! empty( $image['title'] ) ) {
+                                echo '<image:title>' . self::xml_escape( (string) $image['title'] ) . '</image:title>' . "\n";
+                        }
+                        if ( ! empty( $image['caption'] ) ) {
+                                echo '<image:caption>' . self::xml_escape( (string) $image['caption'] ) . '</image:caption>' . "\n";
+                        }
+
+                        echo '</image:image>' . "\n";
+                }
+
+                echo '</url>' . "\n";
+        }
+
+        /**
+         * v1.1.14 (P6): normalizza un testo per i tag XML (strip tag + collasso
+         * spazi). L'escaping XML vero avviene in xml_escape().
+         *
+         * @param string $text Testo di partenza.
+         * @return string
+         */
+        private static function xml_text( $text ) {
+                $text = trim( wp_strip_all_tags( (string) $text ) );
+
+                return trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
+        }
+
+        /**
+         * v1.1.14 (P6): escaping XML per valori testuali e URL già normalizzati
+         * con esc_url_raw: htmlspecialchars con ENT_XML1|ENT_COMPAT e UTF-8
+         * (escapa & < > " — i requisiti di well-formedness XML).
+         *
+         * @param string $value Valore da escapare.
+         * @return string
+         */
+        private static function xml_escape( $value ) {
+                return htmlspecialchars( (string) $value, ENT_XML1 | ENT_COMPAT, 'UTF-8' );
         }
 
         /**

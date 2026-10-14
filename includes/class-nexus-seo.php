@@ -23,6 +23,11 @@
  *                                              JSON-LD @type NewsArticle su single nexus_article e post
  *                                              nativi (dual-mode v1.1.0); da v1.1.2 anche hreflang
  *                                              alternati e og:locale se 'post' ha più lingue pubblicate.
+ *                                              v1.1.14 (P6): JSON-LD NewsArticle COMPLETO (dateModified,
+ *                                              publisher Organization con logo = site icon, articleSection
+ *                                              dalla categoria, author Person/Organization secondo l'entità
+ *                                              risolta) + Twitter Card (twitter:card/title/description/
+ *                                              image) affiancate agli OG esistenti.
  * Nexus_SEO::filter_title( $title )          — hook pre_get_document_title: su single nexus_article usa
  *                                              _nexus_seo_title se presente, altrimenti "Titolo | Nome sito"
  *                                              (separatore ' | ').
@@ -205,6 +210,20 @@ class Nexus_SEO {
          * Nexus_Multilang. Guardie: classe assente, non-singular o meno di due lingue
          * pubblicate: nessun output aggiuntivo, mai fatale.
          *
+         * v1.1.14 (P6) — JSON-LD NewsArticle completo (UN SOLO blocco, esteso in
+         * loco, mai duplicato): headline, description, image (featured image,
+         * corretta dalla v1.1.0: get_the_post_thumbnail_url con fallback
+         * article->image_url — verificata, nessuna modifica necessaria),
+         * datePublished, dateModified (post modified, ISO 8601), author come
+         * Person quando l'entità risolta è un agente/utente reale, Organization
+         * quando l'unico autore disponibile è il nome del sito, publisher
+         * Organization con logo dal site icon (assente il tag), articleSection
+         * dalla categoria WP nativa (fallback categoria Nexus), mainEntityOfPage.
+         * v1.1.14 (P6) — Twitter Card: twitter:card (summary_large_image con
+         * immagine, summary senza), twitter:title, twitter:description e
+         * twitter:image STESSA immagine in evidenza di og:image (nessun tag
+         * twitter esisteva prima: nessun duplicato introdotto).
+         *
          * @return void
          */
         public static function print_head_meta() {
@@ -262,7 +281,13 @@ class Nexus_SEO {
                 // Data di pubblicazione in formato ISO 8601.
                 $published = get_the_date( 'c', $post );
 
+                // v1.1.14 (P6): data ultima modifica (ISO 8601) per dateModified.
+                $modified = get_the_modified_date( 'c', $post );
+
                 // Autore: nome dell'agente Nexus che ha generato l'articolo, con fallback.
+                // v1.1.14 (P6): $author_is_site true quando l'unica entità disponibile
+                // è il nome del sito → JSON-LD author come Organization (non Person).
+                $author_is_site = false;
                 $author_name = '';
                 if ( $article && ! empty( $article->agent_id ) && class_exists( 'Nexus_DB' ) ) {
                         $agent = Nexus_DB::get_agent( (int) $article->agent_id );
@@ -277,9 +302,21 @@ class Nexus_SEO {
                         }
                 }
                 if ( '' === $author_name ) {
-                        $author_name = get_bloginfo( 'name' );
+                        $author_name    = get_bloginfo( 'name' );
+                        $author_is_site = true;
                 }
                 $author_name = self::clean_text( $author_name, 0 );
+
+                // v1.1.14 (P6): articleSection dalla categoria WP nativa del post
+                // (impostata dal publisher), fallback categoria dell'articolo Nexus.
+                $ld_section = '';
+                $wp_cats    = get_the_category( $post_id );
+                if ( is_array( $wp_cats ) && ! empty( $wp_cats ) && isset( $wp_cats[0]->name ) ) {
+                        $ld_section = self::clean_text( $wp_cats[0]->name, 0 );
+                }
+                if ( '' === $ld_section && $article && ! empty( $article->category ) ) {
+                        $ld_section = self::clean_text( self::field( $article, 'category' ), 0 );
+                }
 
                 // Uscita anticipata se non c'è proprio nulla di utile da stampare.
                 if ( '' === $seo_title && '' === $seo_description && '' === $permalink ) {
@@ -309,6 +346,27 @@ class Nexus_SEO {
                 }
                 if ( '' !== $published ) {
                         echo '<meta property="article:published_time" content="' . esc_attr( $published ) . '">' . "\n";
+                }
+                if ( '' !== $modified ) {
+                        echo '<meta property="article:modified_time" content="' . esc_attr( $modified ) . '">' . "\n";
+                }
+
+                // v1.1.14 (P6): Twitter Card. twitter:image usa la STESSA immagine
+                // in evidenza di og:image (featured image, fallback image_url
+                // dell'articolo Nexus): nessun tag twitter esisteva prima.
+                if ( '' !== $image_url ) {
+                        echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
+                } else {
+                        echo '<meta name="twitter:card" content="summary">' . "\n";
+                }
+                if ( '' !== $seo_title ) {
+                        echo '<meta name="twitter:title" content="' . esc_attr( $seo_title ) . '">' . "\n";
+                }
+                if ( '' !== $seo_description ) {
+                        echo '<meta name="twitter:description" content="' . esc_attr( $seo_description ) . '">' . "\n";
+                }
+                if ( '' !== $image_url ) {
+                        echo '<meta name="twitter:image" content="' . esc_url( $image_url ) . '">' . "\n";
                 }
 
                 // v1.1.2 Multilingua nativo (CONTRATTO-v1.1.2.md): sulle single di tipo
@@ -383,9 +441,12 @@ class Nexus_SEO {
                 }
 
                 // JSON-LD NewsArticle (dati strutturati per i motori di ricerca).
+                // v1.1.14 (P6): UN SOLO blocco (esteso, mai duplicato) con
+                // dateModified, publisher+logo, articleSection e author tipizzato.
                 $ld_headline       = '' !== $seo_title ? $seo_title : self::clean_text( get_the_title( $post_id ), 0 );
                 $ld_description    = $seo_description;
                 $ld_published      = self::clean_text( $published, 0 );
+                $ld_modified       = self::clean_text( $modified, 0 );
 
                 $schema = array(
                         '@context'         => 'https://schema.org',
@@ -396,14 +457,45 @@ class Nexus_SEO {
                                 '@type' => 'WebPage',
                                 '@id'   => $permalink,
                         ),
-                        'author'           => array(
+                );
+
+                // Author: Person per agente/utente reale, Organization quando
+                // l'unico autore disponibile è il nome del sito (v1.1.14 P6).
+                if ( $author_is_site ) {
+                        $schema['author'] = array(
+                                '@type' => 'Organization',
+                                'name'  => $author_name,
+                        );
+                } else {
+                        $schema['author'] = array(
                                 '@type' => 'Person',
                                 'name'  => $author_name,
-                        ),
+                        );
+                }
+
+                // Publisher: Organization col nome del sito; logo dal site icon
+                // (campo non configurabile nel plugin: niente opzioni inventate).
+                $publisher = array(
+                        '@type' => 'Organization',
+                        'name'  => self::clean_text( get_bloginfo( 'name' ), 0 ),
                 );
+                $logo_url = get_site_icon_url( 512 );
+                if ( is_string( $logo_url ) && '' !== $logo_url ) {
+                        $publisher['logo'] = array(
+                                '@type' => 'ImageObject',
+                                'url'   => $logo_url,
+                        );
+                }
+                $schema['publisher'] = $publisher;
 
                 if ( '' !== $ld_published ) {
                         $schema['datePublished'] = $ld_published;
+                }
+                if ( '' !== $ld_modified ) {
+                        $schema['dateModified'] = $ld_modified;
+                }
+                if ( '' !== $ld_section ) {
+                        $schema['articleSection'] = $ld_section;
                 }
                 // "image" viene incluso solo se disponibile (valori vuoti non ammessi da schema.org).
                 if ( '' !== $image_url ) {
