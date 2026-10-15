@@ -86,12 +86,30 @@
  * pubblica); (e) entrano i meta multilingua del driver nexus _nexus_lang,
  * _nexus_trid e _nexus_source_post_id (v1.1.2).
  *
+ * Dalla v1.1.18 (FIX-5, AL-16): il guard di ingresso usa il check standard
+ * defined( 'WP_UNINSTALL_PLUGIN' ). Prima era un confronto a stringa esatta
+ * col basename 'nexus-news-ai/nexus-news-ai.php': con la cartella del plugin
+ * rinominata (zip manuale, deploy composer/bedrock, cartella del repo)
+ * l'uninstall usciva come NO-OP silenzioso — tabelle, opzioni e SEGRETI
+ * (nexus_gsc_token cifrato, chiavi provider in nexus_settings) restavano sul
+ * DB per sempre. WordPress esegue uninstall.php SOLO per il plugin realmente
+ * in cancellazione e definisce WP_UNINSTALL_PLUGIN solo in quel contesto: il
+ * vincolo sul nome cartella era ridondante come protezione e fragile come
+ * requisito. Il caricamento di Nexus_DB a fondo file non dipende dal nome:
+ * usa il fallback __DIR__ (già presente, preferito).
+ *
  * @package Nexus_News_AI
  */
 
-// Esci se non siamo in un contesto di disinstallazione valido
-// (WP_UNINSTALL_PLUGIN definito e coincidente col basename di questo plugin).
-if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) || 'nexus-news-ai/nexus-news-ai.php' !== WP_UNINSTALL_PLUGIN ) {
+// Esci se non siamo in un contesto di disinstallazione valido (v1.1.18, AL-16:
+// check standard WP). Prima: 'nexus-news-ai/nexus-news-ai.php' !== WP_UNINSTALL_PLUGIN
+// → con la cartella del plugin RINOMINATA l'intera pulizia era un no-op
+// silenzioso (exit immediato): tabelle, opzioni e segreti restavano sul DB.
+// WordPress definisce WP_UNINSTALL_PLUGIN SOLO quando esegue uninstall.php
+// per il plugin realmente in cancellazione: basta il check defined(), nessun
+// vincolo sul nome cartella. Il caricamento di Nexus_DB sotto usa comunque il
+// fallback __DIR__, indipendente dal basename (vedi candidati a fondo file).
+if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
         exit;
 }
 
@@ -137,6 +155,9 @@ function nexus_uninstall_delete_options() {
         delete_option( 'nexus_digest_optin_v1' );       // v1.1.14 — flag migrazione opt-in digest
         delete_option( 'nexus_news_sitemap_flushed' );  // v1.1.14 — stato flush news/images sitemap
         delete_option( 'nexus_video_sitemap_flushed' ); // v1.1.14 — stato flush video sitemap
+        // v1.1.18 «Recupero e Segreti» — opzioni dei nuovi moduli/fix.
+        delete_option( 'nexus_gsc_plaintext_notice' ); // v1.1.18 (AL-15) — notice admin openssl
+        delete_option( 'nexus_digest_cursor' );        // v1.1.18 (C) — cursor resume digest newsletter
 }
 
 /**
@@ -225,6 +246,14 @@ function nexus_uninstall_delete_transients() {
                 'nexus_pubapi_rl_',  // v1.1.15 (WF2) — rate limit API pubblica (nexus-public/v1).
                 'nexus_image_sitemap_cache', // v1.1.15 (WF6) — cache XML sitemap immagini (TTL 2h).
                 'nexus_video_sitemap_cache', // v1.1.15 (WF6) — cache XML video sitemap (TTL 2h).
+                'nexus_resume_lock_',        // v1.1.x — lock resume articoli pipeline.
+                'nexus_publish_lock_',       // v1.1.x — lock pubblicazione pipeline.
+                'nexus_wire_lock_',          // v1.1.18 (AL-7) — lock per-tema Nexus Wire.
+                'nexus_sync_lock_',          // v1.1.18 (B) — lock endpoint sincroni REST.
+                'nexus_sync_rl_',            // v1.1.18 (B) — rate limit endpoint sincroni REST.
+                'nexus_digest_tick_lock',    // v1.1.18 (C) — lock tick digest newsletter.
+                'nexus_health_run_lock',     // v1.1.18 — lock run health check.
+                'nexus_live_payload',        // v1.1.18 — cache payload live Wire.
         );
 
         foreach ( $prefixes as $prefix ) {

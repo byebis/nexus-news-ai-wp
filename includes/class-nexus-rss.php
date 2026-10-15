@@ -170,7 +170,10 @@ class Nexus_Rss {
          * quelli dei feed di categoria e collect li consumi allo stesso modo.
          * Difensivo: URL non consentita dalla SSRF guard (v1.1.15 WB3,
          * Nexus_Tools::assert_safe_url: DNS + IP privati, fail-closed), feed
-         * in errore, vuoto o fetch_feed assente → array().
+         * in errore, vuoto o fetch_feed assente → array(). v1.1.18 (AL-3):
+         * richiesta interna con redirect 0 e body cap 2 MB (filtrabile) —
+         * nessun redirect seguibile fuori guardia e nessun body illimitato
+         * in memoria (feed enorme → errore di parse onesto).
          *
          * @param string $feed_url  URL del feed.
          * @param int    $max_items Numero massimo di item da estrarre dal feed.
@@ -197,7 +200,43 @@ class Nexus_Rss {
                         return array();
                 }
 
-                $feed = fetch_feed( $feed_url );
+                // v1.1.18 (AL-3, FIX-6): stesso pattern di Nexus_Tools::read_feed —
+                // redirect 0 e cap memoria per la richiesta interna di fetch_feed.
+                // I filtri valgono SOLO per questa chiamata (aggancio e rimozione
+                // immediata). Nota implementativa: WP_SimplePie_File passa
+                // 'redirection' esplicito a wp_remote_request, quindi il filtro
+                // http_request_args (che interviene DOPO il merge dei default di
+                // WP_Http) è quello che forza davvero i due parametri; il cap sul
+                // body ('limit_response_size', default 2 MB filtrabile) tronca la
+                // risposta alla fonte: un feed enorme (o un redirect verso un file
+                // interno) degrada in errore di parse onesto invece di saturare la
+                // memoria del cron.
+                $redirect_filter = function () {
+                        return 0;
+                };
+                $args_filter = function ( $args ) {
+                        if ( is_array( $args ) ) {
+                                $args['redirection']         = 0;
+                                $args['limit_response_size'] = class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'http_max_response_bytes' )
+                                        ? (int) Nexus_Tools::http_max_response_bytes()
+                                        : 2097152; // 2 MB.
+                        }
+                        return $args;
+                };
+                add_filter( 'http_request_redirection_count', $redirect_filter );
+                add_filter( 'http_request_args', $args_filter );
+
+                try {
+                        $feed = fetch_feed( $feed_url );
+                } catch ( Throwable $e ) {
+                        remove_filter( 'http_request_redirection_count', $redirect_filter );
+                        remove_filter( 'http_request_args', $args_filter );
+                        return array();
+                }
+
+                remove_filter( 'http_request_redirection_count', $redirect_filter );
+                remove_filter( 'http_request_args', $args_filter );
+
                 if ( is_wp_error( $feed ) ) {
                         return array();
                 }

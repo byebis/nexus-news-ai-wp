@@ -83,7 +83,8 @@
  *                             (v1.1.9, D6: vuoto con placeholder di stato quando
  *                             in DB c'è solo l'hash — la chiave in chiaro esiste
  *                             solo al momento della generazione).
- * - #nxa-tools-keygen         bottone "Genera nuova chiave" (con window.confirm).
+ * - #nxa-tools-keygen         bottone "Genera nuova chiave" (conferma inline via
+ *                             ponte NexusAdminUi — nessun dialogo nativo).
  * - #nxa-tools-key-copy       bottone "Copia" (v1.0.6): copia #nxa-tools-key negli
  *                             appunti; stato "Copiata" temporaneo sul bottone.
  * - #nxa-tools-ai-test        bottone "Testa provider AI" (v1.0.7, Diagnostica AI).

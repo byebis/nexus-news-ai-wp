@@ -51,6 +51,14 @@
  *    dal segmento precedente') e ricongiunti; cap MAX_CHUNKS segmenti (oltre:
  *    log onesto 'contenuto parzialmente tradotto' + 'partial' => true).
  *
+ * v1.1.18 (AL-11):
+ *  - Flag 'truncated' del motore (contratto chat(), marker di ai-engine.php
+ *    righe 645-652) CONSUMATO in parse_ai_json(): una risposta troncata per
+ *    max_tokens NON è più "riparata" e salvata come traduzione completa (il
+ *    parziale restava in DB e il re-check already lo bloccava per sempre).
+ *    Esito onesto ok=false con errore azionabile: la traduzione NON salvata
+ *    può essere ritentata (nessun already=true sul fallimento).
+ *
  * Note di integrazione:
  * - Le rotte REST sono gestite QUI (pattern Nexus_Newsletter), NON in class-nexus-rest.php.
  * - v1.1.2: native_post_for_article e translate_to_post NON registrano rotte:
@@ -592,7 +600,9 @@ class Nexus_Translate {
                         $parsed = self::parse_ai_json( $res );
                         if ( empty( $parsed['ok'] ) ) {
                                 $out['error'] = (string) $parsed['error'];
-                                self::log_activity( $article_id, $lang, false );
+                                // v1.1.18 (AL-11): log attività con la CAUSA onesta (prima
+                                // il motivo restava solo nell'esito al chiamante).
+                                self::log_activity( $article_id, $lang, false, $out['error'] );
                                 return $out;
                         }
 
@@ -738,6 +748,22 @@ class Nexus_Translate {
                         return array(
                                 'ok'    => false,
                                 'error' => '' !== $ai_error ? 'AI: ' . $ai_error : 'AI: chiamata di traduzione non riuscita.',
+                                'data'  => array(),
+                        );
+                }
+
+                // v1.1.18 (AL-11) — flag 'truncated' del motore (contratto chat():
+                // chiave additiva presente SOLO quando l'ULTIMA risposta è restata
+                // troncata per max_tokens; per l'action 'translate' il motore ha già
+                // consumato il bump ×1.5, quindi arrivare qui significa che anche il
+                // tentativo extra è mozzato). Il JSON "riparato" dell'estrattore è
+                // un contenuto PARZIALE: errore onesto e NESSUN salvataggio — prima
+                // il segmento mozzato veniva salvato come traduzione completa e il
+                // re-check dentro il lock lo bloccava per sempre con already=true.
+                if ( ! empty( $res['truncated'] ) ) {
+                        return array(
+                                'ok'    => false,
+                                'error' => 'AI: risposta troncata (max_tokens esauriti): la traduzione è incompleta e NON viene salvata. Riprova o scegli un modello con più token di output.',
                                 'data'  => array(),
                         );
                 }

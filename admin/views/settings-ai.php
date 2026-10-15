@@ -51,9 +51,12 @@
  *   nel contratto; la vecchia <datalist> #nxa-ai-models-datalist è RIMOSSA
  *   (sostituita dal picker WP12).
  * - ai_api_key: input type="password" (mai mostrata in chiaro a schermo);
- *   il value è stampato con esc_attr e inviato SOLO se compilato (password
- *   vuota = nessun cambio). Stesso pattern per le chiavi prov_key_* e per
- *   tools_search_key.
+ *   v1.1.18 (FIX-8): il value NON è stampato (value="" + classe "nxa-secret",
+ *   placeholder '•••• salvata — compila per sostituire' quando valorizzata) e
+ *   la chiave è inviata SOLO se compilata (password vuota = nessun cambio; il
+ *   PUT /settings scarta comunque i segreti vuoti). Stesso pattern per le
+ *   chiavi prov_key_* (indicatore «salvato»: badge nxa-prov-dot + placeholder)
+ *   e per tools_search_key.
  * - Sezione "Provider AI per agente" (v1.1.10, WP10 — wizard provider): la
  *   lista arriva da Nexus_Providers::catalog() (fallback elenco statico se la
  *   classe non è caricata); le voci CUSTOM (chiave 'cust_*') sono SALTATE
@@ -312,7 +315,7 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                 <tr>
                                                         <th scope="row"><label for="nxa-ai-api-key"><?php esc_html_e( 'Chiave API AI', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="ai_api_key" id="nxa-ai-api-key" value="<?php echo esc_attr( $settings['ai_api_key'] ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="ai_api_key" id="nxa-ai-api-key" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['ai_api_key'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Chiave API del provider AI (OpenRouter o endpoint compatibile OpenAI). Salvata nel database del sito, mai mostrata in chiaro.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
@@ -353,7 +356,7 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                                         <span class="screen-reader-text"><?php echo $prov_set ? esc_html__( 'Chiave configurata', 'nexus-news-ai' ) : esc_html__( 'Chiave non configurata', 'nexus-news-ai' ); ?></span>
                                                                 </th>
                                                                 <td>
-                                                                        <input type="password" name="prov_key_<?php echo esc_attr( $prov_id ); ?>" id="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>" value="<?php echo esc_attr( $settings[ 'prov_key_' . $prov_id ] ?? '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                        <input type="password" name="prov_key_<?php echo esc_attr( $prov_id ); ?>" id="nxa-prov-key-<?php echo esc_attr( $prov_id ); ?>" value="" placeholder="<?php echo esc_attr( $prov_set ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                         <p class="nxa-prov-actions">
                                                                                 <?php if ( $prov_oauth ) : ?>
                                                                                         <button type="button" class="button button-secondary nxa-prov-oauth" data-provider="<?php echo esc_attr( $prov_id ); ?>">🔗 <?php echo esc_html( sprintf( __( 'Connetti con %s', 'nexus-news-ai' ), $prov_label ) ); ?></button>
@@ -532,7 +535,7 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                                                 <tr>
                                                         <th scope="row"><label for="nxa-tools-search-key"><?php esc_html_e( 'Chiave API del provider di ricerca', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="tools_search_key" id="nxa-tools-search-key" value="<?php echo esc_attr( $tools_search_key ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="tools_search_key" id="nxa-tools-search-key" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $tools_search_key ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Chiave del servizio di ricerca scelto (Tavily, Serper o Brave). Salvata nel database del sito, mai mostrata in chiaro.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>

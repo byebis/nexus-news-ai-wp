@@ -795,15 +795,21 @@ class Nexus_Calendar {
         }
 
         /**
-         * Normalizza una stringa oraria in 'HH:MM' (null se non valida).
+         * Normalizza una stringa oraria in 'HH:MM' (null se vuota o non valida).
          *
-         * @param mixed $raw Valore grezzo ('9:05', '09:05', '09.05').
+         * v1.1.18 (AL/B normalize_hhmm): l'input vuoto ritorna null — prima
+         * ritornava '' e uno slot semivuoto veniva accettato con side effect
+         * reali (PHP notice su explode in next_slot_start e post riallineati
+         * alle 00:00). I callers trattano null come "slot non valido": scartato
+         * o ignorato, mai persistito né usato per i riallineamenti.
+         *
+         * @param mixed $raw Valore grezzo ('9:05', '09:05', '09.05', '').
          * @return string|null
          */
         private static function normalize_hhmm( $raw ) {
                 $raw = trim( (string) $raw );
                 if ( '' === $raw ) {
-                        return '';
+                        return null;
                 }
 
                 if ( ! preg_match( '/^(\d{1,2})[:.](\d{1,2})$/', $raw, $m ) ) {
@@ -889,6 +895,13 @@ class Nexus_Calendar {
                 for ( $i = 0; $i < 8; $i++ ) {
                         $day_candidate = $day->modify( '+' . $i . ' days' );
                         foreach ( $ordered as $slot ) {
+                                // Difesa (v1.1.18, AL/B): slot malformati (dati legacy
+                                // pre-fix o vie non previste) vengono SALTATI — mai
+                                // explode su '' e mai riallineamenti a mezzanotte.
+                                // valid_slots li filtra già al caricamento della config.
+                                if ( ! isset( $slot['from'] ) || ! preg_match( '/^\d{1,2}:\d{2}$/', (string) $slot['from'] ) ) {
+                                        continue;
+                                }
                                 $parts = explode( ':', $slot['from'] );
                                 $cand  = $day_candidate->setTime( (int) $parts[0], (int) $parts[1], 0 );
                                 if ( $cand >= $floor ) {
@@ -1257,15 +1270,21 @@ class Nexus_Calendar {
                 // non valida viene scartata (i buchi restano tali).
                 $count = max( count( $froms ), count( $tos ) );
                 for ( $i = 0; $i < $count; $i++ ) {
-                        $from = isset( $froms[ $i ] ) ? self::normalize_hhmm( $froms[ $i ] ) : '';
-                        $to   = isset( $tos[ $i ] ) ? self::normalize_hhmm( $tos[ $i ] ) : '';
+                        // v1.1.18 (AL/B): default null — normalize_hhmm ritorna null
+                        // per input vuoto/non valido (prima '' : lo slot semivuoto
+                        // passava le validazioni ed entrava in DB).
+                        $from = isset( $froms[ $i ] ) ? self::normalize_hhmm( $froms[ $i ] ) : null;
+                        $to   = isset( $tos[ $i ] ) ? self::normalize_hhmm( $tos[ $i ] ) : null;
 
-                        if ( '' === $from && '' === $to ) {
-                                // Riga vuota: ignorata (non è un errore).
+                        if ( null === $from && null === $to ) {
+                                // Riga completamente vuota: ignorata (non è un errore).
                                 continue;
                         }
                         if ( null === $from || null === $to || strcmp( $from, $to ) >= 0 ) {
-                                // Da > a o orario illeggibile: scartata e contata.
+                                // Da > a, orario illeggibile o riga SEMIVUOTA (un solo
+                                // campo valorizzato): scartata e contata — nessuno slot
+                                // parziale entra in DB (niente notice PHP né post
+                                // riallineati alle 00:00).
                                 $bad++;
                                 continue;
                         }

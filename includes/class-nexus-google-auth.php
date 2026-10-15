@@ -35,10 +35,16 @@
  *   ciphertext ) — il GCM dà integrità oltre alla confidenzialità (CBC senza MAC
  *   accettava payload manipolabili). LEGACY READ-ONLY: i valori 'NEXGSC1:'
  *   (AES-256-CBC delle versioni precedenti) restano decifrabili; ogni
- *   salvataggio (refresh o reconnect) riscrive in GCM. Se l'estensione openssl
- *   è assente → degrado DOCUMENTATO: payload JSON in chiaro + insert_activity di
- *   warning (host senza openssl; la lettura di un option cifrato senza openssl
- *   fallisce in modo sicuro e riporta token assente).
+ *   salvataggio (refresh o reconnect) riscrive in GCM. FAIL-CLOSED (v1.1.18,
+ *   AL-15): se l'estensione openssl è assente NESSUN token viene salvato in
+ *   chiaro — il flusso di collegamento (authorize/callback) fallisce con errore
+ *   esplicito e il rinnovo non persiste (WP_Error); un notice admin persistente
+ *   (option 'nexus_gsc_plaintext_notice' + hook standard admin_notices) spiega
+ *   il requisito. Token in chiaro di installazioni precedenti: restano LEGGIBILI
+ *   (mai lock-out) e vengono RI-CIFRATI al primo caricamento con openssl
+ *   disponibile (migrazione in load_payload); se openssl resta assente il
+ *   notice resta visibile. La lettura di un option cifrato senza openssl
+ *   fallisce in modo sicuro e riporta token assente.
  * - RINNOVO CON LOCK (v1.1.15, WC5b): get_access_token() acquisisce un lock
  *   atomico (add_option 'nexus_gsc_refresh_lock', TTL 30s) prima di chiamare
  *   Google; il processo che non ottiene il lock attende brevemente e riusa il
@@ -70,9 +76,28 @@ final class Nexus_Google_Auth {
         private static $refresh_lock_id = '';
 
         /**
-         * Option WP che contiene il token (cifrato o JSON in chiaro come fallback).
+         * v1.1.18 (AL-15): guardia per-request per la notice "token in chiaro"
+         * (load_payload gira anche nel loop di polling del lock: il flag evita
+         * query ripetute sull'option della notice nello stesso request).
+         *
+         * @var bool
+         */
+        private static $plaintext_notice_requested = false;
+
+        /**
+         * Option WP che contiene il token (cifrato con openssl; per i soli token
+         * di installazioni <= 1.1.17 può essere un JSON in chiaro legacy).
          */
         const OPTION_TOKEN = 'nexus_gsc_token';
+
+        /**
+         * v1.1.18 (AL-15): flag persistente "openssl richiesto" (1 = mostra il
+         * notice admin). Armato quando un salvataggio token viene RIFIUTATO
+         * per openssl assente o quando si rileva un token legacy in chiaro senza
+         * openssl; rimosso alla disconnessione o al ritorno di openssl (il token
+         * legacy viene ri-cifrato da load_payload). Standard admin_notices.
+         */
+        const OPTION_PLAINTEXT_NOTICE = 'nexus_gsc_plaintext_notice';
 
         /**
          * LEGACY (v1.1.15, WC5a): prefisso AES-256-CBC delle versioni precedenti
@@ -165,8 +190,9 @@ final class Nexus_Google_Auth {
         const NONCE_DISCONNECT = 'nexus_gsc_disconnect';
 
         /**
-         * Bootstrap modulo: registra i tre handler admin-post.
-         * NON fa chiamate di rete né letture di option.
+         * Bootstrap modulo: registra i tre handler admin-post e il notice admin
+         * persistente (v1.1.18, AL-15). NON fa chiamate di rete né letture di
+         * option a bootstrap time.
          *
          * @return void
          */
@@ -174,6 +200,10 @@ final class Nexus_Google_Auth {
                 add_action( 'admin_post_' . self::ACTION_AUTHORIZE, array( __CLASS__, 'handle_authorize' ) );
                 add_action( 'admin_post_' . self::ACTION_CALLBACK, array( __CLASS__, 'handle_callback' ) );
                 add_action( 'admin_post_' . self::ACTION_DISCONNECT, array( __CLASS__, 'handle_disconnect' ) );
+
+                // v1.1.18 (AL-15): notice persistente "openssl richiesto"; il
+                // callback filtra per capability e per flag option.
+                add_action( 'admin_notices', array( __CLASS__, 'render_admin_notice' ) );
         }
 
         /**
@@ -193,6 +223,16 @@ final class Nexus_Google_Auth {
 
                 if ( '' === $client_id ) {
                         wp_die( 'Client ID OAuth Google non configurato: compila i campi OAuth nelle Impostazioni prima di collegare Search Console.' );
+                }
+
+                // v1.1.18 (AL-15): fail-closed — senza openssl il token NON viene
+                // salvato in chiaro: il flusso si blocca qui, prima del redirect
+                // verso Google (nessuno scambio di code destinato a fallire).
+                if ( ! self::openssl_available() ) {
+                        self::log_activity( 'openssl richiesto per salvare le credenziali Google in sicurezza: collegamento bloccato (openssl assente)', 'error' );
+                        self::mark_plaintext_notice();
+
+                        wp_die( 'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl sul server e riprova il collegamento dalle Impostazioni.' );
                 }
 
                 $params = array(
@@ -250,6 +290,15 @@ final class Nexus_Google_Auth {
                         self::redirect_settings( 'err', 'config' );
                 }
 
+                // v1.1.18 (AL-15): fail-closed anche qui (difesa in profondità: la
+                // guardia è già in handle_authorize) — nessun token salvato in chiaro.
+                if ( ! self::openssl_available() ) {
+                        self::log_activity( 'openssl richiesto per salvare le credenziali Google in sicurezza: scambio token bloccato (openssl assente)', 'error' );
+                        self::mark_plaintext_notice();
+
+                        wp_die( 'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl sul server e riprova il collegamento dalle Impostazioni.' );
+                }
+
                 $data = self::token_request(
                         array(
                                 'code'          => $code,
@@ -277,7 +326,12 @@ final class Nexus_Google_Auth {
                 $scopes  = isset( $data['scope'] ) ? (string) $data['scope'] : self::default_scopes();
                 $expires = isset( $data['expires_in'] ) ? (int) $data['expires_in'] : self::DEFAULT_EXPIRES_IN;
 
-                self::save_payload( (string) $data['access_token'], $refresh, $expires, $scopes );
+                if ( ! self::save_payload( (string) $data['access_token'], $refresh, $expires, $scopes ) ) {
+                        // v1.1.18 (AL-15): fail-closed — nessun token in chiaro nel DB
+                        // (openssl assente o cifratura fallita): esito onesto, il
+                        // notice persistente spiega il requisito.
+                        wp_die( 'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl sul server e riprova il collegamento dalle Impostazioni.' );
+                }
 
                 self::log_activity( 'Collegamento Google (Search Console + GA4) completato', 'success' );
                 self::redirect_settings( 'ok' );
@@ -418,7 +472,11 @@ final class Nexus_Google_Auth {
                         $new_scopes  = isset( $data['scope'] ) ? (string) $data['scope'] : $old_scopes;
                         $new_expires = isset( $data['expires_in'] ) ? (int) $data['expires_in'] : self::DEFAULT_EXPIRES_IN;
 
-                        self::save_payload( $new_access, $new_refresh, $new_expires, $new_scopes );
+                        if ( ! self::save_payload( $new_access, $new_refresh, $new_expires, $new_scopes ) ) {
+                                // v1.1.18 (AL-15): fail-closed — il rinnovo NON viene
+                                // persistito in chiaro; l'option precedente resta intatta.
+                                return new WP_Error( 'nexus_gsc_oauth', 'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl e ricollega Search Console.' );
+                        }
 
                         return $new_access;
                 } finally {
@@ -455,10 +513,17 @@ final class Nexus_Google_Auth {
         /**
          * Disconnessione: rimozione dell'option del token.
          *
+         * v1.1.18 (AL-15): rimuove anche il flag della notice "openssl/token in
+         * chiaro" — senza token non c'è più nulla da proteggere.
+         *
          * @return bool Esito di delete_option (false anche se il token non c'era).
          */
         public static function disconnect() {
-                return delete_option( self::OPTION_TOKEN );
+                $removed = delete_option( self::OPTION_TOKEN );
+
+                self::clear_plaintext_notice();
+
+                return $removed;
         }
 
         /**
@@ -776,11 +841,17 @@ final class Nexus_Google_Auth {
         /**
          * Salva il payload del token cifrato nell'option (autoload off).
          *
+         * v1.1.18 (AL-15) FAIL-CLOSED: senza openssl (o se la cifratura fallisce)
+         * il payload NON viene salvato in chiaro — ritorna false lasciando
+         * intatto il valore precedente dell'option, arma il notice admin
+         * persistente e scrive il log di warning. I chiamanti (flusso di
+         * connessione e rinnovo) gestiscono false come errore esplicito.
+         *
          * @param string $access_token  Access token Google.
          * @param string $refresh_token Refresh token ('' se non ancora ricevuto).
          * @param int    $expires_in    Durata in secondi (da Google).
          * @param string $scopes        Scopes concessi (stringa separata da spazi).
-         * @return void
+         * @return bool True se salvato CIFRATO, false se il salvataggio è stato rifiutato.
          */
         private static function save_payload( $access_token, $refresh_token, $expires_in, $scopes ) {
                 $payload = array(
@@ -791,7 +862,17 @@ final class Nexus_Google_Auth {
                         'created_at'    => time(),
                 );
 
-                update_option( self::OPTION_TOKEN, self::encrypt_payload( (string) wp_json_encode( $payload ) ), false );
+                $cipher = self::encrypt_payload( (string) wp_json_encode( $payload ) );
+
+                if ( ! is_string( $cipher ) || '' === $cipher ) {
+                        self::mark_plaintext_notice();
+
+                        return false;
+                }
+
+                update_option( self::OPTION_TOKEN, $cipher, false );
+
+                return true;
         }
 
         /**
@@ -803,27 +884,28 @@ final class Nexus_Google_Auth {
          * Ogni salvataggio (refresh o reconnect) riscrive così il token anche se
          * era NEXGSC1 (CBC legacy): migrazione automatica al primo uso.
          *
-         * Fallback DOCUMENTATO (host senza openssl o cifratura fallita): ritorna
-         * il JSON in chiaro con insert_activity di warning; la decifratura di un
-         * option cifrato su un host senza openssl fallisce in modo sicuro (token
-         * considerato assente).
+         * v1.1.18 (AL-15) FAIL-CLOSED: nessun fallback in chiaro — se openssl non
+         * è disponibile o la cifratura fallisce ritorna null e il chiamante NON
+         * deve persistere il payload (il vecchio fallback "JSON in chiaro + log"
+         * delle versioni <= 1.1.17 è stato rimosso; resta il notice admin).
          *
          * @param string $json Payload JSON del token.
-         * @return string Valore da persistere nell'option.
+         * @return string|null Valore cifrato da persistere, null se la cifratura
+         *                     sicura non è possibile.
          */
         private static function encrypt_payload( $json ) {
                 if ( ! self::openssl_available() ) {
-                        self::log_activity( 'Estensione openssl assente: token salvato NON cifrato (degrado documentato)', 'warning' );
+                        self::log_activity( 'Estensione openssl assente: salvataggio del token RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)', 'warning' );
 
-                        return $json;
+                        return null;
                 }
 
                 $iv = openssl_random_pseudo_bytes( self::GCM_IV_BYTES );
 
                 if ( ! is_string( $iv ) || self::GCM_IV_BYTES !== strlen( $iv ) ) {
-                        self::log_activity( 'Generazione IV fallita: token salvato NON cifrato (degrado documentato)', 'warning' );
+                        self::log_activity( 'Generazione IV fallita: salvataggio del token RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)', 'warning' );
 
-                        return $json;
+                        return null;
                 }
 
                 // GCM: $tag by-ref (PHP 7.1+), tag di autenticazione a 128 bit.
@@ -831,9 +913,9 @@ final class Nexus_Google_Auth {
                 $cipher = openssl_encrypt( $json, self::CIPHER_METHOD_GCM, self::cipher_key(), OPENSSL_RAW_DATA, $iv, $tag );
 
                 if ( false === $cipher || '' === $cipher || ! is_string( $tag ) || self::GCM_TAG_BYTES !== strlen( $tag ) ) {
-                        self::log_activity( 'Cifratura token fallita: token salvato NON cifrato (degrado documentato)', 'warning' );
+                        self::log_activity( 'Cifratura token fallita: salvataggio RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)', 'warning' );
 
-                        return $json;
+                        return null;
                 }
 
                 return self::CIPHER_MARKER_GCM . base64_encode( $iv . $tag . $cipher );
@@ -847,7 +929,10 @@ final class Nexus_Google_Auth {
          *    AES-256-GCM — un tag mismatch (payload manomesso o corrotto) → null;
          *  - CIPHER_MARKER 'NEXGSC1:' (LEGACY, sola lettura): base64( IV(16) .
          *    ciphertext ), AES-256-CBC delle versioni precedenti;
-         *  - JSON in chiaro: fallback documentato per host senza openssl.
+         *  - JSON in chiaro: SOLO token legacy di installazioni <= 1.1.17 (host
+         *    senza openssl): resta leggibile, MA (v1.1.18, AL-15) con openssl
+         *    disponibile viene ri-cifrato al primo caricamento (migrazione) e
+         *    senza openssl arma il notice admin persistente.
          * Qualunque problema (option corrotta, openssl assente su valore cifrato,
          * taglio/garbage) → null, senza eccezioni.
          *
@@ -912,10 +997,117 @@ final class Nexus_Google_Auth {
                         return is_array( $payload ) ? $payload : null;
                 }
 
-                // Fallback in chiaro (host senza openssl): JSON diretto.
+                // Token in chiaro LEGACY (installazioni <= 1.1.17 su host senza
+                // openssl): resta LEGGIBILE (mai lock-out sui dati esistenti).
+                // v1.1.18 (AL-15): con openssl disponibile → ri-cifratura al primo
+                // successo; senza openssl → notice admin persistente in dashboard.
                 $payload = json_decode( $stored, true );
 
-                return is_array( $payload ) ? $payload : null;
+                if ( ! is_array( $payload ) ) {
+                        return null;
+                }
+
+                if ( self::openssl_available() ) {
+                        self::migrate_plaintext_payload( $payload );
+                } else {
+                        self::mark_plaintext_notice();
+                }
+
+                return $payload;
+        }
+
+        /**
+         * v1.1.18 (AL-15): ri-cifra un token legacy salvato in chiaro (il
+         * chiamante ha già verificato openssl_available()). Scrittura idempotente:
+         * al successo l'option diventa NEXGSC2 e il notice viene rimosso; un
+         * eventuale doppio migrate concorrente produce comunque un payload GCM
+         * valido (stesso contenuto, IV diversi).
+         *
+         * @param array $payload Payload già decodificato dall'option.
+         * @return bool True se l'option è stata riscritta cifrata.
+         */
+        private static function migrate_plaintext_payload( $payload ) {
+                $json = wp_json_encode( $payload );
+
+                if ( ! is_string( $json ) || '' === $json ) {
+                        return false;
+                }
+
+                $cipher = self::encrypt_payload( $json );
+
+                if ( ! is_string( $cipher ) || '' === $cipher ) {
+                        return false; // cifratura fallita: il chiaro resta, log già scritto.
+                }
+
+                update_option( self::OPTION_TOKEN, $cipher, false );
+                self::clear_plaintext_notice();
+                self::log_activity( 'Token Google salvato in chiaro da versioni precedenti ri-cifrato (openssl disponibile)', 'success' );
+
+                return true;
+        }
+
+        /**
+         * v1.1.18 (AL-15): arma il notice admin persistente "openssl richiesto /
+         * token in chiaro". Idempotente: guardia per-request + add_option (che
+         * non sovrascrive un flag già presente).
+         *
+         * @return void
+         */
+        private static function mark_plaintext_notice() {
+                if ( self::$plaintext_notice_requested ) {
+                        return;
+                }
+
+                self::$plaintext_notice_requested = true;
+
+                if ( false === get_option( self::OPTION_PLAINTEXT_NOTICE, false ) ) {
+                        add_option( self::OPTION_PLAINTEXT_NOTICE, 1, '', 'no' );
+                }
+        }
+
+        /**
+         * v1.1.18 (AL-15): rimuove il notice persistente (ri-cifratura avvenuta o
+         * token disconnesso: non c'è più nulla di esposto).
+         *
+         * @return void
+         */
+        private static function clear_plaintext_notice() {
+                self::$plaintext_notice_requested = false;
+
+                delete_option( self::OPTION_PLAINTEXT_NOTICE );
+        }
+
+        /**
+         * v1.1.18 (AL-15): notice admin persistente (standard WP admin_notices,
+         * solo utenti manage_options) che spiega il requisito openssl. Rimane
+         * visibile finché l'estensione non torna disponibile (nessuna chiusura
+         * manuale): al ritorno di openssl il flag viene rimosso qui e un
+         * eventuale token legacy in chiaro viene ri-cifrato da load_payload.
+         *
+         * @return void
+         */
+        public static function render_admin_notice() {
+                if ( ! current_user_can( 'manage_options' ) ) {
+                        return;
+                }
+
+                if ( ! get_option( self::OPTION_PLAINTEXT_NOTICE, false ) ) {
+                        return;
+                }
+
+                if ( self::openssl_available() ) {
+                        // Conflitto risolto: con openssl di nuovo disponibile un
+                        // eventuale token in chiaro viene ri-cifrato da load_payload
+                        // al primo uso; il flag non serve più (una cifratura fallita
+                        // resta tracciata nel log attività).
+                        self::clear_plaintext_notice();
+
+                        return;
+                }
+
+                echo '<div class="notice notice-warning"><p><strong>Nexus News AI:</strong> ';
+                echo esc_html( 'Estensione PHP openssl assente: openssl è richiesto per salvare le credenziali Google in sicurezza. Il collegamento a Search Console/GA4 resta bloccato (nessun token viene salvato in chiaro) e un eventuale token salvato da versioni precedenti è conservato nel database senza cifratura. Attiva l\'estensione openssl, poi ricollega Google dalle Impostazioni: il token verrà cifrato automaticamente (AES-256-GCM).' );
+                echo '</p></div>';
         }
 
         /* ============ HTTP OAUTH (token endpoint) ============ */

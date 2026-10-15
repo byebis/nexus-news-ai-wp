@@ -1146,12 +1146,37 @@ class Nexus_Sources {
                         return array();
                 }
 
+                // v1.1.18 (FIX-6/C): anti DNS-rebinding — la guard ha risolto e validato
+                // il DNS qualche millisecondo fa, ma la connessione ri-risolverebbe
+                // l'host (TOCTOU): ri-validazione immediata + pin IP validato via
+                // CURLOPT_RESOLVE (Nexus_Tools::pin_http_resolve). Fail-closed: se il
+                // DNS ora risolve a un IP privato/riservato (firma del rebinding) la
+                // fonte viene scartata come per la guard.
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
+                        $pin = Nexus_Tools::pin_http_resolve( $url, true );
+                        if ( is_wp_error( $pin ) ) {
+                                self::log( sprintf( 'Web: URL non consentito "%s".', self::clip( $url, 80 ) ) );
+                                self::mark_failure( $key, 'web ' . self::clip( $url, 80 ) );
+                                return array();
+                        }
+                }
+
                 $res = wp_remote_get(
                         $url,
                         array(
                                 'timeout'    => self::HTTP_TIMEOUT,
                                 'user-agent' => self::UA,
                                 'headers'    => array( 'Accept-Language' => 'it-IT,it;q=0.9,en;q=0.8' ),
+                                // v1.1.18 (AL-1): NESSUN redirect (prima: default WP = 5): il
+                                // target di un rimbalzo NON passa dalla SSRF guard → SSRF
+                                // verso IP interni (169.254.169.254, 10.x, 127.0.0.1). Stesso
+                                // pattern v1.1.9 di download_image/http_get: l'host che
+                                // risponde 3xx degrada in failure/cooldown in modo onesto.
+                                'redirection'         => 0,
+                                // v1.1.18 (AL-1/B): cap memoria sul body (default 2 MB, filtrabile).
+                                'limit_response_size' => class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'http_max_response_bytes' )
+                                        ? (int) Nexus_Tools::http_max_response_bytes()
+                                        : 2097152, // 2 MB.
                         )
                 );
                 if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
@@ -1220,9 +1245,11 @@ class Nexus_Sources {
          * Per ogni item con link, finché c'è budget: cache transient
          * 'nexus_full_{md5(link)}' 6h (hit → nessun fetch e nessun consumo di
          * budget), altrimenti SSRF guard (stesso pattern dell'adapter web),
-         * fetch wp_remote_get (timeout 12, redirect 2, risposta cap 500KB),
-         * guard anti-binario/SVG, estrazione Nexus_Readability::extract() e
-         * validazione titolo→contenuto (min 300 caratteri). Se tutto passa:
+         * fetch wp_remote_get (timeout 12, risposta cap 500KB; v1.1.18 AL-2:
+         * redirect 0 — prima 2 — perché il target di un rimbalzo non passa da
+         * url_is_safe, e pin DNS anti-rebinding), guard anti-binario/SVG,
+         * estrazione Nexus_Readability::extract() e validazione titolo→contenuto
+         * (min 300 caratteri). Se tutto passa:
          * item['description'] = testo PLAIN estratto (clip 6000) e
          * item['full_content'] = 1 (campo additivo, v1.1.10); altrimenti la
          * description RSS resta intatta (log 'full_content_fallback' una sola
@@ -1294,11 +1321,31 @@ class Nexus_Sources {
                         // Ogni fetch reale consuma il budget, anche se poi fallisce.
                         self::$full_budget_left--;
 
+                        // v1.1.18 (FIX-6/C): anti DNS-rebinding — url_is_safe ha risolto il
+                        // DNS qualche millisecondo fa, ma la connessione ri-risolverebbe
+                        // l'host (TOCTOU): ri-validazione immediata + pin IP validato via
+                        // CURLOPT_RESOLVE. Fail-closed: anomalia → nessun fetch, estratto
+                        // RSS mantenuto (stesso fallback del caso guard).
+                        if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
+                                $pin = Nexus_Tools::pin_http_resolve( $link, true );
+                                if ( is_wp_error( $pin ) ) {
+                                        self::log_once(
+                                                'full_content_fallback',
+                                                sprintf( 'Full-content: URL item non consentito (%s): estratto RSS mantenuto.', self::clip( $link, 100 ) )
+                                        );
+                                        continue;
+                                }
+                        }
+
                         $res = wp_remote_get(
                                 $link,
                                 array(
                                         'timeout'             => self::HTTP_TIMEOUT,
-                                        'redirection'         => 2,
+                                        // v1.1.18 (AL-2): redirect 0 (prima 2): il target di un
+                                        // rimbalzo NON passa da url_is_safe → SSRF sui link dei
+                                        // feed (contratto v1.1.9 «niente redirect per contenuti
+                                        // non fidati», già applicato a fetch_web/download_image).
+                                        'redirection'         => 0,
                                         'limit_response_size' => 524288, // 500 KB: più che sufficiente per un articolo.
                                         'user-agent'          => self::UA,
                                         'headers'             => array( 'Accept-Language' => 'it-IT,it;q=0.9,en;q=0.8' ),

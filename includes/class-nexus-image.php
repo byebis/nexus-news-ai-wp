@@ -465,6 +465,20 @@ class Nexus_Image {
                         return $guard;
                 }
 
+                // v1.1.18 (FIX-6/C): anti DNS-rebinding — guard_url valida il DNS ma la
+                // connessione ri-risolverebbe l'host (TOCTOU). Nexus_Tools (se presente;
+                // la classe immagine resta autonoma senza dipendenza dura) ri-valida gli
+                // IP subito prima della richiesta e fissa la connessione sull'IP
+                // validato (CURLOPT_RESOLVE via filtro one-shot http_api_curl).
+                // Fail-closed: se il DNS ora risolve a un IP privato/riservato (firma
+                // del rebinding) o non è più risolvibile, il download viene bloccato.
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
+                        $pin = Nexus_Tools::pin_http_resolve( $url, true );
+                        if ( is_wp_error( $pin ) ) {
+                                return 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.';
+                        }
+                }
+
                 $response = wp_remote_get(
                         $url,
                         array(

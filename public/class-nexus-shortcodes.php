@@ -53,6 +53,15 @@
  *     di post (home, archivi e ricerca con post_type nativo o non impostato);
  *     mai singular, pagine o archivi di altri tipi di post.
  *
+ * NOTA v1.1.18 — SCALABILITÀ (cap post ID): le query che risolvono i post
+ * ID dei filtri redazione/lingua NON usano più posts_per_page = -1 (costo
+ * O(n) a ogni pageview, IN list enorme su siti con migliaia di articoli):
+ * caricano al più branch_id_cap() ID — default 100, filtro dev
+ * 'nexus_shortcode_branch_cap', tetto assoluto 500 (BRANCH_ID_CAP_MAX).
+ * La lista alimenta solo la join con nexus_articles (che espone al più
+ * per_page/limit ≤ 24 righe) e il contatore dell'hero: vedi
+ * Nexus_Shortcodes::branch_id_cap() per i dettagli e i limiti onesti.
+ *
  * =====================================================================================
  * NOTA-INTEGRAZIONE (per public/js/nexus-public.js e public/css/nexus-public.css)
  * =====================================================================================
@@ -133,6 +142,24 @@ final class Nexus_Shortcodes {
          * (.nexus-factcheck.ok): sotto soglia il badge è arancio (.low).
          */
         const FACTCHECK_MIN_OK = 60;
+
+        /**
+         * v1.1.18 (FIX-10): cap DEFAULT di post ID caricati dalle query dei
+         * filtri redazione/lingua degli shortcode pubblici (prima:
+         * posts_per_page = -1, costo O(n) per pageview). La lista ID alimenta
+         * la join con nexus_articles (che espone al più per_page/limit ≤ 24
+         * righe) e il conteggio dell'hero: 100 ID coprono ampiamente le righe
+         * effettivamente mostrate.
+         */
+        const BRANCH_ID_CAP_DEFAULT = 100;
+
+        /**
+         * v1.1.18 (FIX-10): tetto MASSIMO del cap, rispettato anche se il
+         * filtro 'nexus_shortcode_branch_cap' chiede di più: protegge il DB
+         * da IN list enormi su qualunque configurazione (l'utente può
+         * alzare il default con il filtro, mai oltre questo limite).
+         */
+        const BRANCH_ID_CAP_MAX = 500;
 
         /**
          * Cache locale mappa agenti {id => oggetto}.
@@ -1170,6 +1197,29 @@ final class Nexus_Shortcodes {
         }
 
         /**
+         * v1.1.18 (FIX-10) — cap di post ID per le query dei filtri
+         * redazione/lingua. Default 100 (BRANCH_ID_CAP_DEFAULT), filtrabile
+         * con 'nexus_shortcode_branch_cap', SEMPRE clampato a [1,
+         * BRANCH_ID_CAP_MAX=500] per proteggere il DB.
+         *
+         * Perché il cap basta (nota onesta): la lista alimenta
+         * redazione_articles() — che espone al più per_page/limit ≤ 24 righe,
+         * ordinate per published_at DESC: le righe più recenti stanno tra i
+         * post ID più recenti della query (default orderby date DESC) — e
+         * redazione_count_articles() per il contatore dell'hero. Con più di
+         * `cap` post pubblicati nel ramo/lingua il contatore mostra il totale
+         * del sottoinsieme (gli ID oltre il cap non entrano nella lista): i
+         * siti con rami molto più grandi del cap possono alzare il filtro
+         * fino al tetto di 500.
+         *
+         * @return int
+         */
+        private static function branch_id_cap() {
+                $cap = (int) apply_filters( 'nexus_shortcode_branch_cap', self::BRANCH_ID_CAP_DEFAULT );
+                return max( 1, min( self::BRANCH_ID_CAP_MAX, $cap ) );
+        }
+
+        /**
          * Post ID del ramo redazione: termine e tutti i discendenti (v1.1.1).
          *
          * WP_Query nativa con la clausola tax_query include_children; i tipi di
@@ -1178,6 +1228,13 @@ final class Nexus_Shortcodes {
          * class_exists. Solo post pubblicati, cache di term e meta disattivate:
          * servono solo gli ID per collegare le righe articoli della tabella
          * Nexus (colonna wp_post_id) ai post WordPress del ramo.
+         *
+         * v1.1.18 (FIX-10): posts_per_page = -1 (lista illimitata, O(n) per
+         * pageview) → cap branch_id_cap() (default 100 ID più recenti, filtro
+         * 'nexus_shortcode_branch_cap', tetto 500): la lista alimenta solo la
+         * join/contatore nexus_articles, che espone al più per_page ≤ 24 righe.
+         * ignore_sticky_posts: gli ID servono in ordine di data (gli sticky
+         * non devono sottrarre posto ai più recenti entro il cap).
          *
          * @param WP_Term $term Termine redazione.
          * @return array Post ID (int).
@@ -1210,7 +1267,11 @@ final class Nexus_Shortcodes {
                                 'post_type'              => $post_types,
                                 'post_status'            => 'publish',
                                 'fields'                 => 'ids',
-                                'posts_per_page'         => -1,
+                                // v1.1.18 (FIX-10): cap invece di -1 (default 100,
+                                // filtro 'nexus_shortcode_branch_cap', tetto 500):
+                                // vedi branch_id_cap().
+                                'posts_per_page'         => self::branch_id_cap(),
+                                'ignore_sticky_posts'    => true,
                                 'no_found_rows'          => true,
                                 'update_post_term_cache' => false,
                                 'update_post_meta_cache' => false,
@@ -1396,6 +1457,13 @@ final class Nexus_Shortcodes {
          * servono solo gli ID per filtrare le righe della tabella articoli
          * (colonna wp_post_id), identico al flusso del filtro redazione 1.1.1.
          *
+         * v1.1.18 (FIX-10): posts_per_page = -1 (lista illimitata, O(n) per
+         * pageview) → cap branch_id_cap() (default 100 ID più recenti, filtro
+         * 'nexus_shortcode_branch_cap', tetto 500), stessa motivazione e
+         * stessa nota onesta del filtro redazione. ignore_sticky_posts: gli
+         * ID servono in ordine di data (gli sticky non devono sottrarre
+         * posto ai più recenti entro il cap).
+         *
          * @param string $lang Codice lingua.
          * @return array Post ID (int).
          */
@@ -1415,7 +1483,11 @@ final class Nexus_Shortcodes {
                                 'post_type'              => $post_types,
                                 'post_status'            => 'publish',
                                 'fields'                 => 'ids',
-                                'posts_per_page'         => -1,
+                                // v1.1.18 (FIX-10): cap invece di -1 (default 100,
+                                // filtro 'nexus_shortcode_branch_cap', tetto 500):
+                                // vedi branch_id_cap().
+                                'posts_per_page'         => self::branch_id_cap(),
+                                'ignore_sticky_posts'    => true,
                                 'no_found_rows'          => true,
                                 'update_post_term_cache' => false,
                                 'update_post_meta_cache' => false,

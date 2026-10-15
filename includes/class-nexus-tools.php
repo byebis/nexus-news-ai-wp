@@ -126,6 +126,13 @@
  *   agli URL dei server MCP configurati dall'utente (l'UNICA fonte di URL MCP ammessa).
  * - Nessun redirect per i contenuti non fidati ('redirection' => 0): un redirect verso
  *   un host interno non deve poter aggirare la guardia.
+ * - Anti DNS-rebinding (v1.1.18, FIX-6/C): pin_http_resolve() ri-valida il DNS subito
+ *   prima della connessione e fissa l'IP validato con CURLOPT_RESOLVE (filtro one-shot
+ *   'http_api_curl'); fallback documentato: la ri-validazione immediata resta attiva
+ *   anche quando il transport non è cURL.
+ * - limit_response_size (v1.1.18, FIX-6/B): corpi HTTP cap a 2 MB (filtro
+ *   'nexus_http_max_response_bytes') su http_get, http_post_json, mcp_post e read_feed
+ *   (oltre a fetch_web e fetch_feed_items): nessun body illimitato in memoria.
  * - Prompt-injection shield: i risultati esterni (search, read_page, RSS, MCP) arrivano al
  *   modello SOLO dentro marcatori espliciti [INIZIO/FINE CONTENUTO ESTERNO] con le
  *   occorrenze dei marcatori stessi neutralizzate nel testo (non si possono chiudere/spoofare).
@@ -357,6 +364,184 @@ class Nexus_Tools {
                                 return false;
                         }
                 }
+                return true;
+        }
+
+        /* ============ LIMIT RESPONSE + DNS PINNING (v1.1.18, FIX-6/B e FIX-6/C) ============ */
+
+        /**
+         * Limite di dimensione della risposta HTTP (limit_response_size) per i fetch
+         * del plugin: default 2 MB, filtrabile con 'nexus_http_max_response_bytes'
+         * (valore intero > 0). Evita OOM/WSOD nel cron quando un server (o un file
+         * interno raggiunto via URL del modello) risponde con corpi enormi.
+         *
+         * Usato da Nexus_Tools (http_get, http_post_json, mcp_post, read_feed),
+         * Nexus_Rss::fetch_feed_items e Nexus_Sources::fetch_web.
+         *
+         * @return int Byte massimi del body (sempre > 0).
+         */
+        public static function http_max_response_bytes() {
+                $bytes = (int) apply_filters( 'nexus_http_max_response_bytes', 2 * 1024 * 1024 );
+                return $bytes > 0 ? $bytes : 2 * 1024 * 1024;
+        }
+
+        /**
+         * Anti DNS-rebinding (v1.1.18, FIX-6/C): chiude il TOCTOU tra la SSRF guard
+         * (che risolve e valida il DNS) e la connessione (che ri-risolverebbe
+         * l'host, lasciando a un DNS a TTL 0 la possibilità di alternare record
+         * pubblico/privato tra i due momenti).
+         *
+         * Due difese, in ordine:
+         * 1. RI-VALIDAZIONE immediata: ri-risolve l'host e controlla ogni IP con la
+         *    STESSA logica di assert_safe_url (resolve_host_ips + is_banned_ip). Se
+         *    a questo punto compare un IP privato/riservato la richiesta viene
+         *    bloccata (fail-closed): è la firma del rebinding. La finestra TOCTOU
+         *    residua si riduce ai millisecondi tra questa risoluzione e la connect().
+         * 2. PINNING: se la richiesta userà il transport cURL, un filtro one-shot su
+         *    'http_api_curl' fissa la connessione sull'IP validato con
+         *    CURLOPT_RESOLVE ("host:porta:ip"): curl NON ri-risolve il DNS e la
+         *    connect() parte verso l'indirizzo controllato (il pin cambia SOLO
+         *    l'IP: hostname, SNI e validazione del certificato TLS restano quelli
+         *    dell'URL). Il filtro si deregistra da solo al primo scatto: non
+         *    influenza le richieste successive né lascia pin "vecchi" nel processo.
+         *
+         * Fallback documentato (transport non cURL — Streams/fsockopen — o filtro
+         * non agganciato dal transport Requests): resta attiva la difesa 1
+         * (ri-validazione immediata); il residuo TOCTOU è la finestra DNS tra
+         * questa verifica e la connect().
+         *
+         * Semantica di $fail_closed:
+         * - true (contenuti NON fidati: read_page, discover_feeds, fetch_web,
+         *   full-content, download immagini, MCP): host non risolvibile o IP
+         *   bannato al re-check → WP_Error, il chiamante abortisce.
+         * - false (endpoint fissi di fiducia: provider di ricerca via
+         *   http_post_json): MAI bloccare la richiesta — né IP bannato né host
+         *   non risolvibile (es. split-DNS aziendale che mappa i provider su IP
+         *   interni): il pin viene applicato solo quando la risoluzione è
+         *   pulita, altrimenti si prosegue esattamente come prima della v1.1.18.
+         *
+         * Disattivazione di emergenza del solo pinning (la ri-validazione resta
+         * sempre attiva): add_filter( 'nexus_http_dns_pinning_enabled', '__return_false' ).
+         *
+         * @param string $url         URL della richiesta (lo STESSO passato a wp_remote_*).
+         * @param bool   $fail_closed True = anomalia DNS blocca la richiesta; false = solo best-effort.
+         * @return true|WP_Error True se la richiesta può proseguire, WP_Error per bloccarla.
+         */
+        public static function pin_http_resolve( $url, $fail_closed = true ) {
+                $url = trim( (string) $url );
+                if ( '' === $url || ! function_exists( 'wp_parse_url' ) ) {
+                        return $fail_closed
+                                ? new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' )
+                                : true;
+                }
+
+                $host   = strtolower( trim( (string) wp_parse_url( $url, PHP_URL_HOST ), '[]' ) );
+                $scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+                $port   = (int) wp_parse_url( $url, PHP_URL_PORT );
+                if ( $port <= 0 ) {
+                        $port = 'https' === $scheme ? 443 : 80;
+                }
+                if ( '' === $host ) {
+                        return $fail_closed
+                                ? new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' )
+                                : true;
+                }
+
+                // 1) Re-resolve + re-validate IMMEDIATAMENTE prima della richiesta
+                // (fallback quando il pinning non è applicabile): riusa la logica della
+                // guard, quindi blocca anche i record A/AAAA multipli con UN SOLO IP
+                // interno (un solo IP malevolo basta per bloccare, come in guardia).
+                $ips    = self::resolve_host_ips( $host );
+                $banned = false;
+                foreach ( $ips as $ip ) {
+                        if ( self::is_banned_ip( $ip ) ) {
+                                $banned = true;
+                                break;
+                        }
+                }
+
+                if ( $banned ) {
+                        if ( ! $fail_closed ) {
+                                // Endpoint di fiducia in ambiente con DNS partizionato (es.
+                                // split-DNS aziendale che mappa i provider su IP interni):
+                                // né bloccare né pinnare — la richiesta prosegue come prima
+                                // della v1.1.18 (comportamento invariato per le API search).
+                                return true;
+                        }
+                        // Il DNS ora risolve a un IP interno: firma del rebinding dopo la
+                        // guard. Messaggio identico a quello della guard (non rivelare la
+                        // topologia interna).
+                        return new WP_Error( 'nexus_url_not_allowed', 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.' );
+                }
+
+                if ( empty( $ips ) ) {
+                        if ( $fail_closed ) {
+                                return new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' );
+                        }
+                        // Endpoint di fiducia non risolvibile dal resolver di PHP in
+                        // questo ambiente: la richiesta prosegue senza pin (curl userà
+                        // il proprio resolver), come prima della v1.1.18.
+                        return true;
+                }
+
+                // 2) Pinning one-shot via CURLOPT_RESOLVE: ha effetto SOLO con il
+                // transport cURL (il filtro http_api_curl non scatta con Streams/
+                // fsockopen); in quel caso resta la ri-validazione del punto 1.
+                if ( ! apply_filters( 'nexus_http_dns_pinning_enabled', true ) || ! defined( 'CURLOPT_RESOLVE' ) ) {
+                        return true;
+                }
+
+                // IP da fissare: preferisci un IPv4 (resolve_host_ips elenca prima gli
+                // A record): massima compatibilità con ambienti senza connettività
+                // IPv6. Con solo AAAA si usa il primo IPv6 validato.
+                $pin_ip = '';
+                foreach ( $ips as $ip ) {
+                        if ( false === strpos( (string) $ip, ':' ) ) {
+                                $pin_ip = (string) $ip;
+                                break;
+                        }
+                }
+                if ( '' === $pin_ip ) {
+                        $pin_ip = (string) $ips[0];
+                }
+
+                $hook = null;
+                $hook = function ( $handle, $request_args, $request_url ) use ( &$hook, $host, $port, $pin_ip ) {
+                        // One-shot: si deregistra al primo scatto così nessuna richiesta
+                        // successiva dello stesso processo può ereditare un IP fissato
+                        // "vecchio" (TTL DNS scaduto o record ruotato).
+                        remove_filter( 'http_api_curl', $hook, 10 );
+
+                        if ( ! function_exists( 'wp_parse_url' ) ) {
+                                return $handle;
+                        }
+
+                        // Pin SOLO la richiesta a cui è rivolto: host e porta devono
+                        // combaciare (una richiesta annidata di terzi resta intatta e
+                        // lascia cadere il pin, che è best-effort per costruzione).
+                        $match_host = strtolower( trim( (string) wp_parse_url( (string) $request_url, PHP_URL_HOST ), '[]' ) );
+                        if ( $match_host !== $host ) {
+                                return $handle;
+                        }
+
+                        $match_scheme = strtolower( (string) wp_parse_url( (string) $request_url, PHP_URL_SCHEME ) );
+                        $match_port   = (int) wp_parse_url( (string) $request_url, PHP_URL_PORT );
+                        if ( $match_port <= 0 ) {
+                                $match_port = 'https' === $match_scheme ? 443 : 80;
+                        }
+                        if ( $match_port !== $port ) {
+                                return $handle;
+                        }
+
+                        // Fissa host:porta:ip per QUESTA connessione: curl non ri-risolve
+                        // (IPv6 senza parentesi: il parser libcurl divide sui primi due
+                        // due-punti). @: in caso di handle inatteso è solo un no-op.
+                        @curl_setopt( $handle, CURLOPT_RESOLVE, array( $host . ':' . $port . ':' . $pin_ip ) );
+
+                        return $handle;
+                };
+                add_filter( 'http_api_curl', $hook, 10, 3 );
+
                 return true;
         }
 
@@ -726,7 +911,9 @@ class Nexus_Tools {
                 }
 
                 // redirection => 0: un redirect verso un host interno non deve aggirare la guardia.
-                $res = self::http_get( $validated );
+                // v1.1.18 (FIX-6/C): strict — URL scelto dal MODELLO: anomalia DNS al
+                // re-check (rebinding) blocca la lettura.
+                $res = self::http_get( $validated, array(), 0, true );
                 if ( ! $res['ok'] ) {
                         $fail['error'] = 'Lettura pagina: ' . $res['error'];
                         return $fail;
@@ -799,7 +986,9 @@ class Nexus_Tools {
                         return array();
                 }
 
-                $res = self::http_get( $validated );
+                // v1.1.18 (FIX-6/C): strict — discovery di contenuti non fidati: anomalia
+                // DNS al re-check (rebinding) blocca la discovery.
+                $res = self::http_get( $validated, array(), 0, true );
                 if ( ! $res['ok'] ) {
                         return array();
                 }
@@ -868,19 +1057,33 @@ class Nexus_Tools {
                 $redirect_filter = function () {
                         return 0;
                 };
+                // v1.1.18 (FIX-6/B): cap memoria sul body + redirect 0 anche quando il
+                // chiamante (WP_SimplePie_File) passa argomenti espliciti: il filtro
+                // http_request_args interviene DOPO il merge dei default di WP_Http e
+                // forza i due parametri sulla richiesta reale di SimplePie.
+                $args_filter = function ( $args ) {
+                        if ( is_array( $args ) ) {
+                                $args['redirection']         = 0;
+                                $args['limit_response_size'] = self::http_max_response_bytes();
+                        }
+                        return $args;
+                };
                 add_filter( 'http_request_timeout', $timeout_filter );
                 add_filter( 'http_request_redirection_count', $redirect_filter );
+                add_filter( 'http_request_args', $args_filter );
 
                 try {
                         $feed = fetch_feed( $validated );
                 } catch ( Throwable $e ) {
                         remove_filter( 'http_request_timeout', $timeout_filter );
                         remove_filter( 'http_request_redirection_count', $redirect_filter );
+                        remove_filter( 'http_request_args', $args_filter );
                         return array();
                 }
 
                 remove_filter( 'http_request_timeout', $timeout_filter );
                 remove_filter( 'http_request_redirection_count', $redirect_filter );
+                remove_filter( 'http_request_args', $args_filter );
 
                 if ( is_wp_error( $feed ) || ! is_object( $feed ) || ! method_exists( $feed, 'get_items' ) ) {
                         return array();
@@ -1209,6 +1412,16 @@ class Nexus_Tools {
                         $headers['Mcp-Session-Id'] = (string) $session;
                 }
 
+                // v1.1.18 (FIX-6/C): l'URL del server MCP è già passato da assert_safe_url
+                // in mcp_call: qui si ri-valida il DNS subito prima della connessione e si
+                // fissa l'IP validato (anti-rebinding, fail-closed — contenuti non fidati
+                // configurati dall'utente).
+                $pin = self::pin_http_resolve( $url, true );
+                if ( is_wp_error( $pin ) ) {
+                        $fail['error'] = 'Errore di connessione al server MCP: ' . $pin->get_error_message();
+                        return $fail;
+                }
+
                 $response = wp_remote_post(
                         $url,
                         array(
@@ -1216,6 +1429,8 @@ class Nexus_Tools {
                                 'headers'     => $headers,
                                 'body'        => $encoded,
                                 'redirection' => 0, // v1.1.9: il server MCP risponde direttamente, niente redirect.
+                                // v1.1.18 (FIX-6/B): cap memoria (default 2 MB, filtrabile).
+                                'limit_response_size' => self::http_max_response_bytes(),
                         )
                 );
 
@@ -2301,16 +2516,31 @@ class Nexus_Tools {
         /**
          * GET HTTP generico per gli strumenti (timeout esplicito, UA del plugin).
          *
-         * @param string $url     URL già validato.
-         * @param array  $headers Header aggiuntivi.
-         * @param int    $timeout Timeout (0 = setting tools_timeout).
+         * v1.1.18 (FIX-6/B+C): 'limit_response_size' (default 2 MB, filtro
+         * 'nexus_http_max_response_bytes') e pinning anti-rebinding via
+         * Nexus_Tools::pin_http_resolve(). $pin_strict = true (URL NON fidati:
+         * read_page, discover_feeds) → anomalia DNS al re-check blocca la richiesta;
+         * false (endpoint fissi di fiducia) → mai bloccare, pin solo best-effort.
+         *
+         * @param string $url        URL già validato.
+         * @param array  $headers    Header aggiuntivi.
+         * @param int    $timeout    Timeout (0 = setting tools_timeout).
+         * @param bool   $pin_strict True = fail-closed sul re-check DNS; false = best-effort.
          * @return array array( 'ok' => bool, 'code' => int, 'body' => string, 'error' => string IT ).
          */
-        private static function http_get( $url, $headers = array(), $timeout = 0 ) {
+        private static function http_get( $url, $headers = array(), $timeout = 0, $pin_strict = false ) {
                 $fail = array( 'ok' => false, 'code' => 0, 'body' => '', 'error' => '' );
 
                 if ( ! function_exists( 'wp_remote_get' ) ) {
                         $fail['error'] = 'Le funzioni HTTP di WordPress non sono disponibili.';
+                        return $fail;
+                }
+
+                // v1.1.18 (FIX-6/C): ri-validazione DNS immediata + pin IP anti-rebinding
+                // (la guard è stata eseguita dal chiamante: qui si chiude il TOCTOU).
+                $pin = self::pin_http_resolve( $url, $pin_strict );
+                if ( is_wp_error( $pin ) ) {
+                        $fail['error'] = $pin->get_error_message();
                         return $fail;
                 }
 
@@ -2321,6 +2551,8 @@ class Nexus_Tools {
                         // Nessun redirect (v1.1.9): i contenuti non fidati non devono poter
                         // rimandare la richiesta verso host interni aggirando la SSRF guard.
                         'redirection' => 0,
+                        // v1.1.18 (FIX-6/B): cap memoria sul body (default 2 MB, filtrabile).
+                        'limit_response_size' => self::http_max_response_bytes(),
                 );
 
                 $response = wp_remote_get( $url, $args );
@@ -2348,6 +2580,11 @@ class Nexus_Tools {
 
         /**
          * POST JSON generico per i provider di ricerca (timeout esplicito).
+         *
+         * v1.1.18 (FIX-6/B+C): 'limit_response_size' (default 2 MB, filtro
+         * 'nexus_http_max_response_bytes') e pin DNS best-effort (endpoint fissi di
+         * fiducia: Tavily/Serper/Brave — mai bloccare la richiesta; si fissa l'IP
+         * validato solo quando la risoluzione è pulita).
          *
          * @param string $url           URL (validato internamente).
          * @param array  $body          Payload da codificare in JSON.
@@ -2385,6 +2622,10 @@ class Nexus_Tools {
                         }
                 }
 
+                // v1.1.18 (FIX-6/C): pin DNS best-effort sui provider di ricerca
+                // (endpoint fissi di fiducia): MAI bloccare la richiesta.
+                self::pin_http_resolve( $validated, false );
+
                 $response = wp_remote_post(
                         $validated,
                         array(
@@ -2392,6 +2633,8 @@ class Nexus_Tools {
                                 'headers'     => $headers,
                                 'body'        => $encoded,
                                 'redirection' => 0, // v1.1.9: niente redirect verso host non previsti.
+                                // v1.1.18 (FIX-6/B): cap memoria (default 2 MB, filtrabile).
+                                'limit_response_size' => self::http_max_response_bytes(),
                         )
                 );
 

@@ -1836,6 +1836,28 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Verifica: perché non vedi articoli?' => 'Check: why aren’t you seeing articles?',
             'Vuoi un run subito? Apri la pagina Agenti e premi ▶ Avvia su un agente (o "Dettagli" per vedere cosa sta facendo).' => 'Want a run right away? Open the Agents page and press ▶ Run on an agent (or "Details" to see what it is doing).',
             'WP-Cron non ha mai eseguito la redazione: il primo giro partirà appena il sito riceve traffico.' => 'WP-Cron has never run the newsroom: the first cycle starts as soon as the site gets traffic.',
+            /* ---- v1.1.18 «Recupero e Segreti» — messaggi dei fix audit (FIX-1..FIX-10) ---- */
+            'AI: risposta troncata (max_tokens esauriti): la traduzione è incompleta e NON viene salvata. Riprova o scegli un modello con più token di output.' => 'AI: response truncated (max_tokens exhausted): the translation is incomplete and is NOT saved. Try again or choose a model with a larger output budget.',
+            'Cifratura token fallita: salvataggio RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)' => 'Token encryption failed: save REFUSED (no plaintext token, v1.1.18 AL-15)',
+            'Estensione openssl assente: salvataggio del token RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)' => 'openssl extension missing: token save REFUSED (no plaintext token, v1.1.18 AL-15)',
+            'Estensione PHP openssl assente: openssl è richiesto per salvare le credenziali Google in sicurezza. Il collegamento a Search Console/GA4 resta bloccato (nessun token viene salvato in chiaro) e un eventuale token salvato da versioni precedenti è conservato nel database senza cifratura. Attiva l\'estensione openssl, poi ricollega Google dalle Impostazioni: il token verrà cifrato automaticamente (AES-256-GCM).' => 'PHP openssl extension missing: openssl is required to store Google credentials securely. The Search Console/GA4 connection stays blocked (no token is saved in plaintext) and any token saved by previous versions is kept in the database unencrypted. Enable the openssl extension, then reconnect Google from Settings: the token will be encrypted automatically (AES-256-GCM).',
+            'Generazione IV fallita: salvataggio del token RIFIUTATO (nessun token in chiaro, v1.1.18 AL-15)' => 'IV generation failed: token save REFUSED (no plaintext token, v1.1.18 AL-15)',
+            'La direzione ha prodotto una risposta troncata per max_tokens esauriti: articolo incompleto NON salvato. Aumenta max_tokens o scegli un modello con più contesto.' => 'The chief editor produced a response truncated because max_tokens ran out: the incomplete article has NOT been saved. Increase max_tokens or choose a model with more context.',
+            'message.content è arrivato come array senza parti testuali riconoscibili.' => 'message.content arrived as an array with no recognizable text parts.',
+            'Nexus Wire già in corso su questo tema: attendere il completamento del giro attuale.' => 'Nexus Wire already running on this topic: wait for the current round to complete.',
+            'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl e ricollega Search Console.' => 'openssl required to store Google credentials securely: enable the PHP openssl extension and reconnect Search Console.',
+            'openssl richiesto per salvare le credenziali Google in sicurezza: attiva l\'estensione PHP openssl sul server e riprova il collegamento dalle Impostazioni.' => 'openssl required to store Google credentials securely: enable the PHP openssl extension on the server and retry the connection from Settings.',
+            'openssl richiesto per salvare le credenziali Google in sicurezza: collegamento bloccato (openssl assente)' => 'openssl required to store Google credentials securely: connection blocked (openssl missing)',
+            'openssl richiesto per salvare le credenziali Google in sicurezza: scambio token bloccato (openssl assente)' => 'openssl required to store Google credentials securely: token exchange blocked (openssl missing)',
+            'Questa operazione è già in esecuzione: attendi che termini prima di rilanciarla.' => 'This operation is already running: wait for it to finish before running it again.',
+            'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.' => 'response_format json_object not supported by the provider: response obtained without json mode.',
+            'reaper: run fantasma (timeout)' => 'reaper: ghost run (timeout)',
+            'Riscrittura troncata: la risposta AI è stata interrotta per max_tokens esauriti e il contenuto incompleto NON è stato salvato. Aumenta max_tokens o scegli un modello con più contesto.' => 'Rewrite truncated: the AI response was cut off because max_tokens ran out and the incomplete content has NOT been saved. Increase max_tokens or choose a model with more context.',
+            'Social saltati: articolo in bozza WP.' => 'Social skipped: the article is a WordPress draft.',
+            'Tentativi AI interrotti: superato il budget di tempo per questa chiamata (limite anti-blocco). Riprova più tardi.' => 'AI attempts stopped: the time budget for this call has been exceeded (anti-lock limit). Please try again later.',
+            'Test generazione non disponibile da questa versione del server' => 'Generation test not available from this server version',
+            'Token Google salvato in chiaro da versioni precedenti ri-cifrato (openssl disponibile)' => 'Google token saved in plaintext by previous versions has been re-encrypted (openssl available)',
+            'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' => 'URL not allowed: the domain safety check failed right before the request.',
         );
 }
 
@@ -4178,6 +4200,95 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => 'Wizard completato: (\d+) agents creati\.',
             'tpl' => 'Wizard completed: $1 agents created.',
+        ),
+        /* ---- v1.1.18 «Recupero e Segreti» — messaggi variabili dei fix audit (FIX-1..FIX-10) ---- */
+        array(
+            're'  => 'Reaper: chiuse (\d+) run fantasma \(stato "running" da oltre (\d+) min: crash/timeout del processo, telemetria ripristinata\)\.',
+            'tpl' => 'Reaper: closed $1 ghost runs (state "running" for over $2 min: process crash/timeout, telemetry restored).',
+        ),
+        array(
+            're'  => 'Reaper run fantasma fallito: ',
+            'tpl' => 'Reaper ghost-run cleanup failed: ',
+        ),
+        array(
+            're'  => 'Agente "([^"]+)" riattivato automaticamente: l\'errore era stato registrato alle ',
+            'tpl' => 'Agent "$1" automatically reactivated: the error had been recorded at ',
+        ),
+        array(
+            're'  => 'Riscrittura articolo #(\d+) interrotta: risposta AI troncata per max_tokens \(contenuto incompleto non salvato, articolo non marcato completo\)\.',
+            'tpl' => 'Rewrite of article #$1 stopped: the AI response was cut off by max_tokens (incomplete content not saved, article not marked complete).',
+        ),
+        array(
+            're'  => 'Nexus Wire "(.*?)" non avviato: un altro Wire è già in corso sullo stesso tema \(lock attivo\)\.',
+            'tpl' => 'Nexus Wire "$1" not started: another Wire is already running on the same topic (active lock).',
+        ),
+        array(
+            're'  => 'Nexus Wire "(.*?)" fallito: risposta del direttore troncata per max_tokens \(articolo incompleto non salvato\)\.',
+            'tpl' => 'Nexus Wire "$1" failed: the chief editor response was truncated by max_tokens (incomplete article not saved).',
+        ),
+        array(
+            're'  => 'Nexus Wire avviato sul tema "(.*?)" con (\d+) agenti in redazione\.',
+            'tpl' => 'Nexus Wire started on topic "$1" with $2 agents in the newsroom.',
+        ),
+        array(
+            're'  => 'Nexus Wire completato sul tema "(.*?)": articolo #(\d+) in coda di approvazione \(redazione: (.*?)\)\.',
+            'tpl' => 'Nexus Wire completed on topic "$1": article #$2 in the approval queue (newsroom: $3).',
+        ),
+        array(
+            're'  => '(.*?): angolo proposto \((\d+) caratteri\)\.',
+            'tpl' => '$1: angle proposed ($2 characters).',
+        ),
+        array(
+            're'  => 'Articolo fuso da (\d+) angoli \((\d+) parole\)\.',
+            'tpl' => 'Article merged from $1 angles ($2 words).',
+        ),
+        array(
+            're'  => 'Articolo #(\d+) salvato in coda di approvazione\.',
+            'tpl' => 'Article #$1 saved to the approval queue.',
+        ),
+        array(
+            're'  => 'Risposta troncata per max_tokens \(articolo incompleto non salvato\)\.',
+            'tpl' => 'Response truncated by max_tokens (incomplete article not saved).',
+        ),
+        array(
+            're'  => 'Social saltati: post WordPress non pubblicato \(stato: (.*?)\)\.',
+            'tpl' => 'Social skipped: WordPress post not published (status: $1).',
+        ),
+        array(
+            're'  => 'Richieste troppo frequenti su questa operazione: riprova tra (\d+) secondi\.',
+            'tpl' => 'Requests too frequent for this operation: try again in $1 seconds.',
+        ),
+        array(
+            're'  => 'Budget di tempo AI esaurito \((\d+) secondi\): ulteriori tentativi di retry non effettuati per questa chiamata\.',
+            'tpl' => 'AI time budget exhausted ($1 seconds): no further retries made for this call.',
+        ),
+        array(
+            're'  => 'Tentativo extra ×1\.5 \(max_tokens (\d+)\) completato: risposta sostituita con una più lunga \(da (\d+) a (\d+) caratteri\)\.',
+            'tpl' => 'Extra ×1.5 attempt (max_tokens $1) completed: response replaced with a longer one (from $2 to $3 characters).',
+        ),
+        array(
+            're'  => 'Tentativo extra ×1\.5 \(max_tokens (\d+)\) non ha prodotto una risposta migliore: mantenuta la risposta precedente \((\d+) caratteri\)\.',
+            'tpl' => 'Extra ×1.5 attempt (max_tokens $1) did not produce a better response: kept the previous response ($2 characters).',
+        ),
+        array(
+            're'  => 'Tentativo extra ×1\.5 non effettuato: il tentativo precedente ha già usato (\d+) max_tokens \(cap 8000\): un aumento non produrrebbe più contenuto\.',
+            'tpl' => 'Extra ×1.5 attempt not made: the previous attempt already used $1 max_tokens (cap 8000): an increase would not produce more content.',
+        ),
+        array(
+            're'  => 'Digest: giro (\d+) parziale — il resto degli iscritti parte al prossimo giro \(inviati finora: (\d+), falliti: (\d+)\)\.',
+            'tpl' => 'Digest: round $1 partial — the remaining subscribers will be sent in the next round (sent so far: $2, failed: $3).',
+        ),
+        array(
+            're'  => 'Digest: invio fallito a ',
+            'tpl' => 'Digest: sending failed to ',
+        ),
+        array(
+            're'  => ' — invio ripartito su (\d+) giri',
+            'tpl' => ' — sending split across $1 rounds',
+        ),
+        array(
+            're'  => ' — invii falliti: (\d+)',
+            'tpl' => ' — failed sends: $1',
         ),
     );
 }

@@ -969,14 +969,16 @@ class Nexus_CLI {
          * Lettura o scrittura delle impostazioni del plugin.
          *
          * Sottocomandi:
-         *   get [chiave]                — tutte le impostazioni o una singola.
+         *   get [chiave] [--reveal]     — tutte le impostazioni o una singola;
+         *                                 i segreti sono mascherati di default
+         *                                 (v1.1.18), --reveal mostra i valori interi.
          *   set <chiave> <valore>       — aggiorna una chiave (solo chiavi di default).
          *
          * @subcommand settings
-         * @synopsis <azione> [<chiave>] [<valore>]
+         * @synopsis <azione> [<chiave>] [<valore>] [--reveal]
          *
          * @param array $args       Argomenti posizionali.
-         * @param array $assoc_args Argomenti associativi (--chiave=valore).
+         * @param array $assoc_args Argomenti associativi (--chiave=valore, --reveal).
          */
         public static function settings( $args, $assoc_args ) {
                 self::check_core();
@@ -984,7 +986,7 @@ class Nexus_CLI {
                 $action = isset( $args[0] ) ? sanitize_key( (string) $args[0] ) : '';
 
                 if ( 'get' === $action ) {
-                        self::settings_get( $args );
+                        self::settings_get( $args, is_array( $assoc_args ) ? $assoc_args : array() );
                         return;
                 }
 
@@ -1518,21 +1520,42 @@ class Nexus_CLI {
         }
 
         /**
-         * Sottocomando interno: wp nexus settings get [chiave].
+         * Sottocomando interno: wp nexus settings get [chiave] [--reveal].
          *
-         * @param array $args Argomenti posizionali.
+         * v1.1.18 (masking segreti CLI): le chiavi segrete vengono MASCHERATE di
+         * default (ultimi 4 caratteri visibili): l'output CLI finisce spesso in
+         * log di terminale, ticket di supporto, script di provisioning e history
+         * di wp shell. Il valore completo è disponibile SOLO con il flag
+         * esplicito --reveal (con avviso a video). Lista segreti: vedi
+         * secret_cli_settings_keys() (coerente con Nexus_Rest::secret_settings_keys()).
+         *
+         * @param array $args       Argomenti posizionali.
+         * @param array $assoc_args Argomenti associativi (--reveal).
          * @return void
          */
-        private static function settings_get( $args ) {
-                $key = isset( $args[1] ) ? sanitize_key( (string) $args[1] ) : '';
+        private static function settings_get( $args, $assoc_args = array() ) {
+                $key    = isset( $args[1] ) ? sanitize_key( (string) $args[1] ) : '';
+                $reveal = ! empty( $assoc_args['reveal'] );
 
                 if ( '' === $key ) {
-                        $rows = array();
-                        foreach ( (array) Nexus_DB::get_settings() as $name => $value ) {
+                        $settings = (array) Nexus_DB::get_settings();
+                        $rows     = array();
+
+                        foreach ( $settings as $name => $value ) {
+                                $display = is_array( $value ) ? (string) wp_json_encode( $value ) : (string) $value;
+
+                                if ( ! $reveal && in_array( (string) $name, self::secret_cli_settings_keys(), true ) ) {
+                                        $display = self::mask_secret_value( $display );
+                                }
+
                                 $rows[] = array(
                                         'Chiave' => (string) $name,
-                                        'Valore' => is_array( $value ) ? (string) wp_json_encode( $value ) : (string) $value,
+                                        'Valore' => $display,
                                 );
+                        }
+
+                        if ( $reveal ) {
+                                self::warn_revealed_secrets( $settings );
                         }
 
                         \WP_CLI\Utils\format_items( 'table', $rows, array( 'Chiave', 'Valore' ) );
@@ -1545,8 +1568,109 @@ class Nexus_CLI {
                         WP_CLI::error( sprintf( 'Impostazione «%s» non trovata: usare «wp nexus settings get» per l\'elenco completo.', $key ) );
                 }
 
-                $value = $settings[ $key ];
-                WP_CLI::log( is_array( $value ) ? (string) wp_json_encode( $value ) : (string) $value );
+                $value     = $settings[ $key ];
+                $raw       = is_array( $value ) ? (string) wp_json_encode( $value ) : (string) $value;
+                $is_secret = in_array( $key, self::secret_cli_settings_keys(), true );
+
+                if ( $is_secret && '' !== trim( $raw ) ) {
+                        if ( ! $reveal ) {
+                                WP_CLI::log( self::mask_secret_value( $raw ) );
+                                WP_CLI::log( 'Valore mascherato (ultimi 4 caratteri visibili): aggiungi --reveal per mostrare il segreto completo.' );
+
+                                return;
+                        }
+
+                        WP_CLI::warning( 'Segreto mostrato IN CHIARO (--reveal): non condividere questo output (log, ticket, screenshot).' );
+                }
+
+                WP_CLI::log( $raw );
+        }
+
+        /**
+         * Chiavi settings considerate SEGRETE per la lettura CLI (v1.1.18, masking).
+         *
+         * Lista locale duplicata in LETTURA STATICa: Nexus_Rest::secret_settings_keys()
+         * è privata e pensata per il contesto REST (mascheratura a valore vuoto +
+         * flag *_set), quindi NON riusabile da CLI. Mantenuta COERENTE con quella
+         * lista (stesse chiavi) PIÙ indexnow_key (chiave IndexNow generata
+         * automaticamente, indicata come segreto esposto anche dall'audit A3 per
+         * la classe REST). Se aggiungi un segreto in Nexus_Rest::secret_settings_keys()
+         * aggiungilo anche qui.
+         *
+         * @return array
+         */
+        private static function secret_cli_settings_keys() {
+                return array(
+                        'ai_api_key',
+                        'prov_key_openrouter',
+                        'prov_key_openai',
+                        'prov_key_anthropic',
+                        'prov_key_google',
+                        'prov_key_groq',
+                        'prov_key_deepseek',
+                        'prov_key_mistral',
+                        'prov_key_xai',
+                        'prov_key_custom',
+                        'prov_key_ollama',
+                        'youtube_api_key',
+                        'pixabay_key',
+                        'reddit_client_secret',
+                        'tools_search_key',
+                        'indexnow_key',
+                        'telegram_bot_token',
+                        'discord_webhook_url',
+                        'x_api_key',
+                        'x_api_secret',
+                        'x_access_token',
+                        'x_access_secret',
+                        'linkedin_access_token',
+                        'public_api_key',
+                        'mcp_servers_text',
+                        'gsc_oauth_client_secret',
+                        'notify_webhook_url',
+                );
+        }
+
+        /**
+         * Maschera un valore segreto per l'output CLI: ultimi 4 caratteri
+         * visibili (i segreti brevi restano interamente coperti).
+         *
+         * @param string $value Valore raw (stringa o JSON).
+         * @return string
+         */
+        private static function mask_secret_value( $value ) {
+                $value = (string) $value;
+
+                if ( '' === $value ) {
+                        return '';
+                }
+
+                if ( strlen( $value ) <= 4 ) {
+                        return '****';
+                }
+
+                return '****' . substr( $value, -4 );
+        }
+
+        /**
+         * Avviso quando --reveal espone segreti non vuoti nell'elenco completo.
+         * Il warning va su STDERR: l'output tabellare resta pulito per il pipe.
+         *
+         * @param array $settings Settings correnti.
+         * @return void
+         */
+        private static function warn_revealed_secrets( $settings ) {
+                $count = 0;
+
+                foreach ( self::secret_cli_settings_keys() as $secret_key ) {
+                        if ( isset( $settings[ $secret_key ] ) && '' !== trim( (string) $settings[ $secret_key ] ) ) {
+                                $count++;
+                        }
+                }
+
+                if ( $count > 0 ) {
+                        WP_CLI::warning( sprintf( '%d segreti mostrati IN CHIARO (--reveal): non condividere questo output (log, ticket, screenshot).', $count ) );
+                }
         }
 
         /**

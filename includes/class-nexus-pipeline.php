@@ -130,6 +130,38 @@
  *     dall'utente). Telemetria fonti (WD1b): collect() espone le chiavi
  *     additive 'candidates', 'sources_ok' e 'sources_err'.
  *
+ * v1.1.18 — Recupero e Segreti (FIX-1: CR-1, AL-6, AL-7, AL-8, AL-11):
+ *   - REAPER RUN FANTASMA (CR-1): a inizio cron_tick le righe agent_runs
+ *     rimaste 'running' da oltre 30 min (crash/timeout/OOM: il finally non è
+ *     potuto girare) vengono CHIUSE con status 'failed' +
+ *     error='reaper: run fantasma (timeout)'. La busy map del resume
+ *     (resume_stalled) ha un TTL sul campo 'since' (RUNTIME_STALE_SECONDS):
+ *     le voci runtime scadute sono ignorate e rimosse dalla option —
+ *     l'articolo in lavorazione al momento del crash torna riprendibile
+ *     (prima: escluso PER SEMPRE).
+ *   - AUTO-RETRY AGENTI 'ERROR' (AL-6): nel tick un agente con
+ *     status='error' la cui registrazione errore (agents.updated_at, scritta
+ *     da update_agent nella transizione di finish_agent_run_row) è più
+ *     vecchia del backoff (30 min) viene riattivato automaticamente
+ *     ('error' → 'active') con activity log onesto: un outage AI transiente
+ *     non blocca più la redazione fino a intervento umano.
+ *   - WIRE CON LOCK + RUN ROW + HEARTBEAT (AL-7): wire_run acquisisce un
+ *     mutex per-tema (pattern acquire_lock WA11), apre una run row
+ *     agent_runs con trigger 'wire' (valore del contratto finora mai usato),
+ *     la chiude nel finally e chiama heartbeat()/touch_agent_run() a ogni
+ *     confine di fase: il reaper della coda (requeue_stale) e quello delle
+ *     run (CR-1) non riaccodano/chiudono mai un Wire vivo → niente doppio
+ *     costo AI per esecuzioni parallele.
+ *   - RESUME LOCK ATOMICO (AL-8): il lock per-articolo del resume usa il
+ *     pattern acquire_lock/release_lock (add_option check-and-set, valore =
+ *     timestamp) al posto del set_transient check-then-set: due tick
+ *     sovrapposti non processano più lo stesso articolo.
+ *   - TRUNCATED ONESTO (AL-11): se il risultato della fase rewrite porta il
+ *     marker 'truncated' del motore (contratto chat v1.1.9/v1.1.17: ultima
+ *     risposta troncata per max_tokens) lo step fallisce con errore chiaro
+ *     e l'articolo NON viene aggiornato né marcato completo (stessa guardia
+ *     sulla chiamata direttore del Wire).
+ *
  * v1.1.15 — Affidabilità (Perfezione Maniacale, WA2/WA5/WA6/WA7/WA10):
  *   - HEARTBEAT JOB: ogni fase (collect/evaluate/rewrite/publish) e il giro
  *     per-agente di cron_tick toccano Nexus_Queue::heartbeat() (started_at del
@@ -177,9 +209,12 @@ class Nexus_Pipeline {
         const RUNTIME_OPTION = 'nexus_agent_runtime';
 
         /**
-         * Prefisso del transient di lock per-articolo del resume (v1.1.13 O1):
-         * durante il resume di una bozza il lock impedisce a un tick sovrapposto
-         * (o a un resume concorrente) di lavorare lo stesso articolo.
+         * Prefisso del lock per-articolo del resume (v1.1.13 O1): durante il resume
+         * di una bozza il lock impedisce a un tick sovrapposto (o a un resume
+         * concorrente) di lavorare lo stesso articolo.
+         * v1.1.18 (AL-8): acquisizione ATOMICA via acquire_lock/release_lock
+         * (add_option check-and-set, valore = timestamp) al posto del
+         * set_transient check-then-set.
          */
         const RESUME_LOCK_PREFIX = 'nexus_resume_lock_';
 
@@ -220,6 +255,55 @@ class Nexus_Pipeline {
          * nel finally, il TTL rende il lock auto-guarigente dopo un crash duro.
          */
         const PUBLISH_LOCK_TTL = 120;
+
+        /**
+         * v1.1.18 (CR-1): età massima (minuti) di una run agent_runs in stato
+         * 'running' prima che il reaper di cron_tick la chiuda come fantasma
+         * (crash/timeout/OOM: il finally di run_full_agent non è potuto girare).
+         * Generosa rispetto alla durata reale dei run (fasi con budget 90s e
+         * timeout AI 60s); il Wire vivo rinfresca started_at a ogni fase e non
+         * viene mai toccato. Regolabile con il filtro
+         * 'nexus_pipeline_run_reaper_minutes' (0 = reaper disattivato).
+         */
+        const RUN_STALE_MINUTES = 30;
+
+        /**
+         * v1.1.18 (CR-1): TTL in secondi delle voci della option runtime
+         * (nexus_agent_runtime, campo 'since' ISO8601 UTC). Le voci più vecchie
+         * sono vittime di un crash (nessun clear_runtime): la busy map di
+         * resume_stalled le IGNORA (l'articolo torna riprendibile) e il reaper
+         * del tick le rimuove. Regolabile con il filtro
+         * 'nexus_pipeline_runtime_ttl' (0 = TTL disattivato: comportamento v1.1.17).
+         */
+        const RUNTIME_STALE_SECONDS = 1800;
+
+        /**
+         * v1.1.18 (AL-6): backoff in secondi prima di riattivare automaticamente
+         * un agente in status 'error' (v1.1.16: il cron non ripassava MAI un
+         * agente in errore — un outage AI di 5 minuti fermava la redazione fino
+         * a intervento umano). Il timestamp dell'errore è agents.updated_at,
+         * scritto da update_agent nella transizione di finish_agent_run_row.
+         * Regolabile con il filtro 'nexus_pipeline_agent_error_backoff'
+         * (0 = auto-retry disattivato: comportamento v1.1.17).
+         */
+        const AGENT_ERROR_BACKOFF_SECONDS = 1800;
+
+        /**
+         * v1.1.18 (AL-7): prefisso del mutex per-tema del Nexus Wire. Un secondo
+         * wire_run sullo stesso tema (doppio click su "assegna", richiesta REST
+         * concorrente, requeue del reaper coda) non gira in parallelo: niente
+         * doppio costo AI né articolo duplicato.
+         */
+        const WIRE_LOCK_PREFIX = 'nexus_wire_lock_';
+
+        /**
+         * v1.1.18 (AL-7): TTL del mutex Wire in secondi (900 = 15 min, 4+ chiamate
+         * AI in serie con retry lato motore). Il rilascio NORMALE avviene nel
+         * finally; il TTL rende il lock auto-guarigente dopo un crash duro. Il
+         * requeue_stale della coda (30 min) arriva sempre DOPO la scadenza del
+         * lock: un Wire morto per crash non fa collisioni al re-dispatch.
+         */
+        const WIRE_LOCK_TTL = 900;
 
         /**
          * FASE 1 — Raccolta notizie per un agente.
@@ -761,6 +845,20 @@ class Nexus_Pipeline {
                         $error        = self::chat_error( $res, 'motore AI non disponibile' );
                         $out['error'] = $error;
                         self::log_phase( (int) $article->agent_id, 'rewriting', sprintf( 'Riscrittura articolo #%d fallita: %s', $article_id, $error ), 'error' );
+                        return $out;
+                }
+
+                // v1.1.18 (AL-11): marker 'truncated' del motore (contratto chat
+                // v1.1.9/v1.1.17: chiave additiva quando l'ULTIMA risposta resta
+                // troncata per max_tokens, finish_reason=length). Risposta troncata =
+                // contenuto INCOMPLETO: fallimento ONESTO — l'articolo NON viene
+                // aggiornato né marcato completo (prima il testo mozzato veniva
+                // salvato in silenzio e messo in coda di approvazione: audit A2-A3).
+                // Resta nel suo stato: il resume/tick successivo ritenta con il
+                // budget max_tokens pieno.
+                if ( ! empty( $res['truncated'] ) ) {
+                        $out['error'] = 'Riscrittura troncata: la risposta AI è stata interrotta per max_tokens esauriti e il contenuto incompleto NON è stato salvato. Aumenta max_tokens o scegli un modello con più contesto.';
+                        self::log_phase( (int) $article->agent_id, 'rewriting', sprintf( 'Riscrittura articolo #%d interrotta: risposta AI troncata per max_tokens (contenuto incompleto non salvato, articolo non marcato completo).', $article_id ), 'error' );
                         return $out;
                 }
 
@@ -1529,6 +1627,8 @@ class Nexus_Pipeline {
         /**
          * Etichetta della run normalizzata sui valori del contratto DB (WB-DB):
          * 'cron' | 'manual' | 'wire' (qualunque altro valore → 'cron').
+         * v1.1.18 (AL-7): 'wire' non è più un valore morto — wire_run apre la sua
+         * run row con trigger 'wire' (audit A4 🟢14 chiuso).
          *
          * @param string $triggered_by Valore passato dal chiamante.
          * @return string
@@ -1550,6 +1650,10 @@ class Nexus_Pipeline {
          *   'ok'/'partial' riporta 'error' → 'active' SOLO se lo status corrente
          *   è già 'error' (mai toccati 'paused' e altri stati scelti dall'utente:
          *   cron_tick esegue solo gli 'active', pipeline.php:224-228/1088).
+         *   v1.1.18 (AL-6): il TIMESTAMP della registrazione errore è la colonna
+         *   agents.updated_at (update_agent la scrive a OGNI transizione, quindi
+         *   anche qui quando status passa a 'error'): è la base del backoff di
+         *   auto-riattivazione di reactivate_error_agents() nel tick.
          *
          * Guard method_exists difensive (WB-DB lavora in parallelo) e try/catch
          * totali: la telemetria non deve MAI mascherare l'esito del run.
@@ -1620,10 +1724,42 @@ class Nexus_Pipeline {
                 // tick (WA5) parte PRIMA del resume: è tempo del tick a tutti gli effetti.
                 $tick_started = microtime( true );
 
+                // v1.1.18 (CR-1) — REAPER RUN FANTASMA: le run agent_runs rimaste
+                // 'running' da oltre RUN_STALE_MINUTES sono vittime di un crash/timeout
+                // del processo (il finally di run_full_agent non è potuto girare):
+                // senza chiusura restavano fantasmi eterni in telemetria (drawer,
+                // diagnostica) e l'articolo in lavorazione restava escluso dal resume
+                // PER SEMPRE via busy map. Chiusura PRIMA del resume, così le voci
+                // runtime scadute che il reaper rimuove non bloccano più il recupero.
+                try {
+                        self::reap_ghost_runs();
+                } catch ( Throwable $e ) {
+                        self::log_phase( 0, 'rewriting', sprintf( 'Reaper run fantasma fallito: %s', self::clip( $e->getMessage(), 300 ) ), 'error' );
+                }
+
+                // v1.1.18 (CR-1) — runtime stuck resettato: le voci della option
+                // nexus_agent_runtime più vecchie del TTL (campo 'since') sono
+                // rimosse. Mai fatale: è pulizia del pannello live, il tick prosegue.
+                try {
+                        self::prune_runtime_stale();
+                } catch ( Throwable $e ) {
+                        // Silenzio onesto: la pulizia del runtime non deve rompere il tick.
+                }
+
                 try {
                         self::resume_stalled();
                 } catch ( Throwable $e ) {
                         self::log_phase( 0, 'rewriting', sprintf( 'Resume articoli bloccati fallito: %s', self::clip( $e->getMessage(), 300 ) ), 'error' );
+                }
+
+                // v1.1.18 (AL-6) — auto-retry agenti 'error': riattivazione con backoff
+                // PRIMA della costruzione della lista $active, così gli agenti
+                // riattivati possono essere ripassati GIÀ in questo tick (probe onesta:
+                // se l'AI è ancora giù la run fallisce e il backoff riparte da qui).
+                try {
+                        self::reactivate_error_agents();
+                } catch ( Throwable $e ) {
+                        // Silenzio onesto: l'auto-retry non deve mai rompere il tick.
                 }
 
                 // v1.1.15 (WA5) — budget di tempo GLOBALE per tick + cap agenti per
@@ -1739,6 +1875,265 @@ class Nexus_Pipeline {
         }
 
         /**
+         * v1.1.18 (CR-1) — REAPER delle run fantasma: chiude le righe agent_runs
+         * rimaste 'running' da oltre RUN_STALE_MINUTES (default 30).
+         *
+         * PERCHÉ ESISTE: il finally di run_full_agent copre solo le eccezioni PHP;
+         * su fatal/max_execution_time/OOM/kill (classe di crash vissuta dal
+         * plugin, changelog v1.1.15 WA5) la run row resta 'running' per sempre:
+         * telemetria bugiarna (drawer/diagnostica mostrano run "in corso"
+         * fantasma) e — combinato con la busy map senza TTL — articolo mai più
+         * ripreso. Il reaper gira a inizio cron_tick (stessa cadenza del tick,
+         * percorso con coda e inline).
+         *
+         * Chiusura ONESTA: status 'failed' (contratto tabella/PC1:
+         * ok|failed|partial|running — il messaggio d'errore distingue la causa),
+         * finished_at = adesso, duration_ms calcolata da started_at,
+         * error='reaper: run fantasma (timeout)'. UPDATE condizionale su
+         * (id, status='running'): se nel frattempo finish_agent_run ha chiuso la
+         * riga con l'esito vero, il reaper non tocca nulla (0 righe = non vinto).
+         * Il Wire vivo (trigger 'wire') rinfresca started_at a ogni fase con
+         * touch_agent_run() e non viene mai chiuso.
+         *
+         * @return int Numero di run fantasma effettivamente chiuse.
+         */
+        private static function reap_ghost_runs() {
+                global $wpdb;
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return 0;
+                }
+
+                $minutes = (int) apply_filters( 'nexus_pipeline_run_reaper_minutes', self::RUN_STALE_MINUTES );
+                if ( $minutes <= 0 ) {
+                        return 0; // Filtro 0 = reaper disattivato (comportamento v1.1.17).
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['agent_runs'] ) ) {
+                        return 0; // Tabella non ancora migrata (schema < v8): niente da fare.
+                }
+
+                $table  = $tables['agent_runs'];
+                $now    = current_time( 'mysql' );
+                $now_ts = strtotime( $now );
+                $cutoff = gmdate( 'Y-m-d H:i:s', $now_ts - $minutes * 60 );
+
+                // phpcs:ignore WordPress.DB -- query mirata (stesso schema di requeue_stale):
+                // solo id/started_at, cap 50 per passata, il resto al prossimo tick.
+                $rows = $wpdb->get_results(
+                        $wpdb->prepare(
+                                "SELECT id, started_at FROM {$table}
+                                        WHERE status = 'running' AND started_at IS NOT NULL AND started_at <> '' AND started_at < %s
+                                        ORDER BY started_at ASC LIMIT 50",
+                                $cutoff
+                        ),
+                        ARRAY_A
+                );
+
+                if ( ! is_array( $rows ) || empty( $rows ) ) {
+                        return 0;
+                }
+
+                $closed = 0;
+
+                foreach ( $rows as $row ) {
+                        $run_id = absint( isset( $row['id'] ) ? $row['id'] : 0 );
+                        if ( $run_id < 1 ) {
+                                continue;
+                        }
+
+                        $started  = isset( $row['started_at'] ) ? strtotime( (string) $row['started_at'] ) : 0;
+                        $duration = ( $started && $now_ts ) ? max( 0, (int) ( ( $now_ts - $started ) * 1000 ) ) : 0;
+
+                        // UPDATE condizionale: vince solo chi chiude una riga ancora 'running'.
+                        $done = $wpdb->update(
+                                $table,
+                                array(
+                                        'status'      => 'failed',
+                                        'finished_at' => $now,
+                                        'duration_ms' => $duration,
+                                        'error'       => 'reaper: run fantasma (timeout)',
+                                ),
+                                array(
+                                        'id'     => $run_id,
+                                        'status' => 'running',
+                                ),
+                                array( '%s', '%s', '%d', '%s' ),
+                                array( '%d', '%s' )
+                        );
+
+                        if ( $done ) {
+                                $closed++;
+                        }
+                }
+
+                if ( $closed > 0 ) {
+                        self::log_phase( 0, 'rewriting', sprintf( 'Reaper: chiuse %d run fantasma (stato "running" da oltre %d min: crash/timeout del processo, telemetria ripristinata).', $closed, $minutes ), 'warning' );
+                }
+
+                return $closed;
+        }
+
+        /**
+         * v1.1.18 (CR-1) — TTL delle voci runtime: secondi oltre i quali una voce
+         * della option nexus_agent_runtime è considerata morta (filtro
+         * 'nexus_pipeline_runtime_ttl', 0 = disattivato).
+         *
+         * @return int
+         */
+        private static function runtime_stale_seconds() {
+                $ttl = (int) apply_filters( 'nexus_pipeline_runtime_ttl', self::RUNTIME_STALE_SECONDS );
+                return $ttl > 0 ? $ttl : 0;
+        }
+
+        /**
+         * v1.1.18 (CR-1) — rimuove dalla option runtime le voci scadute ('since'
+         * più vecchio del TTL, o corrotte/assenti: set_runtime scrive SEMPRE
+         * 'since' ISO8601 UTC, quindi l'assenza è stato corrotto/legacy).
+         *
+         * Chiamata a inizio cron_tick: un crash a metà run non lascia più voci
+         * fantasma "In redazione ora" nel pannello live (il filtro anti-stale del
+         * /live le nascondeva già, ma la option cresceva senza fine e la busy map
+         * del resume le considerava ancora attive — esclusione perpetua).
+         *
+         * @return int Numero di voci rimosse.
+         */
+        private static function prune_runtime_stale() {
+                $ttl = self::runtime_stale_seconds();
+                if ( $ttl <= 0 ) {
+                        return 0; // TTL disattivato via filtro: nessuna pulizia.
+                }
+
+                $runtime = self::get_runtime();
+                if ( empty( $runtime ) ) {
+                        return 0;
+                }
+
+                $now     = time();
+                $removed = 0;
+
+                foreach ( $runtime as $agent_id => $state ) {
+                        $since = is_array( $state ) && isset( $state['since'] ) ? strtotime( (string) $state['since'] ) : 0;
+
+                        if ( ! $since || ( $now - $since ) > $ttl ) {
+                                unset( $runtime[ $agent_id ] );
+                                $removed++;
+                        }
+                }
+
+                if ( $removed > 0 ) {
+                        update_option( self::RUNTIME_OPTION, $runtime, false );
+                }
+
+                return $removed;
+        }
+
+        /**
+         * v1.1.18 (CR-1) — articoli "veramente" in lavorazione per la busy map di
+         * resume_stalled: considera SOLO le voci runtime con 'since' fresco
+         * (entro il TTL). Le voci scadute (crash senza clear_runtime) sono
+         * ignorate: l'articolo torna riprendibile — niente più esclusione
+         * perpetua.
+         *
+         * @return array article_id => true per gli articoli in lavorazione VIVI.
+         */
+        private static function fresh_runtime_articles() {
+                $ttl  = self::runtime_stale_seconds();
+                $now  = time();
+                $busy = array();
+
+                foreach ( self::get_runtime() as $state ) {
+                        if ( ! is_array( $state ) || empty( $state['article_id'] ) ) {
+                                continue;
+                        }
+
+                        if ( $ttl <= 0 ) {
+                                // TTL disattivato via filtro: comportamento v1.1.17 (tutte le voci contano).
+                                $busy[ absint( $state['article_id'] ) ] = true;
+                                continue;
+                        }
+
+                        $since = isset( $state['since'] ) ? strtotime( (string) $state['since'] ) : 0;
+
+                        if ( $since && ( $now - $since ) <= $ttl ) {
+                                $busy[ absint( $state['article_id'] ) ] = true;
+                        }
+                }
+
+                return $busy;
+        }
+
+        /**
+         * v1.1.18 (AL-6) — auto-retry degli agenti in status 'error': un agente
+         * la cui registrazione errore è più vecchia del backoff
+         * (AGENT_ERROR_BACKOFF_SECONDS, default 30 min) viene riattivato
+         * automaticamente ('error' → 'active') e ripassato dal tick.
+         *
+         * PERCHÉ: finish_agent_run_row mette status='error' su OGNI run 'failed'
+         * e cron_tick esegue solo gli 'active' (run_full_agent skippa i
+         * non-attivi, anche via REST): un outage AI di 5 minuti disattivava TUTTI
+         * gli agenti in un tick e il recovery richiedeva un click manuale per
+         * agente. Ora l'errore transiente si "guarisce" da solo: se l'AI è ancora
+         * giù la run riparte, fallisce e il backoff riparte dal nuovo errore —
+         * costo massimo 1 collect ogni 30 min per agente.
+         *
+         * TIMESTAMP DELL'ERRORE: agents.updated_at — update_agent() la scrive a
+         * OGNI transizione, inclusa la messa in 'error' di finish_agent_run_row
+         * (nessuna colonna nuova, nessun cambio schema). Un'eventuale modifica
+         * manuale all'agente (REST/UI) rinfresca updated_at e posticipa la
+         * riattivazione di una finestra: effetto accettato e innocuo.
+         *
+         * SOLO 'error' è toccato: 'paused' e ogni altro stato scelto dall'utente
+         * restano intoccabili (stessa regola di finish_agent_run_row).
+         *
+         * @return int Numero di agenti riattivati.
+         */
+        private static function reactivate_error_agents() {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'agents' ) || ! method_exists( 'Nexus_DB', 'update_agent' ) ) {
+                        return 0;
+                }
+
+                $backoff = (int) apply_filters( 'nexus_pipeline_agent_error_backoff', self::AGENT_ERROR_BACKOFF_SECONDS );
+                if ( $backoff <= 0 ) {
+                        return 0; // Filtro 0 = auto-retry disattivato (comportamento v1.1.17).
+                }
+
+                // agents.updated_at è scritto con current_time('mysql') (orologio SITO):
+                // il "now" del confronto usa current_time('timestamp') (stesso orologio,
+                // stessa convenzione del resume_stalled v1.1.13) — con time() UTC il
+                // backoff sarebbe falsato dell'offset del fuso.
+                $now   = current_time( 'timestamp' );
+                $count = 0;
+
+                foreach ( (array) Nexus_DB::agents() as $agent ) {
+                        if ( 'error' !== (string) $agent->status ) {
+                                continue;
+                        }
+
+                        $errored_at = isset( $agent->updated_at ) ? strtotime( (string) $agent->updated_at ) : 0;
+
+                        if ( ! $errored_at || ( $now - $errored_at ) < $backoff ) {
+                                continue; // Errore recente o timestamp illeggibile: backoff non ancora scaduto.
+                        }
+
+                        Nexus_DB::update_agent( (int) $agent->id, array( 'status' => 'active' ) );
+                        $count++;
+
+                        // Activity log ONESTO: la riattivazione è automatica e visibile,
+                        // con il momento dell'errore originale e la durata del backoff.
+                        self::log_phase(
+                                (int) $agent->id,
+                                'collecting',
+                                sprintf( 'Agente "%s" riattivato automaticamente: l\'errore era stato registrato alle %s (oltre %d min fa, backoff scaduto). Nuovo tentativo del giro di redazione: se l\'AI è ancora irraggiungibile l\'agente tornerà in errore e il backoff ripartirà.', (string) $agent->name, (string) $agent->updated_at, (int) round( $backoff / 60 ) ),
+                                'info'
+                        );
+                }
+
+                return $count;
+        }
+
+        /**
          * v1.1.9 — Resume degli articoli bloccati (WP4 "Pipeline resume").
          *
          * Un crash a metà tick lasciava bozze 'draft' orfane per sempre: il collect
@@ -1766,11 +2161,20 @@ class Nexus_Pipeline {
          * prepare'd, colonna della tabella nexus_articles via Nexus_DB::tables())
          * sostituisce Nexus_DB::articles() che non espone questi filtri.
          *
-         * v1.1.13 (O1) — lock per-articolo: transient 'nexus_resume_lock_{id}' con
-         * TTL RESUME_LOCK_TTL mentre l'articolo è in lavorazione; due tick
+         * v1.1.13 (O1) — lock per-articolo: 'nexus_resume_lock_{id}' con TTL
+         * RESUME_LOCK_TTL mentre l'articolo è in lavorazione; due tick
          * sovrapposti non processano mai lo stesso articolo (lock presente → skip,
          * si riprende al tick successivo). Rilascio garantito nel finally anche su
          * eccezione (che ora resta confinata al singolo articolo).
+         * v1.1.18 (AL-8): acquisizione ATOMICA via acquire_lock (add_option
+         * check-and-set, valore = timestamp, ruba-lock su orfani oltre TTL) al
+         * posto del set_transient check-then-set (finestra di corsa tra check e
+         * set: due tick sovrapposti lavoravano lo stesso articolo).
+         *
+         * v1.1.18 (CR-1) — niente più esclusione perpetua: la busy map del
+         * runtime (fresh_runtime_articles) ha un TTL sul campo 'since': le voci
+         * lasciate da un crash sono ignorate dopo RUNTIME_STALE_SECONDS e
+         * rimosse dalla option dal reaper di cron_tick (prune_runtime_stale).
          *
          * Chiamata UNA volta per tick (da cron_tick) e al massimo $limit articoli:
          * il resto si riprende ai tick successivi.
@@ -1822,13 +2226,13 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
-                // Runtime corrente: un articolo già "in redazione" per un agente non si tocca.
-                $busy = array();
-                foreach ( self::get_runtime() as $state ) {
-                        if ( is_array( $state ) && ! empty( $state['article_id'] ) ) {
-                                $busy[ absint( $state['article_id'] ) ] = true;
-                        }
-                }
+                // Runtime corrente: un articolo già "in redazione" per un agente non si
+                // tocca. v1.1.18 (CR-1): la busy map ha un TTL sul campo 'since'
+                // (ISO8601 UTC) — le voci più vecchie di RUNTIME_STALE_SECONDS (crash
+                // del processo, nessun clear_runtime) sono IGNORATE: prima l'articolo
+                // in lavorazione al momento del crash restava escluso dal resume PER
+                // SEMPRE (l'agente era 'error' → nessun nuovo giro → nessun clear).
+                $busy = self::fresh_runtime_articles();
 
                 $settings      = self::settings();
                 $auto_evaluate = ! empty( $settings['auto_evaluate'] );
@@ -1854,35 +2258,41 @@ class Nexus_Pipeline {
                         // v1.1.13 (O1): lock per-articolo non bloccante — due tick sovrapposti
                         // (o resume concorrenti via CLI/REST) non devono mai lavorare lo
                         // stesso articolo: lock presente → skip, ripresa al prossimo tick.
+                        // v1.1.18 (AL-8): acquisizione ATOMICA col pattern acquire_lock
+                        // (add_option check-and-set, valore = timestamp, TTL RESUME_LOCK_TTL
+                        // con ruba-lock per orfani di crash): il vecchio
+                        // get_transient+set_transient era check-then-set — due tick che
+                        // leggevano assenza nello stesso istante procedevano ENTRAMBI
+                        // (doppia evaluate/rewrite = doppio costo AI; la doppia
+                        // pubblicazione restava chiusa solo dal mutex publish).
                         $resume_lock = self::RESUME_LOCK_PREFIX . $article_id;
-                        if ( get_transient( $resume_lock ) ) {
+                        if ( ! self::acquire_lock( $resume_lock, self::RESUME_LOCK_TTL ) ) {
                                 $out['skipped']++;
                                 continue;
                         }
-                        set_transient( $resume_lock, 1, self::RESUME_LOCK_TTL );
 
                         // Età dello stallo: updated_at (fallback created_at) più vecchio della soglia.
                         $stamp_raw = isset( $row->updated_at ) && '' !== (string) $row->updated_at ? (string) $row->updated_at : (string) $row->created_at;
                         $stamp     = strtotime( $stamp_raw );
                         if ( ! $stamp || $stamp > $threshold ) {
-                                delete_transient( $resume_lock );
+                                self::release_lock( $resume_lock ); // v1.1.18 (AL-8): pattern acquire/release_lock.
                                 continue; // Ancora fresco: non è uno stallo.
                         }
 
                         // Difensive in PHP (le stesse regole della WHERE: mai fidarsi ciecamente).
                         if ( '' === trim( (string) ( isset( $row->source_name ) ? $row->source_name : '' ) ) ) {
-                                delete_transient( $resume_lock );
+                                self::release_lock( $resume_lock ); // v1.1.18 (AL-8).
                                 continue; // Senza fonte non è una bozza prodotta dalla pipeline.
                         }
 
                         if ( isset( $row->factcheck_score ) && (float) $row->factcheck_score > 0 ) {
-                                delete_transient( $resume_lock );
+                                self::release_lock( $resume_lock ); // v1.1.18 (AL-8).
                                 $out['skipped']++;
                                 continue; // Tornato in bozza dal fact-check: la revisione è richiesta all'umano.
                         }
 
                         if ( ! $auto_evaluate && ! $auto_rewrite ) {
-                                delete_transient( $resume_lock );
+                                self::release_lock( $resume_lock ); // v1.1.18 (AL-8).
                                 $out['skipped']++;
                                 continue; // Fasi successive disattivate: bozza parcheggiata di proposito.
                         }
@@ -1921,7 +2331,9 @@ class Nexus_Pipeline {
                         } finally {
                                 // Rilascio garantito del lock per-articolo (anche su eccezione):
                                 // il TTL RESUME_LOCK_TTL è la rete di sicurezza per crash duri.
-                                delete_transient( $resume_lock );
+                                // v1.1.18 (AL-8): release_lock pulisce anche l'eventuale
+                                // _transient_timeout_* residuo dei lock legacy.
+                                self::release_lock( $resume_lock );
                         }
                 }
 
@@ -1993,6 +2405,31 @@ class Nexus_Pipeline {
          * 2. Una chiamata finale "direttore" fonde i 3 angoli in un articolo completo.
          * 3. L'articolo viene salvato in stato 'pending_approval' (fonte: Nexus Wire).
          *
+         * v1.1.18 (AL-7) — LOCK + RUN ROW + HEARTBEAT:
+         *  - MUTEX PER-TEMA (pattern acquire_lock WA11: add_option atomico, valore =
+         *    timestamp, TTL WIRE_LOCK_TTL con ruba-lock per orfani): un secondo Wire
+         *    sullo stesso tema (doppio click su "assegna", richiesta REST concorrente,
+         *    requeue del reaper coda) NON gira più in parallelo → niente doppio costo
+         *    AI né articolo duplicato. Il lock è rilasciato nel finally; dopo un crash
+         *    duro si auto-guarigione alla scadenza del TTL (15 min < soglia requeue
+         *    coda 30 min: nessuna collisione al re-dispatch).
+         *  - RUN ROW agent_runs con trigger 'wire' (contratto insert_agent_run /
+         *    run_trigger: valore finora mai usato — audit 🟢14): aperta DOPO i gate
+         *    (team/budget/lock: le uscite precedenti non lasciano riga, stessa regola
+         *    di run_full_agent) e chiusa nel finally con finish_agent_run (esito +
+         *    steps + errore). Il Wire non è più l'unico flusso AI multiplo invisibile
+         *    alla telemetria v1.1.16. La run row NON tocca agents.status: un Wire
+         *    fallito è un esito collettivo, non il guasto di un giornalista.
+         *  - HEARTBEAT DOPPIO a ogni confine di fase: Nexus_Queue::heartbeat()
+         *    rinfresca started_at del job di coda (requeue_stale non riaccoda un Wire
+         *    vivo) e touch_agent_run() rinfresca started_at della run row (il reaper
+         *    CR-1 non la chiude mai come fantasma). Lock + heartbeat + run row
+         *    chiudono la doppia esecuzione parallela su OGNI via.
+         *
+         * NOTA onesta: la durata (duration_ms) della run row Wire misura l'ULTIMA
+         * fase (started_at è rinfrescato a ogni fase): il tempo totale resta
+         * ricostruibile da created_at (colonna fissa dell'INSERT) a finished_at.
+         *
          * @param string $topic Tema della redazione collettiva.
          * @return array{ok:bool, run:array}
          */
@@ -2038,11 +2475,77 @@ class Nexus_Pipeline {
                         $team
                 );
 
-                Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire avviato sul tema "%s" con %d agenti in redazione.', $topic, count( $team ) ), 'info' );
+                // v1.1.18 (AL-7): mutex per-tema. Chiave normalizzata (md5 del tema in
+                // minuscolo): i sinonimi di casing non aggirano il lock. Rifiuto ONESTO
+                // (nessuna attesa): il chiamante (REST/coda) vede l'esito e riprova dopo.
+                $wire_lock = self::WIRE_LOCK_PREFIX . md5( strtolower( $topic ) );
+                if ( ! self::acquire_lock( $wire_lock, self::WIRE_LOCK_TTL ) ) {
+                        $run['error'] = 'Nexus Wire già in corso su questo tema: attendere il completamento del giro attuale.';
+                        Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" non avviato: un altro Wire è già in corso sullo stesso tema (lock attivo).', $topic ), 'warning' );
+                        return array(
+                                'ok'  => false,
+                                'run' => $run,
+                        );
+                }
+
+                // v1.1.18 (AL-7): run row telemetria con trigger 'wire' (guard
+                // method_exists difensiva, come in run_full_agent: senza i metodi
+                // agent_runs il Wire prosegue identico ma senza traccia).
+                $run_id = 0;
+                if ( method_exists( 'Nexus_DB', 'insert_agent_run' ) ) {
+                        $run_id = (int) Nexus_DB::insert_agent_run( (int) $first->id, 'wire' );
+                }
+
+                $telemetry = array(
+                        'status' => 'failed',
+                        'error'  => '',
+                        'steps'  => array(),
+                );
+
+                try {
+                        Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire avviato sul tema "%s" con %d agenti in redazione.', $topic, count( $team ) ), 'info' );
+
+                        return self::wire_run_locked( $run, $topic, $team, $first, $run_id, $telemetry );
+                } catch ( Throwable $e ) {
+                        $telemetry['status'] = 'failed';
+                        $telemetry['error']  = self::clip( $e->getMessage(), 300 );
+                        throw $e; // Contratto invariato: l'eccezione resta al chiamante (coda: retry/backoff; REST: 500).
+                } finally {
+                        // Rilascio garantito del mutex e chiusura della run row in OGNI
+                        // caso di uscita (stessa disciplina try/finally di run_full_agent).
+                        self::release_lock( $wire_lock );
+                        self::finish_wire_run_row( $run_id, $telemetry );
+                }
+        }
+
+        /**
+         * Corpo del NEXUS WIRE, eseguito DENTRO il mutex per-tema e con la run row
+         * aperta (v1.1.18 AL-7, stesso pattern WA6 dei corpi *_run). Riceve la
+         * run del registro wire_runs, la squadra, il referente, l'ID run row e la
+         * telemetria PER RIFERIMENTO; alimenta steps/errore/stato e ritorna
+         * l'esito {ok, run} al chiamante.
+         *
+         * @param array  $run       Registro wire_runs (nexus_wire_runs).
+         * @param string $topic     Tema già sanificato.
+         * @param array  $team      Agenti attivi (max 3).
+         * @param object $first     Agente referente (autore dell'articolo).
+         * @param int    $run_id    ID run row (0 = telemetria non registrata).
+         * @param array  $telemetry Telemetria della run row (per riferimento).
+         * @return array{ok:bool, run:array}
+         */
+        private static function wire_run_locked( $run, $topic, $team, $first, $run_id, &$telemetry ) {
 
                 /* ---- 1. Angoli editoriali dei colleghi ---- */
                 $angles = array();
                 foreach ( $team as $agent ) {
+                        // v1.1.18 (AL-7): heartbeat doppio a ogni confine di fase — il job
+                        // di coda resta "fresco" (requeue_stale non riaccoda) e la run row
+                        // resta viva (reaper CR-1 non la chiude come fantasma).
+                        self::heartbeat();
+                        self::touch_agent_run( $run_id );
+
+                        $step_t = microtime( true );
+
                         $prompt = sprintf(
                                 "Sei %s, giornalista AI di Nexus News AI, curatore della sezione \"%s\".\nPersonalità editoriale: %s\n\nLa redazione ha attivato il NEXUS WIRE (redazione collettiva) sul tema: \"%s\"\n\nCOMPITO: proponi il TUO angolo editoriale sul tema, in circa 100 parole, coerente con la tua personalità e la tua sezione. Porta un punto di vista originale e complementare rispetto agli altri colleghi.\n\nRispondi SOLO con un JSON valido, nient'altro:\n{\"title\": \"titolo provvisorio del tuo angolo\", \"angle\": \"il tuo angolo editoriale in circa 100 parole\"}",
                                 $agent->name,
@@ -2057,6 +2560,13 @@ class Nexus_Pipeline {
                         if ( empty( $res['ok'] ) ) {
                                 $run['error'] = sprintf( 'Chat fallita per l\'agente %s: %s', $agent->name, self::chat_error( $res, 'motore AI non disponibile' ) );
                                 Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" fallito: %s', $topic, self::clip( $run['error'], 300 ) ), 'error' );
+                                $telemetry['error'] = (string) $run['error'];
+                                $telemetry['steps'][] = array(
+                                        'step'   => 'angles',
+                                        'ok'     => false,
+                                        'detail' => self::clip( sprintf( '%s: %s', $agent->name, $run['error'] ), 200 ),
+                                        'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                                );
                                 self::save_wire_run( $run );
                                 return array(
                                         'ok'  => false,
@@ -2075,6 +2585,14 @@ class Nexus_Pipeline {
                                 'category' => (string) $agent->category,
                                 'angle'    => self::clip( $angle, 1200 ),
                         );
+
+                        // v1.1.18 (AL-7): step telemetria per angolo (contratto steps {step, ok, detail, ms}).
+                        $telemetry['steps'][] = array(
+                                'step'   => 'angles',
+                                'ok'     => true,
+                                'detail' => self::clip( sprintf( '%s: angolo proposto (%d caratteri).', $agent->name, function_exists( 'mb_strlen' ) ? mb_strlen( $angle ) : strlen( $angle ) ), 200 ),
+                                'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                        );
                 }
 
                 /* ---- 2. Direttore: fonde gli angoli in un articolo unico ---- */
@@ -2090,11 +2608,45 @@ class Nexus_Pipeline {
                 );
                 // v1.0.3: tracking usage della chiamata direttore (agente responsabile).
                 // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede un oggetto JSON.
+                // v1.1.18 (AL-7): heartbeat doppio prima della chiamata più lunga del Wire.
+                self::heartbeat();
+                self::touch_agent_run( $run_id );
+
+                $step_t = microtime( true );
+
                 $res = self::chat( $director_prompt, 'wire', array( 'agent_id' => (int) $first->id, 'json_mode' => true ) );
 
                 if ( empty( $res['ok'] ) ) {
                         $run['error'] = sprintf( 'La direzione non ha completato la fusione: %s', self::chat_error( $res, 'motore AI non disponibile' ) );
                         Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" fallito: %s', $topic, self::clip( $run['error'], 300 ) ), 'error' );
+                        $telemetry['error'] = (string) $run['error'];
+                        $telemetry['steps'][] = array(
+                                'step'   => 'director',
+                                'ok'     => false,
+                                'detail' => self::clip( $run['error'], 200 ),
+                                'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                        );
+                        self::save_wire_run( $run );
+                        return array(
+                                'ok'  => false,
+                                'run' => $run,
+                        );
+                }
+
+                // v1.1.18 (AL-11): stessa guardia onesta della fase rewrite — una
+                // risposta del direttore troncata per max_tokens produce un articolo
+                // INCOMPLETO: lo step fallisce e l'articolo NON viene salvato come
+                // completo (nessun pending_approval con testo mozzato).
+                if ( ! empty( $res['truncated'] ) ) {
+                        $run['error'] = 'La direzione ha prodotto una risposta troncata per max_tokens esauriti: articolo incompleto NON salvato. Aumenta max_tokens o scegli un modello con più contesto.';
+                        Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" fallito: risposta del direttore troncata per max_tokens (articolo incompleto non salvato).', $topic ), 'error' );
+                        $telemetry['error'] = (string) $run['error'];
+                        $telemetry['steps'][] = array(
+                                'step'   => 'director',
+                                'ok'     => false,
+                                'detail' => self::clip( 'Risposta troncata per max_tokens (articolo incompleto non salvato).', 200 ),
+                                'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                        );
                         self::save_wire_run( $run );
                         return array(
                                 'ok'  => false,
@@ -2106,12 +2658,26 @@ class Nexus_Pipeline {
                 if ( ! is_array( $data ) || empty( $data['title'] ) || empty( $data['content'] ) ) {
                         $run['error'] = 'La direzione non ha prodotto un articolo valido (JSON mancante o incompleto).';
                         Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" fallito: risposta non interpretabile.', $topic ), 'error' );
+                        $telemetry['error'] = (string) $run['error'];
+                        $telemetry['steps'][] = array(
+                                'step'   => 'director',
+                                'ok'     => false,
+                                'detail' => self::clip( $run['error'], 200 ),
+                                'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                        );
                         self::save_wire_run( $run );
                         return array(
                                 'ok'  => false,
                                 'run' => $run,
                         );
                 }
+
+                $telemetry['steps'][] = array(
+                        'step'   => 'director',
+                        'ok'     => true,
+                        'detail' => self::clip( sprintf( 'Articolo fuso da %d angoli (%d parole).', count( $angles ), self::word_count( (string) $data['content'] ) ), 200 ),
+                        'ms'     => (int) round( ( microtime( true ) - $step_t ) * 1000 ),
+                );
 
                 /* ---- 3. Salvataggio articolo in coda di approvazione ---- */
                 $content   = (string) $data['content'];
@@ -2134,6 +2700,13 @@ class Nexus_Pipeline {
                 if ( ! $article_id ) {
                         $run['error'] = 'Salvataggio dell\'articolo Nexus Wire fallito.';
                         Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire "%s" fallito: salvataggio articolo non riuscito.', $topic ), 'error' );
+                        $telemetry['error'] = (string) $run['error'];
+                        $telemetry['steps'][] = array(
+                                'step'   => 'save',
+                                'ok'     => false,
+                                'detail' => self::clip( $run['error'], 200 ),
+                                'ms'     => 0,
+                        );
                         self::save_wire_run( $run );
                         return array(
                                 'ok'  => false,
@@ -2144,12 +2717,89 @@ class Nexus_Pipeline {
                 $run['status']     = 'completed';
                 $run['article_id'] = $article_id;
 
+                // v1.1.18 (AL-7): esito run row 'ok' (unico percorso di successo).
+                $telemetry['status'] = 'ok';
+                $telemetry['steps'][] = array(
+                        'step'   => 'save',
+                        'ok'     => true,
+                        'detail' => self::clip( sprintf( 'Articolo #%d salvato in coda di approvazione.', $article_id ), 200 ),
+                        'ms'     => 0,
+                );
+
                 Nexus_DB::insert_activity( (int) $first->id, 'wire', sprintf( 'Nexus Wire completato sul tema "%s": articolo #%d in coda di approvazione (redazione: %s).', $topic, $article_id, implode( ', ', $run['agents'] ) ), 'success' );
                 self::save_wire_run( $run );
 
                 return array(
                         'ok'  => true,
                         'run' => $run,
+                );
+        }
+
+        /**
+         * v1.1.18 (AL-7) — chiusura della run row del Wire (finally di wire_run):
+         * finish_agent_run con esito ('ok'|'failed') + steps + ultimo errore.
+         * NON tocca agents.status (a differenza di finish_agent_run_row): un Wire
+         * fallito è un esito collettivo (tema/lock/budget/AI), non il guasto di un
+         * giornalista — lo status degli agenti resta appannaggio dei loro run.
+         *
+         * Guard method_exists difensive e try/catch totale: la telemetria non deve
+         * MAI mascherare l'esito del Wire.
+         *
+         * @param int   $run_id    ID run row (0 = non registrata).
+         * @param array $telemetry Telemetria (status, error, steps).
+         * @return void
+         */
+        private static function finish_wire_run_row( $run_id, $telemetry ) {
+                if ( $run_id <= 0 || ! method_exists( 'Nexus_DB', 'finish_agent_run' ) ) {
+                        return;
+                }
+
+                $status = ( isset( $telemetry['status'] ) && 'ok' === (string) $telemetry['status'] ) ? 'ok' : 'failed';
+
+                try {
+                        Nexus_DB::finish_agent_run(
+                                (int) $run_id,
+                                $status,
+                                array(
+                                        'steps' => isset( $telemetry['steps'] ) && is_array( $telemetry['steps'] ) ? $telemetry['steps'] : array(),
+                                        'error' => (string) ( isset( $telemetry['error'] ) ? $telemetry['error'] : '' ),
+                                )
+                        );
+                } catch ( Throwable $e ) {
+                        // Silenzio onesto: la scrittura della run row non rompe il Wire.
+                }
+        }
+
+        /**
+         * v1.1.18 (AL-7) — heartbeat della run row del Wire: rinfresca started_at
+         * (solo se la riga è ancora 'running': UPDATE condizionale) così il reaper
+         * CR-1 (soglia RUN_STALE_MINUTES su started_at) non chiude mai come
+         * fantasma un Wire vivo. Guardie totali, mai fatale.
+         *
+         * @param int $run_id ID run row (0 = nessuna azione).
+         * @return void
+         */
+        private static function touch_agent_run( $run_id ) {
+                if ( $run_id <= 0 || ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return;
+                }
+
+                $tables = Nexus_DB::tables();
+                if ( ! is_array( $tables ) || empty( $tables['agent_runs'] ) ) {
+                        return;
+                }
+
+                global $wpdb;
+
+                $wpdb->update(
+                        $tables['agent_runs'],
+                        array( 'started_at' => current_time( 'mysql' ) ),
+                        array(
+                                'id'     => (int) $run_id,
+                                'status' => 'running',
+                        ),
+                        array( '%s' ),
+                        array( '%d', '%s' )
                 );
         }
 

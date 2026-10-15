@@ -13,10 +13,11 @@
  * v1.1.12: gsc_oauth_client_id, gsc_oauth_client_secret, gsc_site_url,
  * ga4_property_id, metrics_sync_enabled, evergreen_enabled,
  * evergreen_refresh_days, evergreen_max_posts. Il client secret segue il
- * pattern segreti v1.1.9 (type="password", value stampato esc_attr per
- * re-invio idempotente, placeholder "•••• salvata — compila per sostituire"
- * quando valorizzato, autocomplete="new-password"); la chiave entra nella
- * mascheratura REST Nexus_Rest::secret_settings_keys() (v1.1.12 S8). Le tre
+ * pattern segreti v1.1.9 (type="password", placeholder "•••• salvata — compila
+ * per sostituire" quando valorizzato, autocomplete="new-password"; dalla
+ * v1.1.18 FIX-8 il value NON è stampato: campo vuoto + classe "nxa-secret",
+ * il PUT /settings scarta i segreti vuoti — vuoto = nessun cambio); la chiave
+ * entra nella mascheratura REST Nexus_Rest::secret_settings_keys() (v1.1.12 S8). Le tre
  * chiavi evergreen_* arrivano da default_settings() col pacchetto S6: finché
  * quel merge non arriva get_settings() non le restituisce (i ?? sono
  * difensivi, non mock).
@@ -333,7 +334,7 @@ if ( ! $nxa_status_ai_active ) {
                                                 <tr>
                                                         <th scope="row"><label for="nxa-gsc-client-secret"><?php esc_html_e( 'Client secret OAuth', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="gsc_oauth_client_secret" id="nxa-gsc-client-secret" value="<?php echo esc_attr( $settings['gsc_oauth_client_secret'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['gsc_oauth_client_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="gsc_oauth_client_secret" id="nxa-gsc-client-secret" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['gsc_oauth_client_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Campo mascherato: compila il campo solo per sostituire il client secret salvato (vuoto = nessun cambio).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>

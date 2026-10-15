@@ -67,6 +67,10 @@
  * @since   1.1.6 Regola ZERO MOCK: il canale senza integrazione non è più una
  *                pubblicazione simulata ma un log di errore onesto (status
  *                'error', post_id/post_url vuoti, nessun id/URL generato).
+ * @since   1.1.18 Gate social su post_status WP (social SOLO su 'publish') e
+ *                wp_slash() su title/content/excerpt per wp_insert_post/
+ *                wp_update_post (i backslash del contenuto AI non vengono più
+ *                mangiati all'insert/update).
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -98,6 +102,14 @@ class Nexus_Publisher {
          * onesto (status 'error', post_id/post_url vuoti, messaggio esplicativo
          * nel campo error): nessuna simulazione, nessun successo finto.
          * Un log per platform in tutti i casi.
+         *
+         * v1.1.18 (AL-12) — GATE SOCIAL SU PUBLISH (decisione di prodotto): il
+         * canale 'blog' viene processato SEMPRE per primo (anche se elencato dopo
+         * i social in social_platforms) e i canali social partono SOLO se il post
+         * WordPress collegato all'articolo è in stato 'publish', MAI su bozze:
+         * draft/pending (o post assente/cestinato) → log status 'skipped' con
+         * motivo onesto, NESSUNA chiamata al canale, l'articolo WP resta comunque
+         * pubblicato (in bozza) dal canale blog.
          *
          * @param object|array $article Articolo Nexus (riga di nexus_articles).
          * @return array Log di pubblicazione (uno o più per piattaforma).
@@ -134,6 +146,15 @@ class Nexus_Publisher {
                 );
 
                 $logs = array();
+
+                // v1.1.18 (AL-12) — GATE SOCIAL SU PUBLISH: il canale 'blog' viene
+                // processato SEMPRE per primo (anche se elencato dopo i social nella
+                // lista social_platforms): è l'unico modo per conoscere il post_status
+                // effettivo del post WP di QUESTO run (insert nuovo o update) prima di
+                // decidere sui canali social. In modalità draft esistente l'articolo
+                // WordPress continua a essere pubblicato (in bozza) ma senza social.
+                $social_requested = array();
+
                 foreach ( $platforms as $platform ) {
                         $platform = sanitize_key( $platform );
                         if ( '' === $platform ) {
@@ -153,6 +174,59 @@ class Nexus_Publisher {
                                 continue;
                         }
 
+                        // Canale social: la decisione (invio o skip) avviene dopo il gate.
+                        $social_requested[] = $platform;
+                }
+
+                // v1.1.18 (AL-12) — gate: i social procedono SOLO se NON esiste un post
+                // WP collegato in stato diverso da 'publish'. Con enable_wp_posts=0
+                // (legacy) o senza alcun post WP collegato il gate non scatta: non c'è
+                // nessuna bozza WP da proteggere. wp_post_id viene rilegto dal database
+                // perché il canale 'blog' sopra può averlo appena scritto su questo run
+                // (update_article a fine publish_wp_post).
+                $skip_reason = '';
+                if ( ! empty( $social_requested ) && $enable_wp_posts && function_exists( 'get_post_status' ) && method_exists( 'Nexus_DB', 'get_article' ) ) {
+                        $nxa_fresh = Nexus_DB::get_article( $article_id );
+                        $nxa_wp_id = ( $nxa_fresh && isset( $nxa_fresh->wp_post_id ) ) ? absint( $nxa_fresh->wp_post_id ) : 0;
+                        if ( $nxa_wp_id > 0 ) {
+                                $nxa_status = sanitize_key( (string) get_post_status( $nxa_wp_id ) );
+                                if ( 'publish' !== $nxa_status ) {
+                                        $skip_reason = in_array( $nxa_status, array( 'draft', 'pending' ), true )
+                                                ? 'Social saltati: articolo in bozza WP.'
+                                                : sprintf( 'Social saltati: post WordPress non pubblicato (stato: %s).', '' !== $nxa_status ? $nxa_status : 'sconosciuto' );
+                                }
+                        }
+                }
+
+                if ( '' !== $skip_reason ) {
+                        // Contratto (v1.0.2): UN log per platform in tutti i casi. Status
+                        // 'skipped' (già previsto dal contratto delle classi social),
+                        // post_id/post_url vuoti, motivo onesto in error/note: nessun
+                        // contenuto non revisionato esce sui canali pubblici.
+                        foreach ( $social_requested as $platform ) {
+                                $logs[] = array(
+                                        'platform' => $platform,
+                                        'status'   => 'skipped',
+                                        'post_id'  => '',
+                                        'post_url' => '',
+                                        'error'    => $skip_reason,
+                                        'note'     => $skip_reason,
+                                );
+                        }
+
+                        // Activity onesta aggregata (best-effort, mai bloccante): uno skip
+                        // non è un fallimento → status 'info'.
+                        if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                try {
+                                        Nexus_DB::insert_activity( 0, 'social', $skip_reason, 'info' );
+                                } catch ( \Throwable $e ) { // Skip silenzioso: errore non bloccante.
+                                }
+                        }
+
+                        return $logs;
+                }
+
+                foreach ( $social_requested as $platform ) {
                         // Canale social reale (v1.0.2): delega alla classe dedicata se presente.
                         if ( isset( $social_map[ $platform ] )
                                 && class_exists( $social_map[ $platform ] )
@@ -331,10 +405,17 @@ class Nexus_Publisher {
                 $wp_post_id = isset( $article->wp_post_id ) ? absint( $article->wp_post_id ) : 0;
 
                 // v1.1.0 "Tutto nativo": autore bot dell'agente, categoria nativa e tag.
+                // v1.1.18 (audit A6 M1) — wp_insert_post()/wp_update_post() si aspettano
+                // dati SLASHED (fanno wp_unslash prima del write): senza wp_slash ogni
+                // backslash nel contenuto AI (blocchi codice, JSON, regex) viene mangiato
+                // all'insert/update. Applicato a title/content/excerpt DOPO la
+                // sanitizzazione (kses/strip); il ramo update sotto usa lo stesso
+                // $post_args, quindi l'aggiornamento è coperto. Lo slug non serve
+                // (sanitize_title già rimuove i backslash).
                 $post_args = array(
-                        'post_title'   => $title,
-                        'post_content' => $content,
-                        'post_excerpt' => $excerpt,
+                        'post_title'   => wp_slash( $title ),
+                        'post_content' => wp_slash( $content ),
+                        'post_excerpt' => wp_slash( $excerpt ),
                         'post_status'  => $post_status,
                         'post_name'    => sanitize_title( $title ),
                 );

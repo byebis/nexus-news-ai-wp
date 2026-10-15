@@ -99,6 +99,13 @@
  * task: al prossimo integratore basta spostare il require_once in
  * nexus-news-ai.php ed eliminare la riga in fondo a questo file.
  *
+ * v1.1.18 (FIX-10) — SCALABILITÀ:
+ *  - SEARCH QUERIES: upsert BATCHED per giorno (upsert_search_query_rows,
+ *    chunk QUERY_UPSERT_CHUNK = 500, stesso pattern di upsert_metric_rows):
+ *    al più 6 round-trip DB a run invece di ~3000 upsert riga-per-riga
+ *    (3 giorni × rowLimit GSC_ROW_LIMIT = 1000); il check budget resta tra
+ *    le richieste HTTP giornaliere, la scrittura batched è O(6) query.
+ *
  * @package Nexus_News_AI
  */
 
@@ -156,6 +163,16 @@ final class Nexus_Metrics {
          * paginazione oltre (resta 1 sola richiesta HTTP a run).
          */
         const GSC_ROW_LIMIT = 1000;
+
+        /**
+         * v1.1.18 (FIX-10): righe per chunk dell'upsert batched delle search
+         * query (INSERT multi-row ... ON DUPLICATE KEY UPDATE, pattern
+         * upsert_metric_rows). 500 righe × 6 colonne ≈ 3000 placeholder per
+         * query: pacchetto ben sotto max_allowed_packet e 3 giorni ×
+         * rowLimit GSC_ROW_LIMIT (1000) → al più 6 round-trip DB a run
+         * invece di ~3000 upsert riga-per-riga.
+         */
+        const QUERY_UPSERT_CHUNK = 500;
 
         /**
          * Finestra dati GA4: start = oggi - 3 giorni (ultimi 3 giorni completi,
@@ -1455,21 +1472,23 @@ final class Nexus_Metrics {
                                         $out['truncated'] = 1;
                                 }
 
-                                foreach ( $res['rows'] as $row ) {
-                                        $written = self::upsert_search_query_row(
-                                                $row['query'],
-                                                $date,
-                                                $row['clicks'],
-                                                $row['impressions'],
-                                                $row['position']
-                                        );
+                                // v1.1.18 (FIX-10): upsert BATCHED per giorno
+                                // (INSERT multi-row a chunk QUERY_UPSERT_CHUNK =
+                                // 500, pattern upsert_metric_rows) al posto
+                                // dell'upsert riga-per-riga (~3000 round-trip
+                                // DB a run sui siti con traffico): stesso
+                                // risultato, al più 6 query. Le righe arrivano
+                                // già normalizzate da fetch_gsc_query_rows (trim
+                                // + clip 191 + absint/round); il batch le
+                                // ritratta per difesa (stesse normalizzazioni).
+                                $rows_day  = is_array( $res['rows'] ) ? $res['rows'] : array();
+                                $res_write = self::upsert_search_query_rows( $rows_day, $date );
 
-                                        if ( $written ) {
-                                                $out['rows']++;
-                                        } else {
-                                                $out['errors']++;
-                                                $out['last_error'] = 'Scrittura query GSC fallita (DB).';
-                                        }
+                                $out['rows'] += $res_write['written'];
+
+                                if ( $res_write['failed'] > 0 ) {
+                                        $out['errors']++;
+                                        $out['last_error'] = 'Scrittura query GSC fallita (DB).';
                                 }
                         }
                 } catch ( Exception $e ) {
@@ -1625,44 +1644,120 @@ final class Nexus_Metrics {
         }
 
         /**
-         * Upsert di una riga search query su wp_nexus_search_queries.
+         * v1.1.18 (FIX-10) — upsert BATCHED di righe search query su
+         * wp_nexus_search_queries (sostituisce upsert_search_query_row,
+         * rimossa: era usata solo dal ciclo riga-per-riga della sync).
          *
-         * INSERT ... ON DUPLICATE KEY UPDATE sulla UNIQUE query_day (query,
-         * query_date): re-run della sync sovrascrive i valori del giorno senza
-         * duplicare righe. synced_at = now (locale). La colonna top_url NON è
-         * scritta: la risposta query-dimension non include pagine → resta NULL
+         * INSERT multi-row "VALUES (...),(...)" ... ON DUPLICATE KEY UPDATE
+         * sulla UNIQUE query_day (query, query_date), a chunk di
+         * QUERY_UPSERT_CHUNK (500) righe: 3 giorni × rowLimit GSC_ROW_LIMIT
+         * (1000) → al più 6 round-trip DB a run (prima: UNA query per riga).
+         * Re-run della sync sovrascrive i valori del giorno senza duplicare
+         * righe; synced_at = now (locale). La colonna top_url NON è scritta:
+         * la risposta query-dimension non include pagine → resta NULL
          * (onestà del dato; nessun URL inventato).
          *
-         * @param string $query      Stringa di ricerca (già trimmata/clippata).
+         * SICUREZZA (stesso pattern di upsert_metric_rows): placeholder
+         * completi per OGNI riga (%s/%d/%f) costruiti dinamicamente e passati
+         * a $wpdb->prepare con l'array dei valori; la query viene ritrimmata
+         * e riclippata a 191 caratteri (difesa: la colonna query è
+         * VARCHAR(191) per entrare nell'indice UNIQUE su utf8mb4); le righe
+         * malformate (non array o query vuota) vengono scartate. La tabella
+         * arriva da search_queries_table() (allowlist interna Nexus_DB, mai
+         * input utente).
+         *
+         * Nota budget: il check budget_exceeded resta tra le RICHIESTE HTTP
+         * giornaliere (nel chiamante): la scrittura batched è O(6) query per
+         * run e non consuma budget misurabile.
+         *
+         * Nota onesta: $wpdb->query su ON DUPLICATE KEY UPDATE ritorna 1 per
+         * INSERT e 2 per UPDATE — le righe scritte sono contate con
+         * count($placeholders) e NON col valore di ritorno di query(); un
+         * chunk fallito (false) conta come 'failed' e i suoi errori emergono
+         * dal log del chiamante.
+         *
+         * @param array  $rows       Righe normalizzate da fetch_gsc_query_rows:
+         *                           ognuna { query: string, clicks: int, impressions: int, position: float }.
          * @param string $query_date Giorno locale (Y-m-d, già validato).
-         * @param int    $clicks     Click Search Console.
-         * @param int    $impressions Impression Search Console.
-         * @param float  $position   Posizione media Search Console.
-         * @return bool True se la scrittura è andata a buon fine.
+         * @return array{written:int, failed:int} written = righe incluse in chunk
+         *                                      eseguiti con successo; failed = righe
+         *                                      incluse in chunk falliti (le malformate
+         *                                      escluse da entrambi i contatori).
          */
-        private static function upsert_search_query_row( $query, $query_date, $clicks, $impressions, $position ) {
+        private static function upsert_search_query_rows( array $rows, $query_date ) {
                 global $wpdb;
 
-                $table = self::search_queries_table();
-
-                $sql = "INSERT INTO {$table} ( query, query_date, clicks, impressions, position, synced_at ) "
-                        . 'VALUES ( %s, %s, %d, %d, %f, %s ) '
-                        . 'ON DUPLICATE KEY UPDATE clicks = VALUES( clicks ), impressions = VALUES( impressions ), '
-                        . 'position = VALUES( position ), synced_at = VALUES( synced_at )';
-
-                $result = $wpdb->query(
-                        $wpdb->prepare(
-                                $sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
-                                (string) $query,
-                                (string) $query_date,
-                                absint( $clicks ),
-                                absint( $impressions ),
-                                round( (float) $position, 2 ),
-                                current_time( 'mysql' )
-                        )
+                $result = array(
+                        'written' => 0,
+                        'failed'  => 0,
                 );
 
-                return false !== $result;
+                if ( empty( $rows ) ) {
+                        return $result;
+                }
+
+                $table = self::search_queries_table();
+                $now   = current_time( 'mysql' );
+
+                foreach ( array_chunk( $rows, self::QUERY_UPSERT_CHUNK ) as $chunk ) {
+                        $placeholders = array();
+                        $params       = array();
+
+                        foreach ( $chunk as $row ) {
+                                if ( ! is_array( $row ) || ! isset( $row['query'] ) ) {
+                                        continue;
+                                }
+
+                                // Trim + clip a 191: colonna query VARCHAR(191)
+                                // (entra nell'indice UNIQUE su utf8mb4) — stessa
+                                // normalizzazione di fetch_gsc_query_rows,
+                                // ripetuta qui per difesa.
+                                $query = trim( (string) $row['query'] );
+
+                                if ( '' === $query ) {
+                                        continue;
+                                }
+
+                                if ( function_exists( 'mb_substr' ) ) {
+                                        $query = mb_substr( $query, 0, 191 );
+                                } else {
+                                        $query = substr( $query, 0, 191 );
+                                }
+
+                                $placeholders[] = '( %s, %s, %d, %d, %f, %s )';
+
+                                $params[] = $query;
+                                $params[] = (string) $query_date;
+                                $params[] = absint( isset( $row['clicks'] ) ? $row['clicks'] : 0 );
+                                $params[] = absint( isset( $row['impressions'] ) ? $row['impressions'] : 0 );
+                                $params[] = round( (float) ( isset( $row['position'] ) ? $row['position'] : 0 ), 2 );
+                                $params[] = $now;
+                        }
+
+                        if ( empty( $placeholders ) ) {
+                                continue;
+                        }
+
+                        $sql = "INSERT INTO {$table} ( query, query_date, clicks, impressions, position, synced_at ) "
+                                . 'VALUES ' . implode( ', ', $placeholders ) . ' '
+                                . 'ON DUPLICATE KEY UPDATE clicks = VALUES( clicks ), impressions = VALUES( impressions ), '
+                                . 'position = VALUES( position ), synced_at = VALUES( synced_at )';
+
+                        $ok = $wpdb->query(
+                                $wpdb->prepare(
+                                        $sql, // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi per ogni riga, tabella da allowlist interna.
+                                        $params
+                                )
+                        );
+
+                        if ( false !== $ok ) {
+                                $result['written'] += count( $placeholders );
+                        } else {
+                                $result['failed'] += count( $placeholders );
+                        }
+                }
+
+                return $result;
         }
 
         /**

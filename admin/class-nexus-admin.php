@@ -23,6 +23,12 @@
  *     ├── Strumenti               slug nexus-tools                 → admin/views/tools.php
  *     └── Impostazioni            slug nexus-settings              → admin/views/settings.php
  *
+ * v1.1.18 (FIX-8): fuori da questa mappa (e da page_views()) di proposito le
+ * due pagine registrate AUTONOMAMENTE dai rispettivi moduli (non da Nexus_Admin:
+ * callback proprio, non passano da render_current_page()):
+ *     ├── Calendario editoriale   slug nexus-calendar              → Nexus_Calendar::render_page() (admin/views/calendar.php)
+ *     └── Google (wizard GSC/GA4) slug nexus-google-wizard         → Nexus_Google_Wizard::render_page() (admin/views/google-wizard.php)
+ *
  * v1.1.11 (R2): le 4 voci Impostazioni (contenuti|ai|pubblicazione|sistema)
  * diventano UNA sola voce "Impostazioni" (slug nexus-settings): la vista
  * settings.php è una pagina a tab che INCLUDE i 4 partial storici
@@ -108,6 +114,15 @@ class Nexus_Admin {
          * @return array
          */
         private static function page_views() {
+                // v1.1.18 (FIX-8): le pagine nexus-calendar e nexus-google-wizard NON
+                // stanno in questa mappa di proposito: sono registrate autonomamente
+                // da Nexus_Calendar::init() e Nexus_Google_Wizard::init() (add_submenu_page
+                // con callback proprio Nexus_*::render_page, manage_options) e non
+                // passano da render_current_page(): una voce qui non verrebbe mai
+                // usata e trarrebbe in inganno chi cerca le viste del calendario
+                // (admin/views/calendar.php) e del wizard Google
+                // (admin/views/google-wizard.php). Vedi la mappa completa nel
+                // docblock in testa al file.
                 return array(
                         'nexus-news'      => 'dashboard',
                         'nexus-agents'    => 'agents',

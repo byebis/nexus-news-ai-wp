@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.17
+ * Version:     1.1.18
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.17' );
+define( 'NEXUS_VERSION', '1.1.18' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -179,3 +179,21 @@ function nexus_bootstrap() {
         }
 }
 add_action( 'plugins_loaded', 'nexus_bootstrap' );
+
+/**
+ * v1.1.18 (FIX-8): carica il text domain dichiarato negli header del plugin
+ * (Text Domain: nexus-news-ai, Domain Path: /languages — dove vive il .pot).
+ * L'hook corretto è init: load_plugin_textdomain() non va chiamato prima.
+ * La localizzazione REALE della UI resta il dict custom Nexus_I18n (IT
+ * sorgente → EN), ma senza questa chiamata eventuali .mo (es. generati da
+ * translate.wordpress.org o iniettati via filtro 'load_textdomain_mofile')
+ * non venivano MAI caricati e le __()/esc_html__() delle viste restavano in
+ * italiano. Innocuo oggi (nessun .mo distribuito): chiude l'incoerenza
+ * header/meccanismo (audit A8, finding M2). La path usa la costante
+ * NEXUS_PLUGIN_FILE (il file principale, non __FILE__ locale) come già
+ * fatto per le altre costanti del bootstrap.
+ */
+function nexus_load_textdomain() {
+        load_plugin_textdomain( 'nexus-news-ai', false, dirname( plugin_basename( NEXUS_PLUGIN_FILE ) ) . '/languages' );
+}
+add_action( 'init', 'nexus_load_textdomain' );

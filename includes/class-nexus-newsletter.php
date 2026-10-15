@@ -40,6 +40,17 @@
  *   l'UNICO invio fuori dal cron, sempre da azione admin esplicita.
  * - Il cron NON cambia orari né hook: resta 'nexus_weekly_digest' su 'weekly'.
  *
+ * v1.1.18 (FIX-10) — digest a BATCH con cursor persistente: l'invio wp_mail
+ * sequenziale per iscritto senza cursor (cron morto a metà giro = doppioni
+ * e salti) diventa una serie di GIRI da DIGEST_BATCH_SIZE iscritti con:
+ * cursor in option 'nexus_digest_cursor' (autoload=false: giorno del giro,
+ * ultimo ID iscritto processato, fissi già tentati, intro AI generata,
+ * contatori cumulativi), ordine STABILE id ASC, cursor che avanza dopo
+ * OGNI tentativo (crash = al più UN doppione, mai metà lista ri-inviata),
+ * prosecuzione SCHEDULATA via evento singolo sullo stesso hook quando il
+ * giro non è esausto, RESET del cursor a fine giro con log finale onesto
+ * (totale cumulativo + nota sul numero di giri quando > 1).
+ *
  * Sicurezza (v1.1.9, WP2):
  * - TOKEN HASHATI: in DB viaggia SOLO lo sha256 hex (64 char, colonna VARCHAR(64))
  *   del token casuale; il link email usa il token in CHIARO (mai persistito).
@@ -91,6 +102,43 @@ class Nexus_Newsletter {
          * riuscito (zero costo a regime; fallimento = flag NON impostato → retry).
          */
         const OPTIN_MIGRATION_FLAG = 'nexus_digest_optin_v1';
+
+        /**
+         * v1.1.18 (FIX-10): opzione cursor del digest — array { day: 'Y-m-d'
+         * (chiave del giro = giorno locale della prima esecuzione), last_id:
+         * int (ultimo ID iscritto processato), fixed: bool (destinatari fissi
+         * già tentati), intro: string (HTML intro AI generata, riusata nei
+         * tick successivi), sent: int, failed: int (contatori cumulativi del
+         * run), giri: int (tick serviti) }. Autoload=false; scritta dopo
+         * OGNI tentativo di invio: il crash del cron a metà giro costa al più
+         * UN doppione, mai metà lista ri-inviata. Cancellata a fine giro.
+         */
+        const DIGEST_CURSOR_OPTION = 'nexus_digest_cursor';
+
+        /**
+         * v1.1.18 (FIX-10): iscritti processati per tick del digest
+         * (filtrabile con 'nexus_digest_batch_size', clamp difensivo 1..2000):
+         * 200 wp_mail restano nei timeout di hosting condiviso (30-60s), il
+         * resto riparte dal cursor al tick successivo.
+         */
+        const DIGEST_BATCH_SIZE = 200;
+
+        /**
+         * v1.1.18 (FIX-10): ritardo (secondi) del tick di prosecuzione del
+         * digest quando un giro non è esausto (wp_schedule_single_event sullo
+         * stesso hook HOOK_DIGEST).
+         */
+        const DIGEST_RESUME_DELAY = 60;
+
+        /**
+         * v1.1.18 (FIX-10): transient lock anti-sovrapposizione dei tick del
+         * digest (WP-Cron può far partire più processi in parallelo: due tick
+         * concorrenti leggerebbero lo stesso cursor e genererebbero doppioni).
+         * TTL = 2 × DIGEST_RESUME_DELAY: scade da solo se un tick muore senza
+         * arrivare al finally (netto di crash); il tick successivo garantito
+         * dalla prosecuzione schedulata lo trova scaduto e riparte dal cursor.
+         */
+        const DIGEST_TICK_LOCK = 'nexus_digest_tick_lock';
 
         /**
          * Contatore form renderizzati nella pagina (per id univoci dell'input email).
@@ -607,7 +655,25 @@ JS;
          *   subscriber 'confirmed' CON digest_optin = 1 (v1.1.14, P5: niente invio a
          *   chi ha rinunciato al solo digest) → nessuno → log 'Digest saltato:
          *   nessun destinatario' (v1.1.15 WE5) + false;
-         * - enable_digest == 1 → UNA chiamata Nexus_AI_Engine::chat (solo testo IT:
+         * - v1.1.18 (FIX-10) — BATCHING CON CURSOR PERSISTENTE: gli iscritti NON
+         *   vengono più girati tutti in un unico processo (wp_mail sequenziale senza
+         *   cursor: cron morto a metà giro = doppioni/salti). Giri da
+         *   digest_batch_size() iscritti (ordine STABILE id ASC) con cursor in
+         *   option (DIGEST_CURSOR_OPTION) e lock anti-sovrapposizione tick
+         *   (transient DIGEST_TICK_LOCK, rilasciato nel finally):
+         *     - il cursor avanza dopo OGNI tentativo (invio o fallimento loggato):
+         *       se il cron muore, il danno è al più UN doppione, mai metà lista;
+         *     - giro non esausto → log di progresso onesto + evento singolo sullo
+         *       stesso hook tra DIGEST_RESUME_DELAY secondi: il tick successivo
+         *       RIPARTE dal cursor (nessun doppione, nessun salto);
+         *     - lista esausta → log finale ('Digest inviato a N destinatari' con i
+         *       totali cumulativi di TUTTI i giri + nota falliti + nota giri) + reset cursor;
+         *     - l'intro AI viene generata SOLO al primo tick e riusata nei successivi
+         *       (niente chiamate AI ripetute né testo diverso tra i batch);
+         *     - i destinatari fissi (recipients + copia admin) ricevono UNA copia per
+         *       run, tentata solo al primo tick (flag 'fixed' nel cursor: un retry
+         *       dei fissi rischierebbe doppioni, wp_mail è at-least-once);
+         * - enable_digest == 1 → UNA chiamata Nexus_AI_Engine::chat per RUN (solo testo IT:
          *   intro 2 frasi + un paragrafo per articolo), con fallback lista manuale
          *   titoli+link se la chat fallisce o non è disponibile;
          * - v1.1.14: sezioni extra (performance / uso AI / errori) via Nexus_Digest,
@@ -616,12 +682,10 @@ JS;
          *   (?nexus_unsub={token}) + link gestione solo-digest (?nexus_unsub={token}
          *   &nexus_digest=0), footer generico per i destinatari fissi;
          * - v1.1.15 (WE5): OGNI wp_mail false viene loggato con le email MASCHERATE
-         *   (mask_email: 'm***@dominio.tld', niente PII completa) e il contatore
-         *   $failed entra nel log finale (' — invii falliti: N' solo quando > 0:
-         *   la riga storica 'Digest inviato a N destinatari' resta identica altrimenti);
-         * - log attività best-effort ('Digest inviato a N destinatari').
+         *   (mask_email: 'm***@dominio.tld', niente PII completa) e i falliti entrano
+         *   nel log finale (' — invii falliti: N' solo quando > 0).
          *
-         * @return bool True se almeno una email è stata inviata.
+         * @return bool True se QUESTO tick ha inviato almeno una email.
          */
         public static function send_weekly_digest() {
                 try {
@@ -644,12 +708,65 @@ JS;
                                 return false;
                         }
 
-                        /* ---------- Destinatari: recipients fissi + copia admin + subscriber opt-in digest ---------- */
-                        $recipients  = self::fixed_digest_recipients( $settings );
-                        $subscribers = self::digest_subscribers();
+                        /* ---------- Lock anti-sovrapposizione tick (v1.1.18, FIX-10) ----------
+                         * WP-Cron può far partire più processi in parallelo: due tick
+                         * concorrenti leggerebbero lo stesso cursor e genererebbero doppioni.
+                         * Con un tick già in corso (o appena partito) questo esce SENZA
+                         * toccare nulla; se c'è un cursor valido (run in corso) garantisce
+                         * comunque una prosecuzione schedulata, così un crash del tick
+                         * attivo non lascia il giro appeso (il TTL del lock è una rete di
+                         * sicurezza: scade e il tick successivo riparte dal cursor). */
+                        if ( get_transient( self::DIGEST_TICK_LOCK ) ) {
+                                $pending = get_option( self::DIGEST_CURSOR_OPTION, array() );
+                                if ( is_array( $pending ) && ! empty( $pending ) ) {
+                                        $next_lock = wp_next_scheduled( self::HOOK_DIGEST );
+                                        if ( false === $next_lock || $next_lock > ( time() + self::DIGEST_RESUME_DELAY * 5 ) ) {
+                                                wp_schedule_single_event( time() + self::DIGEST_RESUME_DELAY, self::HOOK_DIGEST );
+                                        }
+                                }
+                                return false;
+                        }
+                        set_transient( self::DIGEST_TICK_LOCK, 1, self::DIGEST_RESUME_DELAY * 2 );
 
-                        if ( ! $recipients && ! $subscribers ) {
+                        /* ---------- Cursor (v1.1.18, FIX-10): resume del giro o giro nuovo ----------
+                         * Chiave del giro = giorno locale della prima esecuzione: un cursor
+                         * di un giro precedente (settimana scorsa) viene scartato e il
+                         * giro riparte pulito. Un cursor valido del giorno corrente
+                         * significa: run in corso, si riparte da last_id. */
+                        $day_key = substr( current_time( 'mysql' ), 0, 10 );
+
+                        $cursor = get_option( self::DIGEST_CURSOR_OPTION, array() );
+                        if ( ! is_array( $cursor ) || empty( $cursor )
+                                || ! isset( $cursor['day'] ) || (string) $cursor['day'] !== $day_key ) {
+                                $cursor   = array(
+                                        'day'     => $day_key,
+                                        'last_id' => 0,
+                                        'fixed'   => false,
+                                        'intro'   => '',
+                                        'sent'    => 0,
+                                        'failed'  => 0,
+                                        'giri'    => 0,
+                                );
+                                $resuming = false;
+                        } else {
+                                $cursor['last_id'] = absint( isset( $cursor['last_id'] ) ? $cursor['last_id'] : 0 );
+                                $cursor['fixed']   = ! empty( $cursor['fixed'] );
+                                $cursor['intro']   = (string) ( isset( $cursor['intro'] ) ? $cursor['intro'] : '' );
+                                $cursor['sent']    = absint( isset( $cursor['sent'] ) ? $cursor['sent'] : 0 );
+                                $cursor['failed']  = absint( isset( $cursor['failed'] ) ? $cursor['failed'] : 0 );
+                                $cursor['giri']    = absint( isset( $cursor['giri'] ) ? $cursor['giri'] : 0 );
+                                $resuming          = true;
+                        }
+
+                        /* ---------- Destinatari fissi + PRIMO batch di iscritti ---------- */
+                        $recipients = self::fixed_digest_recipients( $settings );
+
+                        $batch_size = self::digest_batch_size();
+                        $batch      = self::digest_subscribers_batch( $cursor['last_id'], $batch_size );
+
+                        if ( ! $recipients && ! $batch && ! $resuming ) {
                                 // v1.1.15 (WE5): anche lo skip 0 destinatari lascia traccia in log.
+                                // (Un run in corso con cursor esce invece dal fondo: chiusura onesta.)
                                 self::log_digest_notice( 'Digest saltato: nessun destinatario' );
                                 return false;
                         }
@@ -657,11 +774,19 @@ JS;
                         /* ---------- Lista articoli (titolo + link) ---------- */
                         $items = self::digest_items( $recent );
 
-                        /* ---------- Testo digest: AI (enable_digest=1) con fallback manuale ---------- */
-                        $intro_html = self::digest_intro_html( $recent, $settings );
+                        /* ---------- Testo digest: AI (enable_digest=1) con fallback manuale ----------
+                         * v1.1.18 (FIX-10): generato SOLO al primo tick del run e riusato nei
+                         * tick successivi via cursor (niente chiamate AI ripetute, niente
+                         * testo diverso tra i batch dello stesso digest). */
+                        if ( '' !== $cursor['intro'] ) {
+                                $intro_html = $cursor['intro'];
+                        } else {
+                                $intro_html      = self::digest_intro_html( $recent, $settings );
+                                $cursor['intro'] = $intro_html;
+                        }
 
                         /* ---------- Sezioni extra (v1.1.14, P5): performance / uso AI / errori ----------
-                         * Costruite UNA volta per tutti i destinatari; ogni sezione esiste
+                         * Costruite UNA volta per tick; ogni sezione esiste
                          * solo se i dati esistono (onestà, vedi Nexus_Digest::sections_html). */
                         $sections_html = '';
                         if ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'sections_html' ) ) {
@@ -671,13 +796,15 @@ JS;
                         /* ---------- Invio ---------- */
                         $subject = sprintf( __( 'Digest Nexus — settimana del %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
                         $headers = self::mail_headers();
-                        $sent    = 0;
-                        $failed  = 0; // v1.1.15 (WE5): invii falliti, riportati nel log finale.
 
-                        if ( $recipients ) {
+                        $tick_sent = 0;
+
+                        /* ---------- Destinatari fissi: SOLO al primo tick del run ---------- */
+                        if ( $recipients && ! $cursor['fixed'] ) {
                                 $body = self::build_digest_html( $intro_html, $items, '', $sections_html );
                                 if ( wp_mail( array_values( $recipients ), $subject, $body, $headers ) ) {
-                                        $sent += count( $recipients );
+                                        $cursor['sent'] += count( $recipients );
+                                        $tick_sent      += count( $recipients );
                                 } else {
                                         // v1.1.15 (WE5): fallimento wp_mail NON più silenzioso — le email
                                         // dei destinatari fissi vengono loggate SOLO mascherate (mask_email).
@@ -686,63 +813,94 @@ JS;
                                                 $masked[] = self::mask_email( $email );
                                         }
                                         self::log_digest_notice( 'Digest: invio fallito a ' . implode( ', ', $masked ) );
-                                        $failed += count( $recipients );
+                                        $cursor['failed'] += count( $recipients );
                                 }
+
+                                // v1.1.18 (FIX-10): i fissi si tentano UNA volta per run (riuscito o
+                                // no): un retry al tick successivo rischierebbe doppioni (wp_mail è
+                                // at-least-once). Persistito subito: crash → mai ri-invio ai fissi.
+                                $cursor['fixed'] = true;
+                                update_option( self::DIGEST_CURSOR_OPTION, $cursor, false );
                         }
 
-                        foreach ( $subscribers as $subscriber ) {
+                        /* ---------- Iscritti: batch corrente con cursor persistente ---------- */
+                        foreach ( $batch as $subscriber ) {
+                                $sid   = absint( $subscriber->id );
                                 $email = sanitize_email( (string) $subscriber->email );
+
                                 if ( ! $email || ! is_email( $email ) ) {
+                                        // Email non valida: iscritto marcato come processato e scartato
+                                        // (il cursor avanza comunque: niente loop infinito sul cursor).
+                                        $cursor['last_id'] = $sid;
+                                        update_option( self::DIGEST_CURSOR_OPTION, $cursor, false );
                                         continue;
                                 }
+
                                 // v1.1.9: il token persistito è l'sha256 (i link di disiscrizione
                                 // restano validi: find_subscriber_by_token matcha per uguaglianza
                                 // diretta sull'hash senza riscriverlo).
-                                $token   = (string) ( $subscriber->token ?? '' );
-                                $unsub   = '' !== $token ? home_url( '/?nexus_unsub=' . rawurlencode( $token ) ) : '';
-                                $body    = self::build_digest_html( $intro_html, $items, $token, $sections_html );
+                                $token = (string) ( $subscriber->token ?? '' );
+                                $unsub = '' !== $token ? home_url( '/?nexus_unsub=' . rawurlencode( $token ) ) : '';
+                                $body  = self::build_digest_html( $intro_html, $items, $token, $sections_html );
+
                                 if ( wp_mail( $email, $subject, $body, self::mail_headers( $unsub ) ) ) {
-                                        $sent++;
+                                        $cursor['sent']++;
+                                        $tick_sent++;
                                 } else {
                                         // v1.1.15 (WE5): fallimento loggato con email MASCHERATA
                                         // (m***@dominio.tld): niente PII completa nei log.
                                         self::log_digest_notice( 'Digest: invio fallito a ' . self::mask_email( $email ) );
-                                        $failed++;
+                                        $cursor['failed']++;
+                                }
+
+                                // v1.1.18 (FIX-10): il cursor avanza dopo OGNI tentativo (invio o
+                                // fallimento loggato) e viene persistito (opzione autoload=false):
+                                // se il cron muore a metà giro il danno è al più UN doppione, mai
+                                // metà lista ri-inviata o saltata.
+                                $cursor['last_id'] = $sid;
+                                update_option( self::DIGEST_CURSOR_OPTION, $cursor, false );
+                        }
+
+                        $cursor['giri']++;
+                        update_option( self::DIGEST_CURSOR_OPTION, $cursor, false );
+
+                        if ( count( $batch ) < $batch_size ) {
+                                /* ---------- Lista iscritti esausta: log finale + reset cursor ---------- */
+                                self::digest_finalize_log( $cursor );
+                                delete_option( self::DIGEST_CURSOR_OPTION );
+                        } else {
+                                /* ---------- Giro parziale: log di progresso + prosecuzione schedulata ---------- */
+                                self::log_digest_notice( sprintf(
+                                        'Digest: giro %d parziale — il resto degli iscritti parte al prossimo giro (inviati finora: %d, falliti: %d).',
+                                        $cursor['giri'],
+                                        $cursor['sent'],
+                                        $cursor['failed']
+                                ) );
+
+                                // v1.1.18 (FIX-10): prosecuzione SCHEDULATA sullo stesso hook
+                                // (evento singolo): il tick successivo riparte dal cursor. Se
+                                // esiste già un evento imminente dello stesso hook (es. il tick
+                                // appena partito) non se ne aggiunge un altro: niente invii
+                                // paralleli.
+                                $next = wp_next_scheduled( self::HOOK_DIGEST );
+                                if ( false === $next || $next > ( time() + self::DIGEST_RESUME_DELAY * 5 ) ) {
+                                        wp_schedule_single_event( time() + self::DIGEST_RESUME_DELAY, self::HOOK_DIGEST );
                                 }
                         }
 
-                        /* ---------- Log attività best-effort ---------- */
-                        try {
-                                if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
-                                        $detail = sprintf( 'Digest inviato a %d destinatari', $sent );
-
-                                        // v1.1.15 (WE5): il contatore dei falliti entra nel log finale SOLO
-                                        // quando serve (suffisso additivo: la riga storica resta identica
-                                        // quando $failed = 0, il pattern i18n esistente non si rompe).
-                                        if ( $failed > 0 ) {
-                                                $detail .= sprintf( ' — invii falliti: %d', $failed );
-                                        }
-
-                                        Nexus_DB::insert_activity(
-                                                0,
-                                                'newsletter',
-                                                $detail,
-                                                $sent > 0 ? 'success' : 'error'
-                                        );
-                                }
-                        } catch ( Exception $e ) {
-                                /* Best-effort: mai bloccare il cron. */
-                        } catch ( Throwable $e ) {
-                                /* Best-effort: mai bloccare il cron. */
-                        }
-
-                        return $sent > 0;
+                        return $tick_sent > 0;
                 } catch ( Exception $e ) {
                         self::log_digest_error( $e->getMessage() );
                         return false;
                 } catch ( Throwable $e ) {
                         self::log_digest_error( $e->getMessage() );
                         return false;
+                } finally {
+                        // v1.1.18 (FIX-10): rilascio del lock su OGNI uscita (return,
+                        // eccezione incassata): il TTL (2 × DIGEST_RESUME_DELAY) resta
+                        // la rete di sicurezza per i crash duri (fatal/kill) dove il
+                        // finally non viene raggiunto.
+                        delete_transient( self::DIGEST_TICK_LOCK );
                 }
         }
 
@@ -887,6 +1045,11 @@ JS;
          * NIENTE invio a chi ha digest_optin = 0. Colonna assente (migrazione
          * fallita): comportamento legacy documentato (tutti i confermati).
          *
+         * NOTA v1.1.18 (FIX-10): il CRON non usa più questo metodo (caricamento
+         * completo fino a 10k righe): usa digest_subscribers_batch() con cursor.
+         * Il metodo resta PUBBLICO per i consumatori esistenti (Nexus_Digest lo
+         * usa per il conteggio dei destinatari).
+         *
          * @return array
          */
         public static function digest_subscribers() {
@@ -1026,6 +1189,12 @@ JS;
          */
         public static function deactivate() {
                 wp_clear_scheduled_hook( self::HOOK_DIGEST );
+
+                // v1.1.18 (FIX-10): la disattivazione abbandona ogni run in corso
+                // (l'evento singolo di prosecuzione viene cancellato assieme a quello
+                // settimanale): il cursor non serve più e va rimosso (al prossimo
+                // run riparte pulito, senza crediti fantasma).
+                delete_option( self::DIGEST_CURSOR_OPTION );
         }
 
         /* ============ TOKEN E LOOKUP (v1.1.9) ============ */
@@ -1151,6 +1320,108 @@ JS;
         }
 
         /* ============ HELPER PRIVATI ============ */
+
+        /**
+         * v1.1.18 (FIX-10) — dimensione del batch iscritti per tick del digest:
+         * DIGEST_BATCH_SIZE (200) di default, filtrabile con
+         * 'nexus_digest_batch_size' e clamp difensivo 1..2000 (un giro da 200
+         * wp_mail resta nei timeout di hosting condiviso 30-60s; il resto
+         * riparte dal cursor al tick successivo).
+         *
+         * @return int
+         */
+        private static function digest_batch_size() {
+                $size = (int) apply_filters( 'nexus_digest_batch_size', self::DIGEST_BATCH_SIZE );
+                return max( 1, min( 2000, $size ) );
+        }
+
+        /**
+         * v1.1.18 (FIX-10) — iscritti digest A BATCH con cursor: status
+         * 'confirmed' con digest_optin = 1 (quando la colonna esiste; tutti i
+         * confermati altrimenti — stessa semantica legacy di
+         * digest_subscribers()) con id > $after_id, ordine STABILE id ASC, al
+         * più $limit righe.
+         *
+         * Perché query diretta (stesso pattern di set_subscriber_digest_optin):
+         * Nexus_DB::subscribers() ordina id DESC, cap 500 e non filtra
+         * digest_optin; il cursor richiede ordine ASC e ripresa deterministica
+         * da $after_id. Tabella da whitelist Nexus_DB::tables(), query
+         * preparata, parametri interni (nessun input utente).
+         *
+         * @param int $after_id Primo id ESCLUSO (cursor: ultimo processato; 0 = dall'inizio).
+         * @param int $limit    Massimo righe del batch.
+         * @return array
+         */
+        private static function digest_subscribers_batch( $after_id, $limit ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return array();
+                }
+
+                global $wpdb;
+                $tables = Nexus_DB::tables();
+                $table  = ( isset( $tables['subscribers'] ) && is_string( $tables['subscribers'] ) && '' !== $tables['subscribers'] )
+                        ? $tables['subscribers']
+                        : '';
+                if ( '' === $table ) {
+                        return array();
+                }
+
+                $after_id = absint( $after_id );
+                $limit    = max( 1, absint( $limit ) );
+
+                // Colonna digest_optin presente (migration riuscita) → solo gli
+                // opt-in; assente → tutti i confermati (comportamento legacy,
+                // vedi ensure_digest_optin_column).
+                $optin_sql = self::ensure_digest_optin_column() ? ' AND digest_optin = 1' : '';
+
+                $sql = "SELECT * FROM {$table} WHERE status = 'confirmed'{$optin_sql} AND id > %d ORDER BY id ASC LIMIT %d";
+
+                $rows = $wpdb->get_results( $wpdb->prepare( $sql, $after_id, $limit ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- tabella da allowlist interna, placeholder completi.
+
+                return is_array( $rows ) ? $rows : array();
+        }
+
+        /**
+         * v1.1.18 (FIX-10) — log finale del digest a run completato (lista
+         * iscritti esausta): stessa riga storica 'Digest inviato a N
+         * destinatari' con i totali CUMULATIVI del run (destinatari fissi +
+         * iscritti, di TUTTI i giri), suffisso falliti solo quando serve
+         * (v1.1.15 WE5: la riga resta identica altrimenti) e, quando
+         * l'invio è stato ripartito su più tick, nota onesta sul numero di giri.
+         *
+         * @param array $cursor Cursor del run (chiavi sent/failed/giri).
+         * @return void
+         */
+        private static function digest_finalize_log( $cursor ) {
+                try {
+                        if ( method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                $sent   = absint( isset( $cursor['sent'] ) ? $cursor['sent'] : 0 );
+                                $failed = absint( isset( $cursor['failed'] ) ? $cursor['failed'] : 0 );
+                                $giri   = absint( isset( $cursor['giri'] ) ? $cursor['giri'] : 0 );
+
+                                $detail = sprintf( 'Digest inviato a %d destinatari', $sent );
+
+                                if ( $failed > 0 ) {
+                                        $detail .= sprintf( ' — invii falliti: %d', $failed );
+                                }
+
+                                if ( $giri > 1 ) {
+                                        $detail .= sprintf( ' — invio ripartito su %d giri', $giri );
+                                }
+
+                                Nexus_DB::insert_activity(
+                                        0,
+                                        'newsletter',
+                                        $detail,
+                                        $sent > 0 ? 'success' : 'error'
+                                );
+                        }
+                } catch ( Exception $e ) {
+                        /* Best-effort: mai bloccare il cron. */
+                } catch ( Throwable $e ) {
+                        /* Best-effort: mai bloccare il cron. */
+                }
+        }
 
         /**
          * Autosync schedule: enable_newsletter == 1 → schedula 'nexus_weekly_digest'

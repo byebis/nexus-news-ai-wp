@@ -1537,6 +1537,86 @@ class Nexus_Rest {
                 @header( 'Access-Control-Allow-Origin: *' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
         }
 
+        /* =========================================================================
+         * GATE ENDPOINT SINCRONI (v1.1.18, FIX-4 / audit A3 F4)
+         * ======================================================================= */
+
+        /**
+         * Gate anti-raffica per gli endpoint sincroni costosi (v1.1.18).
+         *
+         * Due protezioni indipendenti su transient, con chiave per-azione+utente:
+         *  1. LOCK di concorrenza: una sola esecuzione alla volta per route+utente
+         *     (transiente 'nexus_sync_lock_*' con TTL = durata massima stimata
+         *     dell'operazione come safety net; la release esplicita lo libera
+         *     prima, anche in caso di Throwable via try/finally nel chiamante).
+         *  2. INTERVALLO MINIMO tra due chiamate dello stesso utente sulla stessa
+         *     route (transiente 'nexus_sync_rl_*'), stesso pattern a finestra del
+         *     rate limit delle mutazioni pubbliche (rate_limit_hit).
+         *
+         * Su entrambe le guardie get/set transient NON è atomico (limitazione
+         * nota e documentata dalle v1.1.9 D6): in raffica estrema due richieste
+         * possono attraversare il gate insieme. Il lock è una difesa contro
+         * doppio-click, polling accavallati e loop accidentali (DoS self-inflicted,
+         * race di pipeline concorrenti, spesa token AI), non un mutex adversario-proof.
+         *
+         * @param string $action   Identificatore route (es. 'pipeline_run').
+         * @param int    $lock_ttl TTL del lock in secondi (durata massima stimata).
+         * @param int    $interval Intervallo minimo tra chiamate in secondi.
+         * @return true|WP_Error true = via libera; WP_Error 429 con header Retry-After.
+         */
+        private static function sync_gate_acquire( $action, $lock_ttl = 600, $interval = 15 ) {
+                $scope    = (string) $action . '|' . (int) get_current_user_id();
+                $lock_key = 'nexus_sync_lock_' . md5( $scope );
+                $last_key = 'nexus_sync_rl_' . md5( $scope );
+                $interval = max( 1, (int) $interval );
+                $now      = time();
+
+                // 2. Intervallo minimo tra chiamate (burst limit per route+utente).
+                $last = (int) get_transient( $last_key );
+                if ( $last > 0 && ( $now - $last ) < $interval ) {
+                        $remaining = max( 1, $interval - ( $now - $last ) );
+                        @header( 'Retry-After: ' . $remaining ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                        return self::err(
+                                'nexus_rest_rate_limited',
+                                /* translators: %d: secondi rimanenti prima del nuovo tentativo. */
+                                sprintf( __( 'Richieste troppo frequenti su questa operazione: riprova tra %1$d secondi.', 'nexus-news-ai' ), $remaining ),
+                                429
+                        );
+                }
+
+                // 1. Lock di concorrenza: 1 esecuzione per route+utente.
+                if ( get_transient( $lock_key ) ) {
+                        // Retry-After indicativo (il lock si libera a fine esecuzione
+                        // reale o, in caso di crash, alla scadenza del TTL).
+                        @header( 'Retry-After: ' . $interval ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                        return self::err(
+                                'nexus_rest_already_running',
+                                __( 'Questa operazione è già in esecuzione: attendi che termini prima di rilanciarla.', 'nexus-news-ai' ),
+                                429
+                        );
+                }
+
+                set_transient( $lock_key, 1, max( 60, (int) $lock_ttl ) );
+                set_transient( $last_key, $now, $interval + 60 );
+
+                return true;
+        }
+
+        /**
+         * Rilascia il lock di concorrenza acquisito da sync_gate_acquire (v1.1.18).
+         *
+         * Da chiamare in try/finally nel wrapper della route, così il lock viene
+         * liberato sia sul ritorno normale sia su eccezione; il TTL del transient
+         * resta la safety net per i fatal senza finally.
+         *
+         * @param string $action Identificatore route (stesso passato ad acquire).
+         * @return void
+         */
+        private static function sync_gate_release( $action ) {
+                $scope = (string) $action . '|' . (int) get_current_user_id();
+                delete_transient( 'nexus_sync_lock_' . md5( $scope ) );
+        }
+
         /**
          * Whitelist canonica delle emoji di reazione (v1.1.9).
          *
@@ -2332,9 +2412,19 @@ class Nexus_Rest {
                 }
 
                 // Dove finiscono gli articoli: in semi_autonomous si fermano in Coda
-                // Approvazioni; in autonomous con auto_publish spento la fase di
-                // pubblicazione salta (articoli bloccati in attesa per sempre).
-                if ( 'autonomous' !== $mode ) {
+                // Approvazioni; in fully_autonomous con auto_publish spento la fase
+                // di pubblicazione salta (articoli bloccati in attesa per sempre).
+                // v1.1.18 (FIX-4 / audit A3 F6): confronto allineato all'enum REALE
+                // del PUT /settings ('semi_autonomous'|'fully_autonomous', :5647).
+                // Il confronto storico su 'autonomous' (convenzione stantia mai
+                // scrivibile via REST) rendeva il verdict mode_semi_autonomous
+                // SEMPRE errato con la modalità completamente autonoma. Difensiva:
+                // un eventuale valore legacy 'autonomous' in DB (scritto da
+                // versioni pre-enum) viene normalizzato invece di falsare il warn.
+                if ( 'autonomous' === $mode ) {
+                        $mode = 'fully_autonomous';
+                }
+                if ( 'fully_autonomous' !== $mode ) {
                         $verdict_warn[] = array( 'level' => 'warn', 'code' => 'mode_semi_autonomous', 'params' => new stdClass() );
                 } elseif ( ! $auto_publish ) {
                         $verdict_warn[] = array( 'level' => 'warn', 'code' => 'auto_publish_off', 'params' => new stdClass() );
@@ -2547,10 +2637,27 @@ class Nexus_Rest {
                         $refresh = rest_sanitize_boolean( $request->get_param( 'refresh' ) );
                 }
 
-                if ( '' !== $provider ) {
-                        return self::rest_ai_models_for_provider( $provider, $refresh );
+                // v1.1.18 (FIX-4 / audit A3 F4): gate anti-raffica SOLO sul refresh
+                // (l'unica variante che fa fetch remota vera, timeout 10s): lock di
+                // concorrenza + intervallo minimo 15s per route+utente. Le chiamate
+                // senza refresh restano libere (di solito colpiscono solo la cache).
+                if ( $refresh ) {
+                        $gate = self::sync_gate_acquire( 'ai_models_refresh', 120, 15 );
+                        if ( is_wp_error( $gate ) ) {
+                                return $gate;
+                        }
                 }
-                return self::rest_ai_models_global( $refresh );
+
+                try {
+                        if ( '' !== $provider ) {
+                                return self::rest_ai_models_for_provider( $provider, $refresh );
+                        }
+                        return self::rest_ai_models_global( $refresh );
+                } finally {
+                        if ( $refresh ) {
+                                self::sync_gate_release( 'ai_models_refresh' );
+                        }
+                }
         }
 
         /**
@@ -2599,6 +2706,19 @@ class Nexus_Rest {
                 }
 
                 $family = false !== strpos( $base_url, 'openrouter.ai' ) ? 'openrouter' : 'generic';
+
+                // v1.1.18 (FIX-4 / audit A3 F3): STESSA guardia SSRF fail-closed di
+                // /ai/test (Nexus_Providers::url_guard_error, onore 'allow_private_
+                // providers'): policy coerente tra i due endpoint che colpiscono gli
+                // stessi base_url. La guardia sta SOLO davanti alla fetch remota:
+                // cache fresca/stale e flag R5 restano invariati.
+                $guard = method_exists( 'Nexus_Providers', 'url_guard_error' )
+                        ? Nexus_Providers::url_guard_error( untrailingslashit( $base_url ) . '/models', '', $settings )
+                        : '';
+                if ( '' !== $guard ) {
+                        return self::err( 'nexus_rest_ai_models_guard', $guard, 400 );
+                }
+
                 $result = self::fetch_models_body( untrailingslashit( $base_url ) . '/models', 'bearer', $api_key );
                 if ( is_wp_error( $result ) ) {
                         // v1.1.11 (R5) fail-open: cache scaduta presente → servi con flag stale.
@@ -2750,6 +2870,17 @@ class Nexus_Rest {
                 if ( ! $refresh && is_array( $cached ) && isset( $cached['models'] ) && self::models_cache_is_fresh( $cached ) ) {
                         $cached['cached'] = true;
                         return rest_ensure_response( $cached );
+                }
+
+                // v1.1.18 (FIX-4 / audit A3 F3): STESSA guardia SSRF fail-closed di
+                // /ai/test (Nexus_Providers::url_guard_error, onore 'allow_private_
+                // providers'): protegge in particolare i base_url dinamici
+                // prov_base_custom (PUT: solo esc_url_raw) e le entry cust_*.
+                $guard = method_exists( 'Nexus_Providers', 'url_guard_error' )
+                        ? Nexus_Providers::url_guard_error( $endpoint, $provider, $settings )
+                        : '';
+                if ( '' !== $guard ) {
+                        return self::err( 'nexus_rest_ai_models_guard', $guard, 400 );
                 }
 
                 $result = self::fetch_models_body( $endpoint, $auth, $api_key );
@@ -2951,6 +3082,12 @@ class Nexus_Rest {
                                         }
                                 }
                         }
+                        // v1.1.18 (FIX-4 / audit A3 F3): il body del provider NON è
+                        // riflesso tale quale nell'errore: redact + cap 200 via
+                        // brief_error (stessa pipeline dei messaggi di rete) — un
+                        // base_url interno non deve poter esfiltrare contenuto di
+                        // servizi di rete privati nella risposta REST.
+                        $detail = self::brief_error( $detail );
                         if ( 401 === $code || 403 === $code ) {
                                 return self::err( 'nexus_rest_ai_models_auth', __( 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica la chiave nelle Impostazioni.', 'nexus-news-ai' ), 502 );
                         }
@@ -3554,7 +3691,30 @@ class Nexus_Rest {
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
+        // v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+        // concorrenza + intervallo minimo 15s per route+utente, sync_gate_acquire)
+        // prima del corpo del test, che può fare fino a 3+ chiamate remote da 15s
+        // con retry. Release in try/finally (anche su Throwable); TTL 180s come
+        // safety net.
         public static function rest_ai_test( $request ) {
+                $gate = self::sync_gate_acquire( 'ai_test', 180, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_ai_test_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'ai_test' );
+                }
+        }
+
+        /**
+         * Corpo del test provider (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_ai_test_gated( $request ) {
                 if ( ! class_exists( 'Nexus_Providers' ) ) {
                         return self::err(
                                 'nexus_rest_providers_missing',
@@ -3762,6 +3922,11 @@ class Nexus_Rest {
                                         }
                                 }
                         }
+                        // v1.1.18 (FIX-4 / audit A3 F3): $detail del provider sanitizzato
+                        // (redact + cap 200 via brief_error) prima di finire nel messaggio:
+                        // stesso trattamento di fetch_models_body, nessuna riflessione
+                        // grezza di body remoti.
+                        $detail = self::brief_error( $detail );
                         if ( 401 === $http || 403 === $http ) {
                                 $error = __( 'Chiave API non valida o non autorizzata (HTTP ' . $http . '): verifica la chiave nelle impostazioni o riconnettiti.', 'nexus-news-ai' );
                         } elseif ( 429 === $http ) {
@@ -4029,11 +4194,23 @@ class Nexus_Rest {
         /**
          * POST /pipeline/collect — raccolta per un agente o per tutti gli agenti attivi.
          *
+         * v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+         * concorrenza + intervallo minimo 15s per route+utente); release in
+         * try/finally, TTL 300s come safety net.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_pipeline_collect( $request ) {
-                return self::run_pipeline_for_agents( absint( $request->get_param( 'agent_id' ) ), 'collect' );
+                $gate = self::sync_gate_acquire( 'pipeline_collect', 300, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::run_pipeline_for_agents( absint( $request->get_param( 'agent_id' ) ), 'collect' );
+                } finally {
+                        self::sync_gate_release( 'pipeline_collect' );
+                }
         }
 
         /**
@@ -4064,7 +4241,29 @@ class Nexus_Rest {
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
+        // v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+        // concorrenza + intervallo minimo 15s per route+utente): un run_full
+        // sincrono per N agenti non deve mai sovrapporsi a se stesso o essere
+        // lanciato a raffica. Release in try/finally; TTL 1200s come safety net.
         public static function rest_pipeline_run( $request ) {
+                $gate = self::sync_gate_acquire( 'pipeline_run', 1200, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_pipeline_run_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'pipeline_run' );
+                }
+        }
+
+        /**
+         * Corpo della pipeline completa (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_pipeline_run_gated( $request ) {
                 if ( ! is_callable( array( 'Nexus_Pipeline', 'run_full' ) ) ) {
                         return self::err( 'nexus_rest_pipeline_missing', __( 'Modulo pipeline non disponibile.', 'nexus-news-ai' ), 500 );
                 }
@@ -4801,10 +5000,33 @@ class Nexus_Rest {
         /**
          * POST /wire/run — lancia una redazione collettiva su un tema.
          *
+         * v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+         * concorrenza + intervallo minimo 15s per route+utente): wire_run è una
+         * redazione sincrona e lunga, mai in parallelo con se stessa. Release in
+         * try/finally; TTL 1200s come safety net.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_wire_run( $request ) {
+                $gate = self::sync_gate_acquire( 'wire_run', 1200, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_wire_run_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'wire_run' );
+                }
+        }
+
+        /**
+         * Corpo di wire/run (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_wire_run_gated( $request ) {
                 $topic = trim( (string) $request->get_param( 'topic' ) );
                 if ( '' === $topic ) {
                         return self::err( 'nexus_rest_missing_topic', __( 'Il campo "topic" è obbligatorio.', 'nexus-news-ai' ), 400 );
@@ -5112,10 +5334,33 @@ class Nexus_Rest {
         /**
          * POST /jobs/process — esegue subito un batch della coda (v1.0.4).
          *
+         * v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+         * concorrenza + intervallo minimo 15s per route+utente): run_batch è
+         * sincrono e non deve mai girare in doppio. Release in try/finally;
+         * TTL 600s come safety net.
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_jobs_process( $request ) {
+                $gate = self::sync_gate_acquire( 'jobs_process', 600, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_jobs_process_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'jobs_process' );
+                }
+        }
+
+        /**
+         * Corpo di jobs/process (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_jobs_process_gated( $request ) {
                 unset( $request );
                 if ( ! class_exists( 'Nexus_Queue' ) || ! method_exists( 'Nexus_Queue', 'run_batch' ) ) {
                         return self::err( 'nexus_not_available', __( 'Coda lavori non disponibile.', 'nexus-news-ai' ), 501 );
@@ -5828,6 +6073,14 @@ class Nexus_Rest {
          * dalla v1.1.12 (S8), il client secret OAuth di Google Search Console e
          * l'URL del webhook di notifica (token incorporato).
          *
+         * v1.1.18 (FIX-4 / audit A3 F2): aggiunta 'indexnow_key' — la chiave
+         * IndexNow autorizza l'invio di URL ai motori di ricerca PER CONTO DEL
+         * SITO: esportata/archiviata in chiaro contraddice la promessa del
+         * docblock di /export. Effetto collaterale accettato: con il PUT già
+         * esistente che scarta i valori vuoti per i segreti, una stringa vuota
+         * NON cancella più la chiave (per disattivarla resta enable_indexnow=0;
+         * per rimpiazzarla si salva un nuovo valore).
+         *
          * @return array
          */
         private static function secret_settings_keys() {
@@ -5861,6 +6114,10 @@ class Nexus_Rest {
                         // mascherati in GET/PUT /settings come gli altri segreti.
                         'gsc_oauth_client_secret',
                         'notify_webhook_url',
+                        // v1.1.18 (FIX-4 / audit A3 F2): chiave IndexNow, autorizza
+                        // submission ai motori per conto del sito — mascherata in
+                        // GET/PUT /settings e /export come gli altri segreti.
+                        'indexnow_key',
                 );
         }
 
@@ -6304,6 +6561,17 @@ class Nexus_Rest {
          * opzionali. settings: applicate solo le chiavi ammesse da default_settings();
          * agents: match per categoria ESATTA → update, altrimenti insert.
          *
+         * v1.1.18 (FIX-4 / audit A3 F1): le settings NON scrivono più il DB con un
+         * array_intersect_key sui soli default (bypass totale di whitelist/sanitize):
+         * passano dalla STESSA pipeline del PUT /settings (sanitize_settings_payload —
+         * esc_url_raw sui base URL, enum mode/post_status/image_size/budget_action,
+         * sanitize segreti, clamp numerici, valori array/oggetto scartati). Ciò che
+         * non valida viene RIFIUTATO con WP_Error 400 (stessa risposta del PUT).
+         * Gli agenti sono sanificati con le stesse regole dell'editor agente
+         * (sanitize_agent_fields_array: status solo active|paused, provider validato,
+         * testi sanitize_text_field/textarea): niente più markup arbitrario o stati
+         * fuori whitelist da un file importato (vettore supply-chain su file condivisi).
+         *
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
@@ -6332,31 +6600,29 @@ class Nexus_Rest {
                 $agents_inserted  = 0;
                 $errors           = array();
 
-                // Impostazioni: whitelist sulle chiavi dei default, poi update.
+                // Impostazioni: STESSA pipeline del PUT /settings (v1.1.18, FIX-4 /
+                // audit A3 F1 — prima un array_intersect_key sui soli default
+                // bypassava whitelist, sanitize ed enum). sanitize_settings_payload
+                // filtra sulla whitelist del PUT, sanifica (esc_url_raw sui base URL,
+                // segreti multiline, indexnow alfanumerico, clamp numerici, enum) e
+                // RIFIUTA con WP_Error 400 i valori non ammessi; le chiavi
+                // informative 'x_*_set' dell'export e i valori array/oggetto non
+                // passano la whitelist, identico al PUT.
                 if ( ! empty( $body['settings'] ) ) {
-                        $keys     = array_keys( Nexus_DB::default_settings() );
-                        $filtered = array_intersect_key( $body['settings'], array_flip( $keys ) );
-
-                        // v1.1.9: 1) scarta le chiavi informative 'x_*_set' (solo GET/export);
-                        // 2) i segreti VUOTI non sovrascrivono quelli esistenti: un export
-                        // mascherato re-importato non può azzerare le chiavi del sito.
-                        foreach ( array_keys( $filtered ) as $key ) {
-                                if ( is_string( $key ) && 0 === strpos( $key, 'x_' ) && '_set' === substr( $key, -4 ) ) {
-                                        unset( $filtered[ $key ] );
-                                }
+                        $filtered = self::sanitize_settings_payload( $body['settings'] );
+                        if ( is_wp_error( $filtered ) ) {
+                                return $filtered;
                         }
+
+                        // v1.1.9: i segreti VUOTI non sovrascrivono quelli esistenti —
+                        // un export mascherato re-importato non può azzerare le chiavi
+                        // del sito (identico al PUT). public_api_key è già normalizzata
+                        // (hash SHA-256 / passthrough hex-64) dentro
+                        // sanitize_settings_payload.
                         foreach ( self::secret_settings_keys() as $secret_key ) {
                                 if ( isset( $filtered[ $secret_key ] ) && '' === trim( (string) $filtered[ $secret_key ] ) ) {
                                         unset( $filtered[ $secret_key ] );
                                 }
-                        }
-
-                        // v1.1.9 (D6): la chiave API pubblica importata NON resta mai in
-                        // chiaro — stesso contratto di PUT/keygen. Le chiavi legacy in
-                        // chiaro importate da export vecchi vengono subito hashate; un
-                        // valore hex-64 è considerato già un hash (passthrough).
-                        if ( isset( $filtered['public_api_key'] ) ) {
-                                $filtered['public_api_key'] = self::normalize_public_api_key( $filtered['public_api_key'] );
                         }
 
                         if ( $filtered ) {
@@ -6366,16 +6632,21 @@ class Nexus_Rest {
                 }
 
                 // Agenti: match per categoria esatta → update, altrimenti insert.
-                $allowed = array( 'name', 'avatar', 'category', 'description', 'status', 'personality', 'ai_model' );
+                // v1.1.18 (FIX-4 / audit A3 F1): sanificazione IDENTICA all'editor
+                // agente (agent_fields_from_request) via sanitize_agent_fields_array:
+                // testi sanitize_text_field/textarea, status SOLO active|paused
+                // (error non è impostabile a mano), ai_provider validato contro
+                // catalogo + custom. Prima i campi passavano per un semplice
+                // array_intersect_key (markup arbitrario e status liberi nel DB).
                 if ( ! empty( $body['agents'] ) ) {
                         foreach ( array_values( $body['agents'] ) as $agent ) {
                                 if ( ! is_array( $agent ) ) {
                                         continue;
                                 }
 
-                                $fields = array_intersect_key( $agent, array_flip( $allowed ) );
-                                $name   = isset( $agent['name'] ) ? (string) $agent['name'] : '';
-                                $cat    = isset( $agent['category'] ) ? (string) $agent['category'] : '';
+                                $fields = self::sanitize_agent_fields_array( $agent );
+                                $name   = isset( $fields['name'] ) ? (string) $fields['name'] : '';
+                                $cat    = isset( $fields['category'] ) ? (string) $fields['category'] : '';
 
                                 // Cerca un agente esistente con la stessa categoria ESATTA.
                                 $existing_id = 0;
@@ -6411,6 +6682,66 @@ class Nexus_Rest {
                                 'errors'           => $errors,
                         )
                 );
+        }
+
+        /**
+         * v1.1.18 (FIX-4 / audit A3 F1): sanitizza i campi di UN agente proveniente
+         * dal payload import (array grezzo, non WP_REST_Request) con le STESSE
+         * regole di agent_fields_from_request (editor agente del PUT
+         * /agents/{id}/update):
+         *  - name/avatar/category/ai_model: sanitize_text_field (ai_model trimmed);
+         *  - description/personality: sanitize_textarea_field;
+         *  - status: solo active|paused (error non è impostabile a mano; valore
+         *    non riconosciuto → paused);
+         *  - ai_provider: '' = provider globale, altrimenti id presente nel
+         *    catalogo Nexus_Providers o nei custom 'cust_*' (valore non
+         *    riconosciuto → '').
+         * I valori non scalari (array/oggetti annidati nel JSON importato) sono
+         * scartati per campo. Solo i campi PRESENTI nell'array entrano nell'output.
+         *
+         * @param array $agent Agente grezzo dal payload import.
+         * @return array Campi pronti per Nexus_DB::insert_agent/update_agent.
+         */
+        private static function sanitize_agent_fields_array( $agent ) {
+                $fields = array();
+
+                if ( isset( $agent['name'] ) && is_scalar( $agent['name'] ) ) {
+                        $fields['name'] = sanitize_text_field( (string) $agent['name'] );
+                }
+                if ( isset( $agent['avatar'] ) && is_scalar( $agent['avatar'] ) ) {
+                        $fields['avatar'] = sanitize_text_field( (string) $agent['avatar'] );
+                }
+                if ( isset( $agent['category'] ) && is_scalar( $agent['category'] ) ) {
+                        $fields['category'] = sanitize_text_field( (string) $agent['category'] );
+                }
+                if ( isset( $agent['description'] ) && is_scalar( $agent['description'] ) ) {
+                        $fields['description'] = sanitize_textarea_field( (string) $agent['description'] );
+                }
+                if ( isset( $agent['personality'] ) && is_scalar( $agent['personality'] ) ) {
+                        $fields['personality'] = sanitize_textarea_field( (string) $agent['personality'] );
+                }
+                if ( isset( $agent['ai_model'] ) && is_scalar( $agent['ai_model'] ) ) {
+                        $fields['ai_model'] = sanitize_text_field( trim( (string) $agent['ai_model'] ) );
+                }
+                if ( isset( $agent['status'] ) && is_scalar( $agent['status'] ) ) {
+                        $status = sanitize_key( (string) $agent['status'] );
+                        $fields['status'] = in_array( $status, array( 'active', 'paused' ), true ) ? $status : 'paused';
+                }
+                if ( isset( $agent['ai_provider'] ) && is_scalar( $agent['ai_provider'] ) ) {
+                        // v1.1.10: provider dedicato dell'agente; '' = provider globale.
+                        $provider = sanitize_key( (string) $agent['ai_provider'] );
+                        if ( '' !== $provider ) {
+                                $catalog = class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'catalog' ) ? Nexus_Providers::catalog() : null;
+                                $valid   = is_array( $catalog ) && array_key_exists( $provider, $catalog );
+                                if ( ! $valid && 0 === strpos( $provider, 'cust_' ) && class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'custom_providers' ) ) {
+                                        $valid = array_key_exists( $provider, Nexus_Providers::custom_providers() );
+                                }
+                                $provider = $valid ? $provider : '';
+                        }
+                        $fields['ai_provider'] = $provider;
+                }
+
+                return $fields;
         }
 
         /**
@@ -7371,7 +7702,29 @@ class Nexus_Rest {
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response|WP_Error
          */
+        // v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+        // concorrenza + intervallo minimo 15s per route+utente): i test search/
+        // read/feeds/mcp fanno fetch remote sincrone (fino a 30s). Release in
+        // try/finally; TTL 180s come safety net.
         public static function rest_tools_test( $request ) {
+                $gate = self::sync_gate_acquire( 'tools_test', 180, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_tools_test_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'tools_test' );
+                }
+        }
+
+        /**
+         * Corpo di tools/test (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        private static function rest_tools_test_gated( $request ) {
                 if ( ! class_exists( 'Nexus_Tools' ) ) {
                         return self::err(
                                 'nexus_rest_tools_missing',
@@ -7506,7 +7859,29 @@ class Nexus_Rest {
          * @param WP_REST_Request $request Request.
          * @return WP_REST_Response
          */
+        // v1.1.18 (FIX-4 / audit A3 F4): wrapper con gate anti-raffica (lock di
+        // concorrenza + intervallo minimo 15s per route+utente): gli adapter
+        // fonti fanno fetch remote sincrone. Release in try/finally; TTL 180s
+        // come safety net.
         public static function rest_sources_test( $request ) {
+                $gate = self::sync_gate_acquire( 'sources_test', 180, 15 );
+                if ( is_wp_error( $gate ) ) {
+                        return $gate;
+                }
+                try {
+                        return self::rest_sources_test_gated( $request );
+                } finally {
+                        self::sync_gate_release( 'sources_test' );
+                }
+        }
+
+        /**
+         * Corpo di sources/test (senza gate): vedi docblock sopra (wrapper).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        private static function rest_sources_test_gated( $request ) {
                 if ( ! class_exists( 'Nexus_Sources' ) ) {
                         return rest_ensure_response(
                                 array(

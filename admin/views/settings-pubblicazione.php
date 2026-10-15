@@ -22,9 +22,10 @@
  * I name dei campi = chiavi ESATTE di Nexus_DB::default_settings() v1.1.12:
  * news_sitemap_enabled, news_sitemap_name (modulo S5), notify_webhook_url,
  * notify_events (modulo S7). Il webhook segue il pattern segreti v1.1.9
- * (type="password", value stampato esc_attr per re-invio idempotente,
- * placeholder "•••• salvata — compila per sostituire" quando valorizzato,
- * autocomplete="new-password"); la chiave entra nella mascheratura REST
+ * (type="password", placeholder "•••• salvata — compila per sostituire" quando
+ * valorizzato, autocomplete="new-password"; dalla v1.1.18 FIX-8 il value NON è
+ * stampato: campo vuoto + classe "nxa-secret", vedi CREDENZIALI SOCIAL sotto);
+ * la chiave entra nella mascheratura REST
  * Nexus_Rest::secret_settings_keys() (v1.1.12 S8). I gruppi nuovi nascono
  * chiusi, stesso contratto localStorage/IIFE degli altri. DEBITO
  * INTEGRAZIONE (S8): i name nuovi non sono ancora negli array di
@@ -57,12 +58,15 @@
  * - CREDENZIALI SOCIAL (v1.1.9, WP2): i 7 campi segreti (telegram_bot_token,
  *   discord_webhook_url, x_api_key, x_api_secret, x_access_token, x_access_secret,
  *   linkedin_access_token) sono type="password" con autocomplete="new-password" e
- *   placeholder '•••• salvata — compila per sostituire' quando il valore esiste.
- *   IL VALUE RESTA STAMPATO (esc_attr): verificato admin.js (solo lettura),
- *   collectSettings() include questi campi nel blocco "simple" e li invia SEMPRE
- *   al PUT /settings anche vuoti — con value vuoto ogni salvataggio pagina
- *   azzererebbe i segreti. Il value stampato rende il re-invio idempotente;
- *   il masking REST (v1.1.9) protegge comunque i valori via API.
+ *   placeholder '•••• salvata — compila per sostituire' quando il valore esiste
+ *   (il placeholder è l'indicatore «salvato»: il campo è SEMPRE vuoto).
+ *   v1.1.18 (FIX-8): IL VALUE NON È PIÙ STAMPATO (value="" + classe "nxa-secret"):
+ *   il segreto non è leggibile da sorgente/DevTools/estensioni. Nessun rischio
+ *   di azzeramento: collectSettings() include questi campi nel blocco "simple"
+ *   e li invia al PUT /settings anche vuoti, ma rest_settings_update (v1.1.9)
+ *   SCARTA a monte i segreti vuoti (una stringa vuota non può cancellare un
+ *   segreto: per revocarlo si rigenera/rimpiazza). Il masking REST (v1.1.9)
+ *   protegge comunque i valori via API.
  * - indexnow_key è readonly: la chiave è generata automaticamente alla prima
  *   pubblicazione (Nexus_Ping) e non è modificabile da schermo.
  * - Bottone SALVA IN CIMA (subito sotto l'h1) OLTRE quello in fondo: entrambi
@@ -242,7 +246,7 @@ $social_platforms = array(
                                                 <tr>
                                                         <th scope="row"><label for="nxa-telegram-bot-token"><?php esc_html_e( 'Token del bot Telegram', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="telegram_bot_token" id="nxa-telegram-bot-token" value="<?php echo esc_attr( $settings['telegram_bot_token'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['telegram_bot_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="telegram_bot_token" id="nxa-telegram-bot-token" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['telegram_bot_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Token del bot Telegram da @BotFather (mascherato: il valore salvato non è visibile a schermo).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
@@ -266,7 +270,7 @@ $social_platforms = array(
                                                 <tr>
                                                         <th scope="row"><label for="nxa-discord-webhook-url"><?php esc_html_e( 'Webhook Discord', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="discord_webhook_url" id="nxa-discord-webhook-url" value="<?php echo esc_attr( $settings['discord_webhook_url'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['discord_webhook_url'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="discord_webhook_url" id="nxa-discord-webhook-url" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['discord_webhook_url'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'URL del webhook del canale Discord (discord.com/api/webhooks/…, mascherato).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
@@ -283,28 +287,28 @@ $social_platforms = array(
                                                 <tr>
                                                         <th scope="row"><label for="nxa-x-api-key"><?php esc_html_e( 'API key X', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="x_api_key" id="nxa-x-api-key" value="<?php echo esc_attr( $settings['x_api_key'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_api_key'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="x_api_key" id="nxa-x-api-key" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_api_key'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'API key dell’app dal Developer Portal di X (mascherata).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
                                                         <th scope="row"><label for="nxa-x-api-secret"><?php esc_html_e( 'API secret X', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="x_api_secret" id="nxa-x-api-secret" value="<?php echo esc_attr( $settings['x_api_secret'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_api_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="x_api_secret" id="nxa-x-api-secret" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_api_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'API secret dell’app, consumer secret (mascherato).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
                                                         <th scope="row"><label for="nxa-x-access-token"><?php esc_html_e( 'Access token X', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="x_access_token" id="nxa-x-access-token" value="<?php echo esc_attr( $settings['x_access_token'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_access_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="x_access_token" id="nxa-x-access-token" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_access_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Access token OAuth 1.0a dell’account che pubblica (mascherato).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
                                                         <th scope="row"><label for="nxa-x-access-secret"><?php esc_html_e( 'Access secret X', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="x_access_secret" id="nxa-x-access-secret" value="<?php echo esc_attr( $settings['x_access_secret'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_access_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="x_access_secret" id="nxa-x-access-secret" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['x_access_secret'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Access token secret OAuth 1.0a dell’account (mascherato).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
@@ -321,7 +325,7 @@ $social_platforms = array(
                                                 <tr>
                                                         <th scope="row"><label for="nxa-linkedin-access-token"><?php esc_html_e( 'Access token LinkedIn', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="linkedin_access_token" id="nxa-linkedin-access-token" value="<?php echo esc_attr( $settings['linkedin_access_token'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['linkedin_access_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="linkedin_access_token" id="nxa-linkedin-access-token" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['linkedin_access_token'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Access token OAuth 2.0 con permesso w_member_social (mascherato).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
@@ -467,7 +471,7 @@ $social_platforms = array(
                                                 <tr>
                                                         <th scope="row"><label for="nxa-notify-webhook-url"><?php esc_html_e( 'Webhook notifiche', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
-                                                                <input type="password" name="notify_webhook_url" id="nxa-notify-webhook-url" value="<?php echo esc_attr( $settings['notify_webhook_url'] ); ?>" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['notify_webhook_url'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code" autocomplete="new-password" />
+                                                                <input type="password" name="notify_webhook_url" id="nxa-notify-webhook-url" value="" placeholder="<?php echo esc_attr( '' !== trim( (string) $settings['notify_webhook_url'] ) ? __( '•••• salvata — compila per sostituire', 'nexus-news-ai' ) : '' ); ?>" class="regular-text code nxa-secret" autocomplete="new-password" />
                                                                 <p class="description"><?php esc_html_e( 'Webhook Slack-compatibile che riceve gli eventi della pipeline (errori, pending, pubblicazioni).', 'nexus-news-ai' ); ?></p>
                                                                 <p class="description"><?php esc_html_e( 'Campo mascherato: compila il campo solo per sostituire il webhook salvato (vuoto = nessun cambio).', 'nexus-news-ai' ); ?></p>
                                                         </td>

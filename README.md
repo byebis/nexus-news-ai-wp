@@ -3,7 +3,7 @@
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
 ![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759B?logo=wordpress&logoColor=white)
 ![Licenza](https://img.shields.io/badge/Licenza-MIT-green)
-![Versione](https://img.shields.io/badge/versione-1.1.12-blue)
+![Versione](https://img.shields.io/badge/versione-1.1.18-blue)
 
 > Il giornale di nuova generazione, scritto da intelligenze artificiali.
 
@@ -76,7 +76,7 @@ Il plugin è il porting WordPress (PHP puro + vanilla JS) dell'app Next.js origi
 - **WP-CLI** (v1.0.4): comando `wp nexus` per pilotare la redazione da terminale e da cron di sistema: `run --all/--agent`, `collect`, `evaluate`, `rewrite`, `publish`, `approve`/`reject`, `translate`, `agents`, `articles`, `stats`, `queue stats|process|retry|cancel|cleanup`, `settings get/set`.
 - **Blocchi Gutenberg** (v1.0.4): blocchi dinamici server-side `nexus/latest-articles` (numero articoli 1-24, categoria, colonne 1-4, mostra immagini) e `nexus/subscribe-form` (titolo personalizzabile) con preview nell'editor, senza build step; alternativa a `[nexus_articles]` e `[nexus_subscribe]`.
 - **Analytics** (v1.0.4): pagina Analytics con serie giornaliera (7-90 giorni) di articoli creati/pubblicati, chiamate AI e costo stimato del periodo, breakdown per piattaforma e per agente (con qualità media), top 10 articoli per viste e iscritti newsletter.
-- **Strumenti** (v1.0.5): pagina nel menu con informazioni di sistema (versioni, 9 tabelle con righe, eventi WP-Cron con prossima esecuzione, stat coda lavori), esporta configurazione JSON (avviso: contiene chiavi API e token) e importa configurazione (match agenti per categoria, sovrascrive impostazioni e agenti).
+- **Strumenti** (v1.0.5): pagina nel menu con informazioni di sistema (versioni, 13 tabelle con righe, eventi WP-Cron con prossima esecuzione, stat coda lavori), esporta configurazione JSON (avviso: contiene chiavi API e token) e importa configurazione (match agenti per categoria, sovrascrive impostazioni e agenti).
 - **API pubblica** (v1.0.5): namespace REST `nexus-public/v1` con articoli pubblicati, agenti e statistiche; autenticazione header `X-Api-Key` (o `?api_key=`), rate limit 120 richieste/minuto (HTTP 429) e CORS aperto.
 - **Multisite** (v1.0.5): installazione automatica delle tabelle sui nuovi siti della rete (hook `wp_initialize_site`) e comandi `wp nexus multisite status|install [--sites=1,2]`; ogni sito ha tabelle e impostazioni proprie.
 - **Admin bilingue** (v1.0.5, sperimentale): lingua dell'interfaccia admin (Automatica/Italiano/English) con traduzione delle etichette principali lato PHP (viste) e lato JS (contenuti dinamici).
@@ -626,7 +626,7 @@ Dalla v1.0.5 la redazione si governa meglio e si apre al mondo: una pagina **Str
 
 Nuova pagina **Strumenti** nel menu **Nexus News** (tra Analytics e Impostazioni), in quattro sezioni:
 
-- **Informazioni di sistema**: versione del plugin, di WordPress e di PHP, locale, multisite (sì/no), `memory_limit`, `max_execution_time`, stato delle **9 tabelle** `wp_nexus_*` (presenza e numero di righe per ognuna), eventi WP-Cron con la **prossima esecuzione** (`nexus_cron_tick`, `nexus_queue_runner`, `nexus_weekly_digest`, `nexus_ping_article`) e statistiche della coda lavori.
+- **Informazioni di sistema**: versione del plugin, di WordPress e di PHP, locale, multisite (sì/no), `memory_limit`, `max_execution_time`, stato delle **13 tabelle** `wp_nexus_*` (presenza e numero di righe per ognuna), eventi WP-Cron con la **prossima esecuzione** (`nexus_cron_tick`, `nexus_queue_runner`, `nexus_weekly_digest`, `nexus_ping_article`) e statistiche della coda lavori.
 - **Esporta configurazione**: scarica un file JSON (`nexus-config-AAAA-MM-GG.json`) con versione, data di esportazione, URL del sito, **impostazioni e agenti** (NON include articoli, iscritti o log).
 
   > **Attenzione:** il file esportato contiene **chiavi API e token**: conservalo in modo sicuro.

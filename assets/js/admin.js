@@ -135,6 +135,32 @@
                         .replace( /'/g, '&#39;' );
         }
 
+        /**
+         * AL-14 (v1.1.18): solo URL http/https come href — stesso pattern
+         * safeHref() di public/js/nexus-public.js (riferimento, sola lettura).
+         * Qualsiasi altro scheme (javascript:, data:, vbscript:, …) proveniente
+         * da dati AI/server torna '' e il caller renderizza uno span di testo
+         * non cliccabile invece di un <a> (esc() blocca l'HTML, NON lo scheme).
+         */
+        function safeHref( url ) {
+                var s = String( url === null || url === undefined ? '' : url ).trim();
+                return /^https?:\/\//i.test( s ) ? s : '';
+        }
+
+        /**
+         * AL-14 (v1.1.18): <a> sicuro per URL derivati da dati AI/citazioni/
+         * server (citations.source, source_url, post_url). http/https → <a>
+         * con esc(); altro scheme → <span> di testo non cliccabile. Il label
+         * arriva GIÀ escapato dal caller (contratto esc() di questo file).
+         */
+        function safeLinkHtml( url, labelHtml ) {
+                var href = safeHref( url );
+                if ( href ) {
+                        return '<a href="' + esc( href ) + '" target="_blank" rel="noopener noreferrer">' + labelHtml + '</a>';
+                }
+                return '<span>' + labelHtml + '</span>';
+        }
+
         /** Crea un elemento da una stringa HTML. */
         function el( html ) {
                 var tpl = document.createElement( 'template' );
@@ -1090,7 +1116,7 @@
                                 '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 14px">' +
                                         esc( agentName ) + ' · ' + dateIt( pick( a, 'created_at', 'createdAt' ) ) +
                                         ' · ' + scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
-                                        ( sourceUrl ? ' · <a href="' + esc( sourceUrl ) + '" target="_blank" rel="noopener noreferrer">' + esc( sourceName || sourceUrl ) + ' ↗</a>' : '' ) +
+                                        ( sourceUrl ? ' · ' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) : '' ) +
                                 '</p>';
 
                         var content = String( pick( a, 'content' ) || '' );
@@ -1127,7 +1153,7 @@
                                 logs.forEach( function ( log ) {
                                         html += '<p style="font-size:13px;margin:4px 0">' +
                                                 '<strong>' + esc( pick( log, 'platform' ) || 'blog' ) + '</strong> ' + badge( pick( log, 'status' ) ) +
-                                                ( pick( log, 'post_url' ) ? ' <a href="' + esc( pick( log, 'post_url' ) ) + '" target="_blank" rel="noopener noreferrer">vedi post ↗</a>' : '' ) +
+                                                ( pick( log, 'post_url' ) ? ' ' + safeLinkHtml( pick( log, 'post_url' ), 'vedi post ↗' ) : '' ) +
                                                 ( pick( log, 'error' ) ? '<br><span style="color:var(--nxa-err-text)">' + esc( pick( log, 'error' ) ) + '</span>' : '' ) +
                                                 '</p>';
                                 } );
@@ -1181,7 +1207,9 @@
          * - badge punteggio: row.factcheck_score || 0 → nascosto se 0,
          *   classe ok (verde) se >= 60, ko (rosso) altrimenti;
          * - citazioni: row.citations è una STRINGA JSON [{claim, source}],
-         *   decodificata in modo difensivo (mai crash); source è un URL → <a>.
+         *   decodificata in modo difensivo (mai crash); source è dato AI
+         *   (salvato raw nel DB, non kses-postato): solo http/https → <a> via
+         *   safeHref (AL-14, v1.1.18), altro scheme → span non cliccabile.
          * Ritorna '' quando non c'è nulla da mostrare (box nascosto).
          */
         function factCheckBoxHtml( row ) {
@@ -1215,8 +1243,11 @@
 
                 var items = citations.map( function ( c ) {
                         var source = String( c.source || '' );
+                        // AL-14 (v1.1.18): source arriva dall'AI → safeHref blocca
+                        // javascript:/data:/vbscript: e lo scheme non sicuro resta
+                        // testo (span), mai <a href> cliccabile.
                         return '<li>' + esc( c.claim || '' ) +
-                                ( source ? ' — <a href="' + esc( source ) + '" target="_blank" rel="noopener noreferrer">' + esc( source ) + '</a>' : '' ) +
+                                ( source ? ' — ' + safeLinkHtml( source, esc( source ) ) : '' ) +
                                 '</li>';
                 } ).join( '' );
 
@@ -1995,6 +2026,11 @@
                                         toast( model ? 'Modello "' + model + '" assegnato all\'agente.' : 'Modello dedicato rimosso: verrà usato il modello globale.', 'success', 'Modello aggiornato' );
                                 } ).catch( function ( err ) {
                                         apiErrorToast( err, 'Salvataggio modello non riuscito' );
+                                } ).then( function () {
+                                        // AL-17 (v1.1.18): rilascio del bottone in OGNI percorso
+                                        // (ramo finale, stesso pattern del test provider e del PUT
+                                        // settings) — prima veniva riabilitato solo nel catch e
+                                        // dopo un salvataggio riuscito restava bloccato in "Salvo…".
                                         setBtnLoading( saveBtn, false );
                                 } );
                         } );
@@ -3791,16 +3827,26 @@
                                          * 'truncated' (risposta valida ma mozzata) resta una NOTA: la
                                          * generazione funziona, serve più max_tokens per i testi lunghi.
                                          */
-                                        var statusClass = 'ok';
+                                        /*
+                                         * v1.1.18 (verde falso, residuo A7): se il payload NON
+                                         * porta generation_test (versione server precedente,
+                                         * endpoint parziale, cache pagina) lo stato NON è più
+                                         * verde di default ma grigio/incerto con nota esplicita
+                                         * («test non disponibile») — stessa filosofia «Pong
+                                         * Onesto» di v1.1.17: niente verde senza prova della
+                                         * generazione vera.
+                                         */
+                                        var statusClass = '';
                                         var genTest = ( data.generation_test && typeof data.generation_test === 'object' ) ? data.generation_test : null;
-                                        if ( genTest ) {
-                                                if ( genTest.ok ) {
-                                                        message += ' · ' + nxaT( 'Generazione OK' ) + ' (' + String( genTest.model_used || '' ) + ', ' + num( genTest.latency_ms ) + ' ms' + ( genTest.truncated ? ', ' + nxaT( 'risposta troncata' ) : '' ) + ')';
-                                                } else {
-                                                        var genErr = String( genTest.error || '' ).trim();
-                                                        message += ' · ' + nxaT( 'Generazione fallita' ) + ': ' + ( genErr !== '' ? genErr : nxaT( 'errore sconosciuto' ) );
-                                                        statusClass = 'err';
-                                                }
+                                        if ( ! genTest ) {
+                                                message += ' · ' + nxaT( 'Test generazione non disponibile da questa versione del server' );
+                                        } else if ( genTest.ok ) {
+                                                statusClass = 'ok';
+                                                message += ' · ' + nxaT( 'Generazione OK' ) + ' (' + String( genTest.model_used || '' ) + ', ' + num( genTest.latency_ms ) + ' ms' + ( genTest.truncated ? ', ' + nxaT( 'risposta troncata' ) : '' ) + ')';
+                                        } else {
+                                                var genErr = String( genTest.error || '' ).trim();
+                                                message += ' · ' + nxaT( 'Generazione fallita' ) + ': ' + ( genErr !== '' ? genErr : nxaT( 'errore sconosciuto' ) );
+                                                statusClass = 'err';
                                         }
                                         if ( data.model_in_provider_list === false ) {
                                                 message += ' · ' + nxaT( 'Attenzione: il modello impostato non è nella lista modelli di questo provider.' );
@@ -4412,7 +4458,7 @@
                         '</h3>' +
                         ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 6px;font-size:13px;color:var(--nxa-muted)">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                         ( summary ? '<p style="margin:0 0 8px;font-size:12.5px;color:var(--nxa-muted);line-height:1.55">' + excerpt( summary, 220 ) + '</p>' : '' ) +
-                        ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">🔗 <a href="' + esc( sourceUrl ) + '" target="_blank" rel="noopener noreferrer">' + esc( sourceName || sourceUrl ) + ' ↗</a></p>' : '' ) +
+                        ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">🔗 ' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) + '</p>' : '' ) +
                         actions +
                 '</article>';
         }
@@ -4756,6 +4802,33 @@
                         var fbBoxes = qsa( 'input[name="' + feedbackFlags[ i ] + '"]', form );
                         if ( fbBoxes.length ) {
                                 payload[ feedbackFlags[ i ] ] = fbBoxes.some( function ( b ) { return b.checked; } ) ? 1 : 0;
+                        }
+                }
+
+                // (v1.1.18, contratto FIX-8) skip-secrets: un input con classe
+                // "nxa-secret" e value VUOTO NON viene incluso nel payload — il
+                // server preserva i valori mancanti (segreto invariato); con un
+                // valore digitato dall'utente la chiave viene inviata normalmente.
+                // Unico passaggio finale che copre TUTTI i segreti: quelli già
+                // gestiti "solo-se-compilata" (ai_api_key, prov_key_*,
+                // tools_search_key, gsc_oauth_client_secret, notify_webhook_url),
+                // quelli nella lista simple (token Telegram/X/LinkedIn, webhook
+                // Discord, indexnow_key…) e i campi nuovi marcati nxa-secret dalle
+                // viste (FIX-8) senza dover toccare le liste sopra. I PUT /settings
+                // con body fisso (wizard destinazione, global_rss_sources) non
+                // contengono segreti e non passano da qui.
+                var secretNodes = qsa( '.nxa-secret', form );
+                for ( i = 0; i < secretNodes.length; i++ ) {
+                        var secretNode = secretNodes[ i ];
+                        var secretName = String( secretNode.name || '' ).trim();
+                        if ( ! secretName ) {
+                                continue;
+                        }
+                        var secretValue = String( secretNode.value || '' ).trim();
+                        if ( secretValue === '' ) {
+                                delete payload[ secretName ];
+                        } else {
+                                payload[ secretName ] = secretValue;
                         }
                 }
 

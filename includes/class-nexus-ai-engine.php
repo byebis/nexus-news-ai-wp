@@ -71,6 +71,31 @@
  *     Default OFF: nessun chiamante la passa oggi, infrastruttura pronta per
  *     resume/sviluppi futuri.
  *
+ * NOVITA' v1.1.18 (fix audit A2 — affidabilità e guardia SSRF):
+ *   - Timeout HTTP proporzionale ai max_tokens (AL-5): base 60s + 1s ogni 12
+ *     token (min 60s, max 300s), filtrabile con 'nexus_ai_request_timeout'
+ *     (argomenti: int $timeout, int $max_tokens). I bump 4000-8000 token sui
+ *     modelli reasoning :free non muoiono più per timeout fisso 60s.
+ *     Nexus_Providers usa lo stesso filtro per lo scambio OAuth.
+ *   - Budget temporale TOTALE per chat() (B): default 300s, filtro
+ *     'nexus_ai_retry_budget' (hard cap 3600s). Prima di OGNI retry/sleep/
+ *     chiamata extra (json_mode, fallback chain, empty_length, bump ×1.5) si
+ *     verifica il budget; esaurito → errore onesto + log 'ai_retry_budget'
+ *     (chiude la tempesta storica di ~12 chiamate + ~5 sleep da 60s).
+ *   - Bump generativo ×1.5 senza downgrade (AL-10): calcolato dai max_tokens
+ *     REALI dell'ultimo tentativo ($used_max_tokens, include il retry
+ *     empty_length) e la risposta precedente è sostituita SOLO se la nuova è
+ *     più lunga; ogni decisione è loggata ('ai_bump').
+ *   - Guardia SSRF IPv6 riparata (AL-4 — era codice morto: confronti literal
+ *     da 2 byte contro packed da 16): ora rileva ::1, ::, IPv4-mapped
+ *     ::ffff:0:0/96 (ri-validati con la logica IPv4), fc00::/7, fe80::/10
+ *     (e fec0::/10 deprecato, fail-closed), ff00::/8, 2001:db8::/32 e forme
+ *     "::x" ambigue. Fail-closed su qualunque ambiguità. Stessa riparazione
+ *     nella copia di Nexus_Providers (liste IPv4 allineate).
+ *   - message.content come array di parti (alcuni provider OpenAI-compat):
+ *     testo estratto e concatenato invece del cast che produceva "Array"
+ *     (passava il check vuoto come risposta ok).
+ *
  * CONTRATTO PUBBLICO (usato dagli altri moduli):
  * Nexus_AI_Engine::chat( $messages, $opts )          — POST {ai_base_url}/chat/completions.
  *                                                      Ritorna SEMPRE array:
@@ -109,6 +134,13 @@
  *                                                      12h; un hit ritorna 'cached' => true senza chiamata né usage
  *                                                      log. Le chiavi usate (globali, override, risolte) possono
  *                                                      essere pool multilinea: pick_api_key() le ruota round-robin.
+ *                                                      v1.1.18: timeout HTTP proporzionale ai max_tokens
+ *                                                      (filtro 'nexus_ai_request_timeout') e budget temporale
+ *                                                      totale (filtro 'nexus_ai_retry_budget', default 300s):
+ *                                                      a budget esaurito NESSUN nuovo tentativo (errore onesto
+ *                                                      + log 'ai_retry_budget'). Il ritorno può aggiungere
+ *                                                      'budget_cut' (true = retry tagliati dal budget, solo su
+ *                                                      insuccesso) accanto al marker 'empty_length'.
  * Nexus_AI_Engine::provider_in_cooldown( $slug )     — v1.1.9: true se il provider è in cooldown
  *                                                      (circuit breaker, transient 'nexus_prov_cooldown_{slug}').
  *                                                      v1.1.15 (WE3): implementata davvero (prima era solo nel
@@ -494,31 +526,51 @@ class Nexus_AI_Engine {
                         return $fail;
                 }
 
+                // v1.1.18 (budget B) — budget temporale TOTALE della chiamata
+                // (default 300s, filtro 'nexus_ai_retry_budget'): prima di OGNI
+                // retry/sleep/chiamata extra (json_mode, fallback chain,
+                // empty_length, bump ×1.5) si verifica il budget; esaurito →
+                // nessun nuovo tentativo, errore onesto e log 'ai_retry_budget'.
+                $retry_budget = self::retry_budget_seconds();
+                $deadline     = microtime( true ) + $retry_budget;
+                $budget_cut   = false;
+
                 // v1.1.15 (WE3): contesto dell'ULTIMA chiamata effettuata (primaria,
                 // retry json_mode o fallback chain): serve al retry generativo ×1.5
                 // (contratto v1.1.9) per ripetere l'invio sulla STESSA destinazione
                 // che ha prodotto la risposta troncata.
+                // v1.1.18 (AL-10): $used_max_tokens traccia i max_tokens REALI
+                // dell'ultima chiamata: il bump ×1.5 è calcolato da questo valore
+                // (non dal max_tokens originale) e la sostituzione avviene solo se
+                // la nuova risposta è più lunga (mai un downgrade).
                 $used_endpoint    = $endpoint;
                 $used_headers     = $headers;
                 $used_model       = $model;
                 $used_provider    = $provider_id;
                 $used_json_active = $json_active;
+                $used_max_tokens  = $max_tokens;
 
-                $result = self::execute_request( $endpoint, $headers, $encoded_body, $model, $agent_id, $action, $provider_id );
+                $result = self::execute_request( $endpoint, $headers, $encoded_body, $model, $agent_id, $action, $provider_id, $max_tokens, $deadline );
 
                 // v1.1.9 — json_object non supportato dal provider (tipico: 400 con
                 // messaggio su response_format): si riprova UNA volta senza response_format.
+                // v1.1.18 (budget B): il retry apre un nuovo tentativo solo se il
+                // budget temporale della chat() non è esaurito.
                 $http_code = isset( $result['http_code'] ) ? (int) $result['http_code'] : 0;
                 if ( empty( $result['ok'] ) && 400 === $http_code && $json_active ) {
-                        $retry_body = self::build_request_body( $model, $normalized, $temperature, $max_tokens, false );
-                        if ( false !== $retry_body ) {
-                                $used_json_active = false; // v1.1.15 (WE3): il retry json_mode gira senza response_format.
-                                $result = self::execute_request( $endpoint, $headers, $retry_body, $model, $agent_id, $action, $provider_id );
-                                if ( ! empty( $result['ok'] ) && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
-                                        try {
-                                                Nexus_DB::insert_activity( $agent_id, 'ai_json_mode', 'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.', 'warning' );
-                                        } catch ( Throwable $e ) {
-                                                // logging mai bloccante
+                        if ( ! self::budget_open( $deadline ) ) {
+                                $budget_cut = true;
+                        } else {
+                                $retry_body = self::build_request_body( $model, $normalized, $temperature, $max_tokens, false );
+                                if ( false !== $retry_body ) {
+                                        $used_json_active = false; // v1.1.15 (WE3): il retry json_mode gira senza response_format.
+                                        $result = self::execute_request( $endpoint, $headers, $retry_body, $model, $agent_id, $action, $provider_id, $max_tokens, $deadline );
+                                        if ( ! empty( $result['ok'] ) && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                                                try {
+                                                        Nexus_DB::insert_activity( $agent_id, 'ai_json_mode', 'response_format json_object non supportato dal provider: risposta ottenuta senza json mode.', 'warning' );
+                                                } catch ( Throwable $e ) {
+                                                        // logging mai bloccante
+                                                }
                                         }
                                 }
                         }
@@ -556,6 +608,11 @@ class Nexus_AI_Engine {
                                         if ( ! empty( $result['ok'] ) ) {
                                                 break; // già risposto da uno step precedente
                                         }
+                                        if ( ! self::budget_open( $deadline ) ) {
+                                                // v1.1.18 (budget B): budget esaurito, nessun nuovo tentativo.
+                                                $budget_cut = true;
+                                                break;
+                                        }
                                         if ( ! is_array( $chain_step ) ) {
                                                 continue;
                                         }
@@ -582,7 +639,8 @@ class Nexus_AI_Engine {
                                                 $used_model       = $sm;
                                                 $used_provider    = 'global';
                                                 $used_json_active = false;
-                                                $result = self::execute_request( $g_endpoint, $g_headers, $g_body, $sm, $agent_id, $action, 'global' );
+                                                $used_max_tokens  = $max_tokens;
+                                                $result = self::execute_request( $g_endpoint, $g_headers, $g_body, $sm, $agent_id, $action, 'global', $max_tokens, $deadline );
                                         }
                                 }
                         }
@@ -599,16 +657,24 @@ class Nexus_AI_Engine {
                 // Se anche il tentativo extra resta vuoto vince l'errore arricchito
                 // già prodotto dal motore (azione: aumenta max_tokens o cambia modello).
                 if ( empty( $result['ok'] ) && ! empty( $result['empty_length'] ) ) {
-                        $bumped_empty = (int) min( 8000, (int) ceil( $max_tokens * 2 ) );
+                        if ( ! self::budget_open( $deadline ) ) {
+                                // v1.1.18 (budget B): budget esaurito → nessun tentativo extra.
+                                $budget_cut = true;
+                        } else {
+                                $bumped_empty = (int) min( 8000, (int) ceil( $max_tokens * 2 ) );
 
-                        if ( $bumped_empty > $max_tokens && '' !== $used_endpoint && is_array( $used_headers ) ) {
-                                $bumped_empty_body = self::build_request_body( $used_model, $normalized, $temperature, $bumped_empty, $used_json_active );
+                                if ( $bumped_empty > $max_tokens && '' !== $used_endpoint && is_array( $used_headers ) ) {
+                                        $bumped_empty_body = self::build_request_body( $used_model, $normalized, $temperature, $bumped_empty, $used_json_active );
 
-                                if ( false !== $bumped_empty_body ) {
-                                        $second = self::execute_request( $used_endpoint, $used_headers, $bumped_empty_body, $used_model, $agent_id, $action, $used_provider );
+                                        if ( false !== $bumped_empty_body ) {
+                                                // v1.1.18 (AL-10): l'ultimo tentativo effettivo ha usato
+                                                // bumped_empty token: aggiorna il tracciamento.
+                                                $used_max_tokens = $bumped_empty;
+                                                $second = self::execute_request( $used_endpoint, $used_headers, $bumped_empty_body, $used_model, $agent_id, $action, $used_provider, $bumped_empty, $deadline );
 
-                                        if ( ! empty( $second['ok'] ) ) {
-                                                $result = $second;
+                                                if ( ! empty( $second['ok'] ) ) {
+                                                        $result = $second;
+                                                }
                                         }
                                 }
                         }
@@ -625,18 +691,46 @@ class Nexus_AI_Engine {
                 // ogni altra chiamata (usage onesto). Le fasi NON generative
                 // (collect|evaluate|factcheck|wire) non ricevono alcun tentativo extra:
                 // le risposte JSON brevi non soffrono di troncamento.
+                // v1.1.18 (AL-10) — anti-downgrade: il bump è calcolato dai max_tokens
+                // REALI dell'ultimo tentativo ($used_max_tokens, include il retry
+                // empty_length) e la risposta precedente è sostituita SOLO se la nuova
+                // è strettamente più lunga: MAI rimpiazzare una risposta valida con
+                // una più corta (o con un fallimento). Ogni decisione (salto per cap,
+                // sostituzione, mantenimento, salto per budget) è loggata onestamente
+                // ('ai_bump' / 'ai_retry_budget').
                 if ( ! empty( $result['ok'] ) && 'length' === self::$last_finish_reason
                         && in_array( $action, array( 'rewrite', 'translate', 'digest' ), true ) ) {
-                        $bumped_max = (int) min( 8000, (int) ceil( $max_tokens * 1.5 ) );
+                        $bumped_max = (int) min( 8000, (int) ceil( $used_max_tokens * 1.5 ) );
 
-                        if ( $bumped_max > $max_tokens && '' !== $used_endpoint && is_array( $used_headers ) ) {
+                        if ( $bumped_max <= $used_max_tokens || '' === $used_endpoint || ! is_array( $used_headers ) ) {
+                                // Cap 8000 già raggiunto (o destinazione non più disponibile):
+                                // un aumento non produrrebbe più contenuto. Decisione loggata.
+                                self::log_engine_activity( $agent_id, 'ai_bump', 'Tentativo extra ×1.5 non effettuato: il tentativo precedente ha già usato ' . $used_max_tokens . ' max_tokens (cap 8000): un aumento non produrrebbe più contenuto.', 'warning' );
+                        } elseif ( ! self::budget_open( $deadline ) ) {
+                                // v1.1.18 (budget B): budget esaurito → si mantiene la risposta
+                                // troncata già ottenuta (nessun nuovo tentativo).
+                                $budget_cut = true;
+                        } else {
                                 $bumped_body = self::build_request_body( $used_model, $normalized, $temperature, $bumped_max, $used_json_active );
 
                                 if ( false !== $bumped_body ) {
-                                        $bumped = self::execute_request( $used_endpoint, $used_headers, $bumped_body, $used_model, $agent_id, $action, $used_provider );
+                                        $bumped = self::execute_request( $used_endpoint, $used_headers, $bumped_body, $used_model, $agent_id, $action, $used_provider, $bumped_max, $deadline );
+                                        $used_max_tokens = $bumped_max;
 
-                                        if ( ! empty( $bumped['ok'] ) ) {
+                                        $prev_len = isset( $result['content'] ) ? (int) strlen( (string) $result['content'] ) : 0;
+                                        $new_len  = ( ! empty( $bumped['ok'] ) && isset( $bumped['content'] ) ) ? (int) strlen( (string) $bumped['content'] ) : 0;
+
+                                        if ( ! empty( $bumped['ok'] ) && $new_len > $prev_len ) {
+                                                // Sostituzione SOLO se la nuova risposta è più lunga.
                                                 $result = $bumped;
+                                                self::log_engine_activity( $agent_id, 'ai_bump', 'Tentativo extra ×1.5 (max_tokens ' . $bumped_max . ') completato: risposta sostituita con una più lunga (da ' . $prev_len . ' a ' . $new_len . ' caratteri).', 'info' );
+                                        } else {
+                                                // Mai rimpiazzare una risposta valida con una più corta
+                                                // (o con un fallimento): si mantiene la precedente, che nel
+                                                // ramo è troncata per costruzione (finish_reason=length).
+                                                // last_finish_reason torna sul risultato CONSERVATO.
+                                                self::$last_finish_reason = 'length';
+                                                self::log_engine_activity( $agent_id, 'ai_bump', 'Tentativo extra ×1.5 (max_tokens ' . $bumped_max . ') non ha prodotto una risposta migliore: mantenuta la risposta precedente (' . $prev_len . ' caratteri).', 'warning' );
                                         }
                                 }
                         }
@@ -658,6 +752,13 @@ class Nexus_AI_Engine {
                 // aggiungono usage (zero token).
                 if ( $prompt_cache && '' !== $pc_key && ! empty( $result['ok'] ) && isset( $result['content'] ) && '' !== trim( (string) $result['content'] ) ) {
                         set_transient( $pc_key, (string) $result['content'], 12 * HOUR_IN_SECONDS );
+                }
+
+                // v1.1.18 (budget B): se il budget temporale ha tagliato retry o
+                // tentativi extra e la chiamata è fallita, log onesto UNA volta sola
+                // (nessuna tempesta: il budget copre l'intera chat()).
+                if ( ( $budget_cut || ! empty( $result['budget_cut'] ) ) && empty( $result['ok'] ) ) {
+                        self::log_engine_activity( $agent_id, 'ai_retry_budget', 'Budget di tempo AI esaurito (' . $retry_budget . ' secondi): ulteriori tentativi di retry non effettuati per questa chiamata.', 'warning' );
                 }
 
                 return $result;
@@ -709,6 +810,16 @@ class Nexus_AI_Engine {
          * D2 in Nexus_Tools, duplicata qui per evitare dipendenze circolari con
          * il motore AI). Fail-closed: DNS fallito o IP malformato = privato.
          *
+         * v1.1.18 (AL-4): riparata la guardia IPv6 — i confronti literal da 2 byte
+         * ("\x00\x01" === $packed) non potevano MAI essere veri contro i 16 byte
+         * di inet_pton() (codice morto): ::1, :: e le reti locali IPv6 passavano
+         * la guardia come pubbliche. Ora rileva: ::1 (loopback), :: (unspecified),
+         * IPv4-mapped ::ffff:0:0/96 (entrambe le notazioni, ri-validati con la
+         * logica IPv4 dedicata), fc00::/7 (unique local), fe80::/10 (link local),
+         * fec0::/10 (site-local deprecato, fail-closed), ff00::/8 (multicast),
+         * 2001:db8::/32 (documentazione) e ogni forma "::x" ambigua (IPv4-compatible
+         * deprecato). Fail-closed su qualunque ambiguità.
+         *
          * @param string $host Hostname o IP.
          * @return bool
          */
@@ -722,28 +833,23 @@ class Nexus_AI_Engine {
                         return true; // risoluzione fallita: fail-closed.
                 }
                 if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
-                        // Abbassa gli IPv4-mapped (::ffff:a.b.c.d) a IPv4.
-                        if ( preg_match( '/^::ffff:(\d+\.\d+\.\d+\.\d+)$/', $ip, $m ) ) {
-                                $ip = $m[1];
-                        } else {
-                                $packed = @inet_pton( $ip );
-                                if ( false === $packed ) {
-                                        return true;
-                                }
-                                // ::1, fc00::/7, fe80::/10, ff00::/8, :: (unspecified).
-                                $head = substr( $packed, 0, 2 );
-                                if ( "\x00\x01" === $packed || "\x00\x00" === $packed ) {
-                                        return true;
-                                }
-                                if ( "\xfc" === $head[0] || "\xfe\x80" === substr( $packed, 0, 2 ) || ( ord( $head[0] ) & 0xff ) >= 0xff ) {
-                                        return true;
-                                }
-                                return false;
-                        }
+                        return self::ipv6_is_private( $ip );
                 }
-                $long = ip2long( $ip );
+                return self::ipv4_is_private( $ip );
+        }
+
+        /**
+         * v1.1.18 (AL-4) — logica IPv4 della guardia SSRF, estratta: riusata anche
+         * per gli IPv4-mapped (::ffff:a.b.c.d) estratti dalla coda dell'IPv6.
+         * Fail-closed su IP malformato.
+         *
+         * @param string $ip IPv4 in notazione dotted.
+         * @return bool
+         */
+        private static function ipv4_is_private( $ip ) {
+                $long = ip2long( (string) $ip );
                 if ( false === $long ) {
-                        return true;
+                        return true; // fail-closed.
                 }
                 $long = sprintf( '%u', $long );
                 $cidr_match = function ( $net, $bits ) use ( $long ) {
@@ -762,6 +868,55 @@ class Nexus_AI_Engine {
                         || $cidr_match( '198.18.0.0', 15 )
                         || $cidr_match( '224.0.0.0', 4 )
                         || $cidr_match( '240.0.0.0', 4 );
+        }
+
+        /**
+         * v1.1.18 (AL-4) — logica IPv6 della guardia SSRF (prima era codice morto:
+         * confronti literal da 2 byte contro il packed da 16 byte di inet_pton).
+         * Lavora sui byte del packed (niente dipendenza dalla notazione testuale).
+         * Fail-closed su qualunque ambiguità (inet_pton fallito, forme "::x" non
+         * riconosciute).
+         *
+         * @param string $ip IPv6 valido (già validato con FILTER_VALIDATE_IP).
+         * @return bool
+         */
+        private static function ipv6_is_private( $ip ) {
+                $packed = @inet_pton( (string) $ip );
+                if ( false === $packed || 16 !== strlen( $packed ) ) {
+                        return true; // fail-closed.
+                }
+                // ::1 (loopback) e :: (unspecified).
+                if ( $packed === ( str_repeat( "\x00", 15 ) . "\x01" ) || $packed === str_repeat( "\x00", 16 ) ) {
+                        return true;
+                }
+                // IPv4-mapped ::ffff:0:0/96: entrambe le notazioni (::ffff:a.b.c.d e
+                // ::ffff:aabb:ccdd) producono lo stesso packed. Estrai la parte IPv4
+                // e ri-validala con la logica dedicata.
+                if ( str_repeat( "\x00", 10 ) === substr( $packed, 0, 10 ) && "\xff\xff" === substr( $packed, 10, 2 ) ) {
+                        $v4 = ord( $packed[12] ) . '.' . ord( $packed[13] ) . '.' . ord( $packed[14] ) . '.' . ord( $packed[15] );
+                        return self::ipv4_is_private( $v4 );
+                }
+                // Forme "::x" ambigue (IPv4-compatible deprecato ::a.b.c.d): fail-closed.
+                if ( str_repeat( "\x00", 12 ) === substr( $packed, 0, 12 ) ) {
+                        return true;
+                }
+                $b0 = ord( $packed[0] );
+                $b1 = ord( $packed[1] );
+                // fc00::/7 (unique local: fc00-fdff).
+                if ( 0xfc === ( $b0 & 0xfe ) ) {
+                        return true;
+                }
+                // fe80::/10 (link local: fe80-febf) e ff00::/8 (multicast: ff00-ffff);
+                // per prudenza fail-closed è incluso anche il site-local deprecato
+                // fec0::/10 (fe00-feff), come faceva già la copia providers.
+                if ( 0xfe === $b0 || 0xff === $b0 ) {
+                        return true;
+                }
+                // 2001:db8::/32 (documentazione).
+                if ( 0x20 === $b0 && 0x01 === $b1 && "\x0d\xb8" === substr( $packed, 2, 2 ) ) {
+                        return true;
+                }
+                return false;
         }
 
         /**
@@ -907,9 +1062,11 @@ class Nexus_AI_Engine {
          * @param int    $agent_id     Agente associato (tracking consumi).
          * @param string $action       Azione editoriale (tracking consumi).
          * @param string $provider_id  Provider risolto (tracking consumi e breaker).
+         * @param int    $max_tokens   Max tokens della richiesta (v1.1.18 AL-5: timeout proporzionale).
+         * @param float|null $deadline Scadenza budget temporale della chat() (v1.1.18 B; null = nessun budget).
          * @return array Risultato con chiavi ok/content/error/simulated (+http_code, +usage).
          */
-        private static function execute_request( $endpoint, $headers, $encoded_body, $model, $agent_id, $action, $provider_id ) {
+        private static function execute_request( $endpoint, $headers, $encoded_body, $model, $agent_id, $action, $provider_id, $max_tokens = 0, $deadline = null ) {
                 $fail = array(
                         'ok'        => false,
                         'content'   => '',
@@ -917,9 +1074,13 @@ class Nexus_AI_Engine {
                         'simulated' => false,
                 );
 
-                $sent = self::send_with_retry( $endpoint, $headers, $encoded_body, $provider_id );
+                $sent = self::send_with_retry( $endpoint, $headers, $encoded_body, $provider_id, $max_tokens, $deadline );
                 if ( '' !== $sent['error'] ) {
                         $fail['error'] = $sent['error'];
+                        if ( ! empty( $sent['budget_cut'] ) ) {
+                                // v1.1.18 (budget B): i retry HTTP sono stati tagliati dal budget.
+                                $fail['budget_cut'] = true;
+                        }
                         return $fail;
                 }
                 $response = $sent['response'];
@@ -968,7 +1129,25 @@ class Nexus_AI_Engine {
                         self::log_usage( $usage, $agent_id, $action, $provider_id );
                 }
 
-                $content = isset( $data['choices'][0]['message']['content'] ) ? (string) $data['choices'][0]['message']['content'] : '';
+                // v1.1.18 (bonus audit M1): alcuni provider OpenAI-compat restituiscono
+                // message.content come ARRAY di parti (es. [{type:'text',text:'…'}]):
+                // il cast (string) produceva la stringa "Array" che PASSAVA il check
+                // vuoto come risposta ok (corruzione silenziosa a valle). Estrazione e
+                // concatenazione delle parti testuali; se non risulta testo si cade
+                // nell'errore onesto qui sotto (mai più "Array" come contenuto).
+                $content_raw = isset( $data['choices'][0]['message']['content'] ) ? $data['choices'][0]['message']['content'] : '';
+                $content     = '';
+                if ( is_array( $content_raw ) ) {
+                        foreach ( $content_raw as $part ) {
+                                if ( is_array( $part ) && isset( $part['text'] ) && is_string( $part['text'] ) ) {
+                                        $content .= $part['text'];
+                                } elseif ( is_string( $part ) ) {
+                                        $content .= $part;
+                                }
+                        }
+                } elseif ( is_string( $content_raw ) ) {
+                        $content = $content_raw;
+                }
                 if ( '' === trim( $content ) ) {
                         // v1.1.17 («Pong Onesto») — errore ONESTO e azionabile: NON tutti i
                         // «vuoti» sono uguali. Con finish_reason=length i token sono finiti
@@ -992,6 +1171,10 @@ class Nexus_AI_Engine {
                         }
                         if ( '' !== $reasoning ) {
                                 $fail['error'] .= ' Il modello ha prodotto solo ragionamento (' . (string) strlen( $reasoning ) . ' caratteri) senza contenuto finale.';
+                        }
+                        if ( is_array( $content_raw ) ) {
+                                // v1.1.18 (bonus M1): diagnostica onesta anche per il caso array.
+                                $fail['error'] .= ' message.content è arrivato come array senza parti testuali riconoscibili.';
                         }
                         $fail['http_code'] = $code;
                         if ( 'length' === self::$last_finish_reason ) {
@@ -1028,22 +1211,44 @@ class Nexus_AI_Engine {
          * Ogni 429 alimenta il circuit breaker del provider (3 consecutivi in 10
          * minuti -> cooldown 60s).
          *
+         * v1.1.18 (AL-5): il timeout di wp_remote_post NON è più fisso 60s ma
+         * proporzionale ai max_tokens (base 60s + 1s ogni 12 token, min 60, max
+         * 300, filtro 'nexus_ai_request_timeout'): i bump 4000-8000 token sui
+         * modelli reasoning :free non muoiono più per timeout.
+         * v1.1.18 (budget B): prima di OGNI retry (mai sul primo tentativo) si
+         * verifica il budget temporale della chat(); esaurito → errore onesto con
+         * 'budget_cut' => true, senza nuove chiamate né nuove attese (l'attesa è
+         * anche tagliata al budget rimasto).
+         *
          * @param string $endpoint      URL chat/completions.
          * @param array  $headers       Header HTTP.
          * @param string $encoded_body  Body JSON-encoded.
          * @param string $provider_id   Provider risolto (breaker).
-         * @return array array( 'response' => array|WP_Error|null, 'error' => string )
+         * @param int    $max_tokens    Max tokens della richiesta (timeout proporzionale).
+         * @param float|null $deadline   Scadenza budget temporale della chat() (null = nessun budget).
+         * @return array array( 'response' => array|WP_Error|null, 'error' => string, 'budget_cut' => bool )
          */
-        private static function send_with_retry( $endpoint, $headers, $encoded_body, $provider_id ) {
-                $attempts = 3;
-                $sleep    = 1.0;
-                $last_err = '';
+        private static function send_with_retry( $endpoint, $headers, $encoded_body, $provider_id, $max_tokens = 0, $deadline = null ) {
+                $attempts   = 3;
+                $sleep      = 1.0;
+                $last_err   = '';
+                $budget_cut = false;
 
                 for ( $i = 1; $i <= $attempts; $i++ ) {
+                        // v1.1.18 (budget B): il budget si verifica prima di ogni RETRY
+                        // (il primo tentativo è sempre ammesso): esaurito → si esce con
+                        // errore onesto, senza aprire altre chiamate o attese.
+                        if ( $i > 1 && ! self::budget_open( $deadline ) ) {
+                                $budget_cut = true;
+                                break;
+                        }
+
                         $response = wp_remote_post(
                                 $endpoint,
                                 array(
-                                        'timeout' => 60,
+                                        // v1.1.18 (AL-5): timeout proporzionale ai max_tokens,
+                                        // filtrabile con 'nexus_ai_request_timeout'.
+                                        'timeout' => self::request_timeout( $max_tokens ),
                                         'headers' => $headers,
                                         'body'    => $encoded_body,
                                 )
@@ -1056,19 +1261,20 @@ class Nexus_AI_Engine {
                                 $code = (int) wp_remote_retrieve_response_code( $response );
                                 if ( 200 === $code ) {
                                         self::breaker_success( $provider_id );
-                                        return array( 'response' => $response, 'error' => '' );
+                                        return array( 'response' => $response, 'error' => '', 'budget_cut' => false );
                                 }
                                 if ( 401 === $code || 403 === $code || 400 === $code || 404 === $code || 422 === $code ) {
                                         // Non transitori: stessi input darebbero lo stesso errore.
-                                        return array( 'response' => $response, 'error' => '' );
+                                        return array( 'response' => $response, 'error' => '', 'budget_cut' => false );
                                 }
                                 $last_err = self::http_error_message( $response, $code );
                                 if ( 429 === $code ) {
                                         $hits = self::breaker_rate_hit( $provider_id );
                                         if ( $hits >= 3 ) {
                                                 return array(
-                                                        'response' => null,
-                                                        'error'    => 'Rate limit AI attivo per il provider ' . ( '' !== $provider_id ? $provider_id : 'globale' ) . ': cooldown automatico di 60s dopo 429 consecutivi.',
+                                                        'response'   => null,
+                                                        'error'      => 'Rate limit AI attivo per il provider ' . ( '' !== $provider_id ? $provider_id : 'globale' ) . ': cooldown automatico di 60s dopo 429 consecutivi.',
+                                                        'budget_cut' => false,
                                                 );
                                         }
                                 }
@@ -1085,12 +1291,102 @@ class Nexus_AI_Engine {
                                 }
                                 // v1.1.15 (WE3): l'attesa è SEMPRE tagliata al cap
                                 // RETRY_SLEEP_MAX (default 60s, filtro 'nexus_ai_retry_sleep_max').
+                                // v1.1.18 (budget B): l'attesa è anche tagliata al budget rimasto:
+                                // mai dormire oltre la scadenza della chat().
+                                if ( null !== $deadline ) {
+                                        $wait = min( $wait, max( 0.0, $deadline - microtime( true ) ) );
+                                }
                                 sleep( (int) ceil( min( self::retry_sleep_max(), $wait ) ) );
                                 $sleep = min( 8.0, $sleep * 2 );
                         }
                 }
 
-                return array( 'response' => null, 'error' => $last_err );
+                if ( $budget_cut ) {
+                        return array(
+                                'response'   => null,
+                                'error'      => 'Tentativi AI interrotti: superato il budget di tempo per questa chiamata (limite anti-blocco). Riprova più tardi.',
+                                'budget_cut' => true,
+                        );
+                }
+
+                return array( 'response' => null, 'error' => $last_err, 'budget_cut' => false );
+        }
+
+        /**
+         * v1.1.18 (AL-5) — timeout HTTP (secondi) della richiesta chat/completions,
+         * proporzionale ai max_tokens richiesti: base 60s + 1s ogni 12 token (stima
+         * conservativa ~12 tok/s per i modelli reasoning :free), minimo 60s,
+         * massimo 300s. Filtrabile con 'nexus_ai_request_timeout' (argomenti:
+         * int $timeout, int $max_tokens); valori non sensati (<= 0) tornano al
+         * default calcolato, hard cap 3600s e minimo 5s.
+         *
+         * @param int $max_tokens Max tokens della richiesta (0 = non stimabile).
+         * @return int Secondi di timeout.
+         */
+        public static function request_timeout( $max_tokens = 0 ) {
+                $max_tokens = (int) $max_tokens;
+                if ( $max_tokens < 1 ) {
+                        $max_tokens = 1;
+                }
+                $default = 60 + (int) ceil( $max_tokens / 12 );
+                $default = (int) min( 300, max( 60, $default ) );
+                $timeout = (int) apply_filters( 'nexus_ai_request_timeout', $default, $max_tokens );
+                if ( $timeout <= 0 ) {
+                        $timeout = $default;
+                }
+                return (int) min( 3600, max( 5, $timeout ) );
+        }
+
+        /**
+         * v1.1.18 (budget B) — budget temporale TOTALE di una singola chat() in
+         * secondi: copre tutte le chiamate HTTP, attese e retry annidati (json_mode,
+         * fallback chain, empty_length, bump ×1.5). Default 300s, filtro
+         * 'nexus_ai_retry_budget'; valori non sensati (<= 0) tornano al default,
+         * hard cap 3600s. Nota: il primo tentativo non è mai precluso dal budget
+         * (che può solo TAGLIARE retry e tentativi extra, non l'apertura della
+         * chiamata primaria); un singolo wp_remote_post lungo non è preemptibile.
+         *
+         * @return int Secondi di budget.
+         */
+        private static function retry_budget_seconds() {
+                $budget = (int) apply_filters( 'nexus_ai_retry_budget', 300 );
+                if ( $budget <= 0 ) {
+                        $budget = 300;
+                }
+                return (int) min( 3600, max( 1, $budget ) );
+        }
+
+        /**
+         * v1.1.18 (budget B) — true se il budget temporale della chat() non è
+         * ancora esaurito (o non è stato fissato): false = NESSUN nuovo tentativo
+         * (retry, sleep, chiamate extra json_mode/fallback/empty_length/bump).
+         *
+         * @param float|null $deadline Timestamp microtime della scadenza (null = nessun budget).
+         * @return bool
+         */
+        private static function budget_open( $deadline ) {
+                return null === $deadline || microtime( true ) < $deadline;
+        }
+
+        /**
+         * v1.1.18 — log attività onesto e MAI bloccante: wrap di Nexus_DB::
+         * insert_activity() con guard class_exists/method_exists + try/catch
+         * Throwable (stesso pattern inline già usato ovunque nel motore; qui
+         * centralizzato per le nuove decisioni AL-10/budget).
+         *
+         * @param int    $agent_id Agente associato (0 = globale).
+         * @param string $action   Tipo attività (es. 'ai_bump', 'ai_retry_budget').
+         * @param string $detail   Dettaglio in italiano.
+         * @param string $status   'info'|'warning'.
+         */
+        private static function log_engine_activity( $agent_id, $action, $detail, $status = 'info' ) {
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'insert_activity' ) ) {
+                        try {
+                                Nexus_DB::insert_activity( $agent_id, $action, $detail, $status );
+                        } catch ( Throwable $e ) {
+                                // logging mai bloccante
+                        }
+                }
         }
 
         /**

@@ -33,6 +33,25 @@
  * Nexus_DB::finish_agent_run()         — chiude la run: esito + durata + telemetria (v1.1.16)
  * Nexus_DB::get_agent_runs()           — ultime run di un agente (v1.1.16)
  *
+ * v1.1.18 (FIX-5) — SEARCH FULLTEXT (schema v9) + RETENTION COMPLETA (AL-9/B/C):
+ *   Ricerca articoli: la condizione search è costruita da UN helper condiviso
+ *   (article_search_condition) usato da articles() E count_articles(): le due
+ *   query applicano la STESSA condizione e scelgono SEMPRE la stessa via
+ *   (FULLTEXT o LIKE) — il count non può più divergere dalla lista (AL-9:
+ *   prima il count ignorava search, paginazione errata su ogni ricerca).
+ *   Schema v9: indice FULLTEXT nexus_search_ft su nexus_articles (title,
+ *   summary, content — la colonna "excerpt" del fix corrisponde a summary
+ *   nello schema reale) creato in migrate_schema_v9() con guard
+ *   information_schema.STATISTICS + check versione server (FULLTEXT InnoDB:
+ *   MySQL 5.6+ / MariaDB 10.0.5+) + try/catch (mai fatale): se l'indice manca
+ *   o il server non lo supporta la ricerca resta LIKE senza alcun errore.
+ *   Retention (estensione v1.1.13): nexus_agent_runs più vecchie di 30 giorni
+ *   (batch 500, filtro dev nexus_run_retention_days), nexus_article_revisions
+ *   oltre la 10ª per articolo (filtro dev nexus_revision_keep) e più vecchie
+ *   di 90 giorni (filtro dev nexus_revision_retention_days), job 'dead'
+ *   (dead letter) più vecchi di 30 giorni (filtro dev
+ *   nexus_job_dead_retention_days) — tutto batched e idempotente nel cron
+ *   retention esistente, zero-crescita esteso alle tabelle v8/v1.1.9.
  * v1.1.4 — NUOVE COLONNE (contratto T-02):
  *   nexus_agents:  ai_provider (provider AI dedicato dell'agente, '' = provider globale
  *                  dalle impostazioni), role ('giornalista' | 'capo_redattore'),
@@ -155,7 +174,22 @@ class Nexus_DB {
         //           durata, step JSON e contatori). Tabella NUOVA: la crea dbDelta
         //           da schema() a install()/maybe_upgrade (stesso percorso v4/v6);
         //           nessuna ALTER su tabelle esistenti → nessuna migration manuale.
-        const DB_REVISION     = 8;
+        // v1.1.18 — schema v9: FULLTEXT nexus_search_ft su nexus_articles
+        //           (title, summary, content) per MATCH...AGAINST IN BOOLEAN MODE
+        //           di articles()/count_articles(). Migration idempotente ×2
+        //           (activation + maybe_upgrade) con guard information_schema
+        //           STATISTICS + check versione + try/catch: server senza FULLTEXT
+        //           InnoDB (MySQL < 5.6 / MariaDB < 10.0.5) restano su LIKE, senza
+        //           errori e senza DDL.
+        const DB_REVISION     = 9;
+
+        /**
+         * Nome dell'indice FULLTEXT della tabella articoli (schema v9, v1.1.18).
+         * Usato sia dalla migration (creazione protetta) sia dalla ricerca a
+         * runtime (articles_fulltext_available: esistenza verificata su
+         * information_schema.STATISTICS con INDEX_TYPE='FULLTEXT').
+         */
+        const ARTICLES_FT_INDEX = 'nexus_search_ft';
 
         /* ============ RETENTION (v1.1.13, O2) ============ */
 
@@ -185,6 +219,14 @@ class Nexus_DB {
          * _transient_* / _transient_timeout_* scadute vengono eliminate insieme).
          */
         const RETENTION_TRANSIENT_BATCH = 500;
+
+        /**
+         * Righe per singolo DELETE sulle tabelle con LONGTEXT pesanti (v1.1.18):
+         * telemetria run agenti (steps JSON della pipeline) e revisioni articoli
+         * (content completo per snapshot). Batch ridotto rispetto a
+         * RETENTION_BATCH per non tenere a lungo lock su righe voluminose.
+         */
+        const RETENTION_BATCH_RUNS = 500;
 
         /**
          * Default settings (portati da Prisma Settings model).
@@ -630,6 +672,7 @@ class Nexus_DB {
                 self::migrate_schema_v2();
                 self::migrate_schema_v3();
                 self::migrate_schema_v7();
+                self::migrate_schema_v9();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
                 update_option( self::DB_REVISION_KEY, (string) self::DB_REVISION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
@@ -774,6 +817,90 @@ class Nexus_DB {
                                 $wpdb->query( "ALTER TABLE {$arts} ADD KEY {$index} ({$index})" ); // phpcs:ignore WordPress.DB
                         }
                 }
+        }
+
+        /**
+         * Migrazione schema v9 (v1.1.18, FIX-5/C) per installazioni esistenti — idempotente.
+         *
+         * Indice FULLTEXT nexus_search_ft su nexus_articles (title, summary,
+         * content): la ricerca di articles()/count_articles() passa da LIKE %%
+         * (full-scan su LONGTEXT, audit B5) a MATCH...AGAINST IN BOOLEAN MODE
+         * quando l'indice esiste; count e lista percorrono SEMPRE la stessa via
+         * (helper condiviso article_search_condition).
+         *
+         * Difese in cascata (mai fatale, contratto del progetto):
+         *  1. guard information_schema.STATISTICS (INDEX_TYPE='FULLTEXT'): se
+         *     l'indice esiste già la migration è no-op — rientrante ×2
+         *     (activation + maybe_upgrade), stesso pattern delle v2/v3/v7;
+         *  2. check versione server: FULLTEXT su InnoDB richiede MySQL 5.6+ o
+         *     MariaDB 10.0.5+ (le vecchie MariaDB si dichiarano
+         *     "5.5.5-10.x-MariaDB": il prefisso di compatibilità viene
+         *     decodificato); server non idoneo → NESSUNA DDL, resta LIKE;
+         *  3. creazione in try/catch (Exception + Throwable): un fallimento
+         *     (engine, permessi, lock) non è fatale e non rompe
+         *     attivazione/upgrade. wpdb di default non lancia eccezioni
+         *     (ritorna false e logga): il catch copre i setup con handler che
+         *     le trasformano; il prossimo giro di install() ritenta (punto 1).
+         *
+         * Le installazioni NUOVE ricevono l'indice dallo stesso percorso:
+         * install() chiama migrate_schema_v9() dopo dbDelta (il CREATE TABLE in
+         * schema() NON tocca FULLTEXT: dbDelta non lo gestisce in modo
+         * uniforme su tutti i setup).
+         *
+         * @return void
+         */
+        private static function migrate_schema_v9() {
+                global $wpdb;
+                $arts = self::tables()['articles'];
+
+                // 1) Idempotenza: indice FULLTEXT già presente → zero DDL.
+                $exists = (int) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s AND INDEX_TYPE = 'FULLTEXT'",
+                        DB_NAME, $arts, self::ARTICLES_FT_INDEX
+                ) );
+                if ( $exists ) {
+                        return;
+                }
+
+                // 2) Supporto server (FULLTEXT su InnoDB): MySQL 5.6+ / MariaDB 10.0.5+.
+                if ( ! self::supports_innodb_fulltext() ) {
+                        return;
+                }
+
+                // 3) Creazione protetta: fallimento NON fatale (ricerca resta LIKE).
+                try {
+                        $wpdb->query( "ALTER TABLE {$arts} ADD FULLTEXT KEY " . self::ARTICLES_FT_INDEX . " (title, summary, content)" ); // phpcs:ignore WordPress.DB
+                } catch ( Exception $e ) {
+                        return;
+                } catch ( Throwable $e ) {
+                        return;
+                }
+        }
+
+        /**
+         * Il server corrente supporta l'indice FULLTEXT su InnoDB?
+         *
+         * InnoDB FULLTEXT: MySQL 5.6+ e MariaDB 10.0.5+. La tabella articoli
+         * usa l'engine di default del server (InnoDB nei WP moderni); con
+         * server più vecchi non si tenta alcuna DDL (nessun errore, resta LIKE).
+         *
+         * @return bool
+         */
+        private static function supports_innodb_fulltext() {
+                global $wpdb;
+                $version = (string) $wpdb->get_var( 'SELECT VERSION()' ); // phpcs:ignore WordPress.DB
+                if ( '' === $version ) {
+                        return false; // versione non leggibile: resta LIKE, nessun rischio.
+                }
+                if ( false !== stripos( $version, 'mariadb' ) ) {
+                        // MariaDB 10.0/10.1 si dichiarano "5.5.5-10.x.y-MariaDB":
+                        // la versione reale va estratta dal prefisso di compatibilità.
+                        if ( preg_match( '/^5\\.5\\.5-(\\d+(?:\\.\\d+)+)-MariaDB/i', $version, $m ) ) {
+                                $version = $m[1];
+                        }
+                        return version_compare( $version, '10.0.5', '>=' );
+                }
+                return version_compare( $version, '5.6', '>=' );
         }
 
         /**
@@ -1104,11 +1231,9 @@ class Nexus_DB {
                         $params[] = absint( $args['agent_id'] );
                 }
                 if ( ! empty( $args['search'] ) ) {
-                        $like     = '%' . $wpdb->esc_like( sanitize_text_field( $args['search'] ) ) . '%';
-                        $where[]  = '(title LIKE %s OR summary LIKE %s OR content LIKE %s)';
-                        $params[] = $like;
-                        $params[] = $like;
-                        $params[] = $like;
+                        // v1.1.18 (AL-9/C): condizione UNICA condivisa con
+                        // count_articles() — stessa via FULLTEXT/LIKE per lista e count.
+                        $where[] = self::article_search_condition( (string) $args['search'], $params );
                 }
 
                 $orderby  = in_array( (string) ( $args['orderby'] ?? '' ), array( 'id', 'created_at', 'published_at', 'quality_score', 'views' ), true )
@@ -1152,11 +1277,122 @@ class Nexus_DB {
                         $where[]  = 'agent_id = %d';
                         $params[] = absint( $args['agent_id'] );
                 }
+                // v1.1.18 (AL-9): il count applicava SOLO status/category/agent_id e
+                // ignorava search mentre articles() lo applicava → total/total_pages
+                // di rest_articles e rest_public_articles sbagliati su OGNI ricerca
+                // (paginazione incoerente col totale). Ora la STESSA condizione,
+                // via lo stesso helper (FULLTEXT o LIKE, sempre la stessa via).
+                if ( ! empty( $args['search'] ) ) {
+                        $where[] = self::article_search_condition( (string) $args['search'], $params );
+                }
                 $sql = "SELECT COUNT(*) FROM {$table} WHERE " . implode( ' AND ', $where );
                 if ( $params ) {
                         $sql = $wpdb->prepare( $sql, ...$params );
                 }
                 return (int) $wpdb->get_var( $sql );
+        }
+
+        /* ============ SEARCH ARTICOLI (v1.1.18, AL-9/C) ============ */
+
+        /**
+         * Condizione SQL di ricerca articoli, UNICA per articles() e
+         * count_articles() (AL-9): le due query applicano ESATTAMENTE la stessa
+         * condizione e scelgono SEMPRE la stessa via, così il conteggio non può
+         * divergere dalla lista.
+         *
+         *  - Indice FULLTEXT nexus_search_ft presente (schema v9): MATCH...
+         *    AGAINST IN BOOLEAN MODE (ogni parola >= 3 caratteri è obbligatoria,
+         *    prefix match con '*');
+         *  - indice assente o server non idoneo: LIKE %% su title/summary/content
+         *    (comportamento storico, esc_like incluso).
+         *
+         * I placeholder della condizione sono appaiati ai valori pushati IN
+         * CODA a $params: la chiamante li passa a prepare nello stesso ordine
+         * (stessa meccanica dello spread ...$params preesistente).
+         *
+         * @param string $search Termine di ricerca utente.
+         * @param array  $params Parametri di prepare (per riferimento).
+         * @return string Frammento di WHERE ('1=1' se il termine non filtra nulla).
+         */
+        private static function article_search_condition( $search, &$params ) {
+                global $wpdb;
+                $term = trim( sanitize_text_field( (string) $search ) );
+                if ( '' === $term ) {
+                        return '1=1';
+                }
+
+                if ( self::articles_fulltext_available() ) {
+                        $boolean = self::boolean_search_term( $term );
+                        if ( '' !== $boolean ) {
+                                $params[] = $boolean;
+                                return '(MATCH (title, summary, content) AGAINST (%s IN BOOLEAN MODE))';
+                        }
+                        // Solo parole sotto la soglia del tokenizer FULLTEXT
+                        // (es. "di", "ai"): nessun filtro, come a termine vuoto
+                        // (stessa via garantita per lista e count).
+                        return '1=1';
+                }
+
+                // Fallback LIKE: comportamento storico di articles(), ora
+                // identico per count_articles().
+                $like = '%' . $wpdb->esc_like( $term ) . '%';
+                array_push( $params, $like, $like, $like );
+                return '(title LIKE %s OR summary LIKE %s OR content LIKE %s)';
+        }
+
+        /**
+         * Converte il termine di ricerca in una query BOOLEAN MODE sicura: i
+         * caratteri speciali boolean (+ - > < ( ) ~ * " @) NON possono
+         * sopravvivere perché le parole vengono estratte su lettere/numeri
+         * Unicode (tutto il resto è separatore, come i motori di ricerca).
+         * Ogni parola (max 10, max 50 caratteri) diventa '+parola*': richiesta
+         * + prefix. Le parole più corte di 3 caratteri sono scartate: sotto la
+         * soglia minima del tokenizer FULLTEXT di InnoDB
+         * (innodb_ft_min_token_size, default 3).
+         *
+         * @param string $search Termine già sanitizzato.
+         * @return string Query boolean (vuota se nessuna parola utilizzabile).
+         */
+        private static function boolean_search_term( $search ) {
+                $words = preg_split( '/[^\\p{L}\\p{N}]+/u', (string) $search, -1, PREG_SPLIT_NO_EMPTY );
+                if ( ! is_array( $words ) ) {
+                        return '';
+                }
+                $parts = array();
+                foreach ( $words as $word ) {
+                        if ( mb_strlen( $word ) < 3 ) {
+                                continue;
+                        }
+                        $parts[] = '+' . mb_substr( $word, 0, 50 ) . '*';
+                        if ( count( $parts ) >= 10 ) {
+                                break;
+                        }
+                }
+                return implode( ' ', $parts );
+        }
+
+        /**
+         * L'indice FULLTEXT degli articoli è presente su QUESTO schema?
+         *
+         * information_schema.STATISTICS con INDEX_TYPE='FULLTEXT': la DDL può
+         * girare solo in install()/maybe_upgrade(), quindi il risultato è
+         * stabile per l'intera request (memorizzato in variabile statica: la
+         * ricerca non riscande information_schema a ogni chiamata).
+         *
+         * @return bool
+         */
+        private static function articles_fulltext_available() {
+                static $available = null;
+                if ( null !== $available ) {
+                        return $available;
+                }
+                global $wpdb;
+                $table     = self::tables()['articles'];
+                $available = ( (int) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s AND INDEX_TYPE = 'FULLTEXT'",
+                        DB_NAME, $table, self::ARTICLES_FT_INDEX
+                ) ) > 0 );
+                return $available;
         }
 
         public static function get_article( $id ) {
@@ -2212,13 +2448,29 @@ class Nexus_DB {
          *    'nexus_metrics_retention_days', default 365 giorni — i dati
          *    servono allo storico del learning, NON 90: la finestra di learn
          *    è 30gg e serve retrospettiva più lunga);
+         *  - v1.1.18 (FIX-5/B) RUN AGENTI (nexus_agent_runs): righe con started_at
+         *    più vecchie della finestra dev 'nexus_run_retention_days' (default
+         *    30 giorni), batch 500 — ogni tick pipeline scrive una riga per
+         *    agente con steps LONGTEXT: senza pulizia la telemetria v1.1.16
+         *    cresce senza fine (contratto zero-crescita v1.1.13);
+         *  - v1.1.18 (FIX-5/B) REVISIONI (nexus_article_revisions): doppio
+         *    passaggio — (a) created_at più vecchie di
+         *    'nexus_revision_retention_days' (default 90 giorni), (b) cap
+         *    'nexus_revision_keep' (default 10) revisioni più recenti per
+         *    articolo: il contenuto LONGTEXT completo per snapshot non cresce
+         *    più senza limite (audit M3);
+         *  - v1.1.18 (FIX-5/B) JOB DEAD LETTER (nexus_jobs status='dead',
+         *    scritti da requeue_stale): più vecchi della finestra dev
+         *    'nexus_job_dead_retention_days' (default 30 giorni) — cleanup_jobs
+         *    esclude 'dead' di proposito, qui è la via d'uscita programmata;
          *  - TRANSIENT scaduti del plugin (prefissi nexus_full_, nexus_log1_,
          *    nexus_src_): le coppie opzione _transient_* / _transient_timeout_*
          *    la cui scadenza è passata vengono eliminate insieme (sul DB:
          *    con object cache esterna le query non trovano righe, no-op).
          *
-         * TUTTO a BATCH (RETENTION_BATCH righe per DELETE) con budget di tempo
-         * RETENTION_TIME_BUDGET: il cron si ferma pulito a metà lavoro e
+         * TUTTO a BATCH (RETENTION_BATCH righe per DELETE, RETENTION_BATCH_RUNS
+         * = 500 per le tabelle con LONGTEXT pesanti: run/revisioni) con budget
+         * di tempo RETENTION_TIME_BUDGET: il cron si ferma pulito a metà lavoro e
          * completa al giro successivo. Log attività SOLO se c'è qualcosa da
          * raccontare (righe rimosse o budget raggiunto): un giro vuoto non
          * inquina il feed attività.
@@ -2238,10 +2490,25 @@ class Nexus_DB {
                 $log_cutoff = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $log_days * DAY_IN_SECONDS );
                 $met_cutoff = gmdate( 'Y-m-d', strtotime( current_time( 'mysql' ) ) - $met_days * DAY_IN_SECONDS );
 
+                // v1.1.18 (FIX-5/B): finestre dei NUOVI percorsi retention (stesso
+                // pattern: SOLO filtri dev, nessuna UI; stessi orologi del resto
+                // del metodo — current_time('mysql') coerente ai due lati).
+                $run_days  = max( 1, (int) apply_filters( 'nexus_run_retention_days', 30 ) );
+                $rev_days  = max( 1, (int) apply_filters( 'nexus_revision_retention_days', 90 ) );
+                $dead_days = max( 1, (int) apply_filters( 'nexus_job_dead_retention_days', 30 ) );
+                $rev_keep  = max( 1, (int) apply_filters( 'nexus_revision_keep', 10 ) );
+
+                $run_cutoff  = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $run_days * DAY_IN_SECONDS );
+                $rev_cutoff  = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $rev_days * DAY_IN_SECONDS );
+                $dead_cutoff = gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - $dead_days * DAY_IN_SECONDS );
+
                 $deleted_logs       = 0;
                 $deleted_metrics    = 0;
                 $deleted_queries    = 0; // v1.1.14 (P2): search queries GSC (stessa finestra metriche).
                 $deleted_transients = 0;
+                $deleted_runs       = 0; // v1.1.18 (B): telemetria nexus_agent_runs.
+                $deleted_revisions  = 0; // v1.1.18 (B): revisioni articoli (finestra + cap).
+                $deleted_dead_jobs  = 0; // v1.1.18 (B): dead letter coda lavori.
                 $budget_hit         = false;
 
                 // 1) Log: activity/usage hanno indice created_at, publish_logs
@@ -2337,6 +2604,130 @@ class Nexus_DB {
                         }
                 }
 
+                // 2-ter) RUN AGENTI (v1.1.18, FIX-5/B): nexus_agent_runs più
+                //    vecchie della finestra dev nexus_run_retention_days (default
+                //    30 giorni). started_at è NOT NULL su ogni riga (anche run mai
+                //    chiuse da finish_agent_run): nessun orfano resta indietro.
+                //    Batch ridotto (RETENTION_BATCH_RUNS = 500): steps LONGTEXT.
+                if ( ! $budget_hit && ! empty( $t['agent_runs'] ) ) {
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$t['agent_runs']} WHERE started_at < %s LIMIT %d",
+                                        $run_cutoff,
+                                        self::RETENTION_BATCH_RUNS
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        break;
+                                }
+
+                                $deleted_runs += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH_RUNS ) {
+                                        break;
+                                }
+                        }
+                }
+
+                // 2-quater) REVISIONI ARTICOLI (v1.1.18, FIX-5/B): due passaggi
+                //    idempotenti e batched su nexus_article_revisions (content
+                //    LONGTEXT completo per snapshot):
+                //    (a) finestra temporale: created_at <
+                //        nexus_revision_retention_days (default 90 giorni);
+                //    (b) cap per articolo: una revisione va cancellata quando ha
+                //        >= nexus_revision_keep (default 10) revisioni più recenti
+                //        dello stesso articolo (id più alto = più recente):
+                //        restano SEMPRE le $rev_keep ultime. Self-join materializzato
+                //        in derived table (aggira ERROR 1093 MySQL: subquery sulla
+                //        tabella target; il GROUP BY impedisce il merging, quindi
+                //        la materializzazione è garantita anche con
+                //        derived_merge=ON su MySQL 8/MariaDB) e usa la KEY article_id.
+                if ( ! $budget_hit && ! empty( $t['revisions'] ) ) {
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$t['revisions']} WHERE created_at < %s LIMIT %d",
+                                        $rev_cutoff,
+                                        self::RETENTION_BATCH_RUNS
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        break;
+                                }
+
+                                $deleted_revisions += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH_RUNS ) {
+                                        break;
+                                }
+                        }
+
+                        // (b) cap: oltre le $rev_keep più recenti per articolo.
+                        if ( ! $budget_hit ) {
+                                while ( true ) {
+                                        if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                                $budget_hit = true;
+                                                break;
+                                        }
+
+                                        $affected = $wpdb->query( $wpdb->prepare(
+                                                "DELETE FROM {$t['revisions']} WHERE id IN ( SELECT id FROM ( SELECT r.id FROM {$t['revisions']} r JOIN {$t['revisions']} r2 ON r2.article_id = r.article_id AND r2.id > r.id GROUP BY r.id HAVING COUNT(r2.id) >= %d ) nx ) LIMIT %d",
+                                                $rev_keep,
+                                                self::RETENTION_BATCH_RUNS
+                                        ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                        if ( ! $affected ) {
+                                                break;
+                                        }
+
+                                        $deleted_revisions += (int) $affected;
+
+                                        if ( (int) $affected < self::RETENTION_BATCH_RUNS ) {
+                                                break;
+                                        }
+                                }
+                        }
+                }
+
+                // 2-quinquies) JOB DEAD LETTER (v1.1.18, FIX-5/B): i job 'dead'
+                //    restavano per sempre (cleanup_jobs li esclude di proposito,
+                //    via d'uscita solo reset_dead): qui escono dopo la finestra dev
+                //    nexus_job_dead_retention_days (default 30 giorni). Il prefisso
+                //    status della KEY status_sched copre status='dead'.
+                if ( ! $budget_hit && ! empty( $t['jobs'] ) ) {
+                        while ( true ) {
+                                if ( ( microtime( true ) - $start ) >= self::RETENTION_TIME_BUDGET ) {
+                                        $budget_hit = true;
+                                        break;
+                                }
+
+                                $affected = $wpdb->query( $wpdb->prepare(
+                                        "DELETE FROM {$t['jobs']} WHERE status = 'dead' AND updated_at < %s LIMIT %d",
+                                        $dead_cutoff,
+                                        self::RETENTION_BATCH
+                                ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder completi, tabella da allowlist interna.
+
+                                if ( ! $affected ) {
+                                        break;
+                                }
+
+                                $deleted_dead_jobs += (int) $affected;
+
+                                if ( (int) $affected < self::RETENTION_BATCH ) {
+                                        break;
+                                }
+                        }
+                }
+
                 // 3) Transient scaduti del plugin (stesso budget di tempo).
                 if ( ! $budget_hit ) {
                         $completed = self::purge_expired_transients( $start, $deleted_transients );
@@ -2346,7 +2737,8 @@ class Nexus_DB {
                 }
 
                 // Log finale solo se onesto raccontarlo (niente righe "0" quotidiane).
-                $total = $deleted_logs + $deleted_metrics + $deleted_queries + $deleted_transients;
+                $total = $deleted_logs + $deleted_metrics + $deleted_queries + $deleted_transients
+                        + $deleted_runs + $deleted_revisions + $deleted_dead_jobs;
 
                 if ( $total > 0 || $budget_hit ) {
                         $detail = sprintf(
@@ -2364,6 +2756,18 @@ class Nexus_DB {
                         // additiva SOLO quando c'è qualcosa di rimosso.
                         if ( $deleted_queries > 0 ) {
                                 $detail .= ' — query GSC: ' . $deleted_queries . ' righe rimosse';
+                        }
+
+                        // v1.1.18 (FIX-5/B): note additive per i NUOVI percorsi
+                        // retention (stesso pattern delle query GSC v1.1.14).
+                        if ( $deleted_runs > 0 ) {
+                                $detail .= ' — run agenti: ' . $deleted_runs . ' righe rimosse';
+                        }
+                        if ( $deleted_revisions > 0 ) {
+                                $detail .= ' — revisioni: ' . $deleted_revisions . ' righe rimosse';
+                        }
+                        if ( $deleted_dead_jobs > 0 ) {
+                                $detail .= ' — dead letter: ' . $deleted_dead_jobs . ' job rimossi';
                         }
 
                         if ( $budget_hit ) {

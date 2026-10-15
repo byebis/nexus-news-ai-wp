@@ -867,7 +867,12 @@ class Nexus_Providers {
                 $response = wp_remote_post(
                         'https://openrouter.ai/api/v1/auth/keys',
                         array(
-                                'timeout' => 20,
+                                // v1.1.18 (AL-5): stesso filtro del motore AI
+                                // ('nexus_ai_request_timeout', argomenti: int $timeout, int
+                                // $max_tokens). Lo scambio OAuth non genera token
+                                // ($max_tokens 0): il default resta 20s ma è ora filtrabile
+                                // in modo coerente su tutte le chiamate HTTP AI del plugin.
+                                'timeout' => max( 5, (int) apply_filters( 'nexus_ai_request_timeout', 20, 0 ) ),
                                 'headers' => array(
                                         'Content-Type' => 'application/json',
                                         'Accept'       => 'application/json',
@@ -997,6 +1002,18 @@ class Nexus_Providers {
          * guardia D2 degli strumenti MCP (copia autonoma: le altre due sono
          * private e non riutilizzabili senza accoppiare i moduli).
          *
+         * v1.1.18 (AL-4): riparata la guardia IPv6 — i confronti literal da 2 byte
+         * ("\x00\x01" === $packed) non potevano MAI essere veri contro i 16 byte
+         * di inet_pton() (codice morto): ::1, :: e le reti locali IPv6 passavano
+         * la guardia come pubbliche. Ora rileva: ::1 (loopback), :: (unspecified),
+         * IPv4-mapped ::ffff:0:0/96 (entrambe le notazioni, ri-validati con la
+         * logica IPv4 dedicata), fc00::/7 (unique local), fe80::/10 (link local),
+         * fec0::/10 (site-local deprecato, fail-closed), ff00::/8 (multicast),
+         * 2001:db8::/32 (documentazione) e ogni forma "::x" ambigua (IPv4-compatible
+         * deprecato). Fail-closed su qualunque ambiguità.
+         * v1.1.18 (allineamento audit B6): lista IPv4 portata alla stessa copertura
+         * della copia engine (aggiunte 224.0.0.0/4 multicast e 240.0.0.0/4 reserved).
+         *
          * @param string $host Hostname o IP.
          * @return bool
          */
@@ -1012,30 +1029,24 @@ class Nexus_Providers {
                 }
 
                 if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
-                        // IPv4-mapped (::ffff:a.b.c.d) → valuta la parte IPv4.
-                        if ( preg_match( '/^::ffff:(\d+\.\d+\.\d+\.\d+)$/', $ip, $m ) ) {
-                                $ip = $m[1];
-                        } else {
-                                $packed = @inet_pton( $ip );
-                                if ( false === $packed ) {
-                                        return true;
-                                }
-                                // ::1 (loopback) e :: (unspecified).
-                                if ( "\x00\x01" === $packed || "\x00\x00" === $packed ) {
-                                        return true;
-                                }
-                                $head = ord( $packed[0] );
-                                // fc00::/7 (unique local), fe80::/10 (link-local), ff00::/8 (multicast).
-                                if ( 0xfc === ( $head & 0xfe ) || 0xfe === ( $head & 0xff ) || 0xff === ( $head & 0xff ) ) {
-                                        return true;
-                                }
-                                return false;
-                        }
+                        return self::ipv6_is_private( $ip );
                 }
 
-                $long = ip2long( $ip );
+                return self::ipv4_is_private( $ip );
+        }
+
+        /**
+         * v1.1.18 (AL-4) — logica IPv4 della guardia SSRF, estratta: riusata anche
+         * per gli IPv4-mapped (::ffff:a.b.c.d) estratti dalla coda dell'IPv6.
+         * Fail-closed su IP malformato.
+         *
+         * @param string $ip IPv4 in notazione dotted.
+         * @return bool
+         */
+        private static function ipv4_is_private( $ip ) {
+                $long = ip2long( (string) $ip );
                 if ( false === $long ) {
-                        return true;
+                        return true; // Fail-closed.
                 }
                 $long = sprintf( '%u', $long );
 
@@ -1053,6 +1064,65 @@ class Nexus_Providers {
                         || $cidr_match( '192.0.0.0', 24 )
                         || $cidr_match( '192.168.0.0', 16 )
                         || $cidr_match( '100.64.0.0', 10 )
-                        || $cidr_match( '198.18.0.0', 15 );
+                        || $cidr_match( '198.18.0.0', 15 )
+                        || $cidr_match( '224.0.0.0', 4 )
+                        || $cidr_match( '240.0.0.0', 4 );
+        }
+
+        /**
+         * v1.1.18 (AL-4) — logica IPv6 della guardia SSRF (prima era codice morto:
+         * confronti literal da 2 byte contro il packed da 16 byte di inet_pton).
+         * Lavora sui byte del packed (niente dipendenza dalla notazione testuale).
+         * Fail-closed su qualunque ambiguità (inet_pton fallito, forme "::x" non
+         * riconosciute).
+         *
+         * @param string $ip IPv6 valido (già validato con FILTER_VALIDATE_IP).
+         * @return bool
+         */
+        private static function ipv6_is_private( $ip ) {
+                $packed = @inet_pton( (string) $ip );
+                if ( false === $packed || 16 !== strlen( $packed ) ) {
+                        return true; // Fail-closed.
+                }
+
+                // ::1 (loopback) e :: (unspecified).
+                if ( $packed === ( str_repeat( "\x00", 15 ) . "\x01" ) || $packed === str_repeat( "\x00", 16 ) ) {
+                        return true;
+                }
+
+                // IPv4-mapped ::ffff:0:0/96: entrambe le notazioni (::ffff:a.b.c.d e
+                // ::ffff:aabb:ccdd) producono lo stesso packed. Estrai la parte IPv4
+                // e ri-validala con la logica dedicata.
+                if ( str_repeat( "\x00", 10 ) === substr( $packed, 0, 10 ) && "\xff\xff" === substr( $packed, 10, 2 ) ) {
+                        $v4 = ord( $packed[12] ) . '.' . ord( $packed[13] ) . '.' . ord( $packed[14] ) . '.' . ord( $packed[15] );
+                        return self::ipv4_is_private( $v4 );
+                }
+
+                // Forme "::x" ambigue (IPv4-compatible deprecato ::a.b.c.d): fail-closed.
+                if ( str_repeat( "\x00", 12 ) === substr( $packed, 0, 12 ) ) {
+                        return true;
+                }
+
+                $b0 = ord( $packed[0] );
+                $b1 = ord( $packed[1] );
+
+                // fc00::/7 (unique local: fc00-fdff).
+                if ( 0xfc === ( $b0 & 0xfe ) ) {
+                        return true;
+                }
+
+                // fe80::/10 (link local: fe80-febf) e ff00::/8 (multicast: ff00-ffff);
+                // per prudenza fail-closed è incluso anche il site-local deprecato
+                // fec0::/10 (fe00-feff), copertura già presente prima del fix.
+                if ( 0xfe === $b0 || 0xff === $b0 ) {
+                        return true;
+                }
+
+                // 2001:db8::/32 (documentazione).
+                if ( 0x20 === $b0 && 0x01 === $b1 && "\x0d\xb8" === substr( $packed, 2, 2 ) ) {
+                        return true;
+                }
+
+                return false;
         }
 }
