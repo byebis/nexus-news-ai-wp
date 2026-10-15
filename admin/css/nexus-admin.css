@@ -2889,3 +2889,40 @@ hr.nxa-hairline {
 .nxa-onboarding-empty {
   padding: 56px 16px;
 }
+
+/* ==========================================================================
+ * 1shot-UI-Kit v2.0 Compatibility & Harmony Bridge
+ * ======================================================================= */
+.wrap.nexus-admin.sui-wrap {
+  font-family: var(--sui-font);
+}
+
+.sui-page-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sui-border-soft, rgba(29, 35, 39, 0.08));
+}
+
+.nxa-stat-card {
+  border-radius: var(--sui-radius, 10px) !important;
+  border-color: var(--sui-border, #dcdcde) !important;
+  transition: transform var(--sui-trans, 0.15s ease), box-shadow var(--sui-trans, 0.15s ease), border-color var(--sui-trans, 0.15s ease);
+}
+
+.nxa-stat-card:hover {
+  border-color: var(--sui-accent-line, rgba(19, 94, 150, 0.45));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.nxa-btn {
+  border-radius: var(--sui-radius-sm, 6px) !important;
+  font-family: var(--sui-font) !important;
+}
+
+.nxa-btn-primary {
+  background: var(--sui-primary, #2271b1) !important;
+  border-color: var(--sui-primary-dark, #135e96) !important;
+}
+
+.nxa-btn-primary:hover {
+  background: var(--sui-primary-dark, #135e96) !important;
+}

@@ -1,0 +1,823 @@
+/**
+ * 1shot-UI-Kit v2.0.0 — Design system condiviso per i plugin byebis
+ * (1shotwp · keeper-ai · 1shot-Visibility · nexus-news-ai)
+ *
+ * Unico FOGLIO DI STILE (solo CSS, zero JS) da caricare in TUTTI i plugin.
+ * Prefisso classi: .sui- (Shot UI) — zero collisioni con WP core e tra plugin.
+ * Token: --sui-* su :root. Tema: LIGHT only.
+ *
+ * v1.1.0 — Linguaggio visivo minimalista (modello nexus-news-ai):
+ *   titoli h1/h2 con trattino-accento gradiente, numeri stat in gradiente
+ *   testuale, superfici flat con hover-lift, page head senza banner.
+ * v1.1.1 — Trattino 42→56px (token --sui-dash-w/h) + font allineato 1:1
+ *   allo stack di sistema di WP admin (--sui-font / --sui-font-mono).
+ * v2.0.0 — LEGGERO/VELOCE/NATIVO: rimosso il tema scuro (solo light),
+ *   rimosso TUTTO il JS del kit (toast/confirm/modal/tabs/theme: i plugin
+ *   non li usavano; per modali/conferme usare i componenti nativi WP o
+ *   <details>/<summary> per gli accordion). Rimossi i componenti CSS
+ *   senza uso (chip, tabs, toast, modal, skeleton, footer, busy, delta,
+ *   sticky, numbered). Il look resta identico.
+ *
+ * Indice:
+ *   1.  Token di design (light)
+ *   2.  Base pagina (.sui-wrap) + hero + section
+ *   3.  Bottoni (.sui-btn)
+ *   4.  Card, grid, stat
+ *   5.  Badge, pill, dot
+ *   6.  Tabelle
+ *   7.  Form (field, input, select, toggle)
+ *   8.  Accordion (div+JS del plugin, o <details> nativo)
+ *   9.  Notice
+ *  10.  Spinner, empty state, progress
+ *  11.  Codebox
+ *  12.  A11y (focus, reduced-motion) + print
+ *
+ * Palette base: WP-core #2271b1 + accento gradiente blu scuro→chiaro
+ * (#135e96→#72aee6). Hero navy #101c2c→…→#3f86c2 (variante banner).
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Token di design — tema CHIARO (default)
+ * ---------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Superfici */
+  --sui-bg: #f0f0f1;
+  --sui-surface: #ffffff;
+  --sui-surface-2: #f6f7f7;
+  --sui-surface-3: #fbfbfc;
+  --sui-border: #dcdcde;
+  --sui-border-strong: #c3c4c7;
+  --sui-border-soft: rgba(29, 35, 39, 0.08);
+
+  /* Testo */
+  --sui-text: #1d2327;
+  --sui-text-2: #50575e;
+  --sui-muted: #646970;
+  --sui-link: #2271b1;
+  --sui-link-hover: #135e96;
+  --sui-code-text: #135e96;
+
+  /* Brand */
+  --sui-primary: #2271b1;
+  --sui-primary-dark: #135e96;
+  --sui-primary-soft: rgba(34, 113, 177, 0.12);
+  --sui-on-primary: #ffffff;
+
+  /* Trattino-accento dei titoli (firma minimalista): dimensione in token
+     per ritoccarla in un solo punto (v1.1.1: 42 → 56px su richiesta) */
+  --sui-dash-w: 56px;
+  --sui-dash-h: 3px;
+
+  /* Font: lo STESSO stack di sistema di WP admin (nexus non carica
+     webfont, eredita questo). Allineato 1:1 al core così il rendering
+     dentro l'admin è identico tra i 4 plugin. Un solo punto di swap se
+     un domani si vorrà un webfont. */
+  --sui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  --sui-font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo,
+    Consolas, monospace;
+
+  /* Accento gradiente blu scuro → blu chiaro: dash titoli, tab attive,
+     progress, bordi hover. Variante "-text" con stop più scuri (3:1+ su
+     bianco anche al termine più chiaro) per il gradiente sui NUMERI stat. */
+  --sui-accent-grad: linear-gradient(135deg, #135e96 0%, #72aee6 100%);
+  --sui-accent-grad-text: linear-gradient(135deg, #0a4b78 0%, #3f8cc9 100%);
+  --sui-accent-line: rgba(19, 94, 150, 0.45);
+  --sui-accent-glow: rgba(19, 94, 150, 0.20);
+
+  --sui-hero-grad: linear-gradient(135deg, #101c2c 0%, #1c3a5e 42%, #25618f 72%, #3f86c2 100%);
+  --sui-hero-text: #ffffff;
+  --sui-hero-muted: rgba(255, 255, 255, 0.8);
+
+  /* Raggi */
+  --sui-radius-sm: 6px;
+  --sui-radius: 10px;
+  --sui-radius-lg: 14px;
+  --sui-radius-pill: 999px;
+
+  /* Ombre */
+  --sui-shadow: 0 1px 2px rgba(16, 28, 44, 0.05), 0 8px 24px rgba(16, 28, 44, 0.07);
+
+  /* Stato: verde ok */
+  --sui-ok: #00a32a;
+  --sui-ok-text: #116329;
+  --sui-ok-bg: rgba(0, 163, 42, 0.10);
+  --sui-ok-line: rgba(0, 163, 42, 0.35);
+  /* Stato: arancio warn */
+  --sui-warn: #dba617;
+  --sui-warn-text: #755100;
+  --sui-warn-bg: rgba(219, 166, 23, 0.14);
+  --sui-warn-line: rgba(219, 166, 23, 0.40);
+  /* Stato: rosso err */
+  --sui-err: #d63638;
+  --sui-err-text: #8a2424;
+  --sui-err-bg: rgba(214, 54, 56, 0.10);
+  --sui-err-line: rgba(214, 54, 56, 0.38);
+  /* Stato: blu info */
+  --sui-info: #72aee6;
+  --sui-info-text: #0a4b78;
+  --sui-info-bg: rgba(114, 174, 230, 0.15);
+  --sui-info-line: rgba(34, 113, 177, 0.35);
+  /* Stato: grigio neutro */
+  --sui-neutral: #a7aaad;
+  --sui-neutral-text: #50575e;
+  --sui-neutral-bg: rgba(167, 170, 173, 0.15);
+  --sui-neutral-line: rgba(167, 170, 173, 0.40);
+
+  /* Input */
+  --sui-input-bg: #ffffff;
+  --sui-input-line: #dcdcde;
+  --sui-input-text: #1d2327;
+  --sui-input-ring: 0 0 0 3px rgba(34, 113, 177, 0.35);
+
+  /* Interattivi */
+  --sui-row-hover: #f8fafc;
+  --sui-scroll-thumb: #c3c4c7;
+
+  /* Fill solidi: contrasto AA con testo bianco
+     (--sui-primary schiarisce per link/testo, il fill resta scuro) */
+  --sui-primary-fill: #2271b1;
+  --sui-primary-fill-hover: #135e96;
+  /* Gradiente sottilissimo sul fill del bottone primario (stessa luminanza,
+     resta AA col bianco): identità "blu scuro→chiaro" senza rumore */
+  --sui-primary-fill-grad: linear-gradient(180deg, #2a7ab8 0%, #2271b1 100%);
+  --sui-err-ring: rgba(214, 54, 56, 0.15);
+  --sui-warn-graphic: #b26a00;
+
+  /* Spacing scale (da 1shotwp) */
+  --sui-sp-1: 4px;
+  --sui-sp-2: 8px;
+  --sui-sp-3: 12px;
+  --sui-sp-4: 16px;
+  --sui-sp-5: 20px;
+  --sui-sp-6: 24px;
+  --sui-sp-7: 32px;
+  --sui-sp-8: 40px;
+
+  /* Type scale (da 1shotwp) */
+  --sui-fs-xs: 11px;
+  --sui-fs-sm: 12.5px;
+  --sui-fs-md: 14px;
+  --sui-fs-lg: 16px;
+  --sui-fs-xl: 20px;
+  --sui-fs-2xl: 26px;
+  --sui-fs-stat: 28px;
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Base pagina + hero + section
+ * ---------------------------------------------------------------------- */
+.sui-wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: var(--sui-sp-6) var(--sui-sp-4) var(--sui-sp-8);
+  color: var(--sui-text);
+  font-size: var(--sui-fs-md);
+  line-height: 1.55;
+  font-family: var(--sui-font);
+  scrollbar-color: var(--sui-scroll-thumb) transparent;
+  box-sizing: border-box;
+}
+.sui-wrap *,
+.sui-wrap *::before,
+.sui-wrap *::after { box-sizing: inherit; }
+
+.sui-section-title {
+  /* modello nxa h2 (≈1.12rem, 700): titoli di sezione più compatti */
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--sui-text);
+  margin: var(--sui-sp-7) 0 var(--sui-sp-4);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.sui-section-title small {
+  font-size: var(--sui-fs-sm);
+  font-weight: 400;
+  color: var(--sui-muted);
+  margin-inline-start: 8px;
+}
+/* FIRMA MINIMALISTA: trattino-accento gradiente sotto i titoli
+   (modello nxa h1::after/h2::after, allungato a 56×3px in v1.1.1;
+   pill, blu scuro→chiaro) */
+.sui-section-title::after,
+.sui-page-head__title::after {
+  content: "";
+  display: block;
+  width: var(--sui-dash-w);
+  height: var(--sui-dash-h);
+  margin-top: 8px;
+  border-radius: var(--sui-radius-pill);
+  background: var(--sui-accent-grad);
+}
+
+/* Page head minimalista — il DEFAULT senza banner (modello nxa: h1 +
+ * sottotitolo muted, niente scatola). L'hero navy resta come variante. */
+.sui-page-head { margin-bottom: var(--sui-sp-5); }
+.sui-page-head__title {
+  font-size: var(--sui-fs-2xl);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  color: var(--sui-text);
+}
+.sui-page-head__sub {
+  margin: 0 0 10px;
+  color: var(--sui-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.sui-page-head__actions {
+  display: flex;
+  gap: var(--sui-sp-3);
+  flex-wrap: wrap;
+  margin-top: var(--sui-sp-4);
+}
+
+.sui-wrap *::selection { background: rgba(34, 113, 177, 0.25); }
+.sui-wrap a { color: var(--sui-link); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.sui-wrap a:hover { color: var(--sui-link-hover); }
+
+/* Hero navy (VARIANTE banner, opzionale): più slim della v1.0, gradiente
+   esteso dal blu scuro al blu chiaro */
+.sui-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--sui-hero-grad);
+  color: var(--sui-hero-text);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+  border-radius: var(--sui-radius-lg);
+  padding: var(--sui-sp-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sui-sp-6);
+  flex-wrap: wrap;
+  margin-bottom: var(--sui-sp-6);
+  box-shadow: 0 1px 2px rgba(16, 28, 44, 0.12), 0 16px 40px -12px rgba(16, 28, 44, 0.45);
+}
+/* Radiale di profondità: glow blu chiaro in alto a destra (fine del gradiente) */
+.sui-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(120% 90% at 88% -10%, rgba(114, 174, 230, 0.28), transparent 55%),
+    radial-gradient(90% 120% at 0% 110%, rgba(37, 97, 143, 0.55), transparent 60%);
+}
+.sui-hero__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sui-sp-4);
+  min-width: 0;
+}
+.sui-hero__logo {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--sui-radius);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.sui-hero__title {
+  font-size: var(--sui-fs-2xl);
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+/* Trattino-accento anche nel titolo dell'hero (gradiente blu chiaro→bianco
+   per risaltare sul navy) */
+.sui-hero__title::after {
+  content: "";
+  display: block;
+  width: var(--sui-dash-w);
+  height: var(--sui-dash-h);
+  margin-top: 8px;
+  border-radius: var(--sui-radius-pill);
+  background: linear-gradient(90deg, #72aee6, #dbeefe);
+}
+.sui-hero__tagline {
+  margin: 2px 0 0;
+  color: var(--sui-hero-muted);
+  font-size: var(--sui-fs-md);
+}
+.sui-hero__actions {
+  display: flex;
+  gap: var(--sui-sp-3);
+  flex-wrap: wrap;
+}
+
+/* Toolbar azioni sotto l'hero */
+.sui-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sui-sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sui-sp-5);
+}
+.sui-toolbar__spacer { flex: 1 1 auto; }
+
+/* -------------------------------------------------------------------------
+ * 3. Bottoni
+ * ---------------------------------------------------------------------- */
+.sui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sui-sp-2);
+  padding: 8px 16px;
+  min-height: 38px;
+  border-radius: var(--sui-radius-sm);
+  border: 1px solid var(--sui-border-strong);
+  background: var(--sui-surface);
+  color: var(--sui-text);
+  font-size: var(--sui-fs-md);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.sui-btn:hover {
+  background: var(--sui-surface-2);
+  border-color: var(--sui-primary);
+  color: var(--sui-text);
+}
+.sui-btn:active { transform: translateY(1px); }
+.sui-btn:focus-visible {
+  outline: 2px solid var(--sui-primary);
+  outline-offset: 2px;
+}
+.sui-btn--primary {
+  background: var(--sui-primary-fill-grad);
+  border-color: var(--sui-primary-fill);
+  color: var(--sui-on-primary);
+}
+.sui-btn--primary:hover {
+  background: var(--sui-primary-fill-hover);
+  border-color: var(--sui-primary-fill-hover);
+  color: var(--sui-on-primary);
+}
+.sui-btn--primary:active { box-shadow: inset 0 2px 4px rgba(16, 28, 44, 0.25); }
+/* Bottone primario su hero navy: separato dal gradiente (2.24:1 altrimenti) */
+.sui-hero .sui-btn--primary {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.30);
+}
+.sui-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--sui-link);
+}
+.sui-btn--ghost:hover {
+  background: var(--sui-primary-soft);
+  border-color: transparent;
+  color: var(--sui-link-hover);
+}
+.sui-btn--danger {
+  background: transparent;
+  border-color: var(--sui-err-line);
+  color: var(--sui-err-text);
+}
+.sui-btn--danger:hover {
+  background: var(--sui-err-bg);
+  border-color: var(--sui-err);
+  color: var(--sui-err-text);
+}
+.sui-btn--sm { padding: 5px 10px; min-height: 30px; font-size: var(--sui-fs-sm); }
+.sui-btn[disabled], .sui-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Card, grid, stat
+ * ---------------------------------------------------------------------- */
+.sui-card {
+  background: var(--sui-surface);
+  border: 1px solid var(--sui-border);
+  border-radius: var(--sui-radius-lg);
+  box-shadow: var(--sui-shadow);
+  overflow: hidden;
+  min-width: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+/* hover-lift minimalista (modello nxa-stat-card): bordo accent + micro lift */
+.sui-card:hover { transform: translateY(-2px); box-shadow: var(--sui-shadow); border-color: var(--sui-accent-line); }
+.sui-card__header {
+  padding: var(--sui-sp-4) var(--sui-sp-5);
+  border-bottom: 1px solid var(--sui-border-soft);
+  display: flex;
+  align-items: center;
+  gap: var(--sui-sp-3);
+  flex-wrap: wrap;
+}
+.sui-card__title {
+  font-size: var(--sui-fs-lg);
+  font-weight: 600;
+  margin: 0;
+  color: var(--sui-text);
+}
+.sui-card__header .sui-toolbar__spacer { flex: 1 1 auto; }
+.sui-card__body { padding: var(--sui-sp-5); }
+.sui-card__body--flush { padding: 0; }
+
+/* Grid responsive: colonne auto, min 260px */
+.sui-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sui-sp-4);
+}
+.sui-grid--wide { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.sui-grid--2 { grid-template-columns: 1fr 1fr; }
+
+/* Stat grid + stat card */
+.sui-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sui-sp-4);
+  margin-bottom: var(--sui-sp-6);
+}
+.sui-stat {
+  background: var(--sui-surface);
+  border: 1px solid var(--sui-border);
+  border-radius: var(--sui-radius);
+  padding: var(--sui-sp-4) var(--sui-sp-5);
+  min-width: 0;
+  box-shadow: 0 1px 2px rgba(16, 28, 44, 0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.sui-stat:hover { transform: translateY(-2px); box-shadow: var(--sui-shadow); border-color: var(--sui-accent-line); }
+/* Numero in gradiente testuale blu scuro→chiaro (modello nxa-stat-value);
+ * fallback solido se background-clip:text non è supportato */
+.sui-stat__value {
+  font-size: var(--sui-fs-stat);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--sui-primary);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .sui-stat__value {
+    background: var(--sui-accent-grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+.sui-stat__label {
+  font-size: var(--sui-fs-xs);
+  font-weight: 700;
+  color: var(--sui-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 6px;
+}
+
+/* -------------------------------------------------------------------------
+ * 5. Badge, pill, dot
+ * ---------------------------------------------------------------------- */
+.sui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--sui-radius-pill);
+  font-size: var(--sui-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.sui-badge--ok, .sui-badge--warn, .sui-badge--err,
+.sui-badge--info, .sui-badge--neutral { padding-inline-start: 7px; }
+.sui-badge--ok::before, .sui-badge--warn::before, .sui-badge--err::before,
+.sui-badge--info::before, .sui-badge--neutral::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.sui-badge--ok { background: var(--sui-ok-bg); color: var(--sui-ok-text); border-color: var(--sui-ok-line); }
+.sui-badge--warn { background: var(--sui-warn-bg); color: var(--sui-warn-text); border-color: var(--sui-warn-line); }
+.sui-badge--err { background: var(--sui-err-bg); color: var(--sui-err-text); border-color: var(--sui-err-line); }
+.sui-badge--info { background: var(--sui-info-bg); color: var(--sui-info-text); border-color: var(--sui-info-line); }
+.sui-badge--neutral { background: var(--sui-neutral-bg); color: var(--sui-neutral-text); border-color: var(--sui-neutral-line); }
+
+/* Status pill on/off (unifica le 6 varianti duplicate di Visibility) */
+.sui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: var(--sui-radius-pill);
+  font-size: var(--sui-fs-xs);
+  font-weight: 600;
+  border: 1px solid var(--sui-border);
+  background: var(--sui-surface-2);
+  color: var(--sui-muted);
+}
+.sui-pill--on { background: var(--sui-ok-bg); color: var(--sui-ok-text); border-color: var(--sui-ok-line); }
+.sui-pill--on::before, .sui-pill--off::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sui-pill--on::before { background: var(--sui-ok); }
+.sui-pill--off::before { background: var(--sui-neutral); }
+
+/* Dot + pulse errore */
+.sui-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sui-neutral);
+  flex-shrink: 0;
+}
+.sui-dot--ok { background: var(--sui-ok); }
+.sui-dot--warn { background: var(--sui-warn-graphic); }
+.sui-dot--err { background: var(--sui-err); animation: sui-pulse 1.6s ease-in-out infinite; }
+.sui-dot--info { background: var(--sui-primary); }
+
+/* -------------------------------------------------------------------------
+ * 6. Tabelle
+ * ---------------------------------------------------------------------- */
+.sui-tablewrap {
+  border: 1px solid var(--sui-border);
+  border-radius: var(--sui-radius);
+  background: var(--sui-surface);
+  overflow-x: auto;
+  scrollbar-color: var(--sui-scroll-thumb) transparent;
+}
+.sui-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sui-fs-md);
+  min-width: 640px;
+}
+.sui-table th, .sui-table td {
+  padding: 11px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--sui-border);
+  vertical-align: middle;
+}
+.sui-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sui-surface-2);
+  color: var(--sui-muted);
+  font-size: var(--sui-fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  z-index: 1;
+}
+.sui-table tbody tr:last-child td { border-bottom: none; }
+.sui-table tbody tr:hover { background: var(--sui-row-hover); }
+.sui-table td { font-variant-numeric: tabular-nums; }
+.sui-table td.sui-table__actions { text-align: right; white-space: nowrap; }
+
+/* -------------------------------------------------------------------------
+ * 7. Form
+ * ---------------------------------------------------------------------- */
+.sui-field { margin-bottom: var(--sui-sp-5); max-width: 560px; }
+.sui-field__label {
+  display: block;
+  font-size: var(--sui-fs-md);
+  font-weight: 600;
+  color: var(--sui-text);
+  margin-bottom: var(--sui-sp-2);
+}
+
+.sui-input, .sui-select, .sui-textarea {
+  width: 100%;
+  padding: 9px 12px;
+  min-height: 38px;
+  border-radius: var(--sui-radius-sm);
+  border: 1px solid var(--sui-input-line);
+  background: var(--sui-input-bg);
+  color: var(--sui-input-text);
+  font-size: var(--sui-fs-md);
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.sui-textarea { min-height: 90px; resize: vertical; }
+.sui-input:hover, .sui-select:hover, .sui-textarea:hover { border-color: var(--sui-primary); }
+.sui-input:focus, .sui-select:focus, .sui-textarea:focus {
+  outline: none;
+  border-color: var(--sui-primary);
+  box-shadow: var(--sui-input-ring);
+}
+.sui-input::placeholder, .sui-textarea::placeholder { color: var(--sui-muted); opacity: 1; }
+.sui-input, .sui-textarea { caret-color: var(--sui-primary); }
+.sui-input[aria-invalid="true"], .sui-select[aria-invalid="true"], .sui-textarea[aria-invalid="true"] {
+  border-color: var(--sui-err);
+  box-shadow: 0 0 0 3px var(--sui-err-ring);
+}
+.sui-input:disabled, .sui-select:disabled, .sui-textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--sui-surface-2);
+}
+.sui-input:read-only, .sui-textarea:read-only { background: var(--sui-surface-2); }
+
+/* Toggle switch accessibile: checkbox reale + label */
+.sui-toggle { position: relative; display: inline-flex; align-items: center; gap: var(--sui-sp-3); cursor: pointer; }
+.sui-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  cursor: pointer;
+}
+.sui-toggle__track {
+  width: 44px;
+  height: 24px;
+  border-radius: var(--sui-radius-pill);
+  background: var(--sui-border-strong);
+  position: relative;
+  transition: background 0.18s ease;
+  flex-shrink: 0;
+}
+.sui-toggle__track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s ease;
+}
+.sui-toggle input:checked + .sui-toggle__track { background: var(--sui-primary-fill); }
+.sui-toggle input:checked + .sui-toggle__track::after { transform: translateX(20px); }
+.sui-toggle input:focus-visible + .sui-toggle__track { box-shadow: var(--sui-input-ring); }
+.sui-toggle input:disabled + .sui-toggle__track { opacity: 0.5; cursor: not-allowed; }
+.sui-toggle__label { font-size: var(--sui-fs-md); font-weight: 500; color: var(--sui-text); }
+
+/* -------------------------------------------------------------------------
+ * 8. Accordion — due modi:
+ *    a) div-based + toggle is-open dal JS del plugin (back-compat)
+ *    b) NATIVO: <details class="sui-acc"><summary class="sui-acc__head">
+ *       …</summary><div class="sui-acc__panel">…</div></details> — zero JS
+ * ---------------------------------------------------------------------- */
+.sui-acc { border: 1px solid var(--sui-border); border-radius: var(--sui-radius); background: var(--sui-surface); overflow: hidden; }
+.sui-acc + .sui-acc { margin-top: var(--sui-sp-3); }
+.sui-acc__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sui-sp-3);
+  padding: var(--sui-sp-4) var(--sui-sp-5);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: var(--sui-fs-md);
+  font-weight: 600;
+  color: var(--sui-text);
+  text-align: left;
+}
+.sui-acc__head:hover { background: var(--sui-surface-2); }
+.sui-acc__head:focus-visible { outline: 2px solid var(--sui-primary); outline-offset: -2px; }
+.sui-acc__chev { margin-left: auto; transition: transform 0.2s ease; color: var(--sui-muted); }
+.sui-acc__panel { display: none; min-width: 0; padding: 0 var(--sui-sp-5) var(--sui-sp-5); border-top: 1px solid var(--sui-border); }
+.sui-acc.is-open .sui-acc__panel { display: block; }
+.sui-acc.is-open .sui-acc__chev { transform: rotate(180deg); }
+/* Variante NATIVA <details>/<summary> (stessa resa, zero JS) */
+details.sui-acc > summary.sui-acc__head { list-style: none; }
+details.sui-acc > summary.sui-acc__head::-webkit-details-marker { display: none; }
+details.sui-acc[open] > .sui-acc__panel { display: block; }
+details.sui-acc[open] > summary.sui-acc__head .sui-acc__chev { transform: rotate(180deg); }
+
+/* -------------------------------------------------------------------------
+ * 9. Notice
+ * ---------------------------------------------------------------------- */
+.sui-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sui-sp-3);
+  padding: var(--sui-sp-3) var(--sui-sp-4);
+  border-radius: var(--sui-radius-sm);
+  border: 1px solid var(--sui-info-line);
+  background: var(--sui-info-bg);
+  color: var(--sui-info-text);
+  font-size: var(--sui-fs-md);
+  margin-bottom: var(--sui-sp-5);
+}
+.sui-notice--ok { border-color: var(--sui-ok-line); background: var(--sui-ok-bg); color: var(--sui-ok-text); }
+.sui-notice--warn { border-color: var(--sui-warn-line); background: var(--sui-warn-bg); color: var(--sui-warn-text); }
+.sui-notice--err { border-color: var(--sui-err-line); background: var(--sui-err-bg); color: var(--sui-err-text); }
+
+/* -------------------------------------------------------------------------
+ * 10. Spinner, empty state, progress
+ * ---------------------------------------------------------------------- */
+.sui-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--sui-primary-soft);
+  border-top-color: var(--sui-primary);
+  animation: sui-spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+.sui-empty {
+  text-align: center;
+  padding: var(--sui-sp-8) var(--sui-sp-5);
+  color: var(--sui-muted);
+}
+.sui-empty__icon { font-size: 42px; line-height: 1; margin-bottom: var(--sui-sp-3); opacity: 0.75; }
+.sui-empty__title { font-size: var(--sui-fs-lg); font-weight: 600; color: var(--sui-text); margin: 0 0 var(--sui-sp-2); }
+.sui-empty__text { font-size: var(--sui-fs-md); max-width: 420px; margin: 0 auto var(--sui-sp-4); }
+
+.sui-progress {
+  height: 8px;
+  border-radius: var(--sui-radius-pill);
+  background: var(--sui-surface-3);
+  border: 1px solid var(--sui-border);
+  overflow: hidden;
+}
+.sui-progress__bar {
+  height: 100%;
+  border-radius: var(--sui-radius-pill);
+  background: var(--sui-accent-grad);
+  transition: width 0.3s ease;
+}
+.sui-progress__bar--warn { background: var(--sui-warn); }
+.sui-progress__bar--err { background: var(--sui-err); }
+
+/* -------------------------------------------------------------------------
+ * 11. Codebox
+ * ---------------------------------------------------------------------- */
+.sui-codebox {
+  background: var(--sui-surface-2);
+  border: 1px solid var(--sui-border);
+  border-radius: var(--sui-radius-sm);
+  padding: var(--sui-sp-3) var(--sui-sp-4);
+  font-family: var(--sui-font-mono);
+  font-size: var(--sui-fs-sm);
+  color: var(--sui-code-text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* -------------------------------------------------------------------------
+ * 12. Keyframes + A11y + print
+ * ---------------------------------------------------------------------- */
+@keyframes sui-spin { to { transform: rotate(360deg); } }
+@keyframes sui-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.82); }
+}
+
+/* Reduced motion: spegne tutto */
+@media (prefers-reduced-motion: reduce) {
+  .sui-dot--err, .sui-spinner { animation: none; }
+  .sui-btn, .sui-toggle__track, .sui-toggle__track::after, .sui-acc__chev { transition: none; }
+  .sui-card, .sui-stat, .sui-btn, .sui-progress__bar { transition: none; }
+  .sui-card:hover, .sui-stat:hover, .sui-btn:active { transform: none; }
+}
+
+/* Breakpoint WP: menu collassato a 782px */
+@media (max-width: 782px) {
+  .sui-wrap { padding: var(--sui-sp-4) var(--sui-sp-3) var(--sui-sp-6); }
+  .sui-hero { padding: var(--sui-sp-5) var(--sui-sp-4); }
+  .sui-stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .sui-grid, .sui-grid--2 { grid-template-columns: 1fr; }
+  /* Touch target 44px su mobile (WCAG 2.5.5) */
+  .sui-btn, .sui-btn--sm { min-height: 44px; }
+}
+
+/* Stampa */
+@media print {
+  .sui-toolbar, .sui-btn { display: none !important; }
+  .sui-hero { box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sui-card, .sui-stat { box-shadow: none; border-color: #c3c4c7; }
+  /* Numeri stat: niente gradiente su carta, fallback solido leggibile */
+  .sui-stat__value { background: none; color: #135e96; -webkit-text-fill-color: #135e96; }
+  body { background: #ffffff !important; }
+}
+

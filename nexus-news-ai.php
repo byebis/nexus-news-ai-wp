@@ -3,7 +3,7 @@
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.18
+ * Version:     1.1.18.1
  * Author:      byebis
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.18' );
+define( 'NEXUS_VERSION', '1.1.18.1' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -174,6 +174,10 @@ function nexus_bootstrap() {
         do_action( 'nexus_modules_init' );
 
         if ( is_admin() ) {
+                require_once NEXUS_PLUGIN_DIR . 'vendor-shot-ui/class-1shot-ui.php';
+                require_once NEXUS_PLUGIN_DIR . 'vendor-shot-ui/class-1shot-suite.php';
+                \Shot_UI::init( array( 'plugin_slug' => 'nexus-news-ai' ) );
+
                 require_once NEXUS_PLUGIN_DIR . 'admin/class-nexus-admin.php';
                 Nexus_Admin::init();
         }

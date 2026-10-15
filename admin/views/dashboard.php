@@ -223,17 +223,24 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
         }
 }
 ?>
-<div class="wrap nexus-admin" data-page="dashboard">
+<div class="wrap nexus-admin sui-wrap" data-page="dashboard">
 
-        <h1><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
+        <?php
+        if ( class_exists( 'OneShot_Suite' ) ) {
+                \OneShot_Suite::render_suite_strip( 'nexus-news-ai' );
+        }
+        ?>
 
-        <?php if ( '' !== $nexus_tagline ) : ?>
-                <p class="nxa-tagline"><?php echo esc_html( $nexus_tagline ); ?></p>
-        <?php endif; ?>
+        <div class="sui-page-head" style="margin-bottom:16px;">
+                <h1 class="sui-page-head__title"><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
+                <?php if ( '' !== $nexus_tagline ) : ?>
+                        <p class="nxa-tagline sui-page-head__sub"><?php echo esc_html( $nexus_tagline ); ?></p>
+                <?php else : ?>
+                        <p class="nxa-page-subtitle sui-page-head__sub"><?php echo esc_html__( 'La redazione AI in un colpo d\'occhio: articoli pubblicati, agenti al lavoro e consumo AI del mese.', 'nexus-news-ai' ); ?></p>
+                <?php endif; ?>
+        </div>
 
-        <p class="nxa-page-subtitle"><?php echo esc_html__( 'La redazione AI in un colpo d\'occhio: articoli pubblicati, agenti al lavoro e consumo AI del mese.', 'nexus-news-ai' ); ?></p>
-
-        <div class="nxa-toolbar">
+        <div class="nxa-toolbar sui-toolbar">
                 <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
                      (sezione AVVII MIRATI): conferma inline (v1.1.13.1 Q2) con il numero
                      di agenti già caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).

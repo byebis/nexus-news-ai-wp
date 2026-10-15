@@ -279,6 +279,10 @@ class Nexus_Admin {
                         return;
                 }
 
+                if ( class_exists( 'Shot_UI' ) ) {
+                        \Shot_UI::enqueue();
+                }
+
                 wp_enqueue_style(
                         'nexus-admin-css',
                         NEXUS_PLUGIN_URL . 'admin/css/nexus-admin.css',
