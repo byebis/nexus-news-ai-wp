@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.18
+Stable tag: 1.1.18.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -109,6 +109,9 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.18.1 =
+* NUOVA UI — 1SHOT-UI-KIT v2.0 «LIGHT»: adottato il kit CSS condiviso della Byebis 1Shot Suite (solo CSS, ZERO JavaScript): la testa di pagina admin si armonizza (titolo con accento + sottotitolo) e bottoni/card ereditano raggi, bordi e transizioni coerenti con gli altri plugin Byebis. Sulla Dashboard arriva la «suite strip»: gli altri plugin Byebis installati e attivi (1ShotWP, 1Shot Visibility, Keeper AI) si riconoscono a un colpo d'occhio con badge di versione e link diretto al loro pannello, badge onesto «Inactive» per quelli non presenti. Nessun JS nuovo, nessuna chiamata extra: CSS con cache-busting automatico, caricato solo sulle pagine del plugin.
 
 = 1.1.18 =
 * RECUPERO AUTOMATICO — ADDIO RUN FANTASMA (audit: 1 critico): se un run di un agente crasha o va in timeout la riga di telemetria restava «running» per sempre, l'articolo veniva escluso dai giri successivi e l'agente restava in errore senza alcun recupero. Ora un reaper chiude ogni 30 minuti le run fantasma, il blocco sul riresume ha un TTL (gli articoli tornano riprendibili) e gli agenti in errore si RIATTIVANO DA SOLI con backoff di 30 minuti (niente più redazione ferma finché un umano non riabiliti lo stato). Il Nexus Wire ora ha lock per tema, run row e heartbeat: un Wire vivo non viene più riaccodato in parallelo (niente doppio costo AI né articoli duplicati).
