@@ -1168,6 +1168,17 @@ class Nexus_Tools {
                         return array();
                 }
 
+                // v1.1.18 (FIX-6/C): anti DNS-rebinding — la guardia ha risolto e
+                // validato il DNS qualche millisecondo fa, ma la connect() interna
+                // di SimplePie ri-risolve l'host (finestra TOCTOU): ri-validazione
+                // immediata + pin dell'IP validato via CURLOPT_RESOLVE sulla
+                // richiesta interna di fetch_feed. Fail-closed come la guardia:
+                // anomalia al re-check (firma del rebinding) → nessun fetch.
+                $pin = self::pin_http_resolve( $validated, true );
+                if ( is_wp_error( $pin ) ) {
+                        return array();
+                }
+
                 $max_items = (int) $max_items > 0 ? min( 20, (int) $max_items ) : 5;
 
                 // Timeout esplicito e redirect disattivati per la richiesta interna di

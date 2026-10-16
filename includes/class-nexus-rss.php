@@ -200,6 +200,18 @@ class Nexus_Rss {
                         return array();
                 }
 
+                // v1.1.18 (FIX-6/C): anti DNS-rebinding — guardia e connect() sono due
+                // risoluzioni DNS distinte (finestra TOCTOU): ri-validazione immediata
+                // + pin dell'IP validato via CURLOPT_RESOLVE sulla richiesta interna di
+                // fetch_feed. Fail-closed come la guardia: se il DNS ora risolve a un
+                // IP privato/riservato il fetch viene rinunciato (array() onesto).
+                // method_exists è difensivo: la classe resta caricabile anche con una
+                // versione di Nexus_Tools priva del pin.
+                if ( method_exists( 'Nexus_Tools', 'pin_http_resolve' )
+                        && is_wp_error( Nexus_Tools::pin_http_resolve( $feed_url, true ) ) ) {
+                        return array();
+                }
+
                 // v1.1.18 (AL-3, FIX-6): stesso pattern di Nexus_Tools::read_feed —
                 // redirect 0 e cap memoria per la richiesta interna di fetch_feed.
                 // I filtri valgono SOLO per questa chiamata (aggancio e rimozione
