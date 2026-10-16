@@ -545,6 +545,128 @@ class Nexus_Tools {
                 return true;
         }
 
+        /**
+         * GET di contenuti NON fidati che segue i redirect UNA GUARDIA ALLA VOLTA.
+         *
+         * Perché esiste: i fetch "redirection 0" del plugin sono sicuri ma degradano
+         * quando la fonte risponde 301/302 (http→https, wrapper di tracking, URL
+         * accorciati) — caso frequente per il source_url del fact-check, che dalla
+         * v1.1.10 può arrivare da adapter multi-tipo. Lasciare che sia il transport a
+         * seguire i redirect NON è un'opzione: il target di un rimbalzo non passa
+         * dalla guardia (SSRF verso IP interni/metadata cloud). Qui i redirect
+         * vengono seguiti a mano, un hop alla volta, applicando a OGNI hop:
+         *   1. assert_safe_url (scheme/host + DNS + blocco IP privati/riservati);
+         *   2. pin_http_resolve (ri-validazione immediata + pin IP anti DNS-rebinding);
+         *   3. 'redirection' => 0, così il transport non può seguire nulla da sé;
+         *   4. 'limit_response_size' (cap memoria) e timeout esplicito.
+         * Fail-closed: URL non ammesso, DNS anomalo al re-check, 'Location' assente o
+         * non valida, hop esauriti → ok = false, nessuna richiesta verso un target
+         * non validato. La 'Location' relativa è risolta con absolute_url (stessa
+         * normalizzazione dei feed): path relativi "complessi" (con query) restano
+         * non gestiti di proposito e degradano in errore onesto.
+         *
+         * @param string $url           URL di partenza (NON fidato).
+         * @param array  $args          'timeout' (int), 'limit_response_size' (int),
+         *                              'user-agent' (string), 'headers' (array).
+         * @param int    $max_redirects Hop massimi seguiti (default 2, clamp 0..3).
+         * @return array { ok: bool, code: int, body: string, url: string, error: string }
+         */
+        public static function guarded_get( $url, $args = array(), $max_redirects = 2 ) {
+                $out = array( 'ok' => false, 'code' => 0, 'body' => '', 'url' => (string) $url, 'error' => '' );
+
+                if ( ! function_exists( 'wp_remote_get' ) ) {
+                        $out['error'] = 'Le funzioni HTTP di WordPress non sono disponibili.';
+                        return $out;
+                }
+
+                $args     = is_array( $args ) ? $args : array();
+                $max_hops = max( 0, min( 3, (int) $max_redirects ) );
+
+                $timeout = ( isset( $args['timeout'] ) && (int) $args['timeout'] > 0 )
+                        ? max( 1, (int) $args['timeout'] )
+                        : self::http_timeout();
+                $cap     = ( isset( $args['limit_response_size'] ) && (int) $args['limit_response_size'] > 0 )
+                        ? (int) $args['limit_response_size']
+                        : self::http_max_response_bytes();
+                $headers = ( isset( $args['headers'] ) && is_array( $args['headers'] ) ) ? $args['headers'] : array();
+                $ua      = ( isset( $args['user-agent'] ) && '' !== (string) $args['user-agent'] )
+                        ? (string) $args['user-agent']
+                        : self::user_agent();
+
+                $current = self::normalize_url( (string) $url );
+                if ( '' === $current ) {
+                        $out['error'] = 'URL non consentito: sono ammessi solo URL http/https con host valido.';
+                        return $out;
+                }
+
+                for ( $hop = 0; $hop <= $max_hops; $hop++ ) {
+                        // 1) SSRF guard sull'URL CORRENTE dell'hop (fail-closed).
+                        $safe = self::assert_safe_url( $current );
+                        if ( is_wp_error( $safe ) ) {
+                                $out['error'] = $safe->get_error_message();
+                                return $out;
+                        }
+
+                        // 2) Anti DNS-rebinding: ri-validazione immediata + pin one-shot.
+                        $pin = self::pin_http_resolve( $current, true );
+                        if ( is_wp_error( $pin ) ) {
+                                $out['error'] = $pin->get_error_message();
+                                return $out;
+                        }
+
+                        // 3) Richiesta senza redirect: il transport non segue nulla da sé.
+                        $response = wp_remote_get(
+                                $current,
+                                array(
+                                        'timeout'             => $timeout,
+                                        'user-agent'          => $ua,
+                                        'headers'             => $headers,
+                                        'redirection'         => 0,
+                                        'limit_response_size' => $cap,
+                                )
+                        );
+
+                        if ( is_wp_error( $response ) ) {
+                                $out['error'] = 'Errore di connessione: ' . $response->get_error_message();
+                                return $out;
+                        }
+
+                        $code        = (int) wp_remote_retrieve_response_code( $response );
+                        $out['code'] = $code;
+                        $out['url']  = $current;
+
+                        if ( $code >= 200 && $code < 300 ) {
+                                $out['ok']   = true;
+                                $out['body'] = (string) wp_remote_retrieve_body( $response );
+                                return $out;
+                        }
+
+                        // 4) Solo i 30x si seguono, e solo dopo aver ri-validato il target.
+                        if ( $code >= 300 && $code < 400 ) {
+                                if ( $hop >= $max_hops ) {
+                                        $out['error'] = 'La fonte reindirizza troppe volte: contenuto non scaricato.';
+                                        return $out;
+                                }
+
+                                $location = trim( (string) wp_remote_retrieve_header( $response, 'location' ) );
+                                $next     = self::absolute_url( $location, $current );
+                                if ( '' === $next ) {
+                                        $out['error'] = 'La fonte ha risposto con un redirect non valido: contenuto non scaricato.';
+                                        return $out;
+                                }
+
+                                $current = $next;
+                                continue;
+                        }
+
+                        $out['error'] = 'Il server ha risposto con errore HTTP ' . $code . '.';
+                        return $out;
+                }
+
+                $out['error'] = 'La fonte reindirizza troppe volte: contenuto non scaricato.';
+                return $out;
+        }
+
         /* ============ PROMPT-INJECTION SHIELD (v1.1.9) ============ */
 
         /**
