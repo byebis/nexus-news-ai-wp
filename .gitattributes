@@ -1,0 +1,4 @@
+# Esclusi dai pacchetti di release (git archive / export):
+# gli harness di test e la CI non servono in wp-content/plugins.
+/tests export-ignore
+/.github export-ignore
