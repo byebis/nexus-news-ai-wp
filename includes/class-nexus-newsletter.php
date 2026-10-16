@@ -370,7 +370,10 @@ class Nexus_Newsletter {
                 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- link one-time firmato dal token dell'iscritto.
                 $confirm = isset( $_GET['nexus_confirm'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_confirm'] ) ) : '';
                 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- idem: il token È la credenziale.
-                $unsub   = isset( $_GET['nexus_unsub'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_unsub'] ) ) : '';
+                $unsub = isset( $_GET['nexus_unsub'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_unsub'] ) ) : '';
+                if ( '' === $unsub && isset( $_POST['nexus_unsub'] ) ) {
+                        $unsub = sanitize_text_field( wp_unslash( $_POST['nexus_unsub'] ) );
+                }
 
                 if ( '' === $confirm && '' === $unsub ) {
                         return;
@@ -431,8 +434,9 @@ class Nexus_Newsletter {
                 }
 
                 /* ---------- Disiscrizione ---------- */
-                // v1.1.9: lookup con hash (fallback in chiaro per i token legacy). Nessun
-                // TTL: la disiscrizione deve restare sempre possibile.
+                // Il GET porta solo alla pagina di conferma: scanner e gateway email
+                // visitano automaticamente i link e non devono cambiare lo stato.
+                // La disiscrizione effettiva avviene solo con un POST esplicito.
                 $subscriber = self::find_subscriber_by_token( $unsub );
 
                 if ( ! $subscriber ) {
@@ -445,14 +449,30 @@ class Nexus_Newsletter {
 
                 $already = ( 'unsubscribed' === (string) $subscriber->status );
 
+                if ( 'GET' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+                        $digest_pref = isset( $_GET['nexus_digest'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_digest'] ) ) : '';
+                        self::render_unsubscribe_confirmation_page( $unsub, $already, $digest_pref );
+                }
+
+                if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+                        self::render_notice_page(
+                                __( 'Richiesta non valida', 'nexus-news-ai' ),
+                                __( 'Per completare la disiscrizione usa il pulsante di conferma.', 'nexus-news-ai' ),
+                                405
+                        );
+                }
+
                 /* ---------- v1.1.14 (P5): gestione SOLO-digest ----------
                  * Parametro AGGIUNTO al link di disiscrizione esistente
                  * (?nexus_unsub={token}&nexus_digest=0|1): NON disiscrive, aggiorna
                  * solo la preferenza digest (digest_optin) e mostra la pagina di
                  * esito. La disiscrizione completa resta il percorso predefinito
                  * (link senza parametro, rotta REST e flow storici invariati). */
-                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- il token È la credenziale (come nexus_unsub).
-                $digest_pref = isset( $_GET['nexus_digest'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_digest'] ) ) : '';
+                // Il token conferma la richiesta, ma la preferenza viene applicata
+                // solo su POST esplicito, mai alla visita automatica del link.
+                $digest_pref = isset( $_POST['nexus_digest'] )
+                        ? sanitize_text_field( wp_unslash( $_POST['nexus_digest'] ) )
+                        : '';
                 if ( '0' === $digest_pref || '1' === $digest_pref ) {
                         $updated = self::set_subscriber_digest_optin( (int) $subscriber->id, '1' === $digest_pref );
 
@@ -484,6 +504,48 @@ class Nexus_Newsletter {
                                 : __( 'Non riceverai più la nostra newsletter. Ci dispiace di averti perso!', 'nexus-news-ai' ),
                         200
                 );
+        }
+
+        /**
+         * Pagina di conferma per un link di disiscrizione visitato via GET.
+         * Il form POST conserva il token come credenziale e usa la stessa URL,
+         * così la visita automatica di uno scanner non modifica la sottoscrizione.
+         *
+         * @param string $token Token di disiscrizione.
+         * @param bool   $already Stato già disiscritto.
+         * @param string $digest_pref Preferenza digest eventualmente richiesta.
+         * @return void
+         */
+        private static function render_unsubscribe_confirmation_page( $token, $already, $digest_pref = '' ) {
+                nocache_headers();
+                status_header( 200 );
+                $action = esc_url( home_url( '/' ) );
+                $value  = esc_attr( (string) $token );
+                $title  = esc_html__( 'Conferma disiscrizione', 'nexus-news-ai' );
+                $is_digest_pref = in_array( (string) $digest_pref, array( '0', '1' ), true );
+                $message = $is_digest_pref
+                        ? esc_html__( 'Confermi la modifica delle preferenze del digest?', 'nexus-news-ai' )
+                        : ( $already
+                                ? esc_html__( 'Risulti già disiscritto dalla newsletter.', 'nexus-news-ai' )
+                                : esc_html__( 'Vuoi davvero annullare la tua iscrizione alla newsletter?', 'nexus-news-ai' ) );
+                $button = $is_digest_pref
+                        ? esc_html__( 'Conferma preferenza', 'nexus-news-ai' )
+                        : esc_html__( 'Disiscrivimi', 'nexus-news-ai' );
+
+                echo '<!doctype html><html ' . get_language_attributes() . '><head><meta charset="' . esc_attr( get_bloginfo( 'charset' ) ) . '"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . $title . '</title>';
+                wp_head();
+                echo '</head><body><main class="nexus-news-notice"><h1>' . $title . '</h1><p>' . $message . '</p>';
+                if ( ! $already || $is_digest_pref ) {
+                        echo '<form method="post" action="' . $action . '"><input type="hidden" name="nexus_unsub" value="' . $value . '">';
+                        if ( $is_digest_pref ) {
+                                echo '<input type="hidden" name="nexus_digest" value="' . esc_attr( $digest_pref ) . '">';
+                        }
+                        echo '<button type="submit">' . $button . '</button></form>';
+                }
+                echo '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html__( 'Torna al sito', 'nexus-news-ai' ) . '</a></p></main>';
+                wp_footer();
+                echo '</body></html>';
+                exit;
         }
 
         /* ========================= SHORTCODE [nexus_subscribe] ========================= */
