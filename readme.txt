@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents, editoriale, giornale
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.18.1
+Stable tag: 1.1.18.2
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -109,6 +109,11 @@ Dalla 1.1.0 gli articoli pubblicati sono **post WordPress nativi** (post type `p
 Le traduzioni AI diventano **post WordPress veri e collegati**: per ogni lingua la traduzione pubblicata è un post nativo (permalink, revisioni e SEO propri) legato al post sorgente nel gruppo di traduzione della lingua. Con Polylang o WPML attivi le associazioni tra lingue usano le loro API ufficiali (i post compaiono nelle loro interfacce come qualunque traduzione); senza plugin di lingua il collegamento è interno al plugin via post meta (zero tabelle nuove). Nella pagina articolo la riga «Pubblica come post» crea o aggiorna la traduzione per lingua (upsert: mai duplicati); con «Pubblica automaticamente le traduzioni come post» attivo nelle Impostazioni ogni articolo pubblicato pianifica le sue traduzioni come eventi WP-Cron sfalsati di un minuto. In frontend lo shortcode [nexus_lang_switcher] elenca le lingue e i link alle traduzioni, e il single emette da solo i meta hreflang e og:locale quando ci sono più lingue pubblicate. I post tradotti sono contenuti nativi: alla disinstallazione del plugin restano nel sito.
 
 == Changelog ==
+
+= 1.1.18.2 =
+* CONFERMA DOPPIO OPT-IN ONESTA: il link di conferma iscrizione (?nexus_confirm) ora funziona come la disiscrizione (v1.1.18.1): il GET mostra solo una pagina di conferma con bottone, lo stato cambia SOLO su POST esplicito. Prima uno scanner o un'anteprima email visitando il link potevano auto-confermare l'iscrizione. Token non valido → 404 onesto, token scaduto → 410, metodo non valido → 405.
+* PAGINE DI CONFERMA IN INGLESE: le pagine front-end di conferma iscrizione e disiscrizione passano dal motore i18n del plugin: con lingua EN impostata titoli, messaggi e bottoni vengono tradotti (12 nuove voci nel dizionario IT→EN).
+* Note upgrade: nessuna migrazione di schema, nessun setting nuovo. Comportamento email: il link di conferma ora richiede un click in più (il bottone «Conferma iscrizione») — è voluto, protegge da conferme automatiche.
 
 = 1.1.18.1 =
 * NUOVA UI — 1SHOT-UI-KIT v2.0 «LIGHT»: adottato il kit CSS condiviso della Byebis 1Shot Suite (solo CSS, ZERO JavaScript): la testa di pagina admin si armonizza (titolo con accento + sottotitolo) e bottoni/card ereditano raggi, bordi e transizioni coerenti con gli altri plugin Byebis. Sulla Dashboard arriva la «suite strip»: gli altri plugin Byebis installati e attivi (1ShotWP, 1Shot Visibility, Keeper AI) si riconoscono a un colpo d'occhio con badge di versione e link diretto al loro pannello, badge onesto «Inactive» per quelli non presenti. Nessun JS nuovo, nessuna chiamata extra: CSS con cache-busting automatico, caricato solo sulle pagine del plugin.

@@ -357,8 +357,8 @@ class Nexus_Newsletter {
         /**
          * Gestione link dalle email, su template_redirect:
          *
-         * - ?nexus_confirm={token} → status 'confirmed' + confirmed_at adesso;
-         * - ?nexus_unsub={token}   → status 'unsubscribed'.
+         * - ?nexus_confirm={token} → GET: pagina di conferma; POST: status 'confirmed' + confirmed_at adesso (v1.1.18.2);
+         * - ?nexus_unsub={token}   → GET: pagina di conferma; POST: status 'unsubscribed' (v1.1.18.1);
          *
          * In entrambi i casi stampa una pagina minimale in italiano (doctype + html
          * con wp_head/wp_footer, messaggio centrale, link al sito) e termina con exit.
@@ -369,6 +369,9 @@ class Nexus_Newsletter {
         public static function handle_query_vars() {
                 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- link one-time firmato dal token dell'iscritto.
                 $confirm = isset( $_GET['nexus_confirm'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_confirm'] ) ) : '';
+                if ( '' === $confirm && isset( $_POST['nexus_confirm'] ) ) {
+                        $confirm = sanitize_text_field( wp_unslash( $_POST['nexus_confirm'] ) );
+                }
                 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- idem: il token È la credenziale.
                 $unsub = isset( $_GET['nexus_unsub'] ) ? sanitize_text_field( wp_unslash( $_GET['nexus_unsub'] ) ) : '';
                 if ( '' === $unsub && isset( $_POST['nexus_unsub'] ) ) {
@@ -413,6 +416,22 @@ class Nexus_Newsletter {
                         }
 
                         $already = ( 'confirmed' === (string) $subscriber->status );
+
+                        // v1.1.18.2: come per la disiscrizione, il GET porta solo alla
+                        // pagina di conferma: scanner e gateway email visitano
+                        // automaticamente i link e non devono confermare nulla.
+                        // La conferma effettiva avviene solo con un POST esplicito.
+                        if ( 'GET' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+                                self::render_confirm_subscription_page( $confirm, $already );
+                        }
+
+                        if ( 'POST' !== strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ) ) ) {
+                                self::render_notice_page(
+                                        __( 'Richiesta non valida', 'nexus-news-ai' ),
+                                        __( 'Per completare la conferma usa il pulsante di conferma.', 'nexus-news-ai' ),
+                                        405
+                                );
+                        }
 
                         if ( ! $already ) {
                                 Nexus_DB::update_subscriber(
@@ -519,6 +538,7 @@ class Nexus_Newsletter {
         private static function render_unsubscribe_confirmation_page( $token, $already, $digest_pref = '' ) {
                 nocache_headers();
                 status_header( 200 );
+                ob_start();
                 $action = esc_url( home_url( '/' ) );
                 $value  = esc_attr( (string) $token );
                 $title  = esc_html__( 'Conferma disiscrizione', 'nexus-news-ai' );
@@ -545,6 +565,60 @@ class Nexus_Newsletter {
                 echo '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html__( 'Torna al sito', 'nexus-news-ai' ) . '</a></p></main>';
                 wp_footer();
                 echo '</body></html>';
+                self::output_translated_page( ob_get_clean() );
+        }
+
+        /**
+         * Pagina di conferma per un link di conferma iscrizione visitato via GET
+         * (v1.1.18.2). Il form POST conserva il token come credenziale e usa la
+         * stessa URL, così la visita automatica di uno scanner non conferma nulla.
+         *
+         * @param string $token   Token di conferma.
+         * @param bool   $already Stato già confermato.
+         * @return void
+         */
+        private static function render_confirm_subscription_page( $token, $already ) {
+                nocache_headers();
+                status_header( 200 );
+                $action  = esc_url( home_url( '/' ) );
+                $value   = esc_attr( (string) $token );
+                $title   = esc_html__( 'Conferma iscrizione', 'nexus-news-ai' );
+                $message = $already
+                        ? esc_html__( 'Sei già iscritto alla newsletter.', 'nexus-news-ai' )
+                        : esc_html__( 'Confermi la tua iscrizione alla newsletter?', 'nexus-news-ai' );
+                $button  = esc_html__( 'Conferma iscrizione', 'nexus-news-ai' );
+
+                $html  = '<!doctype html><html ' . get_language_attributes() . '><head><meta charset="' . esc_attr( get_bloginfo( 'charset' ) ) . '"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' . $title . '</title>';
+                ob_start();
+                wp_head();
+                $html .= ob_get_clean();
+                $html .= '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f5fb;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;}.nexus-news-notice{max-width:440px;margin:24px;padding:40px 28px;text-align:center;background:#ffffff;border-radius:14px;box-shadow:0 12px 32px rgba(17,24,39,0.10);}.nexus-news-notice h1{margin:0 0 12px;font-size:22px;line-height:1.3;}.nexus-news-notice p{margin:0 0 24px;font-size:15px;line-height:1.6;color:#4b5563;}.nexus-news-notice a{color:#4f46e5;font-weight:700;text-decoration:none;}.nexus-news-notice button{margin-top:4px;padding:10px 22px;border:0;border-radius:8px;background:#4f46e5;color:#ffffff;font-size:15px;font-weight:700;cursor:pointer;}</style></head><body class="nexus-news-notice-page"><div class="nexus-news-notice"><h1>' . $title . '</h1><p>' . $message . '</p>';
+                if ( ! $already ) {
+                        $html .= '<form method="post" action="' . $action . '"><input type="hidden" name="nexus_confirm" value="' . $value . '">';
+                        $html .= '<button type="submit">' . $button . '</button></form>';
+                }
+                $html .= '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . esc_html__( 'Torna al sito', 'nexus-news-ai' ) . '</a></p></div>';
+                ob_start();
+                wp_footer();
+                $html .= ob_get_clean();
+                $html .= '</body></html>';
+                self::output_translated_page( $html );
+        }
+
+        /**
+         * Stampa la pagina minimale front-end e termina. v1.1.18.2: le pagine di
+         * conferma/disiscrizione NON passano da Nexus_Admin::render_view, quindi
+         * qui passano dallo stesso translate_html(): con lingua EN le stringhe IT
+         * del dizionario vengono tradotte anche fuori dall'admin.
+         *
+         * @param string $html HTML completo della pagina (già escapato).
+         * @return void
+         */
+        private static function output_translated_page( $html ) {
+                if ( class_exists( 'Nexus_I18n' ) && method_exists( 'Nexus_I18n', 'translate_html' ) ) {
+                        $html = Nexus_I18n::translate_html( (string) $html );
+                }
+                echo $html;
                 exit;
         }
 
@@ -1882,7 +1956,7 @@ JS;
                 $site_url    = esc_url( home_url( '/' ) );
                 $back_label  = esc_html__( 'Torna al sito', 'nexus-news-ai' );
 
-                echo <<<HTML
+                $html = <<<HTML
 <!DOCTYPE html>
 <html {$lang}>
 <head>
@@ -1908,6 +1982,6 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 </body>
 </html>
 HTML;
-                exit;
+                self::output_translated_page( $html );
         }
 }

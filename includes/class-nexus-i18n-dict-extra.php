@@ -1858,6 +1858,19 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Test generazione non disponibile da questa versione del server' => 'Generation test not available from this server version',
             'Token Google salvato in chiaro da versioni precedenti ri-cifrato (openssl disponibile)' => 'Google token saved in plaintext by previous versions has been re-encrypted (openssl available)',
             'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' => 'URL not allowed: the domain safety check failed right before the request.',
+            /* ---- v1.1.18.2 «Conferme Oneste» — pagine front-end conferma iscrizione/disiscrizione (PR #1 + opt-in POST) ---- */
+            'Conferma disiscrizione' => 'Unsubscribe confirmation',
+            'Conferma iscrizione' => 'Subscription confirmation',
+            'Confermi la modifica delle preferenze del digest?' => 'Confirm the digest preference change?',
+            'Confermi la tua iscrizione alla newsletter?' => 'Do you confirm your subscription to the newsletter?',
+            'Disiscrivimi' => 'Unsubscribe me',
+            'Per completare la conferma usa il pulsante di conferma.' => 'To complete the confirmation use the confirmation button.',
+            'Per completare la disiscrizione usa il pulsante di conferma.' => 'To complete the unsubscription use the confirmation button.',
+            'Richiesta non valida' => 'Invalid request',
+            'Risulti già disiscritto dalla newsletter.' => 'You are already unsubscribed from the newsletter.',
+            'Sei già iscritto alla newsletter.' => 'You are already subscribed to the newsletter.',
+            'Torna al sito' => 'Back to the site',
+            'Vuoi davvero annullare la tua iscrizione alla newsletter?' => 'Do you really want to unsubscribe from the newsletter?',
         );
 }
 
