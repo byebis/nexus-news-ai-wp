@@ -3048,6 +3048,15 @@ class Nexus_Rest {
                         $headers['X-Title']      = 'Nexus News AI';
                 }
 
+                // Pin anti-rebinding best-effort: l'endpoint del provider è già
+                // passato da url_guard_error (AL-4), quindi un DNS non risolvibile o
+                // partizionato NON deve rompere il picker (fail_closed false, come per
+                // gli endpoint di ricerca): si fissa l'IP solo quando la risoluzione è
+                // pulita, subito prima della connect().
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
+                        Nexus_Tools::pin_http_resolve( $url, false );
+                }
+
                 $response = wp_remote_get(
                         $url,
                         array(
@@ -3055,8 +3064,15 @@ class Nexus_Rest {
                                 // catalogo modelli è una chiamata di contorno del picker,
                                 // non deve tenere la richiesta REST appesa 30s (il
                                 // fail-open sulla cache stale copre i provider lenti).
-                                'timeout' => 10,
-                                'headers' => $headers,
+                                'timeout'             => 10,
+                                'headers'             => $headers,
+                                // Nessun redirect: il target di un rimbalzo non passa
+                                // dalla guardia SSRF dell'endpoint provider.
+                                'redirection'         => 0,
+                                // Cap memoria (filtro nexus_http_max_response_bytes).
+                                'limit_response_size' => class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'http_max_response_bytes' )
+                                        ? (int) Nexus_Tools::http_max_response_bytes()
+                                        : 2097152, // 2 MB.
                         )
                 );
 
@@ -3879,8 +3895,15 @@ class Nexus_Rest {
                 // query_key (?key=) | none.
                 $models_auth = isset( $entry['models_auth'] ) ? (string) $entry['models_auth'] : 'bearer';
                 $args        = array(
-                        'timeout' => 15,
-                        'headers' => array( 'Accept' => 'application/json' ),
+                        'timeout'             => 15,
+                        'headers'             => array( 'Accept' => 'application/json' ),
+                        // Nessun redirect: un 30x porterebbe la richiesta su un host mai
+                        // passato da url_guard_error (SSRF verso la rete interna).
+                        'redirection'         => 0,
+                        // Cap memoria: il catalogo è JSON, 2 MB sono abbondanti.
+                        'limit_response_size' => class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'http_max_response_bytes' )
+                                ? (int) Nexus_Tools::http_max_response_bytes()
+                                : 2097152, // 2 MB.
                 );
                 if ( 'bearer' === $models_auth ) {
                         $args['headers']['Authorization'] = 'Bearer ' . $api_key;
@@ -3891,6 +3914,12 @@ class Nexus_Rest {
                         $args['headers']['anthropic-version'] = '2023-06-01';
                 } elseif ( 'query_key' === $models_auth ) {
                         $endpoint = add_query_arg( 'key', $api_key, $endpoint );
+                }
+
+                // Pin anti-rebinding best-effort (endpoint del provider già validato
+                // dalla guardia sopra; mai bloccare il test live per il DNS).
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
+                        Nexus_Tools::pin_http_resolve( $endpoint, false );
                 }
 
                 $started    = microtime( true );
