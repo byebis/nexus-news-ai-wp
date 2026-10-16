@@ -330,10 +330,13 @@ class Nexus_Translate {
                 }
 
                 $article = method_exists( 'Nexus_DB', 'get_article' ) ? Nexus_DB::get_article( $id ) : null;
-                if ( ! $article ) {
+                // Le traduzioni sono leggibili pubblicamente solo quando lo è anche
+                // l'articolo sorgente. Un ID valido non deve rivelare titoli o
+                // riassunti di bozze, articoli in revisione o rifiutati.
+                if ( ! $article || 'published' !== (string) $article->status ) {
                         return new WP_Error(
                                 'nexus_translate_article_missing',
-                                sprintf( __( 'Articolo #%d non trovato.', 'nexus-news-ai' ), $id ),
+                                __( 'Articolo non trovato.', 'nexus-news-ai' ),
                                 array( 'status' => 404 )
                         );
                 }
