@@ -3162,7 +3162,10 @@ class Nexus_Pipeline {
          * arrivare da adapter multi-tipo (web, search, MCP) e da contenuti non
          * fidati: la guardia SSRF centralizzata Nexus_Tools::assert_safe_url()
          * (DNS + IP privati/riservati) viene applicata SEMPRE, fail-closed
-         * (v1.1.10.1 — chiude il gap audit 1.1.9/1.1.10). Cache
+         * (v1.1.10.1 — chiude il gap audit 1.1.9/1.1.10). Il fetch passa dal
+         * trasporto guardato Nexus_Tools::guarded_get(): i 30x li segue lui, un hop
+         * alla volta, rifacendo la guardia (e il pin anti-rebinding) su OGNI hop,
+         * invece di lasciare i redirect al transport. Cache
          * transient 'nexus_src_{md5url}' 6h: il fact-check gira a ogni riscrittura ma
          * la fonte non cambia. Ritorna '' a qualunque fallimento (chiamante fa il
          * fallback sul riassunto con log onesto).
@@ -3190,27 +3193,36 @@ class Nexus_Pipeline {
                         return $cached;
                 }
 
-                $response = wp_remote_get(
+                // Egress hardening: trasporto guardato (guardia su OGNI hop).
+                // Prima la guardia validava solo l'URL di partenza e il transport
+                // seguiva fino a 2 redirect da sé: il target di un rimbalzo (un
+                // http->https lecito, ma anche 169.254.169.254 o 10.x) non veniva
+                // mai validato. Ora i 30x li segue guarded_get, un hop alla volta,
+                // rifacendo assert_safe_url + pin_http_resolve sull'hop successivo
+                // e con 'redirection' => 0 sulla richiesta reale: un rimbalzo verso
+                // la rete interna finisce in errore onesto (testo vuoto, il
+                // chiamante fa il fallback sul riassunto) invece che in un fetch
+                // non validato. Fail-closed anche su hop esauriti e 30x senza
+                // 'Location' valida.
+                if ( ! class_exists( 'Nexus_Tools' ) || ! method_exists( 'Nexus_Tools', 'guarded_get' ) ) {
+                        return '';
+                }
+
+                $res = Nexus_Tools::guarded_get(
                         $url,
                         array(
                                 'timeout'             => 15,
-                                'redirection'         => 2, // Evita redirect infiniti.
                                 'limit_response_size' => 512000, // 500 KB: più che sufficiente per un articolo.
                                 'user-agent'          => 'Nexus News AI/' . ( defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '1.1.9' ) . ' (WordPress; ' . home_url() . ')',
                         )
                 );
 
-                if ( is_wp_error( $response ) ) {
+                if ( empty( $res['ok'] ) ) {
                         return '';
                 }
 
-                $code = (int) wp_remote_retrieve_response_code( $response );
-                if ( $code < 200 || $code >= 300 ) {
-                        return '';
-                }
-
-                $body = wp_remote_retrieve_body( $response );
-                if ( ! is_string( $body ) || '' === trim( $body ) ) {
+                $body = isset( $res['body'] ) ? (string) $res['body'] : '';
+                if ( '' === trim( $body ) ) {
                         return '';
                 }
 
