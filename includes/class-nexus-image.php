@@ -903,7 +903,9 @@ class Nexus_Image {
 
                 $response = wp_remote_get( $endpoint, array(
                         'timeout'             => 15,
-                        'redirection'         => 1,
+                        // L'endpoint Pixabay deve rispondere direttamente: non seguire
+                        // redirect che aggirerebbero la validazione SSRF del target.
+                        'redirection'         => 0,
                         'limit_response_size' => self::MAX_DOWNLOAD_BYTES,
                 ) );
 
