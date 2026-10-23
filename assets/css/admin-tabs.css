@@ -564,7 +564,7 @@
   gap: 7px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--nxa-text, #334155);
+  color: var(--nxa-text);
   cursor: pointer;
   white-space: nowrap;
   padding: 4px 0;
@@ -575,11 +575,18 @@
 }
 
 /* Il toggle "sezioni avanzate" va a destra della tablist: la barra diventa
- * flex (override della regola in testa, stessa specificità). */
+ * flex (override della regola in testa, stessa specificità). La tablist resta
+ * un elemento flex che può restringersi: senza min-width:0 il suo contenuto
+ * (flex:nowrap + overflow-x:auto) allargherebbe la barra invece di scorrere. */
 .nxa-settab-bar {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.nxa-settab-bar > .nxa-settab-list {
+  flex: 1 1 auto;
+  min-width: 0;
 }

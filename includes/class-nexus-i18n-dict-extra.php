@@ -1874,7 +1874,18 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             // v1.1.19 «Primi Passi» — dashboard operativa (strip stato, prossima azione, checklist).
             'Provider AI attivo' => 'AI provider active',
             'Provider AI da configurare' => 'AI provider to configure',
+            'Raccolta automatica attiva' => 'Automatic collection active',
+            'Raccolta automatica in ritardo' => 'Automatic collection late',
             'Raccolta automatica in pausa' => 'Automatic collection paused',
+            /* Pill coda: tre nodi separati (etichetta, numero, sostantivo).
+             * Le varianti con spazio iniziale servono al strtr lato PHP: senza
+             * di esse la chiave generica ' articoli' spezzerebbe la frase. */
+            'Coda:' => 'Queue:',
+            'articolo in attesa' => 'article waiting',
+            ' articolo in attesa' => ' article waiting',
+            'articoli in attesa' => 'articles waiting',
+            ' articoli in attesa' => ' articles waiting',
+            'Articoli in attesa di approvazione' => 'Articles awaiting approval',
             'Configura la chiave AI' => 'Set up the AI key',
             'La redazione ha bisogno di almeno un provider AI attivo per valutare e riscrivere gli articoli.' => 'The newsroom needs at least one active AI provider to evaluate and rewrite articles.',
             'Apri impostazioni AI' => 'Open AI settings',
@@ -1882,7 +1893,6 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Senza fonti la raccolta resta vuota: incolla gli indirizzi dei feed, uno per riga.' => 'Without sources the collection stays empty: paste the feed addresses, one per line.',
             'Apri impostazioni Contenuti' => 'Open Content settings',
             'In modalità semi-autonoma gli articoli riscritti passano dalla Coda Approvazioni prima della pubblicazione.' => 'In semi-autonomous mode rewritten articles go through the Approval Queue before publishing.',
-            'Vai alla Coda Approvazioni' => 'Go to the Approval Queue',
             'Primi passi' => 'First steps',
             'Nascondi' => 'Dismiss',
             'Chiave AI configurata' => 'AI key configured',
@@ -1893,8 +1903,9 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Primo articolo pubblicato' => 'First article published',
             // v1.1.19 — wizard onboarding, step 0 chiave AI.
             'Collega il provider AI' => 'Connect the AI provider',
+            'Gli agenti scrivono e valutano con l’AI: serve una chiave API. Incollala qui e varrà per tutta la redazione (potrai collegare altri provider da Impostazioni → AI).' => 'Agents write and evaluate with AI: an API key is required. Paste it here and it will apply to the whole newsroom (you can connect more providers later from Settings → AI).',
+            'Dove trovo la chiave?' => 'Where do I find the key?',
             'Provider' => 'Provider',
-            'Chiave API' => 'API key',
             'Salva e continua' => 'Save and continue',
             'Lo farò dopo' => 'I will do it later',
             'Salvataggio della chiave non riuscito: ' => 'Could not save the key: ',
@@ -1934,6 +1945,43 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
  */
 function nexus_i18n_extra_patterns() {
     return array(
+        /* ---- v1.1.19 «Primi Passi» — ereditarietà config.
+         * IN CIMA (regola CIMA): frasi con valori variabili che i pattern
+         * generici pre-esistenti spezzerebbero traducendo solo un frammento.
+         * Le vecchie frasi dashboard cron/coda sono ora statiche a chiavi
+         * esatte (niente numeri o orari dentro la frase). ---- */
+        array(
+            're'  => 'vuoto = modello globale \((.+)\)',
+            'tpl' => 'empty = global model ($1)',
+        ),
+        array(
+            're'  => 'Canale globale attuale: (.+) \(Impostazioni → AI\)\.',
+            'tpl' => 'Current global channel: $1 (Settings → AI).',
+        ),
+        array(
+            're'  => 'Senza fonti qui, la redazione userà la fonte RSS globale \(',
+            'tpl' => 'Without sources here, the newsroom will use the global RSS source (',
+        ),
+        array(
+            're'  => 'Senza fonti qui, la redazione userà le fonti RSS globali \(',
+            'tpl' => 'Without sources here, the newsroom will use the global RSS sources (',
+        ),
+        array(
+            're'  => ' configurata in Impostazioni → Contenuti\)\.',
+            'tpl' => ' configured in Settings → Content).',
+        ),
+        array(
+            're'  => ' configurate in Impostazioni → Contenuti\)\.',
+            'tpl' => ' configured in Settings → Content).',
+        ),
+        array(
+            're'  => 'Attenzione: senza fonti qui e senza fonti globali \(',
+            'tpl' => 'Warning: without sources here and without global sources (',
+        ),
+        array(
+            're'  => '\) i giornalisti della redazione non raccoglieranno nulla\.',
+            'tpl' => ') the newsroom’s journalists will not collect anything.',
+        ),
         /* ---- v1.1.16 (WE1/WE3/WE4): compositi drawer agente + wizard + jobs args.
          * IN CIMA (regola CIMA): i compositi specifici con numeri/parametri devono
          * correre PRIMA di qualunque frammento generico pre-esistente (' articoli',
@@ -4336,60 +4384,6 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => ' — invii falliti: (\d+)',
             'tpl' => ' — failed sends: $1',
-        ),
-        // v1.1.19 «Primi Passi» — dashboard operativa: frasi con numero variabile.
-        array(
-            're'  => 'Raccolta automatica attiva · prossimo giro tra (.+)',
-            'tpl' => 'Automatic collection active · next run in $1',
-        ),
-        array(
-            're'  => '([\d.,]+) articolo attende la tua approvazione',
-            'tpl' => '$1 article awaits your approval',
-        ),
-        array(
-            're'  => '([\d.,]+) articoli attendono la tua approvazione',
-            'tpl' => '$1 articles await your approval',
-        ),
-        array(
-            're'  => 'Coda: ([\d.,]+) articolo in attesa',
-            'tpl' => 'Queue: $1 article waiting',
-        ),
-        array(
-            're'  => 'Coda: ([\d.,]+) articoli in attesa',
-            'tpl' => 'Queue: $1 articles waiting',
-        ),
-        // v1.1.19 — ereditarietà: frasi spezzate da link/valori variabili.
-        array(
-            're'  => 'vuoto = modello globale \((.+)\)',
-            'tpl' => 'empty = global model ($1)',
-        ),
-        array(
-            're'  => 'Canale globale attuale: (.+) \(Impostazioni → AI\)\.',
-            'tpl' => 'Current global channel: $1 (Settings → AI).',
-        ),
-        array(
-            're'  => 'Senza fonti qui, la redazione userà la fonte RSS globale \(',
-            'tpl' => 'Without sources here, the newsroom will use the global RSS source (',
-        ),
-        array(
-            're'  => 'Senza fonti qui, la redazione userà le fonti RSS globali \(',
-            'tpl' => 'Without sources here, the newsroom will use the global RSS sources (',
-        ),
-        array(
-            're'  => ' configurata in Impostazioni → Contenuti\)\.',
-            'tpl' => ' configured in Settings → Content).',
-        ),
-        array(
-            're'  => ' configurate in Impostazioni → Contenuti\)\.',
-            'tpl' => ' configured in Settings → Content).',
-        ),
-        array(
-            're'  => 'Attenzione: senza fonti qui e senza fonti globali \(',
-            'tpl' => 'Warning: without sources here and without global sources (',
-        ),
-        array(
-            're'  => '\) i giornalisti della redazione non raccoglieranno nulla\.',
-            'tpl' => ') the newsroom’s journalists will not collect anything.',
         ),
     );
 }

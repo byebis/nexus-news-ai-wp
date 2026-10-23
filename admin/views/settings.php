@@ -224,12 +224,14 @@ if ( '' === $nxa_settab_active ) {
                 pubblicazione: 'nxa-settings-acc-pubblicazione',
                 sistema: 'nxa-settings-acc-sistema'
         };
-        /* Gruppo aperto di default di ciascuna pagina storica (stesso contratto). */
+        /* Gruppo aperto di default di ciascuna pagina storica (stesso contratto).
+         * sistema: 'interface' (essenziale) e non 'scala' (avanzata), così in
+         * modalità Semplice la pagina si apre con una sezione visibile. */
         var ACC_DEFAULT = {
                 contenuti: 'pipeline',
                 ai: 'ai',
                 pubblicazione: 'wp-seo',
-                sistema: 'scala'
+                sistema: 'interface'
         };
 
         var root = document.querySelector( '.nxa-settab-panels' );
@@ -365,6 +367,11 @@ if ( '' === $nxa_settab_active ) {
                                         tabs[ t ].classList.remove( 'is-active' );
                                 }
                         }
+                }
+
+                /* v1.1.19: il conteggio del toggle "sezioni avanzate" è per tab. */
+                if ( document.getElementById( 'nxa-settab-mode-toggle' ) ) {
+                        applyMode( readMode() );
                 }
         }
 
@@ -812,7 +819,7 @@ if ( '' === $nxa_settab_active ) {
                 var slug;
                 var i;
 
-                /* Marcatura idempotente delle sezioni avanzate. */
+                /* Marcatura idempotente di TUTTE le sezioni avanzate (tutti i tab). */
                 for ( slug in ADVANCED ) {
                         if ( ! Object.prototype.hasOwnProperty.call( ADVANCED, slug ) || ! panels[ slug ] ) {
                                 continue;
@@ -821,7 +828,6 @@ if ( '' === $nxa_settab_active ) {
                                 var group = panels[ slug ].querySelector( '.nxa-acc[data-nxa-acc="' + ADVANCED[ slug ][ i ] + '"]' );
                                 if ( group ) {
                                         group.classList.add( 'nxa-acc--advanced' );
-                                        total++;
                                 }
                         }
                 }
@@ -835,6 +841,15 @@ if ( '' === $nxa_settab_active ) {
                 }
                 if ( toggle ) {
                         toggle.checked = ! isSimple;
+                        /* Conteggio riferito al TAB ATTIVO: il toggle è globale ma
+                         * l'etichetta dice quante sezioni nasconde adesso. */
+                        if ( active && ADVANCED[ active ] && panels[ active ] ) {
+                                for ( i = 0; i < ADVANCED[ active ].length; i++ ) {
+                                        if ( panels[ active ].querySelector( '.nxa-acc[data-nxa-acc="' + ADVANCED[ active ][ i ] + '"]' ) ) {
+                                                total++;
+                                        }
+                                }
+                        }
                         var label = toggle.closest( 'label' );
                         var text = label ? label.querySelector( 'span' ) : null;
                         if ( text ) {

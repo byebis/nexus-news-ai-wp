@@ -7487,6 +7487,12 @@
                         if ( btn ) {
                                 btn.disabled = false;
                         }
+                        // Chiave salvata: lo step 0 non serve più in questa sessione
+                        // (altrimenti riaprendo il wizard ricomparirebbe vuoto).
+                        var step0 = qs( '[data-nxa-obs-step="0"]', modal );
+                        if ( step0 && step0.parentNode ) {
+                                step0.parentNode.removeChild( step0 );
+                        }
                         nxaOnboardingShowStep( 1 );
                 } ).catch( function ( err ) {
                         if ( btn ) {

@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.19.0
+Stable tag: 1.1.19.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,13 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.19.1 =
+* Correzioni emerse dalla revisione approfondita della 1.1.19.0.
+* Wizard: lo Step 0 «Collega il provider AI» ora controlla la chiave del canale globale effettivamente usato dagli agenti creati dal wizard (prima poteva essere saltato con una chiave per-provider, lasciando i nuovi agenti senza AI).
+* Dashboard: la checklist «Fonti RSS» considera anche le fonti delle singole redazioni; lo stato raccolta automatica distingue attiva, in ritardo e in pausa; la pill «Coda» e la prossima azione sono tradotte per intero anche in inglese.
+* Impostazioni: in modalità Semplice la pagina Sistema si apre su una sezione visibile; le tab non escono più dal contenitore su schermi stretti; il toggle avanzate mostra il conteggio del tab attivo.
+* Wizard: dopo il salvataggio della chiave lo Step 0 non ricompare nella stessa sessione.
 
 = 1.1.19.0 =
 * Onboarding guidato: nuovo Step 0 del wizard «Collega il provider AI» per chi non ha ancora una chiave.

@@ -260,7 +260,20 @@ if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
         }
 }
 
+/*
+ * Fonti disponibili: oltre alle globali (global_rss_sources) contano anche
+ * quelle per redazione (term meta nexus_redazione): un sito può raccogliere
+ * solo da lì, quindi la checklist non deve segnalare un falso negativo.
+ */
 $nexus_rss_ok = isset( $nexus_settings['global_rss_sources'] ) && '' !== trim( (string) $nexus_settings['global_rss_sources'] );
+if ( ! $nexus_rss_ok && ! empty( $nexus_red_terms ) && class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'sources_for_term' ) ) {
+        foreach ( $nexus_red_terms as $nexus_red_rss_term ) {
+                if ( ! empty( Nexus_Redazioni::sources_for_term( (int) $nexus_red_rss_term->term_id ) ) ) {
+                        $nexus_rss_ok = true;
+                        break;
+                }
+        }
+}
 
 /*
  * Checklist "Primi passi": 5 voci calcolate server-side. La card resta
@@ -306,12 +319,11 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                 'label' => __( 'Apri impostazioni Contenuti', 'nexus-news-ai' ),
         );
 } elseif ( $nexus_pending_count > 0 ) {
+        /* Titolo STATICO (niente numero concatenato): il conteggio è già nella
+         * pill "Coda" qui sopra e nella stat-card "In attesa". Una frase con un
+         * numero dentro verrebbe spezzata dai frammenti del dizionario i18n. */
         $nexus_next = array(
-                'title' => sprintf(
-                        /* translators: %s: numero di articoli in attesa di approvazione. */
-                        _n( '%s articolo attende la tua approvazione', '%s articoli attendono la tua approvazione', $nexus_pending_count, 'nexus-news-ai' ),
-                        number_format_i18n( $nexus_pending_count )
-                ),
+                'title' => __( 'Articoli in attesa di approvazione', 'nexus-news-ai' ),
                 'desc'  => __( 'In modalità semi-autonoma gli articoli riscritti passano dalla Coda Approvazioni prima della pubblicazione.', 'nexus-news-ai' ),
                 'url'   => admin_url( 'admin.php?page=nexus-queue' ),
                 'label' => __( 'Vai alla Coda Approvazioni', 'nexus-news-ai' ),
@@ -348,16 +360,18 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                         <span class="nxa-status-dot" aria-hidden="true"></span>
                         <?php echo esc_html( ! empty( $nexus_flags['ai_provider_active'] ) ? __( 'Provider AI attivo', 'nexus-news-ai' ) : __( 'Provider AI da configurare', 'nexus-news-ai' ) ); ?>
                 </a>
-                <a class="nxa-status-pill <?php echo $nexus_cron_next > 0 ? 'nxa-status-pill--ok' : 'nxa-status-pill--off'; ?>"
+                <a class="nxa-status-pill <?php echo $nexus_cron_next > time() ? 'nxa-status-pill--ok' : ( $nexus_cron_next > 0 ? 'nxa-status-pill--warn' : 'nxa-status-pill--off' ); ?>"
                         href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ); ?>">
                         <span class="nxa-status-dot" aria-hidden="true"></span>
                         <?php
-                        if ( $nexus_cron_next > 0 ) {
-                                echo esc_html( sprintf(
-                                        /* translators: %s: intervallo leggibile al prossimo giro di raccolta (es. "tra 15 minuti"). */
-                                        __( 'Raccolta automatica attiva · prossimo giro tra %s', 'nexus-news-ai' ),
-                                        human_time_diff( time(), $nexus_cron_next )
-                                ) );
+                        /* Frasi STATICHE (niente orari dinamici): il dizionario i18n
+                         * traduce l'intera stringa con match esatto; un orario
+                         * concatenato verrebbe spezzato dai frammenti del dizionario
+                         * (es. ' articoli' -> ' articles') prima dei pattern JS. */
+                        if ( $nexus_cron_next > time() ) {
+                                echo esc_html__( 'Raccolta automatica attiva', 'nexus-news-ai' );
+                        } elseif ( $nexus_cron_next > 0 ) {
+                                echo esc_html__( 'Raccolta automatica in ritardo', 'nexus-news-ai' );
                         } else {
                                 echo esc_html__( 'Raccolta automatica in pausa', 'nexus-news-ai' );
                         }
@@ -367,12 +381,13 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                         href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-queue' ) ); ?>">
                         <span class="nxa-status-dot" aria-hidden="true"></span>
                         <?php
-                        echo esc_html( sprintf(
-                                /* translators: %s: numero di articoli in coda di approvazione. */
-                                _n( 'Coda: %s articolo in attesa', 'Coda: %s articoli in attesa', $nexus_pending_count, 'nexus-news-ai' ),
-                                number_format_i18n( $nexus_pending_count )
-                        ) );
+                        /* Tre nodi di testo separati (etichetta, numero, sostantivo):
+                         * ognuno è una chiave esatta del dizionario e il server non
+                         * deve mai spezzare una frase con un numero dentro. */
+                        esc_html_e( 'Coda:', 'nexus-news-ai' );
                         ?>
+                        <strong><?php echo esc_html( number_format_i18n( $nexus_pending_count ) ); ?></strong>
+                        <?php echo esc_html( _n( 'articolo in attesa', 'articoli in attesa', $nexus_pending_count, 'nexus-news-ai' ) ); ?>
                 </a>
         </div>
 
@@ -475,6 +490,14 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                                 var card = btn.closest( '.nxa-setup-checklist' );
                                                 if ( card ) {
                                                         card.setAttribute( 'hidden', 'hidden' );
+                                                }
+                                                /* Se la checklist era l'unico contenuto della
+                                                 * guida, si nasconde anche il wrapper (niente
+                                                 * spazio vuoto residuo). */
+                                                var guide = btn.closest( '.nxa-guide' );
+                                                var next = guide ? guide.querySelector( '.nxa-next-action' ) : null;
+                                                if ( guide && ! next ) {
+                                                        guide.setAttribute( 'hidden', 'hidden' );
                                                 }
                                         } else {
                                                 btn.disabled = false;

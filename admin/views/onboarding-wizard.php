@@ -78,21 +78,26 @@ $nxa_obs_sample_rss = implode(
 
 /*
  * v1.1.19 («Primi Passi») — STEP 0 "Collega il provider AI": renderizzato SOLO
- * se nessuna chiave AI è configurata (stessa logica di GET /settings/status,
- * via Nexus_Rest::settings_status_flags() — solo presenza, mai valori).
+ * se il canale GLOBALE legacy non ha una chiave.
  *
  * Il salvataggio (admin.js, nxaObsSaveKey) scrive sul canale GLOBALE legacy
  * (ai_api_key + ai_base_url + ai_model): gli agenti creati dal wizard nascono
  * SENZA provider dedicato e usano proprio quel canale (Nexus_Providers::
- * resolve_for_agent → legacy). I provider 'custom' e 'ollama' restano fuori
- * dallo step (richiedono campi extra: si configurano da Impostazioni → AI).
- * I modelli di default per provider vivono nella mappa qui sotto: sono solo
- * il punto di partenza, modificabili in ogni momento dalle Impostazioni.
+ * resolve_for_agent → legacy). Per questo il guard NON può usare
+ * settings_status_flags()['ai_provider_active']: quello è vero anche con una
+ * sola prov_key_* configurata, ma un agente senza provider dedicato ignora
+ * quelle chiavi e fallirebbe con "Chiave API AI non configurata". Qui serve
+ * la presenza della sola ai_api_key (solo presenza, mai il valore).
+ *
+ * I provider 'custom' e 'ollama' restano fuori dallo step (richiedono campi
+ * extra: si configurano da Impostazioni → AI). I modelli di default per
+ * provider vivono nella mappa qui sotto: sono solo il punto di partenza,
+ * modificabili in ogni momento dalle Impostazioni.
  */
 $nxa_obs_has_ai_key = false;
-if ( class_exists( 'Nexus_Rest' ) && method_exists( 'Nexus_Rest', 'settings_status_flags' ) ) {
-        $nxa_obs_flags     = (array) Nexus_Rest::settings_status_flags();
-        $nxa_obs_has_ai_key = ! empty( $nxa_obs_flags['ai_provider_active'] );
+if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+        $nxa_obs_settings   = (array) Nexus_DB::get_settings();
+        $nxa_obs_has_ai_key = isset( $nxa_obs_settings['ai_api_key'] ) && '' !== trim( (string) $nxa_obs_settings['ai_api_key'] );
 }
 
 $nxa_obs_providers = array();
