@@ -545,3 +545,41 @@
   font-weight: 600;
   line-height: 1.6;
 }
+
+/* ==========================================================================
+   v1.1.19 «Primi Passi» — modalità Semplice/Avanzata delle Impostazioni.
+   La classe .nxa-mode-simple è aggiunta dal JS della vista settings.php:
+   senza JS tutte le sezioni restano visibili (fallback no-JS).
+   ========================================================================== */
+
+.nxa-settab-mode {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.nxa-settab-mode__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nxa-text, #334155);
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 4px 0;
+}
+
+.nxa-mode-simple .nxa-acc--advanced {
+  display: none;
+}
+
+/* Il toggle "sezioni avanzate" va a destra della tablist: la barra diventa
+ * flex (override della regola in testa, stessa specificità). */
+.nxa-settab-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}

@@ -1878,7 +1878,7 @@
                         // del picker segue il provider DEDICATO dell'agente.
                         '<div style="margin:0 0 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
                                 '<span class="nxa-mp" style="flex:1 1 170px;min-width:0">' +
-                                        '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-provider="' + esc( pick( agent, 'ai_provider', 'aiProvider' ) || '' ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="vuoto = modello globale" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
+                                        '<input type="text" class="regular-text nxa-agent-model" data-agent-id="' + esc( pick( agent, 'id' ) ) + '" data-provider="' + esc( pick( agent, 'ai_provider', 'aiProvider' ) || '' ) + '" value="' + esc( pick( agent, 'ai_model' ) || '' ) + '" placeholder="' + esc( nxaGlobalModelPlaceholder() ) + '" aria-label="Modello AI per ' + esc( pick( agent, 'name' ) || 'agente' ) + '" />' +
                                 '</span>' +
                                 '<button type="button" class="button nxa-agent-model-save" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">Salva modello</button>' +
                         '</div>' +
@@ -6796,6 +6796,18 @@
                 return text;
         }
 
+        /**
+         * v1.1.19 — Placeholder "vuoto = modello globale" delle card agente con il
+         * modello globale EFFETTIVO (data-nxa-global-model sul wrap della pagina
+         * Agenti, server-side): l'ereditarietà dice cosa si eredita, non solo
+         * che esiste. Wrap assente o valore vuoto → testo storico.
+         */
+        function nxaGlobalModelPlaceholder() {
+                var wrap = qs( '.wrap.nexus-admin[data-page="agents"]' );
+                var gm = wrap ? String( wrap.getAttribute( 'data-nxa-global-model' ) || '' ).replace( /^\s+|\s+$/g, '' ) : '';
+                return gm ? 'vuoto = modello globale (' + gm + ')' : 'vuoto = modello globale';
+        }
+
         function boot() {
                 // v1.1.6 ("dashboard doppia"): il boot può girare UNA sola volta
                 // per pagina (dominio di esecuzione singolo, nessun doppio loader).
@@ -7005,16 +7017,29 @@
                 if ( progress ) {
                         progress.textContent = nxaT( 'Creo gli agenti…' );
                 }
-                nxaOnboardingShowStep( 1 );
+                // v1.1.19: step 0 (chiave AI) — reset del campo e dell'errore;
+                // il wizard parte dallo step 0 SOLO se il partial lo ha
+                // renderizzato (nessuna chiave configurata), altrimenti step 1.
+                var keyInput = qs( '#nxa-obs-key', modal );
+                if ( keyInput ) {
+                        keyInput.value = '';
+                }
+                var keyError = qs( '#nxa-obs-key-error', modal );
+                if ( keyError ) {
+                        keyError.hidden = true;
+                        keyError.textContent = '';
+                }
+                nxaOnboardingShowStep( qs( '[data-nxa-obs-step="0"]', modal ) ? 0 : 1 );
         }
 
-        /** Visibilità passi e bottoni per lo step richiesto (1..4). */
+        /** Visibilità passi e bottoni per lo step richiesto (0..4; lo step 0
+         *  "chiave AI" esiste SOLO se il partial lo ha renderizzato, v1.1.19). */
         function nxaOnboardingShowStep( step ) {
                 var modal = nxaOnboardingModal();
                 if ( ! modal ) {
                         return;
                 }
-                var steps = [ 1, 2, 3, 4 ];
+                var steps = [ 0, 1, 2, 3, 4 ];
                 for ( var i = 0; i < steps.length; i++ ) {
                         var pane = qs( '[data-nxa-obs-step="' + steps[ i ] + '"]', modal );
                         if ( pane ) {
@@ -7040,7 +7065,9 @@
                         btnDone.hidden = step !== 4;
                 }
                 if ( btnCancel ) {
-                        btnCancel.hidden = ! isChoice;
+                        // v1.1.19: Annulla resta disponibile anche allo step 0
+                        // (chiave AI): l'uscita dal wizard è sempre possibile.
+                        btnCancel.hidden = ! ( isChoice || step === 0 );
                 }
         }
 
@@ -7393,6 +7420,85 @@
                 } );
         }
 
+        /**
+         * v1.1.19 — Step 0: il link "Dove trovo la chiave?" segue il provider
+         * scelto (data-keypage sull'option; vuoto → link nascosto).
+         */
+        function nxaObsSyncKeyPage() {
+                var modal = nxaOnboardingModal();
+                var sel = modal ? qs( '#nxa-obs-provider', modal ) : null;
+                var link = modal ? qs( '#nxa-obs-keypage', modal ) : null;
+                if ( ! sel || ! link ) {
+                        return;
+                }
+                var opt = sel.options[ sel.selectedIndex ];
+                var page = opt ? String( opt.getAttribute( 'data-keypage' ) || '' ) : '';
+                if ( page ) {
+                        link.setAttribute( 'href', page );
+                        link.hidden = false;
+                } else {
+                        link.hidden = true;
+                }
+        }
+
+        /**
+         * v1.1.19 — Step 0: salva la chiave AI sul canale GLOBALE legacy
+         * (ai_api_key + ai_base_url + modello di default del provider, dai
+         * data-attribute dell'option): gli agenti del wizard nascono senza
+         * provider dedicato e usano proprio quel canale. Errore onesto inline,
+         * nessun avanzamento automatico a salvataggio fallito.
+         */
+        function nxaObsSaveKey() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                var sel    = qs( '#nxa-obs-provider', modal );
+                var keyEl  = qs( '#nxa-obs-key', modal );
+                var errEl  = qs( '#nxa-obs-key-error', modal );
+                var btn    = qs( '#nxa-obs-key-save', modal );
+                var key    = keyEl ? String( keyEl.value || '' ).replace( /^\s+|\s+$/g, '' ) : '';
+                if ( errEl ) {
+                        errEl.hidden = true;
+                        errEl.textContent = '';
+                }
+                if ( ! sel || ! key ) {
+                        if ( errEl ) {
+                                errEl.textContent = nxaT( 'Inserisci la chiave API del provider scelto.' );
+                                errEl.hidden = false;
+                        }
+                        return;
+                }
+                var opt  = sel.options[ sel.selectedIndex ];
+                var body = {
+                        ai_api_key: key,
+                        ai_base_url: opt ? String( opt.getAttribute( 'data-base' ) || '' ) : ''
+                };
+                var model = opt ? String( opt.getAttribute( 'data-model' ) || '' ) : '';
+                if ( model ) {
+                        body.ai_model = model;
+                }
+                if ( btn ) {
+                        btn.disabled = true;
+                }
+                api( 'settings', { method: 'PUT', body: body } ).then( function () {
+                        // Cache settings del wizard invalidata: la chiave ora c'è.
+                        nxaObsSettings = null;
+                        if ( btn ) {
+                                btn.disabled = false;
+                        }
+                        nxaOnboardingShowStep( 1 );
+                } ).catch( function ( err ) {
+                        if ( btn ) {
+                                btn.disabled = false;
+                        }
+                        if ( errEl ) {
+                                errEl.textContent = nxaT( 'Salvataggio della chiave non riuscito: ' ) + ( ( err && err.message ) ? err.message : '' );
+                                errEl.hidden = false;
+                        }
+                } );
+        }
+
         /** Binding del wizard: una sola volta per pagina (guard sul markup). */
         function nxaOnboardingBind() {
                 var modal = nxaOnboardingModal();
@@ -7476,6 +7582,23 @@
                 var runBtn = qs( '#nxa-obs-run', modal );
                 if ( runBtn ) {
                         runBtn.addEventListener( 'click', nxaOnboardingRun );
+                }
+
+                // v1.1.19: step 0 (chiave AI) — salva+e-continua, salta, link key page.
+                var keySaveBtn = qs( '#nxa-obs-key-save', modal );
+                if ( keySaveBtn ) {
+                        keySaveBtn.addEventListener( 'click', nxaObsSaveKey );
+                }
+                var keySkipBtn = qs( '#nxa-obs-key-skip', modal );
+                if ( keySkipBtn ) {
+                        keySkipBtn.addEventListener( 'click', function () {
+                                nxaOnboardingShowStep( 1 );
+                        } );
+                }
+                var keyProvSel = qs( '#nxa-obs-provider', modal );
+                if ( keyProvSel ) {
+                        keyProvSel.addEventListener( 'change', nxaObsSyncKeyPage );
+                        nxaObsSyncKeyPage();
                 }
 
                 // Bottone "Apri il wizard" (empty state + altri eventuali): delega

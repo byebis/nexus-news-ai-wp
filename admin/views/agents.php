@@ -238,8 +238,19 @@ $nxa_agent_status_labels = array(
         'paused' => __( 'In pausa', 'nexus-news-ai' ),
         'error'  => __( 'Errore', 'nexus-news-ai' ),
 );
+
+/*
+ * v1.1.19 («Primi Passi») — ereditarietà VISIBILE nel modal agente: il canale
+ * globale legacy (ai_base_url + ai_model) viene mostrato nel placeholder del
+ * modello e nell'hint del provider, così "vuoto = globale" dice COSA si eredita.
+ * Sola lettura dei settings; nessuna logica di risoluzione toccata.
+ */
+$nxa_global_settings  = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) ? (array) Nexus_DB::get_settings() : array();
+$nxa_global_model     = isset( $nxa_global_settings['ai_model'] ) ? trim( (string) $nxa_global_settings['ai_model'] ) : '';
+$nxa_global_base      = isset( $nxa_global_settings['ai_base_url'] ) ? trim( (string) $nxa_global_settings['ai_base_url'] ) : '';
+$nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_global_base, PHP_URL_HOST ) : '';
 ?>
-<div class="wrap nexus-admin" data-page="agents">
+<div class="wrap nexus-admin" data-page="agents" data-nxa-global-model="<?php echo esc_attr( $nxa_global_model ); ?>">
 
         <h1><?php esc_html_e( 'Agenti giornalisti', 'nexus-news-ai' ); ?></h1>
 
@@ -399,7 +410,13 @@ $nxa_agent_status_labels = array(
                                                 <select id="nxa-agent-provider" name="ai_provider">
                                                         <option value=""><?php echo esc_html( 'Provider globale (impostazioni)' ); ?></option>
                                                 </select>
-                                                <span class="nxa-agent-field-hint"><?php echo esc_html( 'La lista dei provider arriva dalle impostazioni; senza chiave in Impostazioni → Provider AI il provider non è utilizzabile.' ); ?></span></p>
+                                                <span class="nxa-agent-field-hint"><?php echo esc_html( 'La lista dei provider arriva dalle impostazioni; senza chiave in Impostazioni → Provider AI il provider non è utilizzabile.' ); ?></span>
+                                                <?php if ( '' !== $nxa_global_base_host ) : ?>
+                                                <span class="nxa-agent-field-hint"><?php
+                                                        /* translators: %s: host dell'URL base del canale AI globale (es. openrouter.ai). */
+                                                        echo esc_html( sprintf( __( 'Canale globale attuale: %s (Impostazioni → AI).', 'nexus-news-ai' ), $nxa_global_base_host ) );
+                                                ?></span>
+                                                <?php endif; ?></p>
                                         <p class="nxa-agent-field nxa-agent-field--full nxa-agent-chief-field" id="nxa-agent-chief-field" hidden>
                                                 <label for="nxa-agent-chief-scope"><?php echo esc_html( 'Ambito capo redattore' ); ?></label>
                                                 <select id="nxa-agent-chief-scope" name="chief_scope">
@@ -413,7 +430,11 @@ $nxa_agent_status_labels = array(
                                                 <span class="nxa-agent-field-hint"><?php echo esc_html( 'Visibile solo per il ruolo Capo redattore: dice al capo quali articoli verifica (intero giornale, solo la sua categoria o una redazione specifica).' ); ?></span></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-model"><?php esc_html_e( 'Modello AI (vuoto = globale)', 'nexus-news-ai' ); ?></label>
                                                 <?php /* WP12: combobox cercabile — admin.js (nexusModelPicker) avvolge l'input in span.nxa-mp e apre il dropdown al focus: la lista segue #nxa-agent-provider (reload al cambio, fix G5). La vecchia <datalist> #nxa-agent-model-datalist è rimossa. */ ?>
-                                                <input type="text" id="nxa-agent-model" name="ai_model" maxlength="100" class="code" autocomplete="off" placeholder="vuoto = modello globale" />
+                                                <input type="text" id="nxa-agent-model" name="ai_model" maxlength="100" class="code" autocomplete="off" placeholder="<?php echo esc_attr( '' !== $nxa_global_model ? sprintf(
+                                                        /* translators: %s: modello AI globale attuale (es. openai/gpt-4o-mini). */
+                                                        __( 'vuoto = modello globale (%s)', 'nexus-news-ai' ),
+                                                        $nxa_global_model
+                                                ) : __( 'vuoto = modello globale', 'nexus-news-ai' ) ); ?>" />
                                                 <span class="nxa-agent-field-hint"><?php esc_html_e( 'Digita per cercare tra i modelli del provider scelto: clic o Invio per scegliere, Esc per chiudere.', 'nexus-news-ai' ); ?></span></p>
                                         <p class="nxa-agent-field nxa-agent-field--full"><label for="nxa-agent-description"><?php esc_html_e( 'Descrizione', 'nexus-news-ai' ); ?></label>
                                                 <textarea id="nxa-agent-description" name="description" rows="3"></textarea></p>

@@ -222,6 +222,101 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 $nexus_ml_badge_text = __( 'Associazioni gestite da WPML.', 'nexus-news-ai' );
         }
 }
+
+/*
+ * v1.1.19 («Primi Passi») — Dashboard operativa: strip "Stato del sistema",
+ * card "Prossima azione suggerita" e checklist setup, tutto server-side
+ * (stesso pattern delle card v1.1.0/v1.1.1: PHP diretto, nessuna rotta REST
+ * nuova per il render, nessun id/data-* consumato da admin.js).
+ *
+ * - Stato connessioni: riuso di Nexus_Rest::settings_status_flags() (v1.1.19:
+ *   reso pubblico) — STESSA logica dei badge del tab Sistema e dell'endpoint
+ *   GET /settings/status, mai valori o segreti, solo booleani.
+ * - Cron raccolta: wp_next_scheduled() sull'hook Nexus_Cron::HOOK_TICK
+ *   ('nexus_cron_tick'): se non schedulato la raccolta automatica è in pausa.
+ * - Coda approvazioni / pubblicati: Nexus_DB::stats() (conteggi per status,
+ *   già usati da GET /stats).
+ */
+$nexus_flags = ( class_exists( 'Nexus_Rest' ) && method_exists( 'Nexus_Rest', 'settings_status_flags' ) )
+        ? (array) Nexus_Rest::settings_status_flags()
+        : array( 'google_connected' => false, 'telegram_configured' => false, 'ai_provider_active' => false );
+
+$nexus_cron_next = function_exists( 'wp_next_scheduled' ) ? (int) wp_next_scheduled( 'nexus_cron_tick' ) : 0;
+
+$nexus_stats_srv       = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'stats' ) )
+        ? (array) Nexus_DB::stats()
+        : array();
+$nexus_pending_count   = isset( $nexus_stats_srv['pending'] ) ? (int) $nexus_stats_srv['pending'] : 0;
+$nexus_published_count = isset( $nexus_stats_srv['published'] ) ? (int) $nexus_stats_srv['published'] : 0;
+
+/* Totale articoli raccolti (qualsiasi stato): COUNT difensivo, stesso pattern
+ * della card "Contenuti nativi" qui sopra. */
+$nexus_articles_total = 0;
+if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
+        $nexus_tables_setup = Nexus_DB::tables();
+        if ( is_array( $nexus_tables_setup ) && ! empty( $nexus_tables_setup['articles'] ) ) {
+                global $wpdb;
+                $nexus_articles_total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$nexus_tables_setup['articles']}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- nome tabella da Nexus_DB::tables(), non da input.
+        }
+}
+
+$nexus_rss_ok = isset( $nexus_settings['global_rss_sources'] ) && '' !== trim( (string) $nexus_settings['global_rss_sources'] );
+
+/*
+ * Checklist "Primi passi": 5 voci calcolate server-side. La card resta
+ * visibile finché almeno una voce è incompleta E l'utente non l'ha nascosta
+ * (user meta 'nexus_setup_dismissed', via POST /setup/dismiss — v1.1.19).
+ */
+$nexus_setup_dismissed = (bool) get_user_meta( get_current_user_id(), 'nexus_setup_dismissed', true );
+$nexus_checklist       = array(
+        'ai'        => ! empty( $nexus_flags['ai_provider_active'] ),
+        'agents'    => $nexus_agents_count > 0,
+        'rss'       => $nexus_rss_ok,
+        'collected' => $nexus_articles_total > 0,
+        'published' => $nexus_published_count > 0,
+);
+$nexus_checklist_done = ! in_array( false, $nexus_checklist, true );
+$nexus_checklist_show = ( ! $nexus_setup_dismissed && ! $nexus_checklist_done );
+
+/*
+ * Prossima azione suggerita: UNA sola CTA primaria, in ordine di priorità.
+ * Se è tutto a posto la card non viene renderizzata (la toolbar con
+ * "Avvia testata" è subito sotto: niente CTA duplicate).
+ */
+$nexus_next = null;
+if ( empty( $nexus_flags['ai_provider_active'] ) ) {
+        $nexus_next = array(
+                'title' => __( 'Configura la chiave AI', 'nexus-news-ai' ),
+                'desc'  => __( 'La redazione ha bisogno di almeno un provider AI attivo per valutare e riscrivere gli articoli.', 'nexus-news-ai' ),
+                'url'   => admin_url( 'admin.php?page=nexus-settings&tab=ai' ),
+                'label' => __( 'Apri impostazioni AI', 'nexus-news-ai' ),
+        );
+} elseif ( 0 === $nexus_agents_count ) {
+        $nexus_next = array(
+                'title' => __( 'Crea la tua redazione', 'nexus-news-ai' ),
+                'desc'  => __( 'Nessun agente ancora: apri il wizard e parti da un pacchetto pronto (1, 3 o più giornalisti), tutto personalizzabile.', 'nexus-news-ai' ),
+                'url'   => admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ),
+                'label' => __( 'Apri il wizard', 'nexus-news-ai' ),
+        );
+} elseif ( ! $nexus_rss_ok ) {
+        $nexus_next = array(
+                'title' => __( 'Aggiungi le fonti RSS', 'nexus-news-ai' ),
+                'desc'  => __( 'Senza fonti la raccolta resta vuota: incolla gli indirizzi dei feed, uno per riga.', 'nexus-news-ai' ),
+                'url'   => admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ),
+                'label' => __( 'Apri impostazioni Contenuti', 'nexus-news-ai' ),
+        );
+} elseif ( $nexus_pending_count > 0 ) {
+        $nexus_next = array(
+                'title' => sprintf(
+                        /* translators: %s: numero di articoli in attesa di approvazione. */
+                        _n( '%s articolo attende la tua approvazione', '%s articoli attendono la tua approvazione', $nexus_pending_count, 'nexus-news-ai' ),
+                        number_format_i18n( $nexus_pending_count )
+                ),
+                'desc'  => __( 'In modalità semi-autonoma gli articoli riscritti passano dalla Coda Approvazioni prima della pubblicazione.', 'nexus-news-ai' ),
+                'url'   => admin_url( 'admin.php?page=nexus-queue' ),
+                'label' => __( 'Vai alla Coda Approvazioni', 'nexus-news-ai' ),
+        );
+}
 ?>
 <div class="wrap nexus-admin sui-wrap" data-page="dashboard">
 
@@ -240,6 +335,47 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 <?php endif; ?>
         </div>
 
+        <?php
+        /*
+         * v1.1.19 — Strip "Stato del sistema": 3 pill con semaforo, ognuna
+         * linka alla pagina di risoluzione. Tutto server-side (fonti: blocco
+         * PHP in testa alla vista). Classi nuove, nessun contratto admin.js.
+         */
+        ?>
+        <div class="nxa-status-strip" role="status">
+                <a class="nxa-status-pill <?php echo ! empty( $nexus_flags['ai_provider_active'] ) ? 'nxa-status-pill--ok' : 'nxa-status-pill--off'; ?>"
+                        href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=ai' ) ); ?>">
+                        <span class="nxa-status-dot" aria-hidden="true"></span>
+                        <?php echo esc_html( ! empty( $nexus_flags['ai_provider_active'] ) ? __( 'Provider AI attivo', 'nexus-news-ai' ) : __( 'Provider AI da configurare', 'nexus-news-ai' ) ); ?>
+                </a>
+                <a class="nxa-status-pill <?php echo $nexus_cron_next > 0 ? 'nxa-status-pill--ok' : 'nxa-status-pill--off'; ?>"
+                        href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ); ?>">
+                        <span class="nxa-status-dot" aria-hidden="true"></span>
+                        <?php
+                        if ( $nexus_cron_next > 0 ) {
+                                echo esc_html( sprintf(
+                                        /* translators: %s: intervallo leggibile al prossimo giro di raccolta (es. "tra 15 minuti"). */
+                                        __( 'Raccolta automatica attiva · prossimo giro tra %s', 'nexus-news-ai' ),
+                                        human_time_diff( time(), $nexus_cron_next )
+                                ) );
+                        } else {
+                                echo esc_html__( 'Raccolta automatica in pausa', 'nexus-news-ai' );
+                        }
+                        ?>
+                </a>
+                <a class="nxa-status-pill <?php echo 0 === $nexus_pending_count ? 'nxa-status-pill--ok' : 'nxa-status-pill--warn'; ?>"
+                        href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-queue' ) ); ?>">
+                        <span class="nxa-status-dot" aria-hidden="true"></span>
+                        <?php
+                        echo esc_html( sprintf(
+                                /* translators: %s: numero di articoli in coda di approvazione. */
+                                _n( 'Coda: %s articolo in attesa', 'Coda: %s articoli in attesa', $nexus_pending_count, 'nexus-news-ai' ),
+                                number_format_i18n( $nexus_pending_count )
+                        ) );
+                        ?>
+                </a>
+        </div>
+
         <div class="nxa-toolbar sui-toolbar">
                 <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
                      (sezione AVVII MIRATI): conferma inline (v1.1.13.1 Q2) con il numero
@@ -252,17 +388,105 @@ if ( class_exists( 'Nexus_Multilang' ) ) {
                 <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
         </div>
 
-        <?php if ( 0 === $nexus_agents_count ) : ?>
-                <!-- v1.1.11 (R3): card CTA wizard — SOLO con zero agenti (guard nel
-                     docblock di testa). L'hash #nxa-onboarding apre il wizard in
-                     automatico nella pagina Agenti (sezione v1.1.11 di admin.js). -->
-                <div class="nxa-onboarding-cta">
-                        <div class="nxa-onboarding-cta__text">
-                                <strong><?php esc_html_e( 'Crea la tua redazione', 'nexus-news-ai' ); ?></strong>
-                                <span><?php esc_html_e( 'Nessun agente ancora: apri il wizard e parti da un pacchetto pronto (1, 3 o più giornalisti), tutto personalizzabile.', 'nexus-news-ai' ); ?></span>
+        <?php
+        /*
+         * v1.1.19 — Blocco guida: card "Prossima azione suggerita" (UNA CTA
+         * primaria, cascade in testa alla vista) + checklist "Primi passi".
+         * Sostituisce la vecchia card CTA v1.1.11 (caso zero agenti → stesso
+         * link con hash #nxa-onboarding, il wizard si apre in automatico nella
+         * pagina Agenti). Con tutto configurato e nessuna coda la card azione
+         * non viene renderizzata (la toolbar sopra ha già "Avvia testata").
+         */
+        ?>
+        <?php if ( $nexus_next || $nexus_checklist_show ) : ?>
+        <div class="nxa-guide">
+                <?php if ( $nexus_next ) : ?>
+                <div class="nxa-next-action">
+                        <div class="nxa-next-action__text">
+                                <strong><?php echo esc_html( $nexus_next['title'] ); ?></strong>
+                                <span><?php echo esc_html( $nexus_next['desc'] ); ?></span>
                         </div>
-                        <a class="nxa-btn nxa-btn-primary nxa-onboarding-cta__btn" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ) ); ?>"><?php esc_html_e( 'Apri il wizard', 'nexus-news-ai' ); ?></a>
+                        <a class="nxa-btn nxa-btn-primary nxa-next-action__btn" href="<?php echo esc_url( $nexus_next['url'] ); ?>"><?php echo esc_html( $nexus_next['label'] ); ?></a>
                 </div>
+                <?php endif; ?>
+
+                <?php if ( $nexus_checklist_show ) : ?>
+                <div class="nxa-setup-checklist">
+                        <div class="nxa-setup-checklist__head">
+                                <strong><?php esc_html_e( 'Primi passi', 'nexus-news-ai' ); ?></strong>
+                                <button type="button" class="button-link nxa-setup-dismiss"><?php esc_html_e( 'Nascondi', 'nexus-news-ai' ); ?></button>
+                        </div>
+                        <ul class="nxa-setup-checklist__list">
+                                <li class="<?php echo $nexus_checklist['ai'] ? 'is-done' : ''; ?>">
+                                        <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['ai'] ? '✓' : '○'; ?></span>
+                                        <?php if ( $nexus_checklist['ai'] ) : ?>
+                                                <?php esc_html_e( 'Chiave AI configurata', 'nexus-news-ai' ); ?>
+                                        <?php else : ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=ai' ) ); ?>"><?php esc_html_e( 'Configura la chiave AI', 'nexus-news-ai' ); ?></a>
+                                        <?php endif; ?>
+                                </li>
+                                <li class="<?php echo $nexus_checklist['agents'] ? 'is-done' : ''; ?>">
+                                        <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['agents'] ? '✓' : '○'; ?></span>
+                                        <?php if ( $nexus_checklist['agents'] ) : ?>
+                                                <?php esc_html_e( 'Redazione creata', 'nexus-news-ai' ); ?>
+                                        <?php else : ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ) ); ?>"><?php esc_html_e( 'Crea la redazione con il wizard', 'nexus-news-ai' ); ?></a>
+                                        <?php endif; ?>
+                                </li>
+                                <li class="<?php echo $nexus_checklist['rss'] ? 'is-done' : ''; ?>">
+                                        <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['rss'] ? '✓' : '○'; ?></span>
+                                        <?php if ( $nexus_checklist['rss'] ) : ?>
+                                                <?php esc_html_e( 'Fonti RSS impostate', 'nexus-news-ai' ); ?>
+                                        <?php else : ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ); ?>"><?php esc_html_e( 'Aggiungi le fonti RSS', 'nexus-news-ai' ); ?></a>
+                                        <?php endif; ?>
+                                </li>
+                                <li class="<?php echo $nexus_checklist['collected'] ? 'is-done' : ''; ?>">
+                                        <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['collected'] ? '✓' : '○'; ?></span>
+                                        <?php esc_html_e( 'Prima raccolta eseguita', 'nexus-news-ai' ); ?>
+                                </li>
+                                <li class="<?php echo $nexus_checklist['published'] ? 'is-done' : ''; ?>">
+                                        <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['published'] ? '✓' : '○'; ?></span>
+                                        <?php esc_html_e( 'Primo articolo pubblicato', 'nexus-news-ai' ); ?>
+                                </li>
+                        </ul>
+                </div>
+                <script>
+                /* v1.1.19 — Dismiss checklist: POST /setup/dismiss (user meta
+                 * per-utente). Niente hide ottimistico: la card sparisce solo a
+                 * salvataggio riuscito (stesso criterio "onesto" degli altri flussi). */
+                ( function () {
+                        var btn = document.querySelector( '.nxa-setup-dismiss' );
+                        if ( ! btn ) {
+                                return;
+                        }
+                        btn.addEventListener( 'click', function () {
+                                var data = window.NexusAdminData || {};
+                                if ( ! data.restUrl || ! data.nonce ) {
+                                        return;
+                                }
+                                btn.disabled = true;
+                                window.fetch( String( data.restUrl ).replace( /\/+$/, '' ) + '/setup/dismiss', {
+                                        method: 'POST',
+                                        headers: { 'X-WP-Nonce': data.nonce },
+                                        credentials: 'same-origin'
+                                } ).then( function ( res ) {
+                                        if ( res && res.ok ) {
+                                                var card = btn.closest( '.nxa-setup-checklist' );
+                                                if ( card ) {
+                                                        card.setAttribute( 'hidden', 'hidden' );
+                                                }
+                                        } else {
+                                                btn.disabled = false;
+                                        }
+                                } ).catch( function () {
+                                        btn.disabled = false;
+                                } );
+                        } );
+                } )();
+                </script>
+                <?php endif; ?>
+        </div>
         <?php endif; ?>
 
         <!-- v1.1.16 (WE5): #nxa-stats-error è il contenitore dello stato d'errore

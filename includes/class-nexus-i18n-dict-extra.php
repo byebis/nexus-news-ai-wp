@@ -1871,6 +1871,40 @@ Child desks will be reassigned to the parent desk. Articles are not deleted.',
             'Sei già iscritto alla newsletter.' => 'You are already subscribed to the newsletter.',
             'Torna al sito' => 'Back to the site',
             'Vuoi davvero annullare la tua iscrizione alla newsletter?' => 'Do you really want to unsubscribe from the newsletter?',
+            // v1.1.19 «Primi Passi» — dashboard operativa (strip stato, prossima azione, checklist).
+            'Provider AI attivo' => 'AI provider active',
+            'Provider AI da configurare' => 'AI provider to configure',
+            'Raccolta automatica in pausa' => 'Automatic collection paused',
+            'Configura la chiave AI' => 'Set up the AI key',
+            'La redazione ha bisogno di almeno un provider AI attivo per valutare e riscrivere gli articoli.' => 'The newsroom needs at least one active AI provider to evaluate and rewrite articles.',
+            'Apri impostazioni AI' => 'Open AI settings',
+            'Aggiungi le fonti RSS' => 'Add RSS sources',
+            'Senza fonti la raccolta resta vuota: incolla gli indirizzi dei feed, uno per riga.' => 'Without sources the collection stays empty: paste the feed addresses, one per line.',
+            'Apri impostazioni Contenuti' => 'Open Content settings',
+            'In modalità semi-autonoma gli articoli riscritti passano dalla Coda Approvazioni prima della pubblicazione.' => 'In semi-autonomous mode rewritten articles go through the Approval Queue before publishing.',
+            'Vai alla Coda Approvazioni' => 'Go to the Approval Queue',
+            'Primi passi' => 'First steps',
+            'Nascondi' => 'Dismiss',
+            'Chiave AI configurata' => 'AI key configured',
+            'Redazione creata' => 'Newsroom created',
+            'Fonti RSS impostate' => 'RSS sources set',
+            'Crea la redazione con il wizard' => 'Create the newsroom with the wizard',
+            'Prima raccolta eseguita' => 'First collection done',
+            'Primo articolo pubblicato' => 'First article published',
+            // v1.1.19 — wizard onboarding, step 0 chiave AI.
+            'Collega il provider AI' => 'Connect the AI provider',
+            'Provider' => 'Provider',
+            'Chiave API' => 'API key',
+            'Salva e continua' => 'Save and continue',
+            'Lo farò dopo' => 'I will do it later',
+            'Salvataggio della chiave non riuscito: ' => 'Could not save the key: ',
+            'Inserisci la chiave API del provider scelto.' => 'Enter the API key for the chosen provider.',
+            // v1.1.19 — impostazioni, modalità Semplice/Avanzata.
+            'Mostra sezioni avanzate' => 'Show advanced sections',
+            // v1.1.19 — ereditarietà config (agenti/redazioni).
+            'Eredita dalle impostazioni globali' => 'Inherits from global settings',
+            'Personalizzato' => 'Customized',
+            'Impostazioni → Contenuti' => 'Settings → Content',
         );
 }
 
@@ -4302,6 +4336,60 @@ function nexus_i18n_extra_patterns() {
         array(
             're'  => ' — invii falliti: (\d+)',
             'tpl' => ' — failed sends: $1',
+        ),
+        // v1.1.19 «Primi Passi» — dashboard operativa: frasi con numero variabile.
+        array(
+            're'  => 'Raccolta automatica attiva · prossimo giro tra (.+)',
+            'tpl' => 'Automatic collection active · next run in $1',
+        ),
+        array(
+            're'  => '([\d.,]+) articolo attende la tua approvazione',
+            'tpl' => '$1 article awaits your approval',
+        ),
+        array(
+            're'  => '([\d.,]+) articoli attendono la tua approvazione',
+            'tpl' => '$1 articles await your approval',
+        ),
+        array(
+            're'  => 'Coda: ([\d.,]+) articolo in attesa',
+            'tpl' => 'Queue: $1 article waiting',
+        ),
+        array(
+            're'  => 'Coda: ([\d.,]+) articoli in attesa',
+            'tpl' => 'Queue: $1 articles waiting',
+        ),
+        // v1.1.19 — ereditarietà: frasi spezzate da link/valori variabili.
+        array(
+            're'  => 'vuoto = modello globale \((.+)\)',
+            'tpl' => 'empty = global model ($1)',
+        ),
+        array(
+            're'  => 'Canale globale attuale: (.+) \(Impostazioni → AI\)\.',
+            'tpl' => 'Current global channel: $1 (Settings → AI).',
+        ),
+        array(
+            're'  => 'Senza fonti qui, la redazione userà la fonte RSS globale \(',
+            'tpl' => 'Without sources here, the newsroom will use the global RSS source (',
+        ),
+        array(
+            're'  => 'Senza fonti qui, la redazione userà le fonti RSS globali \(',
+            'tpl' => 'Without sources here, the newsroom will use the global RSS sources (',
+        ),
+        array(
+            're'  => ' configurata in Impostazioni → Contenuti\)\.',
+            'tpl' => ' configured in Settings → Content).',
+        ),
+        array(
+            're'  => ' configurate in Impostazioni → Contenuti\)\.',
+            'tpl' => ' configured in Settings → Content).',
+        ),
+        array(
+            're'  => 'Attenzione: senza fonti qui e senza fonti globali \(',
+            'tpl' => 'Warning: without sources here and without global sources (',
+        ),
+        array(
+            're'  => '\) i giornalisti della redazione non raccoglieranno nulla\.',
+            'tpl' => ') the newsroom’s journalists will not collect anything.',
         ),
     );
 }

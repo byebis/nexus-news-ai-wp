@@ -708,6 +708,21 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.19 («Primi Passi»): dismiss della checklist setup in
+                // dashboard. Scrive SOLO una user meta dell'utente corrente
+                // ('nexus_setup_dismissed'): nessun setting globale toccato.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/setup/dismiss',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_setup_dismiss' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
                 /* ---------------- ADMIN: ACTIVITY / STATS ---------------- */
 
                 register_rest_route(
@@ -4638,11 +4653,29 @@ class Nexus_Rest {
         }
 
         /**
-         * Booleani di stato connessioni (condivisi da badge UI e endpoint REST).
+         * POST /setup/dismiss — nasconde la checklist "Primi passi" per l'utente
+         * corrente (v1.1.19 «Primi Passi»).
+         *
+         * Scrive SOLO la user meta 'nexus_setup_dismissed': nessun setting
+         * globale, nessun effetto sugli altri utenti admin.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_setup_dismiss( $request ) {
+                unset( $request );
+                update_user_meta( get_current_user_id(), 'nexus_setup_dismissed', 1 );
+                return rest_ensure_response( array( 'dismissed' => true ) );
+        }
+
+        /**
+         * Booleani di stato connessioni (condivisi da badge UI, endpoint REST e
+         * dashboard — v1.1.19: pubblico per lo strip "Stato del sistema"
+         * server-side in admin/views/dashboard.php, stessa logica dei badge).
          *
          * @return array
          */
-        private static function settings_status_flags() {
+        public static function settings_status_flags() {
                 $settings = Nexus_DB::get_settings();
 
                 // Google (Search Console / GA4): modulo OAuth v1.1.12 (S1), con le

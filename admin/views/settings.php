@@ -151,6 +151,23 @@ if ( '' === $nxa_settab_active ) {
                                         data-nxa-settab-tab="<?php echo esc_attr( $nxa_settab_slug ); ?>"><?php echo esc_html( $nxa_settab_label ); ?><span class="nxa-settab-dirty" aria-hidden="true"><span class="nxa-settab-dirty-text"><?php esc_html_e( 'non salvato', 'nexus-news-ai' ); ?></span></span></a>
                         <?php endforeach; ?>
                 </div>
+                <?php
+                /*
+                 * v1.1.19 («Primi Passi») — modalità Semplice/Avanzata: il toggle
+                 * è solo UI (stato in localStorage 'nxa-settings-mode', stesso
+                 * pattern degli snapshot accordion). Le sezioni avanzate vengono
+                 * MARCATE dallo script inline qui sotto (classe .nxa-acc--advanced,
+                 * mappa slug per tab) e nascoste dal CSS solo in modalità semplice:
+                 * i 4 partial settings-*.php NON sono toccati, tutti i campi restano
+                 * nel DOM e nel salvataggio per-tab. Senza JS: tutto visibile.
+                 */
+                ?>
+                <div class="nxa-settab-mode">
+                        <label class="nxa-settab-mode__label" for="nxa-settab-mode-toggle">
+                                <input type="checkbox" id="nxa-settab-mode-toggle" />
+                                <span><?php esc_html_e( 'Mostra sezioni avanzate', 'nexus-news-ai' ); ?></span>
+                        </label>
+                </div>
         </nav>
 
         <div class="nxa-settab-panels" data-nxa-settab-active="<?php echo esc_attr( $nxa_settab_active ); ?>">
@@ -760,6 +777,96 @@ if ( '' === $nxa_settab_active ) {
         }
 
         /* ==================================================================
+         * 5b. Modalità Semplice/Avanzata (v1.1.19 «Primi Passi»)
+         *
+         * Mappa tab → slug degli accordion avanzati (data-nxa-acc dei partial,
+         * NON toccati): a ogni sezione elencata viene aggiunta la classe
+         * .nxa-acc--advanced; in modalità semplice il root porta
+         * .nxa-mode-simple e il CSS le nasconde. Stato in localStorage
+         * (chiave 'nxa-settings-mode', stesso pattern degli snapshot
+         * accordion). Tutti i campi restano nel DOM: il salvataggio per-tab
+         * (form viaggiante) non cambia. Senza JS tutto resta visibile.
+         * ================================================================== */
+
+        var ADVANCED = {
+                contenuti: [ 'interlink', 'limits' ],
+                ai: [ 'chief', 'tools', 'intelligence', 'dedup', 'learning' ],
+                pubblicazione: [ 'social', 'newsletter', 'indexing', 'news-sitemap', 'notify' ],
+                sistema: [ 'scala', 'limiti', 'evergreen', 'google-feedback', 'language-api' ]
+        };
+        var MODE_KEY = 'nxa-settings-mode';
+
+        function readMode() {
+                try {
+                        return window.localStorage.getItem( MODE_KEY ) === 'advanced' ? 'advanced' : 'simple';
+                } catch ( err ) {
+                        return 'simple';
+                }
+        }
+
+        function applyMode( mode ) {
+                var wrap = document.querySelector( '.wrap.nexus-admin[data-page="settings"]' );
+                var toggle = document.getElementById( 'nxa-settab-mode-toggle' );
+                var isSimple = mode !== 'advanced';
+                var total = 0;
+                var slug;
+                var i;
+
+                /* Marcatura idempotente delle sezioni avanzate. */
+                for ( slug in ADVANCED ) {
+                        if ( ! Object.prototype.hasOwnProperty.call( ADVANCED, slug ) || ! panels[ slug ] ) {
+                                continue;
+                        }
+                        for ( i = 0; i < ADVANCED[ slug ].length; i++ ) {
+                                var group = panels[ slug ].querySelector( '.nxa-acc[data-nxa-acc="' + ADVANCED[ slug ][ i ] + '"]' );
+                                if ( group ) {
+                                        group.classList.add( 'nxa-acc--advanced' );
+                                        total++;
+                                }
+                        }
+                }
+
+                if ( wrap ) {
+                        if ( isSimple ) {
+                                wrap.classList.add( 'nxa-mode-simple' );
+                        } else {
+                                wrap.classList.remove( 'nxa-mode-simple' );
+                        }
+                }
+                if ( toggle ) {
+                        toggle.checked = ! isSimple;
+                        var label = toggle.closest( 'label' );
+                        var text = label ? label.querySelector( 'span' ) : null;
+                        if ( text ) {
+                                text.textContent = toggle.getAttribute( 'data-label' ) + ' (' + total + ')';
+                        }
+                }
+        }
+
+        function bindModeToggle() {
+                var toggle = document.getElementById( 'nxa-settab-mode-toggle' );
+                if ( ! toggle ) {
+                        return;
+                }
+                /* Etichetta base salvata una volta: applyMode aggiunge il conteggio. */
+                var label = toggle.closest( 'label' );
+                var text = label ? label.querySelector( 'span' ) : null;
+                if ( text && ! toggle.getAttribute( 'data-label' ) ) {
+                        toggle.setAttribute( 'data-label', text.textContent );
+                }
+                toggle.addEventListener( 'change', function () {
+                        var mode = toggle.checked ? 'advanced' : 'simple';
+                        try {
+                                window.localStorage.setItem( MODE_KEY, mode );
+                        } catch ( err ) {
+                                /* localStorage non disponibile: la modalità vale per questa vista. */
+                        }
+                        applyMode( mode );
+                } );
+                applyMode( readMode() );
+        }
+
+        /* ==================================================================
          * 6. Avvio
          * ================================================================== */
 
@@ -781,6 +888,12 @@ if ( '' === $nxa_settab_active ) {
                 }
 
                 setupForms();
+
+                /* Modalità Semplice/Avanzata (v1.1.19): marcatura sezioni +
+                 * classe sul root, PRIMA del restore accordion (indipendenti:
+                 * la visibilità accordion è gestita da hidden, quella di
+                 * modalità da classe CSS). */
+                bindModeToggle();
 
                 /* Dirty-guard: input/change delegati in capture sui pannelli (i
                  * campi viaggiano fra form e shell ma restano DENTRO il proprio

@@ -75,12 +75,84 @@ $nxa_obs_sample_rss = implode(
                 'https://www.ansa.it/sito/notizie/politica/politica_rss.xml',
         )
 );
+
+/*
+ * v1.1.19 («Primi Passi») — STEP 0 "Collega il provider AI": renderizzato SOLO
+ * se nessuna chiave AI è configurata (stessa logica di GET /settings/status,
+ * via Nexus_Rest::settings_status_flags() — solo presenza, mai valori).
+ *
+ * Il salvataggio (admin.js, nxaObsSaveKey) scrive sul canale GLOBALE legacy
+ * (ai_api_key + ai_base_url + ai_model): gli agenti creati dal wizard nascono
+ * SENZA provider dedicato e usano proprio quel canale (Nexus_Providers::
+ * resolve_for_agent → legacy). I provider 'custom' e 'ollama' restano fuori
+ * dallo step (richiedono campi extra: si configurano da Impostazioni → AI).
+ * I modelli di default per provider vivono nella mappa qui sotto: sono solo
+ * il punto di partenza, modificabili in ogni momento dalle Impostazioni.
+ */
+$nxa_obs_has_ai_key = false;
+if ( class_exists( 'Nexus_Rest' ) && method_exists( 'Nexus_Rest', 'settings_status_flags' ) ) {
+        $nxa_obs_flags     = (array) Nexus_Rest::settings_status_flags();
+        $nxa_obs_has_ai_key = ! empty( $nxa_obs_flags['ai_provider_active'] );
+}
+
+$nxa_obs_providers = array();
+if ( ! $nxa_obs_has_ai_key && class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'catalog' ) ) {
+        $nxa_obs_default_models = array(
+                'openrouter' => 'openai/gpt-4o-mini',
+                'openai'     => 'gpt-4o-mini',
+                'anthropic'  => 'claude-3-5-haiku-20241022',
+                'google'     => 'gemini-2.0-flash',
+                'groq'       => 'llama-3.3-70b-versatile',
+                'deepseek'   => 'deepseek-chat',
+                'mistral'    => 'mistral-small-latest',
+                'xai'        => 'grok-2-latest',
+        );
+        foreach ( (array) Nexus_Providers::catalog() as $nxa_obs_prov ) {
+                $nxa_obs_pid = ( is_array( $nxa_obs_prov ) && isset( $nxa_obs_prov['id'] ) ) ? (string) $nxa_obs_prov['id'] : '';
+                if ( '' === $nxa_obs_pid || 'custom' === $nxa_obs_pid || 'ollama' === $nxa_obs_pid || 0 === strpos( $nxa_obs_pid, 'cust_' ) ) {
+                        continue;
+                }
+                $nxa_obs_prov['default_model'] = isset( $nxa_obs_default_models[ $nxa_obs_pid ] ) ? $nxa_obs_default_models[ $nxa_obs_pid ] : '';
+                $nxa_obs_providers[]           = $nxa_obs_prov;
+        }
+}
 ?>
 <div id="nxa-onboarding" class="nxa-modal nxa-onboarding" hidden role="dialog" aria-modal="true" aria-labelledby="nxa-onboarding-title">
         <div class="nxa-modal-panel nxa-onboarding-panel" role="document">
                 <button type="button" class="nxa-modal-close" data-nxa-onboarding-close aria-label="<?php esc_attr_e( 'Chiudi', 'nexus-news-ai' ); ?>">&times;</button>
                 <h2 id="nxa-onboarding-title"><?php esc_html_e( 'Crea la tua redazione', 'nexus-news-ai' ); ?></h2>
                 <p class="nxa-obs-sub"><?php esc_html_e( 'Benvenuto: parti con il pacchetto di agenti che vuoi. Potrai modificare, aggiungere o eliminare agenti in ogni momento.', 'nexus-news-ai' ); ?></p>
+
+                <!-- STEP 0 (v1.1.19) — chiave AI: SOLO se nessuna chiave è
+                     configurata (guard PHP in testa). Se assente il wizard parte
+                     direttamente dallo step 1 (admin.js: nxaOnboardingReset). -->
+                <?php if ( ! $nxa_obs_has_ai_key && ! empty( $nxa_obs_providers ) ) : ?>
+                <div class="nxa-obs-step" data-nxa-obs-step="0">
+                        <h3 class="nxa-obs-step-title"><?php esc_html_e( 'Collega il provider AI', 'nexus-news-ai' ); ?></h3>
+                        <p class="nxa-obs-sub"><?php esc_html_e( 'Gli agenti scrivono e valutano con l’AI: serve una chiave API. Incollala qui e varrà per tutta la redazione (potrai collegare altri provider da Impostazioni → AI).', 'nexus-news-ai' ); ?></p>
+                        <p>
+                                <label for="nxa-obs-provider"><strong><?php esc_html_e( 'Provider', 'nexus-news-ai' ); ?></strong></label><br />
+                                <select id="nxa-obs-provider">
+                                        <?php foreach ( $nxa_obs_providers as $nxa_obs_prov ) : ?>
+                                                <option value="<?php echo esc_attr( (string) $nxa_obs_prov['id'] ); ?>"
+                                                        data-base="<?php echo esc_attr( isset( $nxa_obs_prov['base_url'] ) ? (string) $nxa_obs_prov['base_url'] : '' ); ?>"
+                                                        data-model="<?php echo esc_attr( (string) $nxa_obs_prov['default_model'] ); ?>"
+                                                        data-keypage="<?php echo esc_attr( isset( $nxa_obs_prov['key_page'] ) ? (string) $nxa_obs_prov['key_page'] : '' ); ?>"><?php echo esc_html( (string) $nxa_obs_prov['label'] ); ?></option>
+                                        <?php endforeach; ?>
+                                </select>
+                                <a href="#" target="_blank" rel="noopener" id="nxa-obs-keypage"><?php esc_html_e( 'Dove trovo la chiave?', 'nexus-news-ai' ); ?></a>
+                        </p>
+                        <p>
+                                <label for="nxa-obs-key"><strong><?php esc_html_e( 'Chiave API', 'nexus-news-ai' ); ?></strong></label><br />
+                                <input type="password" id="nxa-obs-key" class="regular-text code" autocomplete="new-password" />
+                        </p>
+                        <p class="nxa-obs-key-error" id="nxa-obs-key-error" role="alert" hidden></p>
+                        <p class="nxa-obs-key-actions">
+                                <button type="button" class="nxa-btn nxa-btn-primary" id="nxa-obs-key-save"><?php esc_html_e( 'Salva e continua', 'nexus-news-ai' ); ?></button>
+                                <button type="button" class="button-link" id="nxa-obs-key-skip"><?php esc_html_e( 'Lo farò dopo', 'nexus-news-ai' ); ?></button>
+                        </p>
+                </div>
+                <?php endif; ?>
 
                 <!-- STEP 1 — pacchetti preset (radio card, conteggio visibile). -->
                 <div class="nxa-obs-step" data-nxa-obs-step="1">

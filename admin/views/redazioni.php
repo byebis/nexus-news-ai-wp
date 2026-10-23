@@ -218,6 +218,41 @@ defined( 'ABSPATH' ) || exit;
                                 <p class="nxa-red-field">
                                         <span class="nxa-red-field-label"><?php esc_html_e( 'Fonti della redazione', 'nexus-news-ai' ); ?></span>
                                         <span class="description"><?php esc_html_e( 'Aggiungi le fonti della redazione: feed RSS, siti, canali YouTube o Telegram, subreddit, ricerche, server MCP o pagine web. Usa “Test” per provare una fonte prima di salvare. Le fonti sono opzionali: i giornalisti della redazione le useranno in raccolta e il capo redattore per verificare.', 'nexus-news-ai' ); ?></span>
+                                        <?php
+                                        /*
+                                         * v1.1.19 («Primi Passi») — ereditarietà VISIBILE: se la redazione
+                                         * resta senza fonti, la raccolta riparte dalle fonti RSS globali
+                                         * (fallback reale in Nexus_Sources::fetch_for_agent). Qui si mostra
+                                         * solo QUANTE sono, con link alla pagina che le gestisce.
+                                         */
+                                        $nxa_red_global_rss = 0;
+                                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                                                $nxa_red_settings = (array) Nexus_DB::get_settings();
+                                                $nxa_red_raw_rss  = isset( $nxa_red_settings['global_rss_sources'] ) ? (string) $nxa_red_settings['global_rss_sources'] : '';
+                                                foreach ( preg_split( '/\r\n|\r|\n/', $nxa_red_raw_rss ) as $nxa_red_rss_line ) {
+                                                        if ( '' !== trim( (string) $nxa_red_rss_line ) ) {
+                                                                $nxa_red_global_rss++;
+                                                        }
+                                                }
+                                        }
+                                        ?>
+                                        <?php if ( $nxa_red_global_rss > 0 ) : ?>
+                                        <span class="description"><?php
+                                                printf(
+                                                        /* translators: %s: numero di fonti RSS globali configurate. */
+                                                        esc_html( _n( 'Senza fonti qui, la redazione userà la fonte RSS globale (%s configurata in Impostazioni → Contenuti).', 'Senza fonti qui, la redazione userà le fonti RSS globali (%s configurate in Impostazioni → Contenuti).', $nxa_red_global_rss, 'nexus-news-ai' ) ),
+                                                        '<a href="' . esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ) . '">' . esc_html( number_format_i18n( $nxa_red_global_rss ) ) . '</a>'
+                                                );
+                                        ?></span>
+                                        <?php else : ?>
+                                        <span class="description"><?php
+                                                printf(
+                                                        /* translators: %s: link alle impostazioni Contenuti. */
+                                                        wp_kses_post( __( 'Attenzione: senza fonti qui e senza fonti globali (%s) i giornalisti della redazione non raccoglieranno nulla.', 'nexus-news-ai' ) ),
+                                                        '<a href="' . esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ) . '">' . esc_html__( 'Impostazioni → Contenuti', 'nexus-news-ai' ) . '</a>'
+                                                );
+                                        ?></span>
+                                        <?php endif; ?>
                                         <!-- v1.1.10 (WP8): textarea nascosta di compatibilità per admin.js (load/reset la
                                              referenziano); NON è più modificata dall'utente. Lo script inline la tiene
                                              sincronizzata con le righe legacy "type|url" come fallback (contratto di testa §5/§6). -->

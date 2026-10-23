@@ -2926,3 +2926,125 @@ hr.nxa-hairline {
 .nxa-btn-primary:hover {
   background: var(--sui-primary-dark, #135e96) !important;
 }
+
+/* ==========================================================================
+   v1.1.19 «Primi Passi» — Dashboard operativa
+   Strip stato sistema + card prossima azione + checklist setup.
+   Solo token var(--nxa-*) con fallback --sui-*: il tema dark
+   (body.nexus-theme-dark) viene ereditato automaticamente.
+   ========================================================================== */
+
+.nxa-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.nxa-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  border: 1px solid var(--nxa-border, #e2e8f2);
+  color: var(--nxa-text, #334155);
+  background: var(--nxa-surface, #fff);
+}
+
+.nxa-status-pill:hover {
+  border-color: var(--nxa-accent-line, rgba(124, 58, 237, 0.45));
+  color: var(--nxa-text, #334155);
+}
+
+.nxa-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--nxa-cat, #64748b);
+}
+
+.nxa-status-pill--ok .nxa-status-dot  { background: #22c55e; }
+.nxa-status-pill--warn .nxa-status-dot { background: #f59e0b; }
+.nxa-status-pill--off .nxa-status-dot { background: #ef4444; }
+
+.nxa-status-pill--ok   { color: var(--nxa-ok-text, #15803d);   background: var(--nxa-ok-bg, rgba(34,197,94,.12));   border-color: var(--nxa-ok-line, rgba(22,163,74,.35)); }
+.nxa-status-pill--warn { color: var(--nxa-warn-text, #b45309); background: var(--nxa-warn-bg, rgba(245,158,11,.15)); border-color: var(--nxa-warn-line, rgba(217,119,6,.38)); }
+.nxa-status-pill--off  { color: var(--nxa-err-text, #b91c1c);  background: var(--nxa-err-bg, rgba(239,68,68,.10));  border-color: var(--nxa-err-line, rgba(220,38,38,.35)); }
+
+.nxa-guide {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.nxa-next-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: var(--nxa-radius-sm, 10px);
+  border: 1px solid var(--nxa-accent-line, rgba(124, 58, 237, 0.45));
+  background: var(--nxa-accent-1-soft, rgba(124, 58, 237, 0.14));
+}
+
+.nxa-next-action__text {
+  display: grid;
+  gap: 3px;
+  max-width: 640px;
+}
+
+.nxa-next-action__text strong { font-size: 14px; }
+.nxa-next-action__text span {
+  font-size: 13px;
+  color: var(--nxa-text-muted, #64748b);
+}
+
+.nxa-setup-checklist {
+  padding: 14px 18px;
+  border-radius: var(--nxa-radius-sm, 10px);
+  border: 1px solid var(--nxa-border, #e2e8f2);
+  background: var(--nxa-surface, #fff);
+}
+
+.nxa-setup-checklist__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.nxa-setup-checklist__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.nxa-setup-checklist__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nxa-setup-checklist__list li.is-done {
+  color: var(--nxa-text-muted, #64748b);
+}
+
+.nxa-setup-check {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.nxa-setup-checklist__list li.is-done .nxa-setup-check { color: #22c55e; }
