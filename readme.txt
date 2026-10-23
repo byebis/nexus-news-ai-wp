@@ -8,7 +8,7 @@ Stable tag: 1.1.19.0
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-Trasforma WordPress in una testata automatica: agenti giornalisti AI raccolgono le notizie dalle tue fonti, le valutano, le riscrivono e le pubblicano come post WordPress nativi, dopo la tua approvazione.
+Agenti giornalisti AI che raccolgono, valutano, riscrivono e pubblicano notizie come post WordPress nativi, con la tua approvazione.
 
 == Description ==
 
@@ -18,46 +18,46 @@ Il plugin parte da zero agenti: il wizard «Crea la tua redazione» propone pacc
 
 = La pipeline editoriale =
 
-1. **Raccolta** — gli agenti leggono le fonti configurate e preparano le bozze con una selezione fatta dal modello AI.
-2. **Valutazione** — ogni notizia riceve un punteggio di qualità da 0 a 100.
-3. **Riscrittura** — il modello riscrive le notizie migliori nello stile editoriale dell'agente, con fact-check e controllo anti-duplicato.
-4. **Approvazione** — in modalità semi-autonoma l'articolo attende un revisore umano nella Coda Approvazioni; in modalità autonoma viene pubblicato da solo se supera la soglia di qualità. Il Capo Redattore AI può approvare, correggere o rifiutare gli articoli.
-5. **Pubblicazione** — l'articolo diventa un post WordPress nativo con autore bot, categoria e tag reali, immagine in evidenza e SEO automatico. Se configurata, parte anche la distribuzione su Telegram, Discord, X e LinkedIn; i canali non configurati vengono saltati con un log onesto.
+1. Raccolta — gli agenti leggono le fonti configurate e preparano le bozze con una selezione fatta dal modello AI.
+2. Valutazione — ogni notizia riceve un punteggio di qualità da 0 a 100.
+3. Riscrittura — il modello riscrive le notizie migliori nello stile editoriale dell'agente, con fact-check e controllo anti-duplicato.
+4. Approvazione — in modalità semi-autonoma l'articolo attende un revisore umano nella Coda Approvazioni; in modalità autonoma viene pubblicato da solo se supera la soglia di qualità. Il Capo Redattore AI può approvare, correggere o rifiutare gli articoli.
+5. Pubblicazione — l'articolo diventa un post WordPress nativo con autore bot, categoria e tag reali, immagine in evidenza e SEO automatico. Se configurata, parte anche la distribuzione su Telegram, Discord, X e LinkedIn; i canali non configurati vengono saltati con un log onesto.
 
 = Cosa puoi configurare =
 
-* **Redazioni gerarchiche** — organizza la testata in redazioni e sub-redazioni (es. Sport → Calcio, Basket, F1), con archivi pubblici `/redazione/{slug}/` che includono i rami figli.
-* **Fonti per redazione** — 8 tipi di fonte: RSS, siti web, YouTube, Telegram, Reddit, ricerche web, server MCP e pagine singole. Una redazione senza fonti proprie usa le fonti RSS globali.
-* **Provider e modello per agente** — 10 provider AI integrati (OpenRouter, OpenAI, Anthropic, Google, Groq, DeepSeek, Mistral, xAI, Ollama e provider custom illimitati), più chiavi multiple con rotazione e provider dedicato per ogni agente.
-* **Strumenti di ricerca** — ricerca web, lettura pagine, scoperta feed e client MCP disponibili agli agenti durante la scrittura.
-* **Multilingua** — le traduzioni AI diventano post WordPress collegati, con Polylang o WPML se presenti, `hreflang` e `og:locale` automatici.
-* **Autonomia e controllo** — modalità semi-autonoma o completamente autonoma, budget AI mensile con avviso o blocco, cap giornaliero, coda lavori con retry e dead letter.
-* **Newsletter** — iscrizioni con double opt-in e digest settimanale.
-* **Indicizzazione** — IndexNow, WebSub, Google News sitemap e sitemap immagini/video.
-* **Contenuti nativi** — tutti gli articoli sono post WordPress veri: permalink, revisioni, SEO e pagina autore del tema.
+* Redazioni gerarchiche — organizza la testata in redazioni e sub-redazioni (es. Sport, con Calcio, Basket e F1), con archivi pubblici /redazione/{slug}/ che includono i rami figli.
+* Fonti per redazione — 8 tipi di fonte: RSS, siti web, YouTube, Telegram, Reddit, ricerche web, server MCP e pagine singole. Una redazione senza fonti proprie usa le fonti RSS globali.
+* Provider e modello per agente — 10 provider AI integrati (OpenRouter, OpenAI, Anthropic, Google, Groq, DeepSeek, Mistral, xAI, Ollama e provider custom illimitati), più chiavi multiple con rotazione e provider dedicato per ogni agente.
+* Strumenti di ricerca — ricerca web, lettura pagine, scoperta feed e client MCP disponibili agli agenti durante la scrittura.
+* Multilingua — le traduzioni AI diventano post WordPress collegati, con Polylang o WPML se presenti, hreflang e og:locale automatici.
+* Autonomia e controllo — modalità semi-autonoma o completamente autonoma, budget AI mensile con avviso o blocco, cap giornaliero, coda lavori con retry e dead letter.
+* Newsletter — iscrizioni con double opt-in e digest settimanale.
+* Indicizzazione — IndexNow, WebSub, Google News sitemap e sitemap immagini/video.
+* Contenuti nativi — tutti gli articoli sono post WordPress veri: permalink, revisioni, SEO e pagina autore del tema.
 
 = Nel pannello admin =
 
-* **Dashboard** — stato del sistema, prossima azione suggerita, checklist dei primi passi, statistiche e pannello live «In redazione ora».
-* **Agenti** — creazione, modifica, clonazione, avvio singolo e diagnostica per agente.
-* **Redazioni** — albero gerarchico con agenti e fonti assegnati.
-* **Coda Approvazioni** — articoli da rivedere, approvare o rifiutare.
-* **Attività e Coda Lavori** — log e stato dei job di raccolta, scrittura e pubblicazione.
-* **Analytics** — serie giornaliere, costi AI, performance da Google Search Console e GA4, opportunità di ricerca.
-* **Calendario editoriale** — articoli programmati e slot di pubblicazione.
-* **Impostazioni** — una pagina a tab (Contenuti, AI, Pubblicazione, Sistema) con modalità Semplice e Avanzata.
+* Dashboard — stato del sistema, prossima azione suggerita, checklist dei primi passi, statistiche e pannello live «In redazione ora».
+* Agenti — creazione, modifica, clonazione, avvio singolo e diagnostica per agente.
+* Redazioni — albero gerarchico con agenti e fonti assegnati.
+* Coda Approvazioni — articoli da rivedere, approvare o rifiutare.
+* Attività e Coda Lavori — log e stato dei job di raccolta, scrittura e pubblicazione.
+* Analytics — serie giornaliere, costi AI, performance da Google Search Console e GA4, opportunità di ricerca.
+* Calendario editoriale — articoli programmati e slot di pubblicazione.
+* Impostazioni — una pagina a tab (Contenuti, AI, Pubblicazione, Sistema) con modalità Semplice e Avanzata.
 
 = Nel sito =
 
 Shortcode disponibili:
 
-* `[nexus_magazine]` — magazine con hero, categorie, griglia articoli, modal di lettura e reazioni.
-* `[nexus_articles category="Tecnologia" limit="6" layout="list"]` — lista di articoli filtrabile.
-* `[nexus_subscribe]` — form newsletter.
-* `[nexus_lang_switcher]` — selettore delle traduzioni.
-* `[nexus_wire]` — redazione collettiva multi-agente.
+* [nexus_magazine] — magazine con hero, categorie, griglia articoli, modal di lettura e reazioni.
+* [nexus_articles category="Tecnologia" limit="6" layout="list"] — lista di articoli filtrabile.
+* [nexus_subscribe] — form newsletter.
+* [nexus_lang_switcher] — selettore delle traduzioni.
+* [nexus_wire] — redazione collettiva multi-agente.
 
-Sono disponibili anche i blocchi Gutenberg «Ultimi articoli» e «Form newsletter», le API REST `nexus/v1` (admin) e `nexus-public/v1` (pubblica, con chiave API) e i comandi WP-CLI `wp nexus`.
+Sono disponibili anche i blocchi Gutenberg «Ultimi articoli» e «Form newsletter», le API REST nexus/v1 (admin) e nexus-public/v1 (pubblica, con chiave API) e i comandi WP-CLI wp nexus.
 
 = Requisiti =
 
@@ -68,11 +68,11 @@ Sono disponibili anche i blocchi Gutenberg «Ultimi articoli» e «Form newslett
 
 == Installation ==
 
-1. Carica la cartella `nexus-news-ai-wp` in `wp-content/plugins/`, oppure installa lo ZIP da Plugin → Aggiungi nuovo → Carica plugin.
-2. Attiva il plugin: vengono create le tabelle `wp_nexus_*` e il ruolo «Giornalista AI»; la redazione parte da zero agenti.
+1. Carica la cartella nexus-news-ai-wp in wp-content/plugins/, oppure installa lo ZIP da Plugin → Aggiungi nuovo → Carica plugin.
+2. Attiva il plugin: vengono create le tabelle wp_nexus_* e il ruolo «Giornalista AI»; la redazione parte da zero agenti.
 3. Apri Nexus News → Impostazioni → AI e inserisci la chiave del provider, oppure lascia che il wizard te la chieda al primo avvio.
-4. Imposta un cron di sistema che richiama `wp-cron.php` ogni 5-15 minuti: WP-Cron scatta solo quando qualcuno visita il sito.
-5. Crea una pagina e inserisci lo shortcode `[nexus_magazine]`.
+4. Imposta un cron di sistema che richiama wp-cron.php ogni 5-15 minuti: WP-Cron scatta solo quando qualcuno visita il sito.
+5. Crea una pagina e inserisci lo shortcode [nexus_magazine].
 
 == Frequently Asked Questions ==
 
@@ -82,7 +82,7 @@ Sì, se vuoi che la redazione produca articoli: ogni fase della pipeline, raccol
 
 = Dove finiscono gli articoli generati? =
 
-Durante raccolta, valutazione e scrittura l'articolo esiste solo dentro Nexus, nella tabella interna `wp_nexus_articles`. Gli articoli in attesa di revisione stanno nella Coda Approvazioni: è il flusso normale. Il post WordPress nasce alla pubblicazione finale e il suo stato dipende da Impostazioni → Pubblicazione (bozza, in attesa di revisione o pubblicato).
+Durante raccolta, valutazione e scrittura l'articolo esiste solo dentro Nexus, nella tabella interna wp_nexus_articles. Gli articoli in attesa di revisione stanno nella Coda Approvazioni: è il flusso normale. Il post WordPress nasce alla pubblicazione finale e il suo stato dipende da Impostazioni → Pubblicazione (bozza, in attesa di revisione o pubblicato).
 
 = L'agente non produce nulla, cosa controllo? =
 
@@ -90,11 +90,11 @@ In ordine di frequenza: fonti configurate (redazione o fonti RSS globali), chiav
 
 = Come funziona il cron? =
 
-Il plugin usa WP-Cron con l'evento `nexus_cron_tick`. WP-Cron è «pigro»: scatta solo quando qualcuno visita il sito, quindi su un sito con poco traffico i tick possono ritardare di ore. Per una redazione costante imposta un cron di sistema che chiama `wp-cron.php` a intervalli regolari, disattivando `WP_CRON` per evitare doppi scatti.
+Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta solo quando qualcuno visita il sito, quindi su un sito con poco traffico i tick possono ritardare di ore. Per una redazione costante imposta un cron di sistema che chiama wp-cron.php a intervalli regolari, disattivando WP_CRON per evitare doppi scatti.
 
 = Cosa succede se disattivo o disinstallo il plugin? =
 
-La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle `wp_nexus_*`, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
+La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
 

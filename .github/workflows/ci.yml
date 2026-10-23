@@ -5,13 +5,12 @@ name: CI
 # WordPress richiesta: gli harness usano gli stub in tests/wp-stubs.php).
 #
 # Trigger ridotti per contenere i minuti GitHub Actions: niente run a ogni
-# push su main (il gate gira in locale prima del push). Si esegue solo su PR
-# verso main, sui tag di release e su richiesta manuale dalla tab Actions.
+# push su main (il gate gira in locale prima del push) e niente run sui tag,
+# così anche la creazione di una release non avvia la CI. Si esegue solo sulle
+# PR verso main e su richiesta manuale dalla tab Actions.
 on:
   pull_request:
     branches: [ main ]
-  push:
-    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
