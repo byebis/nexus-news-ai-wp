@@ -207,7 +207,7 @@ class Nexus_Digest {
                         }
                         $link  = (string) ( isset( $row['link'] ) ? $row['link'] : '' );
                         $first = '' !== $link
-                                ? '<a href="' . esc_url( $link ) . '" style="color:#4f46e5;text-decoration:none;">' . esc_html( $title ) . '</a>'
+                                ? '<a href="' . esc_url( $link ) . '" style="color:#1d4ed8;text-decoration:none;">' . esc_html( $title ) . '</a>'
                                 : esc_html( $title );
 
                         $ctr      = isset( $row['ctr'] ) ? $row['ctr'] : null;

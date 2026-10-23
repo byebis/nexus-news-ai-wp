@@ -85,11 +85,11 @@
   --nxa-text: #0f1a33;
   --nxa-text-body: #33415c;
   --nxa-muted: #5c6b84;
-  /* Accenti brand (invariati dalla 1.0.0) */
-  --nxa-accent-1: #7c3aed;
-  --nxa-accent-2: #06b6d4;
-  --nxa-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
-  --nxa-focus: #0891b2;
+  /* Accenti brand: scala blu scuro → azzurro */
+  --nxa-accent-1: #1d4ed8;
+  --nxa-accent-2: #38bdf8;
+  --nxa-accent-grad: linear-gradient(135deg, #0b3a75 0%, #1d4ed8 50%, #0284c7 100%);
+  --nxa-focus: #0284c7;
   /* Raggi */
   --nxa-radius: 14px;
   --nxa-radius-sm: 10px;
@@ -116,22 +116,22 @@
   --nxa-panel-line: #e2e8f2;
   --nxa-line-strong: #dbe3ef;
   --nxa-heading: #0f1a33;
-  --nxa-link: #7c3aed;
-  --nxa-link-hover: #6d28d9;
-  --nxa-code-text: #6d28d9;
+  --nxa-link: #1d4ed8;
+  --nxa-link-hover: #1e40af;
+  --nxa-code-text: #1e40af;
   /* Bottoni */
   --nxa-btn-bg: #ffffff;
   --nxa-btn-bg-hover: #f2f5fa;
-  --nxa-btn-line-hover: rgba(124, 58, 237, 0.5);
+  --nxa-btn-line-hover: rgba(29, 78, 216, 0.5);
   --nxa-btn-text-hover: #0f1a33;
   --nxa-on-accent: #ffffff;
   --nxa-on-accent-soft: rgba(255, 255, 255, 0.35);
-  --nxa-accent-glow: rgba(124, 58, 237, 0.28);
-  --nxa-accent-glow-strong: rgba(124, 58, 237, 0.4);
+  --nxa-accent-glow: rgba(29, 78, 216, 0.28);
+  --nxa-accent-glow-strong: rgba(29, 78, 216, 0.4);
   /* Input */
   --nxa-input-bg: #ffffff;
   --nxa-input-line: #d8e0ee;
-  --nxa-ring-accent: 0 0 0 3px rgba(124, 58, 237, 0.16);
+  --nxa-ring-accent: 0 0 0 3px rgba(29, 78, 216, 0.16);
   /* Superfici interattive e overlay */
   --nxa-row-hover-bg: #f8fafd;
   --nxa-overlay: rgba(15, 23, 42, 0.52);
@@ -140,12 +140,12 @@
   --nxa-scroll-thumb: #c3cfe2;
   --nxa-skeleton-hi: rgba(255, 255, 255, 0.7);
   /* Aloni brand tenui (sfondo pannello, avatar, hover card) */
-  --nxa-glow-1: rgba(124, 58, 237, 0.05);
-  --nxa-glow-2: rgba(6, 182, 212, 0.05);
-  --nxa-accent-1-soft: rgba(124, 58, 237, 0.14);
-  --nxa-accent-2-soft: rgba(6, 182, 212, 0.12);
-  --nxa-accent-line: rgba(124, 58, 237, 0.45);
-  --nxa-accent2-line: rgba(6, 182, 212, 0.45);
+  --nxa-glow-1: rgba(29, 78, 216, 0.06);
+  --nxa-glow-2: rgba(56, 189, 248, 0.06);
+  --nxa-accent-1-soft: rgba(29, 78, 216, 0.12);
+  --nxa-accent-2-soft: rgba(56, 189, 248, 0.12);
+  --nxa-accent-line: rgba(29, 78, 216, 0.45);
+  --nxa-accent2-line: rgba(56, 189, 248, 0.45);
   /* Errore rafforzato (hover bottoni e chiusura modale) */
   --nxa-err-bg-strong: rgba(239, 68, 68, 0.16);
   --nxa-err-text-strong: #991b1b;
@@ -186,27 +186,27 @@ body.nexus-theme-dark {
   --nxa-heading: #f1f5f9;
   --nxa-link: #7dd3fc;
   --nxa-link-hover: #bae6fd;
-  --nxa-code-text: #a5b4fc;
+  --nxa-code-text: #93c5fd;
   --nxa-btn-bg: #1a2234;
   --nxa-btn-bg-hover: #202a40;
-  --nxa-btn-line-hover: rgba(124, 58, 237, 0.6);
+  --nxa-btn-line-hover: rgba(56, 189, 248, 0.6);
   --nxa-btn-text-hover: #ffffff;
   --nxa-input-bg: #0d1320;
   --nxa-input-line: #232c42;
-  --nxa-ring-accent: 0 0 0 3px rgba(124, 58, 237, 0.22);
+  --nxa-ring-accent: 0 0 0 3px rgba(56, 189, 248, 0.22);
   --nxa-row-hover-bg: #141b2c;
   --nxa-overlay: rgba(4, 7, 14, 0.74);
   --nxa-modal-close-bg: rgba(26, 34, 52, 0.88);
   --nxa-spinner-track: rgba(148, 163, 184, 0.3);
   --nxa-scroll-thumb: #2a3550;
   --nxa-skeleton-hi: rgba(148, 163, 184, 0.14);
-  --nxa-glow-1: rgba(124, 58, 237, 0.12);
-  --nxa-glow-2: rgba(6, 182, 212, 0.08);
-  --nxa-accent-1-soft: rgba(124, 58, 237, 0.24);
-  --nxa-accent-2-soft: rgba(6, 182, 212, 0.24);
-  --nxa-accent-line: rgba(124, 58, 237, 0.5);
-  --nxa-accent-glow: rgba(124, 58, 237, 0.32);
-  --nxa-accent-glow-strong: rgba(124, 58, 237, 0.45);
+  --nxa-glow-1: rgba(29, 78, 216, 0.18);
+  --nxa-glow-2: rgba(56, 189, 248, 0.1);
+  --nxa-accent-1-soft: rgba(56, 189, 248, 0.24);
+  --nxa-accent-2-soft: rgba(56, 189, 248, 0.24);
+  --nxa-accent-line: rgba(56, 189, 248, 0.5);
+  --nxa-accent-glow: rgba(56, 189, 248, 0.32);
+  --nxa-accent-glow-strong: rgba(56, 189, 248, 0.45);
   --nxa-err-bg-strong: rgba(248, 113, 113, 0.2);
   --nxa-err-text-strong: #ffffff;
 }
@@ -218,7 +218,7 @@ body.nexus-theme-dark {
 [data-category="tecnologia" i] { --nxa-cat: #0369a1; --nxa-cat-soft: rgba(3, 105, 161, 0.12);  --nxa-cat-line: rgba(3, 105, 161, 0.35); }
 [data-category="politica" i]   { --nxa-cat: #b45309; --nxa-cat-soft: rgba(180, 83, 9, 0.12);   --nxa-cat-line: rgba(180, 83, 9, 0.35); }
 [data-category="economia" i]   { --nxa-cat: #047857; --nxa-cat-soft: rgba(4, 120, 87, 0.12);   --nxa-cat-line: rgba(4, 120, 87, 0.35); }
-[data-category="scienza" i]    { --nxa-cat: #6d28d9; --nxa-cat-soft: rgba(109, 40, 217, 0.12); --nxa-cat-line: rgba(109, 40, 217, 0.35); }
+[data-category="scienza" i]    { --nxa-cat: #0e7490; --nxa-cat-soft: rgba(14, 116, 144, 0.12); --nxa-cat-line: rgba(14, 116, 144, 0.35); }
 [data-category="sport" i]      { --nxa-cat: #dc2626; --nxa-cat-soft: rgba(220, 38, 38, 0.12);  --nxa-cat-line: rgba(220, 38, 38, 0.35); }
 [data-category="cultura" i]    { --nxa-cat: #be185d; --nxa-cat-soft: rgba(190, 24, 93, 0.12);  --nxa-cat-line: rgba(190, 24, 93, 0.35); }
 [data-category="salute" i]     { --nxa-cat: #15803d; --nxa-cat-soft: rgba(21, 128, 61, 0.12);  --nxa-cat-line: rgba(21, 128, 61, 0.35); }
@@ -226,7 +226,7 @@ body.nexus-theme-dark {
 body.nexus-theme-dark [data-category="tecnologia" i] { --nxa-cat: #38bdf8; --nxa-cat-soft: rgba(56, 189, 248, 0.14);  --nxa-cat-line: rgba(56, 189, 248, 0.4); }
 body.nexus-theme-dark [data-category="politica" i]   { --nxa-cat: #f59e0b; --nxa-cat-soft: rgba(245, 158, 11, 0.14);  --nxa-cat-line: rgba(245, 158, 11, 0.4); }
 body.nexus-theme-dark [data-category="economia" i]   { --nxa-cat: #34d399; --nxa-cat-soft: rgba(52, 211, 153, 0.14);  --nxa-cat-line: rgba(52, 211, 153, 0.4); }
-body.nexus-theme-dark [data-category="scienza" i]    { --nxa-cat: #a78bfa; --nxa-cat-soft: rgba(167, 139, 250, 0.15); --nxa-cat-line: rgba(167, 139, 250, 0.4); }
+body.nexus-theme-dark [data-category="scienza" i]    { --nxa-cat: #67e8f9; --nxa-cat-soft: rgba(103, 232, 249, 0.15); --nxa-cat-line: rgba(103, 232, 249, 0.4); }
 body.nexus-theme-dark [data-category="sport" i]      { --nxa-cat: #f87171; --nxa-cat-soft: rgba(248, 113, 113, 0.14); --nxa-cat-line: rgba(248, 113, 113, 0.4); }
 body.nexus-theme-dark [data-category="cultura" i]    { --nxa-cat: #f472b6; --nxa-cat-soft: rgba(244, 114, 182, 0.14); --nxa-cat-line: rgba(244, 114, 182, 0.4); }
 body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa-cat-soft: rgba(74, 222, 128, 0.13);  --nxa-cat-line: rgba(74, 222, 128, 0.4); }
@@ -2395,7 +2395,7 @@ hr.nxa-hairline {
 }
 
 /* Bottone "Avvia" (T-04): variante del bottone base in tinta accento (light
- * = viola brand, dark = azzurro chiaro via --nxa-link). Porta la base
+ * = blu brand, dark = azzurro chiaro via --nxa-link). Porta la base
  * completa: funziona sia come .nxa-btn.nxa-btn-run sia da solo. */
 .nxa-btn-run {
   display: inline-flex;
@@ -2957,7 +2957,7 @@ hr.nxa-hairline {
 }
 
 .nxa-status-pill:hover {
-  border-color: var(--nxa-accent-line, rgba(124, 58, 237, 0.45));
+  border-color: var(--nxa-accent-line, rgba(29, 78, 216, 0.45));
   color: var(--nxa-text, #334155);
 }
 
@@ -2990,8 +2990,8 @@ hr.nxa-hairline {
   flex-wrap: wrap;
   padding: 16px 18px;
   border-radius: var(--nxa-radius-sm, 10px);
-  border: 1px solid var(--nxa-accent-line, rgba(124, 58, 237, 0.45));
-  background: var(--nxa-accent-1-soft, rgba(124, 58, 237, 0.14));
+  border: 1px solid var(--nxa-accent-line, rgba(29, 78, 216, 0.45));
+  background: var(--nxa-accent-1-soft, rgba(29, 78, 216, 0.12));
 }
 
 .nxa-next-action__text {

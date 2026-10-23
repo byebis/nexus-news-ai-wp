@@ -592,7 +592,7 @@ class Nexus_Newsletter {
                 ob_start();
                 wp_head();
                 $html .= ob_get_clean();
-                $html .= '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f5fb;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;}.nexus-news-notice{max-width:440px;margin:24px;padding:40px 28px;text-align:center;background:#ffffff;border-radius:14px;box-shadow:0 12px 32px rgba(17,24,39,0.10);}.nexus-news-notice h1{margin:0 0 12px;font-size:22px;line-height:1.3;}.nexus-news-notice p{margin:0 0 24px;font-size:15px;line-height:1.6;color:#4b5563;}.nexus-news-notice a{color:#4f46e5;font-weight:700;text-decoration:none;}.nexus-news-notice button{margin-top:4px;padding:10px 22px;border:0;border-radius:8px;background:#4f46e5;color:#ffffff;font-size:15px;font-weight:700;cursor:pointer;}</style></head><body class="nexus-news-notice-page"><div class="nexus-news-notice"><h1>' . $title . '</h1><p>' . $message . '</p>';
+                $html .= '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f5fb;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;}.nexus-news-notice{max-width:440px;margin:24px;padding:40px 28px;text-align:center;background:#ffffff;border-radius:14px;box-shadow:0 12px 32px rgba(17,24,39,0.10);}.nexus-news-notice h1{margin:0 0 12px;font-size:22px;line-height:1.3;}.nexus-news-notice p{margin:0 0 24px;font-size:15px;line-height:1.6;color:#4b5563;}.nexus-news-notice a{color:#1d4ed8;font-weight:700;text-decoration:none;}.nexus-news-notice button{margin-top:4px;padding:10px 22px;border:0;border-radius:8px;background:#1d4ed8;color:#ffffff;font-size:15px;font-weight:700;cursor:pointer;}</style></head><body class="nexus-news-notice-page"><div class="nexus-news-notice"><h1>' . $title . '</h1><p>' . $message . '</p>';
                 if ( ! $already ) {
                         $html .= '<form method="post" action="' . $action . '"><input type="hidden" name="nexus_confirm" value="' . $value . '">';
                         $html .= '<button type="submit">' . $button . '</button></form>';
@@ -1604,7 +1604,7 @@ JS;
                 $body  = '<div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;">';
                 $body .= '<h2 style="font-size:18px;margin:0 0 12px;">' . esc_html( sprintf( __( "Un ultimo passo per completare l'iscrizione a %s", 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . '</h2>';
                 $body .= '<p style="line-height:1.6;">' . esc_html__( 'Ciao! Abbiamo ricevuto una richiesta di iscrizione alla newsletter da questo indirizzo email. Per confermarla clicca il pulsante qui sotto.', 'nexus-news-ai' ) . '</p>';
-                $body .= '<p style="text-align:center;margin:24px 0;"><a href="' . esc_url( $confirm_url ) . '" style="display:inline-block;background:#4f46e5;color:#ffffff;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;">' . esc_html__( 'Conferma iscrizione', 'nexus-news-ai' ) . '</a></p>';
+                $body .= '<p style="text-align:center;margin:24px 0;"><a href="' . esc_url( $confirm_url ) . '" style="display:inline-block;background:#1d4ed8;color:#ffffff;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;">' . esc_html__( 'Conferma iscrizione', 'nexus-news-ai' ) . '</a></p>';
                 $body .= '<p style="font-size:13px;color:#4b5563;line-height:1.6;">' . esc_html__( 'Se il pulsante non funziona, copia e incolla questo link nel browser:', 'nexus-news-ai' ) . '<br />' . esc_html( $confirm_url ) . '</p>';
                 $body .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;">' . esc_html__( 'Se non hai richiesto questa iscrizione ignora questa email: nessun account verrà creato.', 'nexus-news-ai' ) . '</p>';
                 $body .= '</div>';
@@ -1847,7 +1847,7 @@ JS;
                 $out .= '<div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;">';
 
                 if ( $is_preview ) {
-                        $out .= '<p style="margin:0 0 16px;padding:10px 12px;border:2px dashed #4f46e5;border-radius:8px;color:#4f46e5;font-weight:bold;font-size:13px;line-height:1.5;">'
+                        $out .= '<p style="margin:0 0 16px;padding:10px 12px;border:2px dashed #1d4ed8;border-radius:8px;color:#1d4ed8;font-weight:bold;font-size:13px;line-height:1.5;">'
                                 . esc_html__( 'ANTEPRIMA — email di prova: non è stata inviata agli iscritti.', 'nexus-news-ai' )
                                 . '</p>';
                 }
@@ -1860,7 +1860,7 @@ JS;
                         $out .= '<ul style="list-style:none;margin:16px 0;padding:0;">';
                         foreach ( $items as $item ) {
                                 $out .= '<li style="margin:0 0 12px;padding:0 0 12px;border-bottom:1px solid #e5e7eb;">';
-                                $out .= '<a href="' . esc_url( $item['url'] ) . '" style="color:#4f46e5;font-weight:bold;font-size:15px;text-decoration:none;">' . esc_html( $item['title'] ) . '</a>';
+                                $out .= '<a href="' . esc_url( $item['url'] ) . '" style="color:#1d4ed8;font-weight:bold;font-size:15px;text-decoration:none;">' . esc_html( $item['title'] ) . '</a>';
                                 if ( '' !== trim( (string) $item['category'] ) ) {
                                         $out .= '<span style="display:block;color:#6b7280;font-size:12px;margin-top:2px;">' . esc_html( $item['category'] ) . '</span>';
                                 }
@@ -1969,7 +1969,7 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 .nexus-news-notice{max-width:440px;margin:24px;padding:40px 28px;text-align:center;background:#ffffff;border-radius:14px;box-shadow:0 12px 32px rgba(17,24,39,0.10);}
 .nexus-news-notice h1{margin:0 0 12px;font-size:22px;line-height:1.3;}
 .nexus-news-notice p{margin:0 0 24px;font-size:15px;line-height:1.6;color:#4b5563;}
-.nexus-news-notice a{color:#4f46e5;font-weight:700;text-decoration:none;}
+.nexus-news-notice a{color:#1d4ed8;font-weight:700;text-decoration:none;}
 </style>
 </head>
 <body class="nexus-news-notice-page">

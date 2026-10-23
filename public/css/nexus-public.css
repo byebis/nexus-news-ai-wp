@@ -5,7 +5,7 @@
  * Versione:    1.0.6
  *
  * FOGLIO LIGHT EDITORIALE: superfici bianche, bordi sottili, raggi 14px,
- * ombre leggere, accenti violet/cyan. Nessuno sfondo scuro forzato: ogni
+ * ombre leggere, accenti blu/azzurro. Nessuno sfondo scuro forzato: ogni
  * componente e' una superficie chiara autosufficiente che si adatta a
  * qualunque tema del sito (su temi scuri resta un blocco chiaro leggibile).
  *
@@ -67,41 +67,41 @@
   --nxp-text: #0f1a33;
   --nxp-text-body: #33415c;
   --nxp-muted: #5c6b84;
-  /* Accenti brand */
-  --nxp-accent-1: #7c3aed;
-  --nxp-accent-2: #06b6d4;
-  --nxp-accent-grad: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
-  --nxp-link: #6d28d9;
-  --nxp-link-hover: #4c1d95;
-  --nxp-focus: #0891b2;
+  /* Accenti brand: scala blu scuro → azzurro */
+  --nxp-accent-1: #1d4ed8;
+  --nxp-accent-2: #38bdf8;
+  --nxp-accent-grad: linear-gradient(135deg, #0b3a75 0%, #1d4ed8 50%, #0284c7 100%);
+  --nxp-link: #1d4ed8;
+  --nxp-link-hover: #1e40af;
+  --nxp-focus: #0284c7;
   /* Accento: tinte trasparenti, glow, glass e testi sopra accento (v1.1.15 WD5) */
   --nxp-on-accent: #ffffff;
   --nxp-glass: rgba(255, 255, 255, 0.92);
   --nxp-glass-strong: rgba(255, 255, 255, 0.94);
   --nxp-glass-dim: rgba(255, 255, 255, 0.65);
-  --nxp-accent-1-faint: rgba(124, 58, 237, 0.06);
-  --nxp-accent-1-soft: rgba(124, 58, 237, 0.1);
-  --nxp-accent-1-soft-2: rgba(124, 58, 237, 0.12);
-  --nxp-accent-1-ring: rgba(124, 58, 237, 0.15);
-  --nxp-accent-1-line: rgba(124, 58, 237, 0.28);
-  --nxp-accent-1-line-strong: rgba(124, 58, 237, 0.35);
-  --nxp-accent-1-line-deep: rgba(124, 58, 237, 0.5);
-  --nxp-accent-1-line-pressed: rgba(124, 58, 237, 0.55);
-  --nxp-accent-1-glow: rgba(124, 58, 237, 0.28);
-  --nxp-accent-1-glow-strong: rgba(124, 58, 237, 0.36);
-  --nxp-accent-2-line: rgba(6, 182, 212, 0.45);
-  --nxp-accent-text: #5b21b6;
-  --nxp-selection: rgba(124, 58, 237, 0.18);
+  --nxp-accent-1-faint: rgba(29, 78, 216, 0.06);
+  --nxp-accent-1-soft: rgba(29, 78, 216, 0.1);
+  --nxp-accent-1-soft-2: rgba(29, 78, 216, 0.12);
+  --nxp-accent-1-ring: rgba(29, 78, 216, 0.15);
+  --nxp-accent-1-line: rgba(29, 78, 216, 0.28);
+  --nxp-accent-1-line-strong: rgba(29, 78, 216, 0.35);
+  --nxp-accent-1-line-deep: rgba(29, 78, 216, 0.5);
+  --nxp-accent-1-line-pressed: rgba(29, 78, 216, 0.55);
+  --nxp-accent-1-glow: rgba(29, 78, 216, 0.28);
+  --nxp-accent-1-glow-strong: rgba(29, 78, 216, 0.36);
+  --nxp-accent-2-line: rgba(56, 189, 248, 0.45);
+  --nxp-accent-text: #1e40af;
+  --nxp-selection: rgba(29, 78, 216, 0.18);
   /* Stati/overlay aggiuntivi */
   --nxp-err-faint: rgba(239, 68, 68, 0.08);
   --nxp-overlay: rgba(15, 23, 42, 0.55);
   --nxp-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.12);
   /* Gradienti compositi (hero, skeleton) */
-  --nxp-hero-grad: linear-gradient(100deg, #4c1d95 0%, #7c3aed 46%, #0e7490 100%);
-  --nxp-hero-glow-1: radial-gradient(720px 260px at 12% -30%, rgba(124, 58, 237, 0.09), transparent 60%);
-  --nxp-hero-glow-2: radial-gradient(560px 240px at 96% -20%, rgba(6, 182, 212, 0.08), transparent 55%);
+  --nxp-hero-grad: linear-gradient(100deg, #0b2a5e 0%, #1d4ed8 55%, #0284c7 100%);
+  --nxp-hero-glow-1: radial-gradient(720px 260px at 12% -30%, rgba(29, 78, 216, 0.1), transparent 60%);
+  --nxp-hero-glow-2: radial-gradient(560px 240px at 96% -20%, rgba(56, 189, 248, 0.1), transparent 55%);
   --nxp-skeleton-grad: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
-  --nxp-skeleton-ph: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.08));
+  --nxp-skeleton-ph: linear-gradient(135deg, rgba(29, 78, 216, 0.08), rgba(56, 189, 248, 0.08));
   /* Stampa */
   --nxp-border-print: #d4d4d8;
   /* Raggi */
@@ -136,7 +136,7 @@
 [data-category="tecnologia" i] { --nxp-cat: #0369a1; --nxp-cat-soft: rgba(3, 105, 161, 0.12); --nxp-cat-line: rgba(3, 105, 161, 0.35); }
 [data-category="politica" i]   { --nxp-cat: #b45309; --nxp-cat-soft: rgba(180, 83, 9, 0.12);  --nxp-cat-line: rgba(180, 83, 9, 0.35); }
 [data-category="economia" i]   { --nxp-cat: #047857; --nxp-cat-soft: rgba(4, 120, 87, 0.12);  --nxp-cat-line: rgba(4, 120, 87, 0.35); }
-[data-category="scienza" i]    { --nxp-cat: #6d28d9; --nxp-cat-soft: rgba(109, 40, 217, 0.12); --nxp-cat-line: rgba(109, 40, 217, 0.35); }
+[data-category="scienza" i]    { --nxp-cat: #0e7490; --nxp-cat-soft: rgba(14, 116, 144, 0.12); --nxp-cat-line: rgba(14, 116, 144, 0.35); }
 [data-category="sport" i]      { --nxp-cat: #dc2626; --nxp-cat-soft: rgba(220, 38, 38, 0.1);  --nxp-cat-line: rgba(220, 38, 38, 0.35); }
 [data-category="cultura" i]    { --nxp-cat: #be185d; --nxp-cat-soft: rgba(190, 24, 93, 0.12); --nxp-cat-line: rgba(190, 24, 93, 0.35); }
 [data-category="salute" i]     { --nxp-cat: #15803d; --nxp-cat-soft: rgba(21, 128, 61, 0.12); --nxp-cat-line: rgba(21, 128, 61, 0.35); }

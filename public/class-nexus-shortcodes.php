@@ -135,7 +135,7 @@ final class Nexus_Shortcodes {
         /**
          * Colore di fallback per badge/dot categoria.
          */
-        const FALLBACK_COLOR = '#6366f1';
+        const FALLBACK_COLOR = '#1d4ed8';
 
         /**
          * Soglia minima del punteggio fact-check per il badge verde
@@ -1133,7 +1133,7 @@ final class Nexus_Shortcodes {
          * Accetta solo #rgb / #rrggbb (espande #rgb in #rrggbb), altrimenti fallback.
          *
          * @param string $color Colore in ingresso (es. output di Nexus_Utils::category_color()).
-         * @return string Colore sicuro tipo "#6366f1".
+         * @return string Colore sicuro tipo "#1d4ed8".
          */
         private static function color_attr( $color ) {
                 $color = trim( (string) $color );

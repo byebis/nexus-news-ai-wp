@@ -59,7 +59,7 @@
                 'tecnologia': '#38bdf8',
                 'politica': '#f59e0b',
                 'economia': '#34d399',
-                'scienza': '#a78bfa',
+                'scienza': '#22d3ee',
                 'sport': '#f87171',
                 'cultura': '#f472b6',
                 'salute': '#4ade80'

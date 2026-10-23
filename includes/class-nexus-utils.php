@@ -206,7 +206,7 @@ class Nexus_Utils {
                         'Tecnologia' => '#38bdf8',
                         'Politica'   => '#f59e0b',
                         'Economia'   => '#34d399',
-                        'Scienza'    => '#a78bfa',
+                        'Scienza'    => '#22d3ee',
                         'Sport'      => '#f87171',
                         'Cultura'    => '#f472b6',
                         'Salute'     => '#4ade80',
