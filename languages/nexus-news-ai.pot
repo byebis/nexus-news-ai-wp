@@ -1,4 +1,4 @@
-# Copyright (C) 2026 byebis
+# Copyright (C) 2026 ai4wp
 # This file is distributed under the MIT License.
 msgid ""
 msgstr ""

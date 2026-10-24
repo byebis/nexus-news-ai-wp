@@ -1,10 +1,10 @@
 === Nexus News AI ===
-Contributors: byebis
+Contributors: ai4wp
 Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.19.2
+Stable tag: 1.1.19.3
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,9 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.19.3 =
+* Autore del plugin aggiornato a ai4wp (header, readme e copyright di LICENSE/POT).
 
 = 1.1.19.2 =
 * Nuova palette UI: rimossi gli accenti indaco/viola, ora le sfumature vanno dal blu scuro all'azzurro in pannello admin, frontend, email e categoria Scienza.
