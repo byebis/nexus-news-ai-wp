@@ -77,7 +77,7 @@ defined( 'ABSPATH' ) || exit;
         <h1><?php esc_html_e( 'Coda Lavori', 'nexus-news-ai' ); ?></h1>
 
         <p class="nxa-jb-note">
-                <?php esc_html_e( "La coda esegue i lavori pesanti in batch ogni 60 secondi tramite WP-Cron quando l'opzione 'Usa la coda' è attiva in Impostazioni → Scala & Pro. Il pulsante 'Processa ora' esegue subito un batch.", 'nexus-news-ai' ); ?>
+                <?php esc_html_e( "La coda esegue i lavori pesanti in gruppi ogni 60 secondi tramite WP-Cron quando l'opzione 'Esegui i lavori in coda' è attiva in Impostazioni → Coda e prestazioni. Il pulsante 'Processa ora' esegue subito un gruppo.", 'nexus-news-ai' ); ?>
         </p>
 
         <!-- STAT-CARD: numeri riempiti dallo script inline via GET /jobs (stats). -->
@@ -103,7 +103,7 @@ defined( 'ABSPATH' ) || exit;
                      non porta variante --dead. -->
                 <div class="nxa-jb-card nxa-jb-card--failed">
                         <span class="nxa-jb-card-value" id="nxa-jb-stat-dead">&mdash;</span>
-                        <span class="nxa-jb-card-label"><?php esc_html_e( 'Dead letter', 'nexus-news-ai' ); ?></span>
+                        <span class="nxa-jb-card-label"><?php esc_html_e( 'Lavori bloccati', 'nexus-news-ai' ); ?></span>
                 </div>
                 <div class="nxa-jb-card nxa-jb-card--total">
                         <span class="nxa-jb-card-value" id="nxa-jb-stat-total">&mdash;</span>
@@ -126,7 +126,7 @@ defined( 'ABSPATH' ) || exit;
                         <!-- v1.1.16 (WE3): dead letter — i job 'running' bloccati oltre i
                              tentativi massimi (Nexus_Queue::monitor); si riaprono SOLO via
                              CLI (wp nexus queue dead --reset=<id>), nessun bottone UI. -->
-                        <option value="dead"><?php esc_html_e( 'Dead letter', 'nexus-news-ai' ); ?></option>
+                        <option value="dead"><?php esc_html_e( 'Bloccati', 'nexus-news-ai' ); ?></option>
                 </select>
 
                 <button type="button" id="nxa-jb-process" class="button button-primary">
@@ -234,7 +234,7 @@ defined( 'ABSPATH' ) || exit;
                         complete: 'Completato',
                         failed: 'Fallito',
                         cancelled: 'Annullato',
-                        dead: 'Dead letter'
+                        dead: 'Bloccato'
                 };
                 var STATUS_KEYS = ['pending', 'running', 'complete', 'failed', 'cancelled', 'dead'];
 

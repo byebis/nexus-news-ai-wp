@@ -198,7 +198,7 @@ if ( ! $nxa_status_ai_active ) {
 
                 <section class="nxa-acc" data-nxa-acc="scala">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="true" aria-controls="nxa-acc-panel-scala">
-                                <span class="nxa-acc-label"><?php esc_html_e( 'Scala & Pro', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Coda e prestazioni', 'nexus-news-ai' ); ?></span>
                                 <span class="nxa-acc-chevron" aria-hidden="true"></span>
                         </button>
                         <div class="nxa-acc-panel" id="nxa-acc-panel-scala">
@@ -210,24 +210,24 @@ if ( ! $nxa_status_ai_active ) {
                                                         <td>
                                                                 <label for="nxa-enable-queue">
                                                                         <input type="checkbox" name="enable_queue" id="nxa-enable-queue" value="1" <?php checked( (int) $settings['enable_queue'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Usa la coda lavori (stile Action Scheduler)', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Esegui i lavori in coda', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Le azioni pesanti (raccolta, valutazione, pubblicazione, traduzioni) vengono accodate nella tabella nexus_jobs ed eseguite in batch ogni 60 secondi dal runner WP-Cron. Consigliato su siti con molto traffico o hosting lento. Lo stato live è visibile nella pagina Coda Lavori.', 'nexus-news-ai' ); ?></p>
-                                                                <p class="description"><?php esc_html_e( 'Vedi la pagina Coda Lavori per statistiche, retry e pulizia. I comandi WP-CLI wp nexus queue stats|process sono disponibili.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Raccolta, valutazione, pubblicazione e traduzioni vengono messe in coda ed eseguite in gruppi ogni 60 secondi tramite WP-Cron. Consigliato sui siti con molto traffico o hosting lento. Lo stato si segue dalla pagina Coda lavori.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Dalla pagina Coda lavori puoi vedere le statistiche, ripetere i lavori falliti e fare pulizia.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
-                                                        <th scope="row"><label for="nxa-queue-batch-size"><?php esc_html_e( 'Lavori per batch', 'nexus-news-ai' ); ?></label></th>
+                                                        <th scope="row"><label for="nxa-queue-batch-size"><?php esc_html_e( 'Lavori per passaggio', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
                                                                 <input type="number" name="queue_batch_size" id="nxa-queue-batch-size" value="<?php echo esc_attr( $settings['queue_batch_size'] ); ?>" min="1" max="50" step="1" class="small-text" />
-                                                                <p class="description"><?php esc_html_e( 'Quanti lavori al massimo vengono eseguiti a ogni tick del runner (default 5).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Quanti lavori al massimo vengono eseguiti a ogni passaggio della coda (default 5).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
                                                         <th scope="row"><label for="nxa-queue-max-attempts"><?php esc_html_e( 'Tentativi massimi per lavoro', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
                                                                 <input type="number" name="queue_max_attempts" id="nxa-queue-max-attempts" value="<?php echo esc_attr( $settings['queue_max_attempts'] ); ?>" min="1" max="10" step="1" class="small-text" />
-                                                                <p class="description"><?php esc_html_e( "Dopo N fallimenti il lavoro viene marcato come Fallito (default 3). Tra un tentativo e l'altro il ritardo raddoppia (backoff esponenziale, max 1 ora).", 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( "Dopo il numero di tentativi indicato il lavoro viene segnato come fallito (default 3). L'attesa tra un tentativo e l'altro raddoppia, fino a un'ora.", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>
@@ -260,7 +260,7 @@ if ( ! $nxa_status_ai_active ) {
                                                         <td>
                                                                 <label for="nxa-enable-public-api">
                                                                         <input type="checkbox" name="enable_public_api" id="nxa-enable-public-api" value="1" <?php checked( (int) ( $settings['enable_public_api'] ?? 0 ), 1 ); ?> />
-                                                                        <?php esc_html_e( 'Attiva API pubblica (nexus-public/v1)', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Attiva l’API pubblica', 'nexus-news-ai' ); ?>
                                                                 </label>
                                                                 <p class="description"><?php esc_html_e( 'Espone articoli pubblicati, agenti e statistiche via REST pubblica con autenticazione X-Api-Key (rate limit 120 richieste/minuto). Genera la chiave nella pagina Strumenti.', 'nexus-news-ai' ); ?></p>
                                                         </td>
@@ -359,7 +359,7 @@ if ( ! $nxa_status_ai_active ) {
                                                                         <input type="checkbox" name="metrics_sync_enabled" id="nxa-metrics-sync-enabled" value="1" <?php checked( (int) $settings['metrics_sync_enabled'], 1 ); ?> />
                                                                         <?php esc_html_e( 'Sincronizza GSC e GA4 una volta al giorno', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Sincronizzazione giornaliera via WP-Cron: le metriche degli articoli finiscono nella tabella nexus_metrics.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Ogni giorno, tramite WP-Cron, le metriche degli articoli vengono aggiornate.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>

@@ -84,7 +84,8 @@ class Nexus_Digest {
          * Preferenze del digest con default e sanitizzazione alla lettura.
          *
          * digest_show_performance — sezione top articoli (default 1);
-         * digest_show_ai_usage    — sezione uso AI (default 1);
+         * digest_show_ai_usage    — sezione uso AI (default 0: è un dato operativo
+         *                           interno, non va agli iscritti senza opt-in);
          * digest_show_errors      — sezione errori interni (default 0: gli errori
          *                           interni non vengono mostrati agli iscritti
          *                           se l'admin non lo chiede esplicitamente);
@@ -95,7 +96,7 @@ class Nexus_Digest {
         public static function digest_prefs() {
                 $defaults = array(
                         'digest_show_performance' => 1,
-                        'digest_show_ai_usage'    => 1,
+                        'digest_show_ai_usage'    => 0,
                         'digest_show_errors'      => 0,
                         'digest_recipient'        => '',
                 );
@@ -232,7 +233,7 @@ class Nexus_Digest {
                         . '<th align="right" style="padding:8px;border-bottom:2px solid #e5e7eb;text-align:right;font-size:12px;color:#6b7280;">' . esc_html__( 'CTR', 'nexus-news-ai' ) . '</th>'
                         . '</tr>';
 
-                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">🏆 ' . esc_html__( 'Top performance della settimana', 'nexus-news-ai' ) . '</h2>';
+                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">' . esc_html__( 'Gli articoli più letti della settimana', 'nexus-news-ai' ) . '</h2>';
                 $out .= '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#111827;">' . $head . $rows . '</table>';
 
                 return $out;
@@ -280,7 +281,7 @@ class Nexus_Digest {
                         $line    .= ' ' . esc_html( sprintf( __( 'Costo stimato: %s USD.', 'nexus-news-ai' ), '$' . $cost_str ) );
                 }
 
-                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">🤖 ' . esc_html__( 'Uso AI della settimana', 'nexus-news-ai' ) . '</h2>';
+                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">' . esc_html__( 'Uso dell’AI questa settimana', 'nexus-news-ai' ) . '</h2>';
                 $out .= '<p style="margin:0 0 14px;line-height:1.6;font-size:13px;color:#374151;">' . $line . '</p>';
 
                 return $out;
@@ -362,7 +363,7 @@ class Nexus_Digest {
                         $list .= '</li>';
                 }
 
-                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">⚠️ ' . esc_html__( 'Errori della settimana', 'nexus-news-ai' ) . '</h2>';
+                $out  = '<h2 style="font-size:16px;margin:24px 0 10px;color:#111827;">' . esc_html__( 'Problemi della settimana', 'nexus-news-ai' ) . '</h2>';
                 $out .= '<p style="margin:0 0 8px;line-height:1.6;font-size:13px;color:#374151;">' . esc_html__( 'Problemi registrati negli ultimi 7 giorni:', 'nexus-news-ai' ) . '</p>';
                 $out .= '<ul style="list-style:none;margin:0 0 14px;padding:0;font-size:13px;color:#374151;">' . $list . '</ul>';
 

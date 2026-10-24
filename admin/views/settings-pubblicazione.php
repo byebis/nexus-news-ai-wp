@@ -380,7 +380,7 @@ $social_platforms = array(
                                                         <th scope="row"><?php esc_html_e( 'Contenuti e anteprima', 'nexus-news-ai' ); ?></th>
                                                         <td>
                                                                 <?php /* v1.1.14 (P5): solo testo, nessun input (non interferisce col salvataggio REST della form principale). Le preferenze del digest (sezioni performance/uso AI/errori, copia garantita, anteprima) vivono nella card dedicata IN FONDO alla pagina: opzione WP indipendente nexus_digest_prefs (contratto opzioni 1.1.13), salvata con un form admin_post proprio fuori dalla form #nxa-settings-form. */ ?>
-                                                                <p class="description"><?php esc_html_e( 'Sezioni performance, uso AI ed errori del digest, copia garantita e anteprima si gestiscono nella card "Digest settimanale" in fondo alla pagina (salvataggio dedicato).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Gli articoli più letti, l’uso AI e i problemi interni del digest, insieme alla copia garantita e all’anteprima, si gestiscono nella card "Digest settimanale" in fondo alla pagina.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>
@@ -524,33 +524,33 @@ $social_platforms = array(
                                 <table class="form-table" role="presentation">
                                         <tbody>
                                                 <tr>
-                                                        <th scope="row"><?php esc_html_e( 'Sezione performance', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="row"><?php esc_html_e( 'Articoli più letti', 'nexus-news-ai' ); ?></th>
                                                         <td>
                                                                 <label for="nxa-digest-show-performance">
                                                                         <input type="checkbox" name="digest_show_performance" id="nxa-digest-show-performance" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_performance'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Includi i top articoli della settimana', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Includi gli articoli più letti della settimana', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Click e viste dei migliori articoli (Search Console / Analytics 4). Se i dati non ci sono ancora, la sezione è omessa.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Click e viste dei migliori articoli, se i dati di Search Console o Analytics sono disponibili. Altrimenti la sezione non compare.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
-                                                        <th scope="row"><?php esc_html_e( 'Sezione uso AI', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="row"><?php esc_html_e( 'Uso dell’AI', 'nexus-news-ai' ); ?></th>
                                                         <td>
                                                                 <label for="nxa-digest-show-ai-usage">
                                                                         <input type="checkbox" name="digest_show_ai_usage" id="nxa-digest-show-ai-usage" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_ai_usage'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Includi il riepilogo uso AI', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Includi il riepilogo dell’uso AI', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Chiamate, token e costo stimato della settimana (quando tracciati). Nessuna chiamata nella settimana: sezione omessa.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Richieste all’AI, token e costo stimato della settimana, quando disponibili. È un dato operativo interno: disattivato di default.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
-                                                        <th scope="row"><?php esc_html_e( 'Sezione errori', 'nexus-news-ai' ); ?></th>
+                                                        <th scope="row"><?php esc_html_e( 'Problemi interni', 'nexus-news-ai' ); ?></th>
                                                         <td>
                                                                 <label for="nxa-digest-show-errors">
                                                                         <input type="checkbox" name="digest_show_errors" id="nxa-digest-show-errors" value="1" <?php checked( (int) $nxa_digest_prefs['digest_show_errors'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Includi gli errori della settimana', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Includi i problemi della settimana', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( 'Conteggi per tipo di errori interni (attività e lavori falliti). Disattiva di default: gli errori interni non vengono mostrati agli iscritti.', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'Conteggi per tipo di errori interni (attività e lavori falliti). Disattivato di default: i problemi interni non vengono mostrati agli iscritti.', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>

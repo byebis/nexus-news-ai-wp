@@ -179,7 +179,7 @@ defined( 'ABSPATH' ) || exit;
 
         <h1><?php esc_html_e( 'Redazioni', 'nexus-news-ai' ); ?></h1>
 
-        <p class="nxa-page-subtitle"><?php esc_html_e( 'Organizza la testata in redazioni gerarchiche: una redazione madre può contenere sub-redazioni (es. Sport → Calcio, Basket, F1) e ogni redazione ha i suoi agenti assegnati. Ogni redazione ha anche un archivio pubblico con il tema attivo.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'Organizza la redazione in sezioni gerarchiche: una sezione madre può contenerne altre (es. Sport → Calcio, Basket, F1) e ogni sezione ha i suoi agenti assegnati. Ogni sezione ha anche un archivio pubblico con il tema attivo.', 'nexus-news-ai' ); ?></p>
 
         <noscript>
                 <div class="notice notice-warning"><p><?php esc_html_e( 'JavaScript è disattivato: la gestione delle redazioni richiede JavaScript (form e albero sono riempiti via REST).', 'nexus-news-ai' ); ?></p></div>

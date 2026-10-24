@@ -17,8 +17,9 @@
  * TUTTE valide e usate (selettori orfani verificati e rimossi in log).
  *
  * Tema CHIARO di default dalla 1.0.6: i token su :root descrivono la
- * palette chiara (superfici bianche, bordi sottili, ombre leggere) e
- * ogni componente e' restilizzato di conseguenza. Il tema scuro storico
+ * palette "carta e inchiostro" (superfici neutre, hairline, ombre solo per
+ * overlay e menu, titoli serif) e ogni componente e' restilizzato di
+ * conseguenza. Il tema scuro storico
  * resta disponibile come opzione (setting admin_theme) tramite l'override
  * su body.nexus-theme-dark, classe applicata al body admin dal filtro
  * admin_body_class. Nessun colore hardcoded nei componenti: solo
@@ -61,13 +62,13 @@
  * 1. Token di design — tema CHIARO di default (contratto v1.0.6 §1)
  * ---------------------------------------------------------------------- */
 :root {
-  /* Superfici (light) */
-  --nxa-bg: #f6f8fc;
+  /* Superfici (light) — carta neutra, non azzurrata */
+  --nxa-bg: #f7f7f5;
   --nxa-surface: #ffffff;
-  --nxa-surface-2: #f2f5fa;
-  --nxa-surface-3: #eaeef6;
-  --nxa-border: #e2e8f2;
-  --nxa-border-soft: rgba(15, 23, 42, 0.08);
+  --nxa-surface-2: #f4f4f2;
+  --nxa-surface-3: #ebebe7;
+  --nxa-border: #e3e5e8;
+  --nxa-border-soft: rgba(20, 24, 31, 0.09);
   /* Hairline (v1.1.5): la separazione interna di default. 1px, molto tenue:
    * sostituisce i riquadri pieni tra superfici sorelle. */
   --nxa-hairline: var(--nxa-border-soft);
@@ -82,20 +83,22 @@
   --nxa-space-7: 48px;
   --nxa-space-8: 64px;
   /* Testo */
-  --nxa-text: #0f1a33;
-  --nxa-text-body: #33415c;
-  --nxa-muted: #5c6b84;
-  /* Accenti brand: scala blu scuro → azzurro */
+  --nxa-text: #14181f;
+  --nxa-text-body: #333b47;
+  --nxa-muted: #5b6572;
+  --nxa-text-muted: #5b6572;
+  --nxa-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Accenti brand: un solo blu, niente sfumature decorative */
   --nxa-accent-1: #1d4ed8;
-  --nxa-accent-2: #38bdf8;
-  --nxa-accent-grad: linear-gradient(135deg, #0b3a75 0%, #1d4ed8 50%, #0284c7 100%);
+  --nxa-accent-2: #0284c7;
+  --nxa-accent-grad: #1d4ed8;
   --nxa-focus: #0284c7;
   /* Raggi */
-  --nxa-radius: 14px;
-  --nxa-radius-sm: 10px;
-  --nxa-radius-lg: 18px;
-  /* Ombre leggere */
-  --nxa-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.07);
+  --nxa-radius: 6px;
+  --nxa-radius-sm: 4px;
+  --nxa-radius-lg: 8px;
+  /* Ombre: solo per overlay e menu */
+  --nxa-shadow: none;
   --nxa-shadow-lg: 0 20px 56px rgba(15, 23, 42, 0.16);
   /* Stato: testo / bg / bordo (light) */
   --nxa-ok-text: #15803d;   --nxa-ok-bg: rgba(34, 197, 94, 0.12);    --nxa-ok-line: rgba(22, 163, 74, 0.35);
@@ -113,39 +116,39 @@
  * tema non li differenzia; override in body.nexus-theme-dark altrimenti. */
 :root {
   /* Bordi di dettaglio e titoli */
-  --nxa-panel-line: #e2e8f2;
-  --nxa-line-strong: #dbe3ef;
-  --nxa-heading: #0f1a33;
+  --nxa-panel-line: #e3e5e8;
+  --nxa-line-strong: #d5d8dd;
+  --nxa-heading: #14181f;
   --nxa-link: #1d4ed8;
   --nxa-link-hover: #1e40af;
   --nxa-code-text: #1e40af;
   /* Bottoni */
   --nxa-btn-bg: #ffffff;
-  --nxa-btn-bg-hover: #f2f5fa;
+  --nxa-btn-bg-hover: #f4f4f2;
   --nxa-btn-line-hover: rgba(29, 78, 216, 0.5);
-  --nxa-btn-text-hover: #0f1a33;
+  --nxa-btn-text-hover: #14181f;
   --nxa-on-accent: #ffffff;
   --nxa-on-accent-soft: rgba(255, 255, 255, 0.35);
-  --nxa-accent-glow: rgba(29, 78, 216, 0.28);
-  --nxa-accent-glow-strong: rgba(29, 78, 216, 0.4);
+  --nxa-accent-glow: transparent;
+  --nxa-accent-glow-strong: transparent;
   /* Input */
   --nxa-input-bg: #ffffff;
-  --nxa-input-line: #d8e0ee;
-  --nxa-ring-accent: 0 0 0 3px rgba(29, 78, 216, 0.16);
+  --nxa-input-line: #d5d8dd;
+  --nxa-ring-accent: 0 0 0 3px rgba(29, 78, 216, 0.14);
   /* Superfici interattive e overlay */
-  --nxa-row-hover-bg: #f8fafd;
+  --nxa-row-hover-bg: #f7f7f5;
   --nxa-overlay: rgba(15, 23, 42, 0.52);
   --nxa-modal-close-bg: rgba(255, 255, 255, 0.92);
   --nxa-spinner-track: rgba(100, 116, 139, 0.28);
   --nxa-scroll-thumb: #c3cfe2;
   --nxa-skeleton-hi: rgba(255, 255, 255, 0.7);
-  /* Aloni brand tenui (sfondo pannello, avatar, hover card) */
-  --nxa-glow-1: rgba(29, 78, 216, 0.06);
-  --nxa-glow-2: rgba(56, 189, 248, 0.06);
-  --nxa-accent-1-soft: rgba(29, 78, 216, 0.12);
-  --nxa-accent-2-soft: rgba(56, 189, 248, 0.12);
-  --nxa-accent-line: rgba(29, 78, 216, 0.45);
-  --nxa-accent2-line: rgba(56, 189, 248, 0.45);
+  /* Tinte accento: supporto, non decorazione */
+  --nxa-glow-1: transparent;
+  --nxa-glow-2: transparent;
+  --nxa-accent-1-soft: rgba(29, 78, 216, 0.08);
+  --nxa-accent-2-soft: rgba(2, 132, 199, 0.08);
+  --nxa-accent-line: rgba(29, 78, 216, 0.35);
+  --nxa-accent2-line: rgba(2, 132, 199, 0.35);
   /* Errore rafforzato (hover bottoni e chiusura modale) */
   --nxa-err-bg-strong: rgba(239, 68, 68, 0.16);
   --nxa-err-text-strong: #991b1b;
@@ -160,18 +163,19 @@
  * v1.1.5 — contrasto tra superfici ridotto (il pannello resta la scatola UNA,
  * l'interno si separa con hairline e whitespace), bordi piu' soft. */
 body.nexus-theme-dark {
-  --nxa-bg: #0b0f17;
-  --nxa-surface: #0f1522;
-  --nxa-surface-2: #161e30;
-  --nxa-surface-3: #0d1320;
-  --nxa-border: #1f2940;
-  --nxa-border-soft: rgba(148, 163, 184, 0.13);
-  --nxa-text: #e2e8f0;
-  --nxa-text-body: #cbd5e1;
-  --nxa-muted: #94a3b8;
-  --nxa-focus: #22d3ee;
-  --nxa-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
-  --nxa-shadow-lg: 0 24px 64px rgba(2, 6, 23, 0.6);
+  --nxa-bg: #0f1319;
+  --nxa-surface: #161b23;
+  --nxa-surface-2: #1c222c;
+  --nxa-surface-3: #12171e;
+  --nxa-border: #2a313b;
+  --nxa-border-soft: rgba(232, 234, 237, 0.12);
+  --nxa-text: #e8eaed;
+  --nxa-text-body: #c9cfd6;
+  --nxa-muted: #99a2ad;
+  --nxa-text-muted: #99a2ad;
+  --nxa-focus: #38bdf8;
+  --nxa-shadow: none;
+  --nxa-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
   /* Stato: varianti chiare su tinte trasparenti (come 1.0.5) */
   --nxa-ok-text: #4ade80;   --nxa-ok-bg: rgba(74, 222, 128, 0.1);   --nxa-ok-line: rgba(74, 222, 128, 0.4);
   --nxa-warn-text: #fbbf24; --nxa-warn-bg: rgba(251, 191, 36, 0.1); --nxa-warn-line: rgba(251, 191, 36, 0.4);
@@ -181,32 +185,32 @@ body.nexus-theme-dark {
   --nxa-cat-soft: rgba(148, 163, 184, 0.14);
   --nxa-cat-line: rgba(148, 163, 184, 0.35);
   /* Token estesi */
-  --nxa-panel-line: #1c2536;
-  --nxa-line-strong: #263149;
-  --nxa-heading: #f1f5f9;
+  --nxa-panel-line: #242b35;
+  --nxa-line-strong: #303844;
+  --nxa-heading: #e8eaed;
   --nxa-link: #7dd3fc;
   --nxa-link-hover: #bae6fd;
   --nxa-code-text: #93c5fd;
-  --nxa-btn-bg: #1a2234;
-  --nxa-btn-bg-hover: #202a40;
+  --nxa-btn-bg: #1c222c;
+  --nxa-btn-bg-hover: #232b36;
   --nxa-btn-line-hover: rgba(56, 189, 248, 0.6);
   --nxa-btn-text-hover: #ffffff;
-  --nxa-input-bg: #0d1320;
-  --nxa-input-line: #232c42;
+  --nxa-input-bg: #12171e;
+  --nxa-input-line: #2a313b;
   --nxa-ring-accent: 0 0 0 3px rgba(56, 189, 248, 0.22);
-  --nxa-row-hover-bg: #141b2c;
+  --nxa-row-hover-bg: #1a2029;
   --nxa-overlay: rgba(4, 7, 14, 0.74);
-  --nxa-modal-close-bg: rgba(26, 34, 52, 0.88);
+  --nxa-modal-close-bg: rgba(28, 34, 44, 0.92);
   --nxa-spinner-track: rgba(148, 163, 184, 0.3);
   --nxa-scroll-thumb: #2a3550;
   --nxa-skeleton-hi: rgba(148, 163, 184, 0.14);
-  --nxa-glow-1: rgba(29, 78, 216, 0.18);
-  --nxa-glow-2: rgba(56, 189, 248, 0.1);
-  --nxa-accent-1-soft: rgba(56, 189, 248, 0.24);
-  --nxa-accent-2-soft: rgba(56, 189, 248, 0.24);
-  --nxa-accent-line: rgba(56, 189, 248, 0.5);
-  --nxa-accent-glow: rgba(56, 189, 248, 0.32);
-  --nxa-accent-glow-strong: rgba(56, 189, 248, 0.45);
+  --nxa-glow-1: transparent;
+  --nxa-glow-2: transparent;
+  --nxa-accent-1-soft: rgba(56, 189, 248, 0.16);
+  --nxa-accent-2-soft: rgba(56, 189, 248, 0.16);
+  --nxa-accent-line: rgba(56, 189, 248, 0.45);
+  --nxa-accent-glow: transparent;
+  --nxa-accent-glow-strong: transparent;
   --nxa-err-bg-strong: rgba(248, 113, 113, 0.2);
   --nxa-err-text-strong: #ffffff;
 }
@@ -325,12 +329,10 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   margin: 16px 20px 32px 2px;
   padding: clamp(20px, 3vw, 36px);
   color: var(--nxa-text);
-  background:
-    radial-gradient(900px 380px at 90% -10%, var(--nxa-glow-2), transparent 60%),
-    radial-gradient(700px 320px at 0% 0%, var(--nxa-glow-1), transparent 55%),
-    var(--nxa-bg);
+  background: var(--nxa-bg);
   border: 1px solid var(--nxa-panel-line);
   border-radius: var(--nxa-radius-lg);
+  font-family: var(--nxa-font-sans);
   font-size: 0.95rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -343,10 +345,10 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 .wrap.nexus-admin h1 {
   margin: 0 0 6px;
   padding: 0;
-  font-size: 1.7rem;
-  font-weight: 800;
+  font-size: 1.65rem;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   color: var(--nxa-heading);
 }
 
@@ -365,35 +367,24 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 .wrap.nexus-admin h2 {
   margin: var(--nxa-space-7) 0 var(--nxa-space-3);
   padding: 0;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.35;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
   color: var(--nxa-text);
-}
-
-/* Underline accent condiviso da h1 e h2 */
-.wrap.nexus-admin h1::after,
-.wrap.nexus-admin h2::after {
-  content: "";
-  display: block;
-  width: 42px;
-  height: 3px;
-  margin-top: 8px;
-  border-radius: 999px;
-  background: var(--nxa-accent-grad);
 }
 
 .wrap.nexus-admin p {
   color: var(--nxa-muted);
 }
 
-.wrap.nexus-admin a {
+/* Link di testo: i bottoni-anchor mantengono i propri colori di componente. */
+.wrap.nexus-admin a:not(.nxa-btn):not(.sui-btn):not(.button):not(.page-title-action) {
   color: var(--nxa-link);
   transition: color 0.15s ease;
 }
 
-.wrap.nexus-admin a:hover {
+.wrap.nexus-admin a:not(.nxa-btn):not(.sui-btn):not(.button):not(.page-title-action):hover {
   color: var(--nxa-link-hover);
 }
 
@@ -476,18 +467,18 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 }
 
 .nxa-btn-primary {
-  border-color: transparent;
-  background: var(--nxa-accent-grad);
+  border-color: var(--nxa-accent-1);
+  background: var(--nxa-accent-1);
   color: var(--nxa-on-accent);
-  box-shadow: 0 6px 18px var(--nxa-accent-glow);
+  box-shadow: none;
 }
 
 .nxa-btn-primary:hover {
-  border-color: transparent;
-  background: var(--nxa-accent-grad);
+  border-color: var(--nxa-accent-1);
+  background: var(--nxa-link-hover);
   color: var(--nxa-on-accent);
-  filter: brightness(1.1);
-  box-shadow: 0 10px 26px var(--nxa-accent-glow-strong);
+  filter: none;
+  box-shadow: none;
 }
 
 /* -------------------------------------------------------------------------
@@ -592,22 +583,41 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
 /* -------------------------------------------------------------------------
  * 7. Stat grid + actions row
  * ---------------------------------------------------------------------- */
+.nxa-stat-groups {
+  display: grid;
+  gap: var(--nxa-space-6);
+  margin: var(--nxa-space-5) 0 var(--nxa-space-2);
+}
+
+.nxa-stat-group__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-family: var(--nxa-font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nxa-muted);
+}
+
+.nxa-stat-group__title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--nxa-border);
+}
+
 .nxa-stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr); /* mobile-first */
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* mobile-first */
   gap: var(--nxa-space-4);
-  margin: var(--nxa-space-5) 0 var(--nxa-space-2);
 }
 
 @media (min-width: 782px) {
   .nxa-stat-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 1100px) {
-  .nxa-stat-grid {
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   }
 }
 
@@ -624,21 +634,13 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   transition: border-color 0.2s ease;
 }
 
-.nxa-stat-card:hover {
-  border-left-color: var(--nxa-accent-line);
-}
-
 .nxa-stat-value {
   display: block;
-  font-size: 1.9rem;
-  font-weight: 800;
+  font-size: 1.8rem;
+  font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  background: var(--nxa-accent-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--nxa-text);
 }
 
 .nxa-stat-label {
@@ -690,21 +692,18 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   transition: border-color 0.2s ease;
 }
 
-.nxa-agent-card:hover {
-  border-color: var(--nxa-accent-line);
-}
-
 .nxa-agent-avatar {
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  font-size: 1.85rem;
+  width: 52px;
+  height: 52px;
+  font-size: 1.3rem;
+  font-weight: 700;
   line-height: 1;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--nxa-accent-1-soft), var(--nxa-accent-2-soft));
-  border: 1px solid var(--nxa-accent-line);
-  box-shadow: inset 0 0 18px var(--nxa-accent-1-soft);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-hairline);
+  box-shadow: none;
 }
 
 .nxa-agent-name {
@@ -857,9 +856,9 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
  * sottotitolo di pagina: parte senza aria extra. */
 .wrap.nexus-admin .nxa-settings-group-title {
   margin: var(--nxa-space-6) 0 var(--nxa-space-1);
-  font-size: 1.32rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
   color: var(--nxa-heading);
 }
 
@@ -978,8 +977,8 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
  * fissa da 220px non deve sopravvivere a quel reset. */
 .wrap.nexus-admin .form-table th,
 .wrap.nexus-admin .form-table td {
-  padding-top: 15px;
-  padding-bottom: 15px;
+  padding-top: 12px;
+  padding-bottom: 12px;
   vertical-align: top;
 }
 
@@ -1101,7 +1100,7 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   gap: 10px;
   max-width: min(380px, calc(100vw - 40px));
   padding: 12px 18px;
-  border-radius: 12px;
+  border-radius: var(--nxa-radius);
   background: var(--nxa-surface);
   border: 1px solid var(--nxa-line-strong);
   color: var(--nxa-text);
@@ -1175,8 +1174,6 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   justify-content: center;
   padding: 16px;
   background: var(--nxa-overlay);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   animation: nxa-fade-in 0.2s ease both;
 }
 
@@ -1193,11 +1190,11 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   color: var(--nxa-text);
   background: var(--nxa-surface);
   border: 1px solid var(--nxa-border);
-  border-radius: 20px;
+  border-radius: var(--nxa-radius-lg);
   box-shadow: var(--nxa-shadow-lg);
   scrollbar-width: thin;
   scrollbar-color: var(--nxa-scroll-thumb) transparent;
-  animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: nxa-fade-in 0.2s ease both;
 }
 
 /* Scrollbar discreta (webkit) nel contenitore scrollabile */
@@ -1223,19 +1220,17 @@ body.nexus-theme-dark [data-category="salute" i]     { --nxa-cat: #4ade80; --nxa
   z-index: 3;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   margin: 0;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--nxa-radius-sm);
   border: 1px solid var(--nxa-border);
   background: var(--nxa-modal-close-bg);
   color: var(--nxa-muted);
   font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
   transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
 }
 
@@ -1309,8 +1304,6 @@ body.nxa-lock-scroll {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
   animation: nxa-fade-in 0.2s ease both;
 }
 
@@ -1340,7 +1333,7 @@ body.nxa-lock-scroll {
   box-shadow: var(--nxa-shadow-lg);
   scrollbar-width: thin;
   scrollbar-color: var(--nxa-scroll-thumb) transparent;
-  animation: nxa-pop-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: nxa-fade-in 0.2s ease both;
 }
 
 .nxa-modal-panel::-webkit-scrollbar {
@@ -1676,6 +1669,41 @@ body.nxa-lock-scroll {
   background-clip: padding-box;
 }
 
+/* Tabelle dati: intestazione sticky, densità da giornale, hover discreto.
+ * Solo le .widefat del plugin: i form-table delle impostazioni restano
+ * com'erano. */
+.wrap.nexus-admin .widefat {
+  border-color: var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  box-shadow: none;
+}
+
+.wrap.nexus-admin .widefat thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  background: var(--nxa-surface);
+  border-bottom: 1px solid var(--nxa-border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--nxa-muted);
+}
+
+.wrap.nexus-admin .widefat tbody td {
+  padding: 8px 10px;
+}
+
+.wrap.nexus-admin .widefat.striped > tbody > :nth-child(odd) {
+  background: transparent;
+}
+
+.wrap.nexus-admin .widefat tbody tr:hover {
+  background: var(--nxa-row-hover-bg);
+}
+
 /* Testi delle card agente sempre a capo (vale anche per i <p> generati da
  * admin.js grazie all'ereditarieta' di overflow-wrap dalla card). */
 .nxa-agent-card,
@@ -1993,10 +2021,10 @@ body.nxa-lock-scroll {
   align-items: baseline;
   gap: 7px;
   margin: 0;
-  padding: 8px 14px;
+  padding: 7px 11px;
   background: transparent;
   border: 1px solid var(--nxa-hairline);
-  border-radius: 999px;
+  border-radius: var(--nxa-radius-sm);
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--nxa-muted);
@@ -2004,8 +2032,8 @@ body.nxa-lock-scroll {
 
 .nxa-red-stats strong,
 .nxa-red-stats b {
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: 1.02rem;
+  font-weight: 700;
   line-height: 1;
   color: var(--nxa-text);
   font-variant-numeric: tabular-nums;
@@ -2201,9 +2229,9 @@ body.nxa-lock-scroll {
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  padding: 2px 9px;
+  padding: 2px 7px;
   border: 1px solid var(--nxa-hairline);
-  border-radius: 999px;
+  border-radius: 3px;
   background: transparent;
   color: var(--nxa-muted);
   font-size: 0.7rem;
@@ -2211,6 +2239,21 @@ body.nxa-lock-scroll {
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.nxa-red-chip__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--nxa-surface-3);
+  color: var(--nxa-text-body);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .nxa-red-count {
@@ -2701,9 +2744,13 @@ hr.nxa-hairline {
   white-space: nowrap;
 }
 
-.nxa-obs-emoji {
-  font-size: 26px;
+.nxa-obs-index {
+  font-family: var(--nxa-font-sans);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   line-height: 1;
+  color: var(--nxa-muted);
 }
 
 .nxa-obs-card-title {
@@ -2722,19 +2769,17 @@ hr.nxa-hairline {
 .nxa-obs-card-count {
   align-self: flex-start;
   margin-top: 4px;
-  padding: 2px 10px;
+  padding: 0;
   font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--nxa-info-text);
-  background: var(--nxa-info-bg);
-  border: 1px solid var(--nxa-info-line);
-  border-radius: 999px;
+  font-weight: 600;
+  color: var(--nxa-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .nxa-obs-card--manual .nxa-obs-card-count {
   color: var(--nxa-muted);
-  background: var(--nxa-surface-3);
-  border-color: var(--nxa-border);
 }
 
 /* Step 2 — opzioni. */
@@ -2894,37 +2939,101 @@ hr.nxa-hairline {
  * 1shot-UI-Kit v2.0 Compatibility & Harmony Bridge
  * ======================================================================= */
 .wrap.nexus-admin.sui-wrap {
-  font-family: var(--sui-font);
+  /* Il kit resta caricato ma eredita la palette editoriale del plugin:
+   * niente gradienti, glow o raggi decorativi del vendor. */
+  --sui-bg: var(--nxa-bg);
+  --sui-surface: var(--nxa-surface);
+  --sui-surface-2: var(--nxa-surface-2);
+  --sui-surface-3: var(--nxa-surface-3);
+  --sui-border: var(--nxa-border);
+  --sui-border-strong: var(--nxa-input-line);
+  --sui-border-soft: var(--nxa-border-soft);
+  --sui-text: var(--nxa-text);
+  --sui-text-2: var(--nxa-text-body);
+  --sui-muted: var(--nxa-muted);
+  --sui-link: var(--nxa-link);
+  --sui-link-hover: var(--nxa-link-hover);
+  --sui-code-text: var(--nxa-code-text);
+  --sui-primary: var(--nxa-accent-1);
+  --sui-primary-dark: var(--nxa-link-hover);
+  --sui-primary-soft: var(--nxa-accent-1-soft);
+  --sui-on-primary: var(--nxa-on-accent);
+  --sui-font: var(--nxa-font-sans);
+  --sui-accent-grad: var(--nxa-accent-1);
+  --sui-accent-grad-text: var(--nxa-accent-1);
+  --sui-accent-line: var(--nxa-accent-line);
+  --sui-accent-glow: transparent;
+  --sui-hero-grad: var(--nxa-surface-2);
+  --sui-hero-text: var(--nxa-text);
+  --sui-hero-muted: var(--nxa-text-muted);
+  --sui-radius-sm: var(--nxa-radius-sm);
+  --sui-radius: var(--nxa-radius);
+  --sui-radius-lg: var(--nxa-radius-lg);
+  --sui-shadow: none;
+  --sui-shadow-lg: var(--nxa-shadow-lg);
+  font-family: var(--nxa-font-sans);
 }
 
 .sui-page-head {
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--sui-border-soft, rgba(29, 35, 39, 0.08));
+  border-bottom: 1px solid var(--nxa-hairline);
 }
 
-.nxa-stat-card {
-  border-radius: var(--sui-radius, 10px) !important;
-  border-color: var(--sui-border, #dcdcde) !important;
-  transition: transform var(--sui-trans, 0.15s ease), box-shadow var(--sui-trans, 0.15s ease), border-color var(--sui-trans, 0.15s ease);
+/* La gerarchia la fa la tipografia: via il trattino decorativo del kit. */
+.wrap.nexus-admin.sui-wrap .sui-page-head__title::after {
+  display: none;
 }
 
-.nxa-stat-card:hover {
-  border-color: var(--sui-accent-line, rgba(19, 94, 150, 0.45));
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+.wrap.nexus-admin.sui-wrap .sui-page-head__title {
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--nxa-heading);
+}
+
+/* Il kit colora ogni anchor: i bottoni-anchor riprendono i colori del
+ * componente (altrimenti il primario diventa blu su blu). */
+.wrap.nexus-admin.sui-wrap a.nxa-btn {
+  color: var(--nxa-text);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn:hover {
+  color: var(--nxa-btn-text-hover);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn-primary,
+.wrap.nexus-admin.sui-wrap a.nxa-btn-primary:hover {
+  color: var(--nxa-on-accent);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn-run {
+  color: var(--nxa-link);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn-run:hover {
+  color: var(--nxa-link-hover);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn.is-danger {
+  color: var(--nxa-err-text);
+}
+
+.wrap.nexus-admin.sui-wrap a.nxa-btn.is-danger:hover {
+  color: var(--nxa-err-text-strong);
 }
 
 .nxa-btn {
-  border-radius: var(--sui-radius-sm, 6px) !important;
-  font-family: var(--sui-font) !important;
+  border-radius: var(--nxa-radius-sm);
 }
 
 .nxa-btn-primary {
-  background: var(--sui-primary, #2271b1) !important;
-  border-color: var(--sui-primary-dark, #135e96) !important;
+  background: var(--nxa-accent-1);
+  border-color: var(--nxa-accent-1);
 }
 
 .nxa-btn-primary:hover {
-  background: var(--sui-primary-dark, #135e96) !important;
+  background: var(--nxa-link-hover);
 }
 
 /* ==========================================================================
@@ -2937,44 +3046,60 @@ hr.nxa-hairline {
 .nxa-status-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 14px;
+  align-items: center;
+  gap: 0;
+  margin: 0 0 16px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--nxa-border);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .nxa-status-pill {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nxa-text-muted);
+  font-weight: 400;
+  line-height: inherit;
   text-decoration: none;
-  border: 1px solid var(--nxa-border, #e2e8f2);
-  color: var(--nxa-text, #334155);
-  background: var(--nxa-surface, #fff);
+}
+
+.nxa-status-pill + .nxa-status-pill {
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--nxa-border);
 }
 
 .nxa-status-pill:hover {
-  border-color: var(--nxa-accent-line, rgba(29, 78, 216, 0.45));
-  color: var(--nxa-text, #334155);
+  color: var(--nxa-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .nxa-status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--nxa-cat, #64748b);
+  flex: none;
 }
 
-.nxa-status-pill--ok .nxa-status-dot  { background: #22c55e; }
-.nxa-status-pill--warn .nxa-status-dot { background: #f59e0b; }
-.nxa-status-pill--off .nxa-status-dot { background: #ef4444; }
+.nxa-status-pill--ok .nxa-status-dot  { background: var(--nxa-ok-text); }
+.nxa-status-pill--warn .nxa-status-dot { background: var(--nxa-warn-text); }
+.nxa-status-pill--off .nxa-status-dot { background: var(--nxa-err-text); }
 
-.nxa-status-pill--ok   { color: var(--nxa-ok-text, #15803d);   background: var(--nxa-ok-bg, rgba(34,197,94,.12));   border-color: var(--nxa-ok-line, rgba(22,163,74,.35)); }
-.nxa-status-pill--warn { color: var(--nxa-warn-text, #b45309); background: var(--nxa-warn-bg, rgba(245,158,11,.15)); border-color: var(--nxa-warn-line, rgba(217,119,6,.38)); }
-.nxa-status-pill--off  { color: var(--nxa-err-text, #b91c1c);  background: var(--nxa-err-bg, rgba(239,68,68,.10));  border-color: var(--nxa-err-line, rgba(220,38,38,.35)); }
+.nxa-status-pill--ok,
+.nxa-status-pill--warn,
+.nxa-status-pill--off {
+  background: transparent;
+  border-color: transparent;
+  color: var(--nxa-text-muted);
+}
 
 .nxa-guide {
   display: grid;
@@ -2988,10 +3113,11 @@ hr.nxa-hairline {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 16px 18px;
-  border-radius: var(--nxa-radius-sm, 10px);
-  border: 1px solid var(--nxa-accent-line, rgba(29, 78, 216, 0.45));
-  background: var(--nxa-accent-1-soft, rgba(29, 78, 216, 0.12));
+  padding: 2px 0 2px 16px;
+  border: 0;
+  border-left: 3px solid var(--nxa-accent-1);
+  border-radius: 0;
+  background: transparent;
 }
 
 .nxa-next-action__text {
@@ -3003,14 +3129,14 @@ hr.nxa-hairline {
 .nxa-next-action__text strong { font-size: 14px; }
 .nxa-next-action__text span {
   font-size: 13px;
-  color: var(--nxa-text-muted, #64748b);
+  color: var(--nxa-text-muted);
 }
 
 .nxa-setup-checklist {
-  padding: 14px 18px;
-  border-radius: var(--nxa-radius-sm, 10px);
-  border: 1px solid var(--nxa-border, #e2e8f2);
-  background: var(--nxa-surface, #fff);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .nxa-setup-checklist__head {
@@ -3037,7 +3163,7 @@ hr.nxa-hairline {
 }
 
 .nxa-setup-checklist__list li.is-done {
-  color: var(--nxa-text-muted, #64748b);
+  color: var(--nxa-text-muted);
 }
 
 .nxa-setup-check {
@@ -3047,4 +3173,21 @@ hr.nxa-hairline {
   font-weight: 700;
 }
 
-.nxa-setup-checklist__list li.is-done .nxa-setup-check { color: #22c55e; }
+.nxa-setup-checklist__list li.is-done .nxa-setup-check { color: var(--nxa-ok-text); }
+
+/* I componenti aggiunti dopo la sezione 16 hanno transizioni proprie:
+ * qui l'override finale per chi chiede movimenti ridotti. */
+@media (prefers-reduced-motion: reduce) {
+  .nxa-btn,
+  .nxa-btn-run,
+  .nxa-settab-tab,
+  .nxa-subtab {
+    transition: none;
+  }
+}
+
+@media print {
+  .nxa-setup-dismiss {
+    display: none !important;
+  }
+}

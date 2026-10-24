@@ -4838,7 +4838,7 @@ class Nexus_Rest {
                         $agents_out[] = array(
                                 'id'          => $aid,
                                 'name'        => (string) $row->name,
-                                'avatar'      => '' !== $avatar ? $avatar : '🤖',
+                                'avatar'      => $avatar,
                                 'status'      => $status,
                                 'running'     => is_array( $current ),
                                 'current'     => $current,

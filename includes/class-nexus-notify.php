@@ -69,7 +69,7 @@
  *    breve e sicuro per i log (URL redatti '[url]', pattern token mascherati);
  *    usato qui e da Nexus_Metrics (cap 120, brief_error storico).
  *
- * MESSAGGI: "📰 Nexus: {evento} — {dettaglio}" in italiano plain (sweep i18n
+ * MESSAGGI: "Nexus: {evento} — {dettaglio}" in italiano plain (sweep i18n
  * futuro); mai dati sensibili (token, chiavi, URL con query string).
  *
  * @package Nexus_News_AI
@@ -272,7 +272,7 @@ final class Nexus_Notify {
         /* ============ MESSAGGI ============ */
 
         /**
-         * Messaggio di notifica: "📰 Nexus: {evento} — {dettaglio}" (italiano plain,
+         * Messaggio di notifica: "Nexus: {evento} — {dettaglio}" (italiano plain,
          * sweep i18n futuro; mai dati sensibili).
          *
          * @param string $event  Evento (error|pending|published).
@@ -291,10 +291,10 @@ final class Nexus_Notify {
                 $detail = trim( (string) $detail );
 
                 if ( '' === $detail ) {
-                        return sprintf( '📰 Nexus: %s.', $label );
+                        return sprintf( 'Nexus: %s.', $label );
                 }
 
-                return sprintf( '📰 Nexus: %s — %s', $label, $detail );
+                return sprintf( 'Nexus: %s — %s', $label, $detail );
         }
 
         /* ============ INVIO ============ */
@@ -919,8 +919,8 @@ final class Nexus_Notify {
 
                         if ( 'health' === $event ) {
                                 // build_message non ha label per i nuovi eventi: messaggio dedicato,
-                                // stesso formato "📰 Nexus: {evento} — {dettaglio}".
-                                $message = sprintf( '📰 Nexus: Health check — %s', $detail );
+                                // stesso formato "Nexus: {evento} — {dettaglio}".
+                                $message = sprintf( 'Nexus: Controllo del sistema — %s', $detail );
                         } else {
                                 $message = self::build_message( $event, $detail );
                         }

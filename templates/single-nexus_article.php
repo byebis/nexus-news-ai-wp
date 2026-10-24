@@ -121,10 +121,16 @@ while ( have_posts() ) :
                 esc_html( number_format_i18n( $nexus_views ) )
         );
 
-        /* Byline: agente Nexus (avatar emoji + nome + categoria). */
-        $nexus_avatar      = ( $nexus_agent && ! empty( $nexus_agent->avatar ) ) ? (string) $nexus_agent->avatar : '🤖';
-        $nexus_agent_name  = ( $nexus_agent && ! empty( $nexus_agent->name ) ) ? (string) $nexus_agent->name : __( 'Agente AI', 'nexus-news-ai' );
-        $nexus_agent_cat   = ( $nexus_agent && ! empty( $nexus_agent->category ) ) ? (string) $nexus_agent->category : '';
+        /* Byline: agente Nexus (iniziale, nome, categoria). Le emoji salvate
+           nelle versioni precedenti vengono ignorate: si usa la prima lettera
+           del nome, così la firma resta sobria e coerente. */
+        $nexus_agent_name = ( $nexus_agent && ! empty( $nexus_agent->name ) ) ? (string) $nexus_agent->name : __( 'Redazione', 'nexus-news-ai' );
+        $nexus_agent_cat  = ( $nexus_agent && ! empty( $nexus_agent->category ) ) ? (string) $nexus_agent->category : '';
+        $nexus_avatar     = ( $nexus_agent && ! empty( $nexus_agent->avatar ) ) ? trim( (string) $nexus_agent->avatar ) : '';
+        if ( ! preg_match( '/^[\p{L}\p{N}]{1,2}$/u', $nexus_avatar ) ) {
+                $nexus_avatar = function_exists( 'mb_substr' ) ? mb_substr( $nexus_agent_name, 0, 1 ) : substr( $nexus_agent_name, 0, 1 );
+        }
+        $nexus_avatar = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $nexus_avatar, 'UTF-8' ) : strtoupper( $nexus_avatar );
 
         /* Reazioni: emoji ammesse + conteggi correnti (JSON colonna "reactions"). */
         $nexus_emojis = ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'reaction_emojis' ) )
@@ -182,18 +188,32 @@ while ( have_posts() ) :
                                 <?php endif; ?>
                         </div>
 
-                        <!-- ============ Byline agente (Redazione AI) ============ -->
+                        <!-- ============ Byline agente + disclosure ============ -->
                         <div class="nexus-single-byline">
                                 <span class="nexus-single-avatar" aria-hidden="true"><?php echo esc_html( $nexus_avatar ); ?></span>
-                                <span class="nexus-single-agent">
-                                        <span class="nexus-single-agent-name"><?php echo esc_html( $nexus_agent_name ); ?></span>
-                                        <?php if ( '' !== $nexus_agent_cat ) : ?>
-                                                <span class="nexus-single-agent-cat"><?php echo esc_html( $nexus_agent_cat ); ?></span>
-                                        <?php endif; ?>
+                                <span class="nexus-single-byline-text">
+                                        <span class="nexus-single-agent-name">
+                                                <?php
+                                                echo esc_html( sprintf(
+                                                        /* translators: %s: nome dell'agente che ha redatto l'articolo. */
+                                                        __( 'Di %s', 'nexus-news-ai' ),
+                                                        $nexus_agent_name
+                                                ) );
+                                                ?>
+                                                <?php if ( '' !== $nexus_agent_cat ) : ?>
+                                                        <span class="nexus-single-agent-cat"><?php echo esc_html( $nexus_agent_cat ); ?></span>
+                                                <?php endif; ?>
+                                        </span>
+                                        <span class="nexus-single-disclosure"><?php echo esc_html__( 'Contenuto redatto con il supporto di AI e verificato dalla redazione.', 'nexus-news-ai' ); ?></span>
                                 </span>
-                                <span class="nexus-single-badge">🤖 <?php echo esc_html__( 'Redazione AI', 'nexus-news-ai' ); ?></span>
                                 <?php if ( '' !== $nexus_factcheck_badge ) : ?>
-                                        <?php echo $nexus_factcheck_badge; // phpcs:ignore WordPress.Security.EscapeOutput -- HTML già escaped in Nexus_Shortcodes::factcheck_badge(). ?>
+                                        <details class="nexus-single-factcheck">
+                                                <summary>
+                                                        <?php echo $nexus_factcheck_badge; // phpcs:ignore WordPress.Security.EscapeOutput -- HTML già escaped in Nexus_Shortcodes::factcheck_badge(). ?>
+                                                        <span class="nexus-single-factcheck-more"><?php echo esc_html__( 'Dettagli', 'nexus-news-ai' ); ?></span>
+                                                </summary>
+                                                <p class="nexus-single-factcheck-note"><?php echo esc_html__( 'Punteggio della verifica automatica dei fatti, calcolato sulle fonti citate in fondo all’articolo. Non sostituisce la revisione editoriale.', 'nexus-news-ai' ); ?></p>
+                                        </details>
                                 <?php endif; ?>
                         </div>
                 </header>

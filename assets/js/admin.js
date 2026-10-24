@@ -87,13 +87,13 @@
 
         /** Azione attività → icona + badge. */
         var ACTION_META = {
-                collecting: { icon: '📡', label: 'Raccolta',      variant: 'info' },
-                evaluating: { icon: '⚖️', label: 'Valutazione',   variant: 'warning' },
-                rewriting:  { icon: '✍️', label: 'Riscrittura',   variant: 'primary' },
-                publishing: { icon: '🚀', label: 'Pubblicazione', variant: 'success' },
-                wire:       { icon: '🕸️', label: 'Wire',          variant: 'primary' }
+                collecting: { icon: '<span class="dashicons dashicons-rss" aria-hidden="true"></span>', label: 'Raccolta',      variant: 'info' },
+                evaluating: { icon: '<span class="dashicons dashicons-yes-alt" aria-hidden="true"></span>', label: 'Valutazione',   variant: 'warning' },
+                rewriting:  { icon: '<span class="dashicons dashicons-edit" aria-hidden="true"></span>', label: 'Riscrittura',   variant: 'primary' },
+                publishing: { icon: '<span class="dashicons dashicons-upload" aria-hidden="true"></span>', label: 'Pubblicazione', variant: 'success' },
+                wire:       { icon: '<span class="dashicons dashicons-networking" aria-hidden="true"></span>', label: 'Wire',          variant: 'primary' }
         };
-        var ACTION_DEFAULT = { icon: '📰', label: 'Evento', variant: 'neutral' };
+        var ACTION_DEFAULT = { icon: '<span class="dashicons dashicons-marker" aria-hidden="true"></span>', label: 'Evento', variant: 'neutral' };
 
         /** Fasi della redazione collettiva (Nexus Wire).
          *  v1.1.16 (WE2): le fasi NON sono più una lista animata su timer
@@ -193,6 +193,32 @@
         function fmt( value ) {
                 return num( value ).toLocaleString( 'it-IT' );
         }
+
+        /**
+         * Iniziale dell'agente: usa il campo avatar solo se è già un'iniziale
+         * (1-2 lettere/cifre); le vecchie emoji salvate vengono ignorate e si
+         * ricava la lettera dal nome. Stesso criterio dei render PHP.
+         */
+        function agentInitial( agent ) {
+                var avatar = String( pick( agent, 'avatar' ) || '' ).trim();
+                if ( /^[A-Za-zÀ-ÿ0-9]{1,2}$/.test( avatar ) ) {
+                        return avatar.toUpperCase();
+                }
+                var name = String( pick( agent, 'name' ) || '' ).trim();
+                return name ? name.charAt( 0 ).toUpperCase() : '·';
+        }
+
+        /** Icone degli stati vuoti: le emoji storiche diventano Dashicons. */
+        var EMPTY_ICON_MAP = {
+                '⚠️': 'warning',
+                '🤖': 'groups',
+                '📡': 'rss',
+                '📊': 'chart-bar',
+                '📄': 'media-default',
+                '📰': 'media-text',
+                '🗂️': 'portfolio',
+                '🕸️': 'networking'
+        };
 
         function debounce( fn, wait ) {
                 var timer = null;
@@ -350,10 +376,10 @@
         /** v1.1.4: verdetto capo redattore → testo IT del contratto ('' = nessuno). */
         function chiefStatusLabel( status ) {
                 var map = {
-                        visto:      '🎖 Capo redattore: visto',
-                        modificato: '✏ Capo redattore: modificato',
-                        rifiutato:  '⛔ Capo redattore: rifiutato',
-                        revisione:  '🔄 Revisione capo redattore'
+                        visto:      'Capo redattore: visto',
+                        modificato: 'Capo redattore: modificato',
+                        rifiutato:  'Capo redattore: rifiutato',
+                        revisione:  'Revisione capo redattore'
                 };
                 return map[ String( status || '' ).toLowerCase() ] || '';
         }
@@ -371,7 +397,7 @@
         /** v1.1.4: bottone forzatura revisione capo (usato in coda e dettaglio). */
         function chiefRunButtonHtml( chiefStatus, attrs ) {
                 var extra = attrs || '';
-                return '<button type="button" class="button nxa-chief-run" data-chief-status="' + esc( String( chiefStatus || '' ) ) + '"' + ( extra ? ' ' + extra : '' ) + '>🎖 Revisione capo redattore</button>';
+                return '<button type="button" class="button nxa-chief-run" data-chief-status="' + esc( String( chiefStatus || '' ) ) + '"' + ( extra ? ' ' + extra : '' ) + '>Revisione capo redattore</button>';
         }
 
         /**
@@ -548,7 +574,7 @@
 
         var FALLBACK_CSS = [
                 '#nxa-toast-stack{position:fixed;right:16px;bottom:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:340px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
-                '.nxa-toast{display:flex;gap:10px;align-items:flex-start;background:var(--nxa-surface);color:var(--nxa-text-body);border-radius:10px;padding:12px 14px;box-shadow:var(--nxa-shadow-lg);font-size:13px;line-height:1.45;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}',
+                '.nxa-toast{display:flex;gap:10px;align-items:flex-start;background:var(--nxa-surface);color:var(--nxa-text-body);border-radius:var(--nxa-radius,6px);padding:12px 14px;box-shadow:var(--nxa-shadow-lg);font-size:13px;line-height:1.45;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}',
                 '.nxa-toast.nxa-toast--in{opacity:1;transform:none}',
                 '.nxa-toast.nxa-toast--out{opacity:0;transform:translateY(6px)}',
                 '.nxa-toast--success{border-left:4px solid var(--nxa-ok-text)}',
@@ -571,35 +597,37 @@
                 '.nxa-chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600;white-space:nowrap}',
                 '.nxa-dot{width:7px;height:7px;border-radius:50%;display:inline-block}',
                 '.nxa-empty{text-align:center;padding:44px 16px;color:var(--nxa-muted);font-size:14px}',
-                '.nxa-empty__icon{font-size:34px;margin-bottom:8px}',
+                '.nxa-empty__icon{margin-bottom:8px;color:var(--nxa-muted)}',
+                '.nxa-empty__icon .dashicons{font-size:34px;width:34px;height:34px}',
                 '.nxa-empty__title{font-weight:600;font-size:16px;color:var(--nxa-text-body);margin:0 0 4px}',
-                '.nxa-card{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:16px}',
-                '.nxa-queue-item{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:14px 16px;margin-bottom:12px}',
+                '.nxa-card{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:var(--nxa-radius,6px);padding:16px}',
+                '.nxa-queue-item{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:var(--nxa-radius,6px);padding:14px 16px;margin-bottom:12px}',
                 '.nxa-act-item{display:flex;gap:12px;padding:12px 4px;border-bottom:1px solid var(--nxa-border-soft)}',
                 '.nxa-act-item:last-child{border-bottom:0}',
-                '.nxa-act-icon{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:17px}',
+                '.nxa-act-icon{flex:0 0 auto;width:36px;height:36px;border-radius:4px;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--nxa-text-body)}',
+                '.nxa-act-icon .dashicons{font-size:18px;width:18px;height:18px}',
                 '.nxa-act-agent{font-weight:600;font-size:13px;color:var(--nxa-text)}',
                 '.nxa-act-detail{font-size:12.5px;color:var(--nxa-muted);margin:3px 0 0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
                 '.nxa-act-time{font-size:11px;color:var(--nxa-muted);white-space:nowrap;margin-left:auto}',
                 '.nxa-modal{position:fixed;left:0;top:0;right:0;bottom:0;z-index:100000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;background:rgba(15,23,42,var(--nxa-overlay-alpha,.55));padding:16px 16px 32px}',
                 '.nxa-modal[hidden]{display:none}',
-                '.nxa-modal__box{margin:auto;background:var(--nxa-surface);color:var(--nxa-text);max-width:760px;width:100%;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto;border-radius:14px;box-shadow:var(--nxa-shadow-lg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+                '.nxa-modal__box{margin:auto;background:var(--nxa-surface);color:var(--nxa-text);max-width:760px;width:100%;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto;border-radius:var(--nxa-radius-lg,8px);box-shadow:var(--nxa-shadow-lg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
                 '.nxa-modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--nxa-border);position:sticky;top:0;background:var(--nxa-surface);z-index:1}',
                 '.nxa-modal__head h2{font-size:17px;margin:0}',
                 '.nxa-modal__body{padding:18px;overflow-wrap:anywhere;word-break:break-word}',
                 '.nxa-modal__close{background:none;border:0;font-size:22px;line-height:1;cursor:pointer;color:var(--nxa-muted)}',
                 'body.nxa-modal-open{overflow:hidden}',
-                '@media (max-width:600px){.nxa-modal{padding:8px;padding-bottom:20px}.nxa-modal__box{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);border-radius:10px}.nxa-modal__body{padding:14px}.nxa-modal__head{padding:12px 14px}.nxa-modal__head h2{font-size:15px}}',
+                '@media (max-width:600px){.nxa-modal{padding:8px;padding-bottom:20px}.nxa-modal__box{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);border-radius:var(--nxa-radius-sm,4px)}.nxa-modal__body{padding:14px}.nxa-modal__head{padding:12px 14px}.nxa-modal__head h2{font-size:15px}}',
                 '.nxa-wp-view{margin-left:8px;font-size:12px;text-decoration:none;color:inherit}',
                 '.nxa-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}',
                 '.nxa-note-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}',
-                '.nxa-note-input{flex:1 1 220px;border:1px solid var(--nxa-input-line);border-radius:8px;padding:6px 10px;font-size:13px}',
+                '.nxa-note-input{flex:1 1 220px;border:1px solid var(--nxa-input-line);border-radius:var(--nxa-radius-sm,4px);padding:6px 10px;font-size:13px}',
                 '.nxa-mini-agents{display:flex;flex-wrap:wrap;gap:10px}',
-                '.nxa-mini-agent{display:flex;align-items:center;gap:8px;background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:999px;padding:6px 12px 6px 6px;font-size:13px}',
-                '.nxa-mini-agent__avatar{width:30px;height:30px;border-radius:50%;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:16px}',
-                '.nxa-wire-run{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:12px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}',
-                '.nxa-wire-status{margin-top:12px;border:1px solid var(--nxa-border);border-radius:10px;background:var(--nxa-surface-2);padding:12px 14px;font-size:13px;color:var(--nxa-muted)}',
-                '.nxa-idea{border:1px solid var(--nxa-input-line);background:var(--nxa-surface);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--nxa-muted);cursor:pointer;margin:0 6px 6px 0}',
+                '.nxa-mini-agent{display:flex;align-items:center;gap:8px;background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:var(--nxa-radius-sm,4px);padding:6px 12px 6px 6px;font-size:13px}',
+                '.nxa-mini-agent__avatar{width:30px;height:30px;border-radius:4px;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}',
+                '.nxa-wire-run{background:var(--nxa-surface);border:1px solid var(--nxa-border);border-radius:var(--nxa-radius,6px);padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}',
+                '.nxa-wire-status{margin-top:12px;border:1px solid var(--nxa-border);border-radius:var(--nxa-radius-sm,4px);background:var(--nxa-surface-2);padding:12px 14px;font-size:13px;color:var(--nxa-muted)}',
+                '.nxa-idea{border:1px solid var(--nxa-input-line);background:var(--nxa-surface);border-radius:var(--nxa-radius-sm,4px);padding:3px 10px;font-size:12px;color:var(--nxa-muted);cursor:pointer;margin:0 6px 6px 0}',
                 '.nxa-idea:hover{background:var(--nxa-surface-2)}'
         ].join( '\n' );
 
@@ -728,7 +756,9 @@
         }
 
         function emptyState( icon, title, hint ) {
-                return '<div class="nxa-empty"><div class="nxa-empty__icon" aria-hidden="true">' + icon + '</div>' +
+                var dash = EMPTY_ICON_MAP[ String( icon || '' ) ];
+                var iconHtml = dash ? '<span class="dashicons dashicons-' + dash + '"></span>' : icon;
+                return '<div class="nxa-empty"><div class="nxa-empty__icon" aria-hidden="true">' + iconHtml + '</div>' +
                         '<p class="nxa-empty__title">' + esc( title ) + '</p>' +
                         ( hint ? '<p>' + esc( hint ) + '</p>' : '' ) +
                         '</div>';
@@ -1262,8 +1292,8 @@
 
         /** Etichetta bottone lingua → emoji bandiera + codice (il file usa già emoji). */
         var TRANSLATE_META = {
-                en: '🇬🇧 EN', es: '🇪🇸 ES', fr: '🇫🇷 FR', de: '🇩🇪 DE',
-                pt: '🇵🇹 PT', ar: '🇸🇦 AR', zh: '🇨🇳 ZH', ja: '🇯🇵 JA'
+                en: 'EN', es: 'ES', fr: 'FR', de: 'DE',
+                pt: 'PT', ar: 'AR', zh: 'ZH', ja: 'JA'
         };
 
         /**
@@ -1320,7 +1350,7 @@
                                 return; // il modal è stato chiuso nel frattempo
                         }
                         container.innerHTML = translateLangs( settings ).map( function ( lang ) {
-                                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                                var label = TRANSLATE_META[ lang ] || lang.toUpperCase();
                                 return '<button type="button" class="button nxa-translate" data-lang="' + esc( lang ) + '">' + label + '</button>';
                         } ).join( '' );
                 } );
@@ -1411,7 +1441,7 @@
          */
         function translationPostChip( t ) {
                 var lang = String( pick( t, 'lang' ) || '' );
-                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                var label = TRANSLATE_META[ lang ] || lang.toUpperCase();
                 var status = String( pick( t, 'status' ) || '' ).toLowerCase();
                 if ( status === 'publish' ) {
                         status = 'published';
@@ -1516,7 +1546,7 @@
                                 return;
                         }
                         btns.innerHTML = translateLangs( settings ).map( function ( lang ) {
-                                var label = TRANSLATE_META[ lang ] || ( '🌐 ' + lang.toUpperCase() );
+                                var label = TRANSLATE_META[ lang ] || lang.toUpperCase();
                                 return '<button type="button" class="button nxa-translate-post" data-lang="' + esc( lang ) + '">' + label + '</button>';
                         } ).join( '' );
                 } );
@@ -1638,9 +1668,12 @@
         function activityItemHtml( item ) {
                 var meta = actionMeta( pick( item, 'action' ) );
                 var agent = ( item.agent && item.agent.name ) ? item.agent :
-                        ( num( pick( item, 'agent_id', 'agentId' ) ) > 0 ? { name: agentNameById( pick( item, 'agent_id', 'agentId' ) ) || 'Agente #' + pick( item, 'agent_id', 'agentId' ), avatar: '🤖' } : { name: 'Sistema', avatar: '⚙️' } );
+                        ( num( pick( item, 'agent_id', 'agentId' ) ) > 0 ? { name: agentNameById( pick( item, 'agent_id', 'agentId' ) ) || 'Agente #' + pick( item, 'agent_id', 'agentId' ) } : { name: 'Sistema' } );
+                var iconHtml = agent.name === 'Sistema'
+                        ? '<span class="dashicons dashicons-admin-settings" aria-hidden="true"></span>'
+                        : esc( agentInitial( agent ) );
                 return '<div class="nxa-act-item">' +
-                        '<div class="nxa-act-icon" aria-hidden="true">' + ( ( item.agent && item.agent.avatar ) || agent.avatar || meta.icon ) + '</div>' +
+                        '<div class="nxa-act-icon" aria-hidden="true">' + iconHtml + '</div>' +
                         '<div style="flex:1;min-width:0">' +
                                 '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
                                         '<span class="nxa-act-agent">' + esc( agent.name ) + '</span>' +
@@ -1679,7 +1712,7 @@
                         container.innerHTML = agents.length
                                 ? '<div class="nxa-mini-agents">' + agents.map( function ( agent ) {
                                         return '<span class="nxa-mini-agent">' +
-                                                '<span class="nxa-mini-agent__avatar" aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span>' +
+                                                '<span class="nxa-mini-agent__avatar" aria-hidden="true">' + esc( agentInitial( agent ) ) + '</span>' +
                                                 '<span>' + esc( pick( agent, 'name' ) || 'Agente' ) + '</span>' +
                                                 badge( pick( agent, 'status' ) ) +
                                         '</span>';
@@ -1734,7 +1767,7 @@
                         html += '<div class="nxa-usage-budget" style="margin:0 0 14px">' +
                                         '<p style="margin:0 0 6px;font-size:12.5px;color:var(--nxa-muted)">' +
                                                 'Budget mensile: <strong style="color:' + barColor + '">' + esc( fmtUsd( cost ) ) + '</strong> / ' + esc( budget.toFixed( 2 ) ) + ' USD' +
-                                                ( pct >= 90 ? ' ⚠️' : '' ) +
+                                                ( pct >= 90 ? ' — sopra la soglia' : '' ) +
                                         '</p>' +
                                         '<div style="height:10px;background:var(--nxa-border);border-radius:999px;overflow:hidden" role="progressbar" aria-valuenow="' + Math.round( pct ) + '" aria-valuemin="0" aria-valuemax="100">' +
                                                 '<div style="height:100%;width:' + pct.toFixed( 1 ) + '%;background:' + barColor + '"></div>' +
@@ -1746,7 +1779,7 @@
                         var rows = byAgent.map( function ( r ) {
                                 var agent = agentById( pick( r, 'agent_id' ) );
                                 var label = agent
-                                        ? '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' + esc( pick( agent, 'name' ) || 'Agente' )
+                                        ? '<span class="nxa-red-chip__avatar" aria-hidden="true">' + esc( agentInitial( agent ) ) + '</span> ' + esc( pick( agent, 'name' ) || 'Agente' )
                                         : 'Agente #' + esc( pick( r, 'agent_id' ) );
                                 return '<tr>' +
                                         '<td style="padding:8px 10px;border-bottom:1px solid var(--nxa-border-soft)">' + label + '</td>' +
@@ -1849,7 +1882,7 @@
                 return '<div class="nxa-card nxa-agent-card" data-agent-id="' + esc( pick( agent, 'id' ) ) + '">' +
                         '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">' +
                                 '<div style="display:flex;align-items:center;gap:10px;min-width:0">' +
-                                        '<span style="width:44px;height:44px;border-radius:12px;background:var(--nxa-surface-3);display:flex;align-items:center;justify-content:center;font-size:22px" aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span>' +
+                                        '<span class="nxa-agent-avatar" aria-hidden="true">' + esc( agentInitial( agent ) ) + '</span>' +
                                         '<div style="min-width:0">' +
                                                 '<strong style="display:block;font-size:14px">' + esc( pick( agent, 'name' ) || 'Agente' ) + '</strong>' +
                                                 '<span style="margin-top:2px;display:inline-block">' + categoryChip( pick( agent, 'category' ) ) + '</span>' +
@@ -2504,7 +2537,8 @@
                 var currentStatus = String( pick( a, 'status' ) || 'active' );
                 idField.value = String( num( pick( a, 'id' ) ) || 0 );
                 nameField.value = String( pick( a, 'name' ) || '' );
-                avatarField.value = String( pick( a, 'avatar' ) || '' );
+                var avatarValue = String( pick( a, 'avatar' ) || '' ).trim();
+                avatarField.value = /^[A-Za-zÀ-ÿ0-9]{1,2}$/.test( avatarValue ) ? avatarValue.toUpperCase() : '';
                 catField.value = String( pick( a, 'category' ) || '' );
                 statusField.value = currentStatus === 'paused' ? 'paused' : 'active';
                 modelField.value = String( pick( a, 'ai_model' ) || '' );
@@ -2830,62 +2864,62 @@
          */
         var AGENT_PRESETS = {
                 tech: {
-                        name: 'Giornalista tech',
-                        avatar: '🤖',
+                        name: 'Giornalista tecnologia',
+                        avatar: 'T',
                         category: 'Tecnologia',
-                        description: 'Agente AI specializzato in tecnologia, AI, gadget e innovazione.',
-                        personality: 'Analitico e orientato all’impatto pratico'
+                        description: 'Segue tecnologia, intelligenza artificiale e innovazione, con attenzione all’impatto su lavoro e imprese.',
+                        personality: 'Sobrio e concreto: il contesto prima delle promesse.'
                 },
                 sport: {
                         name: 'Giornalista sport',
-                        avatar: '⚽',
+                        avatar: 'S',
                         category: 'Sport',
-                        description: 'Agente AI su calcio, sport nazionali e internazionali.',
-                        personality: 'Emozionante e narrativo, con statistiche e analisi tattiche'
+                        description: 'Copre calcio, campionati e sport internazionali con risultati, statistiche e contesto.',
+                        personality: 'Racconto asciutto, con i numeri accanto alla cronaca.'
                 },
                 economia: {
                         name: 'Giornalista economia',
-                        avatar: '📈',
+                        avatar: 'E',
                         category: 'Economia',
-                        description: 'Agente AI su mercati, imprese e finanza personale.',
-                        personality: 'Rigoroso ma accessibile, con dati concreti'
+                        description: 'Segue mercati, imprese e finanze personali con dati verificabili e confronti nel tempo.',
+                        personality: 'Rigoroso e leggibile, mai catastrofista.'
                 },
                 politica: {
                         name: 'Giornalista politica',
-                        avatar: '🏛️',
+                        avatar: 'P',
                         category: 'Politica',
-                        description: 'Agente AI che copre politica italiana ed estera con contesto storico.',
-                        personality: 'Equilibrato e oggettivo, con contesto geopolitico'
+                        description: 'Copre politica italiana ed estera ricostruendo decisioni, attori e conseguenze.',
+                        personality: 'Neutrale e attento alle fonti.'
                 },
                 scienza: {
                         name: 'Giornalista scienza',
-                        avatar: '🔬',
+                        avatar: 'SC',
                         category: 'Scienza',
-                        description: 'Agente AI su ricerca, spazio, ambiente e scoperte scientifiche.',
-                        personality: 'Divulgativo ma preciso, con spiegazioni chiare'
+                        description: 'Racconta ricerca, spazio, ambiente e scoperte scientifiche spiegando metodi e limiti.',
+                        personality: 'Chiaro sui metodi, prudente sulle conclusioni.'
                 },
                 cultura: {
                         name: 'Giornalista cultura',
-                        avatar: '🎭',
+                        avatar: 'C',
                         category: 'Cultura',
-                        description: 'Agente AI su cinema, libri, musica e eventi culturali.',
-                        personality: 'Elegante e riflessivo, con riferimenti storici e artistici'
+                        description: 'Segue cinema, libri, musica e mostre con riferimenti storici e giudizio argomentato.',
+                        personality: 'Curioso e argomentato, senza snobismo.'
                 },
                 salute: {
                         name: 'Giornalista salute',
-                        avatar: '🩺',
+                        avatar: 'SA',
                         category: 'Salute',
-                        description: 'Agente AI su salute, benessere e medicina basata su evidenze.',
-                        personality: 'Rassicurante e basato su evidenze scientifiche'
+                        description: 'Copre salute, prevenzione e medicina distinguendo evidenze consolidate e ipotesi.',
+                        personality: 'Prudente e verificabile, nessuna scorciatoia.'
                 },
                 capo: {
                         name: 'Capo redattore',
-                        avatar: '📰',
+                        avatar: 'CR',
                         category: 'Direzione',
                         role: 'capo_redattore',
                         chief_scope: 'global',
-                        description: 'Legge gli articoli dei giornalisti e li approva, modifica, manda in revisione o rifiuta.',
-                        personality: 'Rigoroso, sintetico e difensore della qualità editoriale'
+                        description: 'Legge gli articoli dei giornalisti e decide cosa pubblicare, correggere, rimandare o scartare.',
+                        personality: 'Sintetico, esigente, fedele al fatto.'
                 }
         };
 
@@ -3187,21 +3221,21 @@
         var MP_CSS = [
                 '.nxa-mp{position:relative;display:inline-block;max-width:100%}',
                 '.nxa-mp>.nxa-agent-model,.nxa-agent-field .nxa-mp>input{width:100%;max-width:none;box-sizing:border-box}',
-                '.nxa-mp .nxa-mp-panel{position:absolute;top:100%;left:0;right:0;z-index:100500;margin-top:4px;display:block;padding:8px;background:var(--nxa-surface,#fff);border:1px solid var(--nxa-border,#e2e8f2);border-radius:10px;box-shadow:var(--nxa-shadow,0 10px 28px rgba(15,23,42,.12));text-align:left}',
-                '.nxa-mp .nxa-mp-search{display:block;width:100%;box-sizing:border-box;margin:0 0 8px;padding:6px 10px;border:1px solid var(--nxa-border,#e2e8f2);border-radius:8px;background:var(--nxa-surface-2,#f2f5fa);color:var(--nxa-text-body,#1d2327);font-size:13px;line-height:1.5}',
+                '.nxa-mp .nxa-mp-panel{position:absolute;top:100%;left:0;right:0;z-index:100500;margin-top:4px;display:block;padding:8px;background:var(--nxa-surface,#fff);border:1px solid var(--nxa-border,#e3e5e8);border-radius:var(--nxa-radius,6px);box-shadow:var(--nxa-shadow-lg,0 20px 56px rgba(15,23,42,.16));text-align:left}',
+                '.nxa-mp .nxa-mp-search{display:block;width:100%;box-sizing:border-box;margin:0 0 8px;padding:6px 10px;border:1px solid var(--nxa-border,#e3e5e8);border-radius:var(--nxa-radius-sm,4px);background:var(--nxa-surface-2,#f7f7f5);color:var(--nxa-text-body,#333b47);font-size:13px;line-height:1.5}',
                 '.nxa-mp .nxa-mp-search:focus{border-color:var(--nxa-focus,#0284c7);outline:none;box-shadow:0 0 0 2px var(--nxa-info-bg,rgba(14,165,233,.12))}',
                 '.nxa-mp .nxa-mp-list{display:block;max-height:320px;overflow-y:auto;overscroll-behavior:contain}',
-                '.nxa-mp .nxa-mp-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;line-height:1.45}',
-                '.nxa-mp .nxa-mp-item:hover,.nxa-mp .nxa-mp-item.is-active{background:var(--nxa-surface-2,#f2f5fa)}',
-                '.nxa-mp .nxa-mp-id{font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--nxa-text-body,#1d2327);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-                '.nxa-mp .nxa-mp-name{color:var(--nxa-muted,#5c6b84);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}',
+                '.nxa-mp .nxa-mp-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--nxa-radius-sm,4px);cursor:pointer;line-height:1.45}',
+                '.nxa-mp .nxa-mp-item:hover,.nxa-mp .nxa-mp-item.is-active{background:var(--nxa-surface-2,#f7f7f5)}',
+                '.nxa-mp .nxa-mp-id{font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--nxa-text-body,#333b47);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+                '.nxa-mp .nxa-mp-name{color:var(--nxa-muted,#5b6572);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}',
                 '.nxa-mp .nxa-mp-badges{margin-left:auto;display:inline-flex;gap:4px;flex-shrink:0}',
-                '.nxa-mp .nxa-mp-badge{display:inline-block;padding:1px 7px;border-radius:999px;border:1px solid var(--nxa-border,#e2e8f2);background:var(--nxa-surface-2,#f2f5fa);color:var(--nxa-muted,#5c6b84);font-size:10px;font-weight:600;line-height:1.6;white-space:nowrap}',
+                '.nxa-mp .nxa-mp-badge{display:inline-block;padding:1px 7px;border-radius:999px;border:1px solid var(--nxa-border,#e3e5e8);background:var(--nxa-surface-2,#f7f7f5);color:var(--nxa-muted,#5b6572);font-size:10px;font-weight:600;line-height:1.6;white-space:nowrap}',
                 '.nxa-mp .nxa-mp-badge--free{color:var(--nxa-ok-text,#15803d);background:var(--nxa-ok-bg,rgba(34,197,94,.12));border-color:transparent}',
                 '.nxa-mp .nxa-mp-badge--ctx{font-family:Consolas,Monaco,monospace}',
-                '.nxa-mp .nxa-mp-empty{display:block;padding:10px 8px;color:var(--nxa-muted,#5c6b84);font-size:12px}',
+                '.nxa-mp .nxa-mp-empty{display:block;padding:10px 8px;color:var(--nxa-muted,#5b6572);font-size:12px}',
                 '.nxa-mp .nxa-mp-empty--err{color:var(--nxa-err-text,#b91c1c);font-weight:600}',
-                '.nxa-mp .nxa-mp-more{display:block;padding:8px 8px 2px;color:var(--nxa-muted,#5c6b84);font-size:11px}'
+                '.nxa-mp .nxa-mp-more{display:block;padding:8px 8px 2px;color:var(--nxa-muted,#5b6572);font-size:11px}'
         ].join( '\n' );
 
         function mpInjectStyles() {
@@ -4450,7 +4484,7 @@
                                 scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                 wpPostBadge( a ) +
                                 wpViewLink( a ) +
-                                '<span style="font-size:12px;color:var(--nxa-muted)">✍️ ' + esc( articleAgentName( a ) ) + '</span>' +
+                                '<span style="font-size:12px;color:var(--nxa-muted)">' + esc( articleAgentName( a ) ) + '</span>' +
                                 '<span style="font-size:11px;color:var(--nxa-muted);margin-left:auto">' + esc( timeAgoIt( pick( a, 'created_at', 'createdAt' ) ) ) + '</span>' +
                         '</div>' +
                         '<h3 style="margin:0 0 4px;font-size:15px;line-height:1.35">' +
@@ -4458,7 +4492,7 @@
                         '</h3>' +
                         ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 6px;font-size:13px;color:var(--nxa-muted)">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                         ( summary ? '<p style="margin:0 0 8px;font-size:12.5px;color:var(--nxa-muted);line-height:1.55">' + excerpt( summary, 220 ) + '</p>' : '' ) +
-                        ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">🔗 ' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) + '</p>' : '' ) +
+                        ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) + '</p>' : '' ) +
                         actions +
                 '</article>';
         }
@@ -5534,10 +5568,10 @@
                 return null;
         }
 
-        /** v1.1.1: chip agente per l'albero (avatar emoji + nome). */
+        /** v1.1.1: chip agente per l'albero (iniziale + nome). */
         function redAgentChip( agent ) {
                 return '<span class="nxa-red-chip">' +
-                        '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' +
+                        '<span class="nxa-red-chip__avatar" aria-hidden="true">' + esc( agentInitial( agent ) ) + '</span> ' +
                         esc( pick( agent, 'name' ) || 'Agente' ) +
                         '</span>';
         }
@@ -5728,7 +5762,7 @@
                                         var aid = num( pick( agent, 'id' ) );
                                         return '<label class="nxa-red-agent-item">' +
                                                 '<input type="checkbox" class="nxa-red-agent" value="' + aid + '"' + ( assigned[ aid ] ? ' checked="checked"' : '' ) + ' /> ' +
-                                                '<span aria-hidden="true">' + esc( pick( agent, 'avatar' ) || '🤖' ) + '</span> ' +
+                                                '<span class="nxa-red-chip__avatar" aria-hidden="true">' + esc( agentInitial( agent ) ) + '</span> ' +
                                                 esc( pick( agent, 'name' ) || 'Agente' ) +
                                         '</label>';
                                 } ).join( '' )
@@ -6136,7 +6170,7 @@
         /** Mappa scope risposta §4.1 → etichetta IT del blocco riepilogo. */
         function runScopeLabel( scope ) {
                 var map = {
-                        testata:   'Intera testata',
+                        testata:   'Tutta la redazione',
                         redazione: 'Redazione',
                         agent:     'Singolo agente',
                         agents:    'Più agenti'
@@ -6419,8 +6453,8 @@
                         if ( btn.getAttribute( 'data-run-testata' ) !== null ) {
                                 testataAgentCount().then( function ( count ) {
                                         var message = count > 0
-                                                ? nxaT( 'Avviare l’intera testata? Verranno avviati ' ) + fmt( count ) + nxaT( ' agenti.' )
-                                                : nxaT( 'Avviare l’intera testata? Verranno avviati tutti gli agenti.' );
+                                                ? nxaT( 'Avviare tutta la redazione? Verranno avviati ' ) + fmt( count ) + nxaT( ' agenti.' )
+                                                : nxaT( 'Avviare tutta la redazione? Verranno avviati tutti gli agenti.' );
                                         // v1.1.13.1 (Q2): conferma INLINE uniforme (niente
                                         // window.confirm nativo) — stessi testi, stessa richiesta.
                                         nxaInlineConfirmOpen(
@@ -6539,7 +6573,7 @@
         /** Riga agente della strip (difensiva: campi mancanti → default). */
         function liveAgentRowHtml( agent ) {
                 var a = agent || {};
-                var avatar = String( pick( a, 'avatar' ) || '🤖' );
+                var avatar = agentInitial( a );
                 var name = String( pick( a, 'name' ) || ( 'Agente #' + num( pick( a, 'id' ) ) ) );
                 var last = liveLastText( a );
                 return '<div class="nxa-live-agent">' +
@@ -6928,7 +6962,7 @@
          */
         function nxaOnboardingEmptyHtml() {
                 return '<div class="nxa-empty nxa-onboarding-empty">' +
-                        '<div class="nxa-empty__icon" aria-hidden="true">🤖</div>' +
+                        '<div class="nxa-empty__icon" aria-hidden="true"><span class="dashicons dashicons-groups"></span></div>' +
                         '<p class="nxa-empty__title">' + esc( nxaT( 'Nessun agente: crea il tuo primo giornalista con un preset o apri il wizard.' ) ) + '</p>' +
                         '<p><button type="button" class="nxa-btn nxa-btn-primary nxa-onboarding-open">' + esc( nxaT( 'Apri il wizard' ) ) + '</button></p>' +
                         '</div>';

@@ -46,30 +46,6 @@
         var REACTION_THROTTLE_MS = 800;
         var HTTP_TIMEOUT_HINT = 'Impossibile caricare gli articoli, riprova.';
 
-        /* Emoji di copertina per articolo senza immagine (mappa categoria → emoji). */
-        var CAT_EMOJI = {
-                tecnologia: '🤖', ai: '🤖', politica: '🏛️', economia: '📈', finanza: '📈',
-                scienza: '🔬', sport: '⚽', cultura: '🎭', salute: '🩺', ambiente: '🌱',
-                mondo: '🌍', intrattenimento: '🎬', lifestyle: '✨', viaggi: '✈️',
-                'default': '📰'
-        };
-
-        /* Colori categoria: stessa mappa di Nexus_Utils::category_color(). */
-        var CAT_COLORS = {
-                'tecnologia': '#38bdf8',
-                'politica': '#f59e0b',
-                'economia': '#34d399',
-                'scienza': '#22d3ee',
-                'sport': '#f87171',
-                'cultura': '#f472b6',
-                'salute': '#4ade80'
-        };
-
-        function catColor(category) {
-                var key = String(category || '').toLowerCase().trim();
-                return CAT_COLORS[key] || '#94a3b8';
-        }
-
         /** Tempo trascorso in italiano (stesso formato di Nexus_Utils::time_ago_it). */
         function timeAgoIt(value) {
                 if (value === null || value === undefined || value === '') return '';
@@ -171,10 +147,6 @@
                 return /^https?:\/\//i.test(s) ? s : '';
         }
 
-        function catEmoji(category) {
-                var key = String(category || '').toLowerCase().trim();
-                return CAT_EMOJI[key] || CAT_EMOJI['default'];
-        }
 
         function emojiLabel(emoji) {
                 return EMOJI_LABELS[emoji] || 'Reazione';
@@ -197,14 +169,19 @@
                 try { return n.toLocaleString('it-IT') + ' letture'; } catch (e) { return n + ' letture'; }
         }
 
-        /** Avatar: emoji testuale, immagine se URL, iniziale come fallback. */
+        /**
+         * Avatar: immagine se URL, altrimenti iniziale del nome. Le vecchie
+         * emoji salvate sul campo avatar vengono ignorate (stesso criterio
+         * dei render PHP e dell'admin).
+         */
         function avatarHTML(avatar, name) {
                 var a = String(avatar || '').trim();
                 if (/^(https?:)?\/\//i.test(a) || a.charAt(0) === '/') {
                         return '<img class="nxa-avatar" src="' + esc(a) + '" alt="" loading="lazy" decoding="async">';
                 }
-                if (a) return '<span class="nxa-avatar" aria-hidden="true">' + esc(a) + '</span>';
-                var initial = String(name || 'N').trim().charAt(0).toUpperCase() || 'N';
+                var initial = /^[A-Za-zÀ-ÿ0-9]{1,2}$/.test(a)
+                        ? a.toUpperCase()
+                        : (String(name || 'N').trim().charAt(0).toUpperCase() || 'N');
                 return '<span class="nxa-avatar" aria-hidden="true">' + esc(initial) + '</span>';
         }
 
@@ -426,7 +403,7 @@
 
                 var media = src
                         ? '<img class="nxa-modal-img" src="' + esc(src) + '" alt="" data-cat="' + esc(a.category || '') + '" decoding="async">'
-                        : '<div class="nxa-modal-cover" aria-hidden="true">' + esc(catEmoji(a.category)) + '</div>';
+                        : '<div class="nxa-modal-cover" aria-hidden="true"><span class="nxa-modal-cover-cat">' + esc(a.category || 'Redazione') + '</span></div>';
 
                 // contenuto splittato in paragrafi su doppio newline
                 var paras = String(a.content || '').replace(/\r\n/g, '\n').split('\n\n')
@@ -444,6 +421,7 @@
                                         '<h2 class="nxa-modal-title" id="nxa-modal-title">' + esc(title) + '</h2>' +
                                         (subtitle ? '<p class="nxa-modal-subtitle">' + esc(subtitle) + '</p>' : '') +
                                         '<div class="nxa-modal-meta">' + metaHTML(a) + '</div>' +
+                                        '<p class="nxa-modal-disclosure">Contenuto redatto con il supporto di AI e verificato dalla redazione.</p>' +
                                         '<div class="nxa-modal-body">' + paras + '</div>' +
                                         sourceHTML(a) +
                                         reactionsBarHTML(a, articleId) +
@@ -658,7 +636,6 @@
                 var a = article || {};
                 var img = safeSrc(a.image_url);
                 var cat = String(a.category || '');
-                var color = catColor(cat);
                 var title = String(a.title || 'Senza titolo');
                 var subtitle = String(a.subtitle || '');
                 var excerpt = excerptN(a.excerpt || a.summary || a.content || '', 20);
@@ -667,8 +644,8 @@
                 if (img) {
                         media = '<img class="nxa-card-img" src="' + esc(img) + '" alt="' + esc(title) + '" loading="lazy" decoding="async">';
                 } else {
-                        media = '<div class="nxa-card-cover" style="background-image:linear-gradient(135deg,' + esc(color) + '33 0%,' + esc(color) + '66 100%)">' +
-                                '<span class="nxa-card-avatar" aria-hidden="true">' + esc(catEmoji(cat)) + '</span>' +
+                        media = '<div class="nxa-card-cover" aria-hidden="true">' +
+                                '<span class="nxa-card-cover-cat">' + esc(cat || 'Redazione') + '</span>' +
                                 '</div>';
                 }
 
@@ -678,7 +655,7 @@
 
                 var footer = '<footer class="nxa-card-footer">' +
                         '<span class="nxa-card-agent">' + avatarHTML(a.agent_avatar, a.agent_name) +
-                        '<span class="nxa-card-agent-name">' + esc(a.agent_name || 'Agente AI') + '</span></span>' +
+                        '<span class="nxa-card-agent-name">' + esc(a.agent_name || 'Redazione') + '</span></span>' +
                         '<span class="nxa-card-meta">' +
                         (when ? '<span class="nxa-card-when">' + esc(when) + '</span>' : '') +
                         (when && read ? '<span class="nxa-sep" aria-hidden="true">·</span>' : '') +
@@ -928,7 +905,10 @@
                 var cover = document.createElement('div');
                 cover.className = img.classList.contains('nxa-modal-img') ? 'nxa-modal-cover' : 'nxa-card-cover';
                 cover.setAttribute('aria-hidden', 'true');
-                cover.textContent = catEmoji(img.getAttribute('data-cat'));
+                var label = document.createElement('span');
+                label.className = img.classList.contains('nxa-modal-img') ? 'nxa-modal-cover-cat' : 'nxa-card-cover-cat';
+                label.textContent = img.getAttribute('data-cat') || 'Redazione';
+                cover.appendChild(label);
                 if (img.parentNode) img.parentNode.replaceChild(cover, img);
         }
 
@@ -942,32 +922,32 @@
                 var css = [
                         '.nxa-modal-overlay{position:fixed;top:0;right:0;bottom:0;left:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(10,12,18,.72);overflow-y:auto}',
                         '.nxa-modal-overlay[hidden]{display:none}',
-                        '.nxa-modal{position:relative;width:100%;max-width:760px;max-height:86vh;display:flex;background:#fff;color:#1a1c22;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.35);margin:auto}',
+                        '.nxa-modal{position:relative;width:100%;max-width:760px;max-height:86vh;display:flex;background:var(--nxp-surface,#fff);color:var(--nxp-text,#14181f);border-radius:var(--nxp-radius-lg,8px);box-shadow:var(--nxp-shadow-lg,0 20px 56px rgba(15,23,42,.16));margin:auto}',
                         '.nxa-modal-scroll{overflow-y:auto;width:100%;border-radius:inherit;-webkit-overflow-scrolling:touch}',
-                        '.nxa-modal-close{position:absolute;top:10px;right:10px;z-index:3;width:38px;height:38px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#1a1c22;font:700 18px/1 system-ui,-apple-system,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}',
-                        '.nxa-modal-close:hover{background:#fff}',
+                        '.nxa-modal-close{position:absolute;top:10px;right:10px;z-index:3;width:36px;height:36px;border:1px solid var(--nxp-border,#e3e5e8);border-radius:var(--nxp-radius-sm,4px);background:var(--nxp-surface,#fff);color:var(--nxp-text-body,#333b47);font:600 18px/1 system-ui,-apple-system,sans-serif;cursor:pointer;box-shadow:none}',
+                        '.nxa-modal-close:hover{background:var(--nxp-surface-2,#f7f7f5)}',
                         '.nxa-modal-img{display:block;width:100%;height:300px;object-fit:cover}',
-                        '.nxa-modal-cover,.nxa-card-cover{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef2ff,#fdf2f8)}',
+                        '.nxa-modal-cover,.nxa-card-cover{display:flex;align-items:center;justify-content:center;background:var(--nxp-surface-3,#efefec)}',
                         '.nxa-modal-cover{height:170px;font-size:64px}',
                         '.nxa-card-cover{min-height:140px;font-size:44px}',
                         '.nxa-card-img{display:block;width:100%;height:auto;object-fit:cover}',
                         '.nxa-modal-content{padding:22px 24px 26px}',
-                        '.nxa-modal-badge{display:inline-block;padding:3px 10px;border-radius:999px;background:#eef2ff;color:#3b4bcc;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}',
-                        '.nxa-modal-title{margin:.4em 0 .2em;font-size:1.55rem;line-height:1.25}',
-                        '.nxa-modal-subtitle{margin:0 0 1em;color:#5a6072;font-size:1.02rem;line-height:1.5}',
-                        '.nxa-modal-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.45em;margin:0 0 1.2em;color:#5a6072;font-size:.86rem}',
-                        '.nxa-modal-agent{display:inline-flex;align-items:center;gap:.4em;font-weight:600;color:#2a2d38}',
-                        '.nxa-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;background:#eef0f5;font-size:14px;flex:none}',
+                        '.nxa-modal-badge{display:inline-block;padding:2px 0;border-radius:0;background:transparent;color:var(--nxp-accent-1,#1d4ed8);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em}',
+                        '.nxa-modal-title{margin:.4em 0 .2em;font-family:Georgia,"Iowan Old Style","Palatino Linotype","Times New Roman",serif;font-size:1.6rem;line-height:1.2}',
+                        '.nxa-modal-subtitle{margin:0 0 1em;color:var(--nxp-muted,#5b6572);font-size:1.02rem;line-height:1.5}',
+                        '.nxa-modal-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.45em;margin:0 0 1.2em;color:var(--nxp-muted,#5b6572);font-size:.86rem}',
+                        '.nxa-modal-agent{display:inline-flex;align-items:center;gap:.4em;font-weight:600;color:var(--nxp-text-body,#333b47)}',
+                        '.nxa-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;background:var(--nxp-surface-2,#f7f7f5);font-size:14px;flex:none}',
                         '.nxa-modal-p{margin:0 0 1em;line-height:1.7;font-size:1rem}',
-                        '.nxa-modal-source{margin:1.4em 0 0;padding:12px 14px;border:1px solid #e5e8ef;border-radius:10px;font-size:.9rem;color:#3c4257;word-break:break-word}',
+                        '.nxa-modal-source{margin:1.4em 0 0;padding:12px 0 0;border:0;border-top:1px solid var(--nxp-border-soft,rgba(20,24,31,.09));border-radius:0;font-size:.88rem;color:var(--nxp-text-body,#333b47);word-break:break-word}',
                         '.nxa-modal-reactions{display:flex;flex-wrap:wrap;gap:8px;margin:1.2em 0 0}',
-                        '.nxa-reaction-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #dfe3ec;border-radius:999px;background:#fff;cursor:pointer;font-size:.95rem;color:inherit}',
-                        '.nxa-reaction-btn:hover{border-color:#b9c0d4}',
-                        '.nxa-reaction-btn.nxa-pressed{background:#eef2ff;border-color:#8fa3f5}',
-                        '.nxa-reaction-hint{margin:.7em 0 0;font-size:.85rem;color:#5a6072}',
-                        '.nxa-modal-error{padding:44px 24px;text-align:center;color:#5a6072}',
-                        '.nxa-modal-retry{margin-top:12px;padding:8px 18px;border:1px solid #c6ccdd;border-radius:999px;background:#fff;cursor:pointer;font-size:.9rem}',
-                        '.nxa-modal-skel .nxa-skel{background:linear-gradient(90deg,#eceff5,#f7f8fb,#eceff5);background-size:200% 100%;border-radius:8px}',
+                        '.nxa-reaction-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid var(--nxp-border,#e3e5e8);border-radius:var(--nxp-radius-sm,4px);background:var(--nxp-surface,#fff);cursor:pointer;font-size:.95rem;color:inherit}',
+                        '.nxa-reaction-btn:hover{border-color:var(--nxp-accent-1-line-deep,rgba(29,78,216,.5))}',
+                        '.nxa-reaction-btn.nxa-pressed{background:var(--nxp-accent-1-soft,rgba(29,78,216,.08));border-color:var(--nxp-accent-1-line-deep,rgba(29,78,216,.5))}',
+                        '.nxa-reaction-hint{margin:.7em 0 0;font-size:.85rem;color:var(--nxp-muted,#5b6572)}',
+                        '.nxa-modal-error{padding:44px 24px;text-align:center;color:var(--nxp-muted,#5b6572)}',
+                        '.nxa-modal-retry{margin-top:12px;padding:8px 16px;border:1px solid var(--nxp-border,#e3e5e8);border-radius:var(--nxp-radius-sm,4px);background:var(--nxp-surface,#fff);cursor:pointer;font-size:.9rem}',
+                        '.nxa-modal-skel .nxa-skel{background:linear-gradient(90deg,#ececea,#f7f7f5,#ececea);background-size:200% 100%;border-radius:var(--nxp-radius-sm,4px)}',
                         '.nxa-skel-media{height:300px;border-radius:0}',
                         '.nxa-skel-badge{height:18px;width:110px;margin:22px 24px 0}',
                         '.nxa-skel-line{height:14px;margin:12px 24px}',
@@ -975,7 +955,7 @@
                         '.nxa-skel-short{width:60%}',
                         '@media (prefers-reduced-motion:no-preference){.nxa-modal-skel .nxa-skel{animation:nxa-pulse 1.4s ease-in-out infinite}}',
                         '@keyframes nxa-pulse{0%,100%{background-position:0 0}50%{background-position:100% 0}}',
-                        '.nxa-status{margin:14px 0;text-align:center;color:#5a6072;font-size:.9rem}',
+                        '.nxa-status{margin:14px 0;text-align:center;color:var(--nxp-muted,#5b6572);font-size:.9rem}',
                         '.nxa-noscroll{overflow:hidden !important}',
                         '.nxa-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}'
                 ].join('\n');

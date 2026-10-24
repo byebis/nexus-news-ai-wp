@@ -406,6 +406,13 @@ class Nexus_Utils {
          *                          heading #, liste, **bold**), o ne restano dopo
          *                          la pulizia (contenuto misto/ambiguo): il
          *                          modello ha risposto in markdown;
+         *  - 'cliched_phrases'   → frasi fatte o enfasi non verificate ("In un
+         *                          mondo in cui", "Non è solo… è", "senza
+         *                          precedenti", "rivoluzionario");
+         *  - 'generic_lede'      → apertura generica ("Nel mondo di oggi",
+         *                          "Negli ultimi anni", domanda retorica);
+         *  - 'ai_voice_markers'  → formule da assistente ("In conclusione",
+         *                          "È fondamentale", "gettare le basi");
          *  - 'ok'                → nessun problema rilevato.
          *
          * I flag riportano ciò che è stato OSSERVATO (un 'escaped_html' già
@@ -446,6 +453,20 @@ class Nexus_Utils {
                         $flags[] = 'markdown_residual';
                 }
 
+                $prose = self::ai_plain_text( $clean );
+
+                if ( self::ai_has_any_phrase( $prose, array( 'in un mondo in cui', 'non è solo', 'è importante notare', 'è importante sottolineare', 'senza precedenti', 'rivoluzionario', 'rivoluzionaria' ) ) ) {
+                        $flags[] = 'cliched_phrases';
+                }
+
+                if ( self::ai_has_generic_lede( $prose ) ) {
+                        $flags[] = 'generic_lede';
+                }
+
+                if ( self::ai_has_any_phrase( $prose, array( 'in conclusione', 'in sintesi', 'è fondamentale', 'è cruciale', 'un ruolo cruciale', 'un ruolo fondamentale', 'svolge un ruolo', 'rappresenta un passo', 'gettare le basi', 'aprire nuove frontiere', 'nel panorama', 'in rapida evoluzione', 'cambierà il modo in cui' ) ) ) {
+                        $flags[] = 'ai_voice_markers';
+                }
+
                 if ( empty( $flags ) ) {
                         $flags[] = 'ok';
                 }
@@ -454,6 +475,62 @@ class Nexus_Utils {
         }
 
         /* ============ HELPER PRIVATI ============ */
+
+        /**
+         * Testo piano per i controlli di voce: rimuove i tag, decodifica le
+         * entità e normalizza gli spazi. Solo diagnostica, nessuna modifica
+         * all'output salvato.
+         *
+         * @param string $text Testo (eventualmente HTML).
+         * @return string
+         */
+        private static function ai_plain_text( $text ) {
+                $text = (string) $text;
+                $text = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $text ) : strip_tags( $text );
+                $text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+                $text = self::ai_normalize_eol( $text );
+                $collapsed = preg_replace( '/\s+/u', ' ', $text );
+
+                return trim( null === $collapsed ? $text : $collapsed );
+        }
+
+        /**
+         * True se il testo contiene una delle frasi indicate (case-insensitive).
+         *
+         * @param string $text    Testo piano.
+         * @param array  $phrases Frasi da cercare, già in minuscolo.
+         * @return bool
+         */
+        private static function ai_has_any_phrase( $text, $phrases ) {
+                $haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( (string) $text, 'UTF-8' ) : strtolower( (string) $text );
+
+                foreach ( (array) $phrases as $phrase ) {
+                        if ( '' !== $phrase && false !== strpos( $haystack, $phrase ) ) {
+                                return true;
+                        }
+                }
+
+                return false;
+        }
+
+        /**
+         * True se l'apertura è generica: formula da introduzione o domanda
+         * retorica nella prima frase.
+         *
+         * @param string $text Testo piano.
+         * @return bool
+         */
+        private static function ai_has_generic_lede( $text ) {
+                $lede = function_exists( 'mb_substr' ) ? mb_substr( (string) $text, 0, 260 ) : substr( (string) $text, 0, 260 );
+                $lede = function_exists( 'mb_strtolower' ) ? mb_strtolower( $lede, 'UTF-8' ) : strtolower( $lede );
+
+                if ( preg_match( '/^(?:in un mondo in cui|nel mondo di oggi|al giorno d\'oggi|negli ultimi anni|sempre più spesso|è risaputo che|tutti sappiamo che|la società moderna|il settore è in continua evoluzione|la tecnologia sta cambiando)/u', $lede ) ) {
+                        return true;
+                }
+
+                // Domanda retorica in apertura: prima frase chiusa da "?".
+                return (bool) preg_match( '/^[^.!?]{1,180}\?/u', $lede );
+        }
 
         /**
          * Normalizza i fine riga a LF (l'output dei modelli spesso mescola CRLF/CR).

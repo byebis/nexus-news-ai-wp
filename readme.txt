@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.19.3
+Stable tag: 1.1.20
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,14 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.20 =
+* Restyling editoriale di pannello admin e sito pubblico: superfici neutre, un solo accento blu, titoli in serif e componenti piatti, senza gradienti né effetti decorativi.
+* Copy riscritto in linguaggio di redazione: «batch» diventa «gruppi», «dead letter» diventa «lavori bloccati», «Scala & Pro» diventa «Coda e prestazioni»; preset agenti con nomi di sezione.
+* Firme degli articoli con iniziale del giornalista al posto delle emoji, disclosure AI sobria e fact-check compatto con dettagli espandibili.
+* Voce editoriale condivisa per riscrittura, Nexus Wire e digest: titoli di circa 70 caratteri, lede di 25-40 parole e divieto di frasi fatte. Nuovi flag diagnostici non bloccanti per frasi cliché, aperture generiche e formule da assistente.
+* Digest: la sezione uso AI è disattivata di default perché dato operativo interno.
+* Corretto il testo dei bottoni-link primari che poteva diventare invisibile per una regola CSS troppo generica.
 
 = 1.1.19.3 =
 * Autore del plugin aggiornato a ai4wp (header, readme e copyright di LICENSE/POT).

@@ -116,10 +116,8 @@
  * bottoni .nxa-preset-btn con data-preset (tech|sport|economia|politica|
  * scienza|cultura|salute|capo) che admin.js trasforma in prefill del form
  * #nxa-agent-form e apertura del modal nuovo agente (invio normale
- * POST /agents). Emoji dei preset: SOLO emoji già presenti nel progetto
- * (seed agenti in class-nexus-db.php e icone attività di admin.js); per il
- * capo redattore si usa 📰 perché il simbolo citato dal contratto non è
- * mai comparso nel progetto (nota in worklog).
+ * POST /agents). Avatar dei preset: iniziale del nome su tinta piatta, con
+ * fallback alla prima lettera del nome lato server.
  * Nel modal editor tre campi nuovi, gestiti interamente da admin.js:
  *  - #nxa-agent-role (name="role"): Giornalista / Capo redattore;
  *  - #nxa-agent-provider (name="ai_provider"): prima option "" = "Provider
@@ -254,7 +252,7 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
 
         <h1><?php esc_html_e( 'Agenti giornalisti', 'nexus-news-ai' ); ?></h1>
 
-        <p class="nxa-page-subtitle"><?php esc_html_e( 'Gli agenti raccolgono notizie reali, le valutano e le riscrivono con AI. Crea quanti agenti vuoi: da 1 a una redazione completa, con preset pronti.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'Gli agenti raccolgono notizie reali, le valutano e le riscrivono. Crea quanti giornalisti vuoi, da uno a una redazione completa, partendo da un modello.', 'nexus-news-ai' ); ?></p>
 
         <div class="nxa-toolbar">
                 <button type="button" class="nxa-btn nxa-agents-refresh"><?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?></button>
@@ -263,18 +261,17 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
 
         <!-- Creazione rapida (v1.1.4): preset agenti in un click. I bottoni sono
              consumati da admin.js (T-06): click → prefill del form agente
-             e apertura del modal editor, poi invio POST /agents standard.
-             Emoji solo da quelle già presenti nel progetto (vedi docblock testa). -->
+             e apertura del modal editor, poi invio POST /agents standard. -->
         <div class="nxa-preset-bar" role="group" aria-label="<?php esc_attr_e( 'Creazione rapida agenti', 'nexus-news-ai' ); ?>">
-                <span class="nxa-preset-bar-label"><?php echo esc_html__( 'Creazione rapida:', 'nexus-news-ai' ); ?></span>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="tech"><?php echo esc_html( '🤖 Giornalista tech' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="sport"><?php echo esc_html( '⚽ Giornalista sport' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="economia"><?php echo esc_html( '📈 Giornalista economia' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="politica"><?php echo esc_html( '🏛️ Giornalista politica' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="scienza"><?php echo esc_html( '🔬 Giornalista scienza' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="cultura"><?php echo esc_html( '🎭 Giornalista cultura' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="salute"><?php echo esc_html( '🩺 Giornalista salute' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="capo"><?php echo esc_html( '📰 Capo redattore' ); ?></button>
+                <span class="nxa-preset-bar-label"><?php echo esc_html__( 'Crea da un modello:', 'nexus-news-ai' ); ?></span>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="tech"><?php echo esc_html( 'Tecnologia' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="sport"><?php echo esc_html( 'Sport' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="economia"><?php echo esc_html( 'Economia' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="politica"><?php echo esc_html( 'Politica' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="scienza"><?php echo esc_html( 'Scienza' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="cultura"><?php echo esc_html( 'Cultura' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="salute"><?php echo esc_html( 'Salute' ); ?></button>
+                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="capo"><?php echo esc_html( 'Capo redattore' ); ?></button>
         </div>
 
         <!-- Modello AI per agente (v1.0.3): il campo input.nxa-agent-model[data-agent-id]
@@ -327,9 +324,16 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
                         </div>
                         <div class="nxa-agents-grid">
                                 <?php foreach ( $nxa_agents as $nxa_agent ) : ?>
-                                        <?php $nxa_status = (string) $nxa_agent->status; ?>
+                                        <?php
+                                        $nxa_status       = (string) $nxa_agent->status;
+                                        $nxa_initial_src  = trim( (string) $nxa_agent->avatar );
+                                        if ( ! preg_match( '/^[\p{L}\p{N}]{1,2}$/u', $nxa_initial_src ) ) {
+                                                $nxa_initial_src = function_exists( 'mb_substr' ) ? mb_substr( (string) $nxa_agent->name, 0, 1 ) : substr( (string) $nxa_agent->name, 0, 1 );
+                                        }
+                                        $nxa_initial = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $nxa_initial_src, 'UTF-8' ) : strtoupper( $nxa_initial_src );
+                                        ?>
                                         <article class="nxa-agent-card" data-agent-id="<?php echo esc_attr( $nxa_agent->id ); ?>" data-status="<?php echo esc_attr( $nxa_status ); ?>" data-category="<?php echo esc_attr( $nxa_agent->category ); ?>">
-                                                <div class="nxa-agent-avatar" aria-hidden="true"><?php echo esc_html( $nxa_agent->avatar ); ?></div>
+                                                <div class="nxa-agent-avatar" aria-hidden="true"><?php echo esc_html( $nxa_initial ); ?></div>
                                                 <h3 class="nxa-agent-name"><?php echo esc_html( $nxa_agent->name ); ?></h3>
                                                 <?php if ( '' !== (string) $nxa_agent->description ) : ?>
                                                         <p class="nxa-agent-description"><?php echo esc_html( $nxa_agent->description ); ?></p>
@@ -392,8 +396,9 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
                                 <div class="nxa-agent-form-grid">
                                         <p class="nxa-agent-field"><label for="nxa-agent-name"><?php esc_html_e( 'Nome', 'nexus-news-ai' ); ?></label>
                                                 <input type="text" id="nxa-agent-name" name="name" maxlength="100" required /></p>
-                                        <p class="nxa-agent-field"><label for="nxa-agent-avatar"><?php esc_html_e( 'Avatar (emoji)', 'nexus-news-ai' ); ?></label>
-                                                <input type="text" id="nxa-agent-avatar" name="avatar" maxlength="20" placeholder="🤖" /></p>
+                                        <p class="nxa-agent-field"><label for="nxa-agent-avatar"><?php echo esc_html__( 'Iniziale (facoltativa)', 'nexus-news-ai' ); ?></label>
+                                                <input type="text" id="nxa-agent-avatar" name="avatar" maxlength="2" placeholder="G" />
+                                                <span class="nxa-agent-field-hint"><?php echo esc_html__( 'Una o due lettere. Se vuota usiamo la prima lettera del nome.', 'nexus-news-ai' ); ?></span></p>
                                         <p class="nxa-agent-field"><label for="nxa-agent-category"><?php esc_html_e( 'Categoria', 'nexus-news-ai' ); ?></label>
                                                 <input type="text" id="nxa-agent-category" name="category" maxlength="100" list="nxa-agent-category-list" required />
                                                 <datalist id="nxa-agent-category-list"></datalist>

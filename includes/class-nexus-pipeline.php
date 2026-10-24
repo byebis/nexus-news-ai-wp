@@ -823,7 +823,7 @@ class Nexus_Pipeline {
                         (string) $article->content,
                         $category,
                         $agent ? (string) $agent->name : 'Nexus AI',
-                        $agent ? self::agent_personality( $agent ) : 'professionale e oggettivo'
+                        $agent ? self::agent_personality( $agent ) : 'giornalista di cronaca: fatti verificati e tono sobrio'
                 );
                 if ( '' !== $chief_note ) {
                         $prompt .= sprintf(
@@ -2547,11 +2547,12 @@ class Nexus_Pipeline {
                         $step_t = microtime( true );
 
                         $prompt = sprintf(
-                                "Sei %s, giornalista AI di Nexus News AI, curatore della sezione \"%s\".\nPersonalità editoriale: %s\n\nLa redazione ha attivato il NEXUS WIRE (redazione collettiva) sul tema: \"%s\"\n\nCOMPITO: proponi il TUO angolo editoriale sul tema, in circa 100 parole, coerente con la tua personalità e la tua sezione. Porta un punto di vista originale e complementare rispetto agli altri colleghi.\n\nRispondi SOLO con un JSON valido, nient'altro:\n{\"title\": \"titolo provvisorio del tuo angolo\", \"angle\": \"il tuo angolo editoriale in circa 100 parole\"}",
+                                "Sei %s, giornalista della sezione \"%s\" di Nexus News AI.\nProfilo: %s\n\nLa redazione ha attivato il NEXUS WIRE (redazione collettiva) sul tema: \"%s\"\n\n%s\n\nCOMPITO: proponi il TUO angolo editoriale sul tema, in circa 100 parole, coerente con il tuo profilo e la tua sezione. Porta un punto di vista originale e complementare rispetto agli altri colleghi.\n\nRispondi SOLO con un JSON valido, nient'altro:\n{\"title\": \"titolo del tuo angolo, circa 70 caratteri e guidato da un verbo\", \"angle\": \"il tuo angolo editoriale in circa 100 parole\"}",
                                 $agent->name,
                                 $agent->category,
                                 self::agent_personality( $agent ),
-                                $topic
+                                $topic,
+                                Nexus_AI_Engine::editorial_style_block( 'wire', (string) $agent->category )
                         );
                         // v1.0.3: tracking usage del wire con l'agente proponente.
                         // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede un oggetto JSON.
@@ -2602,9 +2603,10 @@ class Nexus_Pipeline {
                 }
 
                 $director_prompt = sprintf(
-                        "Sei il DIRETTORE RESPONSABILE della redazione di Nexus News AI.\nTema della redazione collettiva (Nexus Wire): \"%s\"\n\nI tuoi colleghi hanno proposto questi angoli editoriali:\n\n%s\nCOMPITO: fondi i 3 angoli in UN SOLO articolo completo, in ITALIANO, stile giornalistico professionale:\n- titolo d'impatto (max 90 caratteri)\n- sottotitolo di 1 frase\n- contenuto di ALMENO 500 parole, con paragrafi separati da doppio a capo\n- riassunto di 2-3 frasi\n- usa i punti di tutti gli angoli senza inventare fatti non presenti\n\nRispondi SOLO con un JSON valido, senza markdown né testo fuori dal JSON:\n{\"title\": \"...\", \"subtitle\": \"...\", \"content\": \"...\", \"summary\": \"...\"}",
+                        "Sei il DIRETTORE RESPONSABILE della redazione di Nexus News AI.\nTema della redazione collettiva (Nexus Wire): \"%s\"\n\nI tuoi colleghi hanno proposto questi angoli editoriali:\n\n%s\n%s\n\nCOMPITO: fondi i 3 angoli in UN SOLO articolo completo, in ITALIANO, stile giornalistico professionale:\n- titolo di circa 70 caratteri, guidato da un verbo; niente due punti sensazionalistici\n- sottotitolo di una frase che aggiunge un fatto o un contesto\n- contenuto in HTML di ALMENO 500 parole, con paragrafi separati da doppio a capo\n- riassunto di 2-3 frasi\n- usa i punti di tutti gli angoli senza inventare fatti non presenti\n\nRispondi SOLO con un JSON valido, senza markdown né testo fuori dal JSON:\n{\"title\": \"...\", \"subtitle\": \"...\", \"content\": \"...\", \"summary\": \"...\"}",
                         $topic,
-                        $angles_text
+                        $angles_text,
+                        Nexus_AI_Engine::editorial_style_block( 'wire', '' )
                 );
                 // v1.0.3: tracking usage della chiamata direttore (agente responsabile).
                 // v1.1.9: json_mode (contratto Task 4.8): il prompt chiede un oggetto JSON.
@@ -3651,8 +3653,8 @@ class Nexus_Pipeline {
          * @return string
          */
         private static function agent_personality( $agent ) {
-                $personality = isset( $agent->personality ) ? trim( (string) $agent->personality ) : '';
-                return '' !== $personality ? $personality : 'professionale e oggettivo';
+                $personality = isset( $agent->personality ) ? self::clip( (string) $agent->personality, 200 ) : '';
+                return '' !== $personality ? $personality : 'giornalista di cronaca: fatti verificati e tono sobrio';
         }
 
         /**

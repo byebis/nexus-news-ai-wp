@@ -307,7 +307,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
 } elseif ( 0 === $nexus_agents_count ) {
         $nexus_next = array(
                 'title' => __( 'Crea la tua redazione', 'nexus-news-ai' ),
-                'desc'  => __( 'Nessun agente ancora: apri il wizard e parti da un pacchetto pronto (1, 3 o più giornalisti), tutto personalizzabile.', 'nexus-news-ai' ),
+                'desc'  => __( 'Nessun agente ancora: scegli un modello di redazione pronta e personalizza tutto in seguito.', 'nexus-news-ai' ),
                 'url'   => admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ),
                 'label' => __( 'Apri il wizard', 'nexus-news-ai' ),
         );
@@ -343,7 +343,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                 <?php if ( '' !== $nexus_tagline ) : ?>
                         <p class="nxa-tagline sui-page-head__sub"><?php echo esc_html( $nexus_tagline ); ?></p>
                 <?php else : ?>
-                        <p class="nxa-page-subtitle sui-page-head__sub"><?php echo esc_html__( 'La redazione AI in un colpo d\'occhio: articoli pubblicati, agenti al lavoro e consumo AI del mese.', 'nexus-news-ai' ); ?></p>
+                        <p class="nxa-page-subtitle sui-page-head__sub"><?php echo esc_html__( 'Cosa è stato pubblicato, chi sta lavorando e cosa resta da fare.', 'nexus-news-ai' ); ?></p>
                 <?php endif; ?>
         </div>
 
@@ -397,7 +397,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                      di agenti già caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).
                      v1.1.6: il vecchio bottone "Esegui pipeline completa" è stato RIMOSSO
                      (duplicava la stessa azione su due bottoni distinti). -->
-                <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia testata', 'nexus-news-ai' ); ?></button>
+                <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia la redazione', 'nexus-news-ai' ); ?></button>
                 <button type="button" class="nxa-btn nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
                 <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
                 <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
@@ -437,7 +437,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['ai'] ) : ?>
                                                 <?php esc_html_e( 'Chiave AI configurata', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=ai' ) ); ?>"><?php esc_html_e( 'Configura la chiave AI', 'nexus-news-ai' ); ?></a>
+                                                <?php esc_html_e( 'Configura la chiave AI', 'nexus-news-ai' ); ?>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['agents'] ? 'is-done' : ''; ?>">
@@ -445,7 +445,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['agents'] ) : ?>
                                                 <?php esc_html_e( 'Redazione creata', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ) ); ?>"><?php esc_html_e( 'Crea la redazione con il wizard', 'nexus-news-ai' ); ?></a>
+                                                <?php esc_html_e( 'Crea la redazione con il wizard', 'nexus-news-ai' ); ?>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['rss'] ? 'is-done' : ''; ?>">
@@ -453,7 +453,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['rss'] ) : ?>
                                                 <?php esc_html_e( 'Fonti RSS impostate', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ); ?>"><?php esc_html_e( 'Aggiungi le fonti RSS', 'nexus-news-ai' ); ?></a>
+                                                <?php esc_html_e( 'Aggiungi le fonti RSS', 'nexus-news-ai' ); ?>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['collected'] ? 'is-done' : ''; ?>">
@@ -515,106 +515,123 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
         <!-- v1.1.16 (WE5): #nxa-stats-error è il contenitore dello stato d'errore
              con bottone "Riprova" per GET /stats (loadStats di admin.js lo riempie
              solo a fetch fallita e lo ripulisce a successo). -->
-        <div class="nxa-stat-grid" id="nxa-stats-grid">
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-published">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-pending">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'In attesa', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-draft">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Bozze', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-today">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Oggi', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-agents">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Agenti attivi', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value" id="nxa-stat-views">—</span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Visualizzazioni', 'nexus-news-ai' ); ?></span>
-                </div>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_native_linked ); ?></span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Contenuti nativi', 'nexus-news-ai' ); ?></span>
-                        <?php if ( null !== $nexus_native_remaining ) : ?>
-                                <span class="nxa-stat-label"><?php echo esc_html( $nexus_native_remaining ); ?> <?php echo esc_html__( 'da migrare', 'nexus-news-ai' ); ?></span>
-                        <?php endif; ?>
-                </div>
-                <?php if ( class_exists( 'Nexus_Redazioni' ) ) : ?>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value"><?php echo esc_html( number_format_i18n( count( $nexus_red_terms ) ) ); ?></span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Redazioni', 'nexus-news-ai' ); ?></span>
-                        <span class="nxa-stat-label"><?php echo esc_html( sprintf(
-                                /* translators: %s: numero di agenti assegnati alle redazioni. */
-                                __( 'Agenti assegnati: %s', 'nexus-news-ai' ),
-                                number_format_i18n( $nexus_red_agents )
-                        ) ); ?></span>
-                        <?php if ( 0 === count( $nexus_red_terms ) ) : ?>
-                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-redazioni' ) ); ?>"><?php echo esc_html__( 'Crea la prima redazione dalla pagina Redazioni.', 'nexus-news-ai' ); ?></a></span>
-                        <?php endif; ?>
-                        <?php foreach ( $nexus_red_top as $nexus_red_item ) : ?>
-                                <?php
-                                $nexus_red_t      = $nexus_red_item['term'];
-                                $nexus_red_ids    = Nexus_Redazioni::agents_for_term( (int) $nexus_red_t->term_id );
-                                $nexus_red_extra  = max( 0, count( $nexus_red_ids ) - 4 );
-                                ?>
-                                <div class="nxa-red-top-item">
-                                        <span class="nxa-red-top-name"><?php echo esc_html( (string) $nexus_red_t->name ); ?></span>
-                                        <span class="nxa-red-top-count"><?php echo esc_html( sprintf(
-                                                /* translators: %s: numero di articoli nel ramo della redazione. */
-                                                _n( '%s articolo', '%s articoli', $nexus_red_item['count'], 'nexus-news-ai' ),
-                                                number_format_i18n( $nexus_red_item['count'] )
-                                        ) ); ?></span>
-                                        <span class="nxa-red-agents-chips">
-                                                <?php foreach ( array_slice( $nexus_red_ids, 0, 4 ) as $nexus_red_agent_id ) : ?>
-                                                        <?php
-                                                        $nexus_red_agent  = isset( $nexus_red_agent_map[ $nexus_red_agent_id ] ) ? $nexus_red_agent_map[ $nexus_red_agent_id ] : null;
-                                                        $nexus_red_avatar = ( $nexus_red_agent && ! empty( $nexus_red_agent->avatar ) ) ? (string) $nexus_red_agent->avatar : '🤖';
-                                                        $nexus_red_aname  = ( $nexus_red_agent && ! empty( $nexus_red_agent->name ) ) ? (string) $nexus_red_agent->name : sprintf( __( 'Agente #%d', 'nexus-news-ai' ), $nexus_red_agent_id );
-                                                        ?>
-                                                        <span class="nxa-red-chip"><?php echo esc_html( $nexus_red_avatar . ' ' . $nexus_red_aname ); ?></span>
-                                                <?php endforeach; ?>
-                                                <?php if ( $nexus_red_extra > 0 ) : ?>
-                                                        <span class="nxa-red-chip">+<?php echo esc_html( number_format_i18n( $nexus_red_extra ) ); ?></span>
-                                                <?php endif; ?>
-                                        </span>
+        <div class="nxa-stat-groups" id="nxa-stats-grid">
+                <section class="nxa-stat-group">
+                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Produzione', 'nexus-news-ai' ); ?></h2>
+                        <div class="nxa-stat-grid">
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-published">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span>
                                 </div>
-                        <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-                <?php if ( class_exists( 'Nexus_Multilang' ) ) : ?>
-                <div class="nxa-stat-card">
-                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_ml_badge ); ?></span>
-                        <span class="nxa-stat-label"><?php echo esc_html__( 'Multilingua', 'nexus-news-ai' ); ?></span>
-                        <span class="nxa-stat-label"><?php echo esc_html( $nexus_ml_badge_text ); ?></span>
-                        <?php if ( empty( $nexus_ml_counts ) ) : ?>
-                                <span class="nxa-stat-label"><?php echo esc_html__( 'Nessun post tradotto ancora.', 'nexus-news-ai' ); ?></span>
-                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'edit.php' ) ); ?>"><?php echo esc_html__( 'Apri la lista Articoli.', 'nexus-news-ai' ); ?></a></span>
-                        <?php else : ?>
-                                <span class="nxa-red-agents-chips">
-                                        <?php foreach ( $nexus_ml_counts as $nexus_ml_lang => $nexus_ml_count ) : ?>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-pending">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'In attesa', 'nexus-news-ai' ); ?></span>
+                                </div>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-draft">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Bozze', 'nexus-news-ai' ); ?></span>
+                                </div>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-today">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Oggi', 'nexus-news-ai' ); ?></span>
+                                </div>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_native_linked ); ?></span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Contenuti nativi', 'nexus-news-ai' ); ?></span>
+                                        <?php if ( null !== $nexus_native_remaining ) : ?>
+                                                <span class="nxa-stat-label"><?php echo esc_html( $nexus_native_remaining ); ?> <?php echo esc_html__( 'da migrare', 'nexus-news-ai' ); ?></span>
+                                        <?php endif; ?>
+                                </div>
+                        </div>
+                </section>
+
+                <section class="nxa-stat-group">
+                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Redazione', 'nexus-news-ai' ); ?></h2>
+                        <div class="nxa-stat-grid">
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-agents">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Agenti attivi', 'nexus-news-ai' ); ?></span>
+                                </div>
+                                <?php if ( class_exists( 'Nexus_Redazioni' ) ) : ?>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value"><?php echo esc_html( number_format_i18n( count( $nexus_red_terms ) ) ); ?></span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Redazioni', 'nexus-news-ai' ); ?></span>
+                                        <span class="nxa-stat-label"><?php echo esc_html( sprintf(
+                                                /* translators: %s: numero di agenti assegnati alle redazioni. */
+                                                __( 'Agenti assegnati: %s', 'nexus-news-ai' ),
+                                                number_format_i18n( $nexus_red_agents )
+                                        ) ); ?></span>
+                                        <?php if ( 0 === count( $nexus_red_terms ) ) : ?>
+                                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-redazioni' ) ); ?>"><?php echo esc_html__( 'Crea la prima redazione dalla pagina Redazioni.', 'nexus-news-ai' ); ?></a></span>
+                                        <?php endif; ?>
+                                        <?php foreach ( $nexus_red_top as $nexus_red_item ) : ?>
                                                 <?php
-                                                $nexus_ml_count = (int) $nexus_ml_count;
-                                                $nexus_ml_name  = Nexus_Multilang::lang_name( (string) $nexus_ml_lang );
+                                                $nexus_red_t      = $nexus_red_item['term'];
+                                                $nexus_red_ids    = Nexus_Redazioni::agents_for_term( (int) $nexus_red_t->term_id );
+                                                $nexus_red_extra  = max( 0, count( $nexus_red_ids ) - 4 );
                                                 ?>
-                                                <span class="nxa-red-chip"><?php echo esc_html( sprintf(
-                                                        /* translators: 1: nome della lingua, 2: numero di post pubblicati in quella lingua. */
-                                                        _n( '%1$s — %2$s articolo', '%1$s — %2$s articoli', $nexus_ml_count, 'nexus-news-ai' ),
-                                                        $nexus_ml_name,
-                                                        number_format_i18n( $nexus_ml_count )
-                                                ) ); ?></span>
+                                                <div class="nxa-red-top-item">
+                                                        <span class="nxa-red-top-name"><?php echo esc_html( (string) $nexus_red_t->name ); ?></span>
+                                                        <span class="nxa-red-top-count"><?php echo esc_html( sprintf(
+                                                                /* translators: %s: numero di articoli nel ramo della redazione. */
+                                                                _n( '%s articolo', '%s articoli', $nexus_red_item['count'], 'nexus-news-ai' ),
+                                                                number_format_i18n( $nexus_red_item['count'] )
+                                                        ) ); ?></span>
+                                                        <span class="nxa-red-agents-chips">
+                                                                <?php foreach ( array_slice( $nexus_red_ids, 0, 4 ) as $nexus_red_agent_id ) : ?>
+                                                                        <?php
+                                                                        $nexus_red_agent   = isset( $nexus_red_agent_map[ $nexus_red_agent_id ] ) ? $nexus_red_agent_map[ $nexus_red_agent_id ] : null;
+                                                                        $nexus_red_aname   = ( $nexus_red_agent && ! empty( $nexus_red_agent->name ) ) ? (string) $nexus_red_agent->name : sprintf( __( 'Agente #%d', 'nexus-news-ai' ), $nexus_red_agent_id );
+                                                                        $nexus_red_initial = function_exists( 'mb_substr' ) ? mb_substr( $nexus_red_aname, 0, 1 ) : substr( $nexus_red_aname, 0, 1 );
+                                                                        ?>
+                                                                        <span class="nxa-red-chip"><span class="nxa-red-chip__avatar" aria-hidden="true"><?php echo esc_html( strtoupper( $nexus_red_initial ) ); ?></span><?php echo esc_html( $nexus_red_aname ); ?></span>
+                                                                <?php endforeach; ?>
+                                                                <?php if ( $nexus_red_extra > 0 ) : ?>
+                                                                        <span class="nxa-red-chip">+<?php echo esc_html( number_format_i18n( $nexus_red_extra ) ); ?></span>
+                                                                <?php endif; ?>
+                                                        </span>
+                                                </div>
                                         <?php endforeach; ?>
-                                </span>
-                        <?php endif; ?>
-                </div>
-                <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                        </div>
+                </section>
+
+                <section class="nxa-stat-group">
+                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Pubblico', 'nexus-news-ai' ); ?></h2>
+                        <div class="nxa-stat-grid">
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value" id="nxa-stat-views">—</span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Visualizzazioni', 'nexus-news-ai' ); ?></span>
+                                </div>
+                                <?php if ( class_exists( 'Nexus_Multilang' ) ) : ?>
+                                <div class="nxa-stat-card">
+                                        <span class="nxa-stat-value"><?php echo esc_html( $nexus_ml_badge ); ?></span>
+                                        <span class="nxa-stat-label"><?php echo esc_html__( 'Multilingua', 'nexus-news-ai' ); ?></span>
+                                        <span class="nxa-stat-label"><?php echo esc_html( $nexus_ml_badge_text ); ?></span>
+                                        <?php if ( empty( $nexus_ml_counts ) ) : ?>
+                                                <span class="nxa-stat-label"><?php echo esc_html__( 'Nessun post tradotto ancora.', 'nexus-news-ai' ); ?></span>
+                                                <span class="nxa-stat-label"><a href="<?php echo esc_url( admin_url( 'edit.php' ) ); ?>"><?php echo esc_html__( 'Apri la lista Articoli.', 'nexus-news-ai' ); ?></a></span>
+                                        <?php else : ?>
+                                                <span class="nxa-red-agents-chips">
+                                                        <?php foreach ( $nexus_ml_counts as $nexus_ml_lang => $nexus_ml_count ) : ?>
+                                                                <?php
+                                                                $nexus_ml_count = (int) $nexus_ml_count;
+                                                                $nexus_ml_name  = Nexus_Multilang::lang_name( (string) $nexus_ml_lang );
+                                                                ?>
+                                                                <span class="nxa-red-chip"><?php echo esc_html( sprintf(
+                                                                        /* translators: 1: nome della lingua, 2: numero di post pubblicati in quella lingua. */
+                                                                        _n( '%1$s — %2$s articolo', '%1$s — %2$s articoli', $nexus_ml_count, 'nexus-news-ai' ),
+                                                                        $nexus_ml_name,
+                                                                        number_format_i18n( $nexus_ml_count )
+                                                                ) ); ?></span>
+                                                        <?php endforeach; ?>
+                                                </span>
+                                        <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                        </div>
+                </section>
         </div>
         <div id="nxa-stats-error"></div>
 

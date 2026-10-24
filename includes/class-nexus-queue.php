@@ -1102,7 +1102,7 @@ class Nexus_Queue {
                         // I dead letter sono eventi degni di attenzione umana: log attività
                         // in 'error' così compaiono nella dashboard, non solo nel debug.
                         // La soglia riportata è quella EFFETTIVA (per-hook) più usata.
-                        self::log_activity( sprintf( 'Dead letter: %d lavori bloccati (> %d min) marcati come dead.', $dead, $dead_cutoff > 0 ? $dead_cutoff : $minutes ), 'error' );
+                        self::log_activity( sprintf( 'Lavori bloccati: %d fermi da oltre %d minuti sono stati messi da parte.', $dead, $dead_cutoff > 0 ? $dead_cutoff : $minutes ), 'error' );
                 }
 
                 if ( $requeued + $dead > 0 ) {

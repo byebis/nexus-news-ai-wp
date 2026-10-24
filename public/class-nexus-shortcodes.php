@@ -393,13 +393,13 @@ final class Nexus_Shortcodes {
                         $hero_site_tagline = trim( (string) ( $settings['site_tagline'] ?? '' ) );
                 }
                 if ( '' === $hero_site_tagline ) {
-                        $hero_site_tagline = 'Il giornale di nuova generazione';
+                        $hero_site_tagline = 'Notizie, analisi e contesto.';
                 }
                 $out .= '<section class="nxa-hero" aria-labelledby="nxa-hero-title">';
                 $out .= '<div class="nxa-hero-inner">';
-                $out .= '<span class="nxa-hero-badge">🤖 ' . sprintf(
+                $out .= '<span class="nxa-hero-badge">' . sprintf(
                         /* translators: %s: numero di agenti attivi. */
-                        esc_html( _n( '%s agente giornalista AI', '%s agenti giornalisti AI', $n_agents, 'nexus-news-ai' ) ),
+                        esc_html( _n( 'Redazione: %s giornalista', 'Redazione: %s giornalisti', $n_agents, 'nexus-news-ai' ) ),
                         esc_html( number_format_i18n( $n_agents ) )
                 ) . '</span>';
                 $out .= '<h1 class="nxa-hero-title" id="nxa-hero-title">' . esc_html( wp_specialchars_decode( $hero_site_name, ENT_QUOTES ) ) . '</h1>';
@@ -438,7 +438,7 @@ final class Nexus_Shortcodes {
                                 $out .= self::render_card( $article );
                         }
                 } else {
-                        $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento. Torna presto!', 'nexus-news-ai' ) . '</p>';
+                        $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento.', 'nexus-news-ai' ) . '</p>';
                 }
                 $out .= '</div>';
 
@@ -511,8 +511,15 @@ final class Nexus_Shortcodes {
                 }
 
                 $cat_color = self::color_attr( Nexus_Utils::category_color( $cat ) );
-                $avatar    = ( $agent && ! empty( $agent->avatar ) ) ? (string) $agent->avatar : '🤖';
-                $agent_nm  = ( $agent && ! empty( $agent->name ) ) ? (string) $agent->name : __( 'Agente AI', 'nexus-news-ai' );
+                $avatar    = ( $agent && ! empty( $agent->avatar ) ) ? trim( (string) $agent->avatar ) : '';
+                $agent_nm  = ( $agent && ! empty( $agent->name ) ) ? (string) $agent->name : __( 'Redazione', 'nexus-news-ai' );
+
+                /* Iniziale per la firma: le vecchie emoji salvate come avatar
+                 * vengono ignorate, si ricava la lettera dal nome. */
+                if ( ! preg_match( '/^[\p{L}\p{N}]{1,2}$/u', $avatar ) ) {
+                        $avatar = function_exists( 'mb_substr' ) ? mb_substr( $agent_nm, 0, 1 ) : substr( $agent_nm, 0, 1 );
+                }
+                $avatar_initial = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $avatar, 'UTF-8' ) : strtoupper( $avatar );
 
                 /* Fact-check + fonti verificate (v1.0.3): helper condivisi col template single. */
                 $factcheck_badge = self::factcheck_badge( $article );
@@ -526,11 +533,13 @@ final class Nexus_Shortcodes {
                 if ( $image_url ) {
                         $out .= '<img class="nxa-card-img" src="' . esc_url( $image_url ) . '" alt="' . esc_attr( $title ) . '" loading="lazy" />';
                 } else {
-                        $out .= '<div class="nxa-card-cover" style="background-image:linear-gradient(135deg,' . esc_attr( $cat_color ) . '33 0%,' . esc_attr( $cat_color ) . '66 100%)">';
-                        $out .= '<span class="nxa-card-avatar" aria-hidden="true">' . esc_html( $avatar ) . '</span>';
+                        $out .= '<div class="nxa-card-cover" aria-hidden="true">';
+                        $out .= '<span class="nxa-card-cover-cat">' . esc_html( '' !== $cat ? $cat : __( 'Redazione', 'nexus-news-ai' ) ) . '</span>';
                         $out .= '</div>';
                 }
-                $out .= '<span class="nxa-card-cat">' . esc_html( $cat ) . '</span>';
+                if ( $image_url && '' !== $cat ) {
+                        $out .= '<span class="nxa-card-cat">' . esc_html( $cat ) . '</span>';
+                }
                 $out .= '<span class="nxa-card-ai">AI</span>';
                 $out .= '</div>';
 
@@ -548,7 +557,7 @@ final class Nexus_Shortcodes {
                 }
 
                 $out .= '<footer class="nxa-card-footer">';
-                $out .= '<span class="nxa-card-agent"><span class="nxa-avatar" aria-hidden="true">' . esc_html( $avatar ) . '</span><span class="nxa-card-agent-name">' . esc_html( $agent_nm ) . '</span></span>';
+                $out .= '<span class="nxa-card-agent"><span class="nxa-avatar" aria-hidden="true">' . esc_html( $avatar_initial ) . '</span><span class="nxa-card-agent-name">' . esc_html( $agent_nm ) . '</span></span>';
                 $out .= '<span class="nxa-card-meta">';
                 if ( $time_ago ) {
                         $out .= '<span class="nxa-card-when">' . esc_html( $time_ago ) . '</span>';
@@ -601,10 +610,10 @@ final class Nexus_Shortcodes {
                         ? (string) (int) $score
                         : number_format( $score, 1, ',', '.' );
 
-                return '<span class="nexus-factcheck ' . esc_attr( $class ) . '">'
+                return '<span class="nexus-factcheck ' . esc_attr( $class ) . '" title="' . esc_attr__( 'Punteggio della verifica fact-check', 'nexus-news-ai' ) . '">'
                         . esc_html( sprintf(
                                 /* translators: %s: punteggio fact-check su 100. */
-                                __( 'Verificato AI %s/100', 'nexus-news-ai' ),
+                                __( 'Verificato · %s/100', 'nexus-news-ai' ),
                                 $score_txt
                         ) )
                         . '</span>';
@@ -664,7 +673,7 @@ final class Nexus_Shortcodes {
                 }
 
                 $out  = '<div class="nexus-citations">';
-                $out .= '<h4>' . esc_html__( 'Fonti verificate', 'nexus-news-ai' ) . '</h4>';
+                $out .= '<h4>' . esc_html__( 'Fonti', 'nexus-news-ai' ) . '</h4>';
                 $out .= '<ul>';
                 foreach ( $items as $item ) {
                         $out .= '<li>';
@@ -675,8 +684,10 @@ final class Nexus_Shortcodes {
                                 if ( '' !== $item['claim'] ) {
                                         $out .= ' — ';
                                 }
+                                $host = (string) wp_parse_url( $item['source'], PHP_URL_HOST );
+                                $host = '' !== $host ? preg_replace( '/^www\./i', '', $host ) : __( 'fonte', 'nexus-news-ai' );
                                 $out .= '<a href="' . esc_url( $item['source'] ) . '" rel="noopener nofollow" target="_blank">'
-                                        . esc_html__( 'fonte', 'nexus-news-ai' )
+                                        . esc_html( $host . ' ↗' )
                                         . '</a>';
                         }
                         $out .= '</li>';
@@ -791,7 +802,7 @@ final class Nexus_Shortcodes {
                                 $out .= self::render_card( $article );
                         }
                 } else {
-                        $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento. Torna presto!', 'nexus-news-ai' ) . '</p>';
+                        $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento.', 'nexus-news-ai' ) . '</p>';
                 }
                 $out .= '</div>';
                 $out .= '</div>';
@@ -842,7 +853,7 @@ final class Nexus_Shortcodes {
                 $out .= '<section class="nxa-wire" data-nxa="wire" aria-labelledby="nxa-wire-title">';
                 $out .= '<header class="nxa-wire-head">';
                 $out .= '<h2 class="nxa-wire-title" id="nxa-wire-title">' . esc_html__( 'Nexus Wire — La redazione collettiva', 'nexus-news-ai' ) . '</h2>';
-                $out .= '<p class="nxa-wire-sub">' . esc_html__( 'Gli agenti AI leggono le fonti, scrivono e si revisionano a vicenda: qui trovi le ultime edizioni collettive.', 'nexus-news-ai' ) . '</p>';
+                $out .= '<p class="nxa-wire-sub">' . esc_html__( 'Tre giornalisti propongono i loro angoli su un tema; il capo redattore li unisce in un articolo. Qui trovi le ultime edizioni.', 'nexus-news-ai' ) . '</p>';
                 $out .= '</header>';
 
                 if ( ! $runs ) {

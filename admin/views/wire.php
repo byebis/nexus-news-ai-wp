@@ -59,7 +59,7 @@ defined( 'ABSPATH' ) || exit;
 <div class="wrap nexus-admin" data-page="wire">
         <h1><?php esc_html_e( 'Nexus Wire', 'nexus-news-ai' ); ?></h1>
 
-        <p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva multi-agente: tre agenti propongono i loro angoli editoriali su un tema e il direttore AI fonde tutto in un articolo.', 'nexus-news-ai' ); ?></p>
+        <p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva: tre giornalisti propongono i loro angoli su un tema e il capo redattore li unisce in un articolo.', 'nexus-news-ai' ); ?></p>
 
         <form id="nxa-wire-form" class="nxa-wire-form">
                 <label class="screen-reader-text" for="nxa-wire-topic"><?php esc_html_e( 'Tema da sviluppare', 'nexus-news-ai' ); ?></label>

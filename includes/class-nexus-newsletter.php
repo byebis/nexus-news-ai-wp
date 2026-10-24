@@ -930,7 +930,7 @@ JS;
                         }
 
                         /* ---------- Invio ---------- */
-                        $subject = sprintf( __( 'Digest Nexus — settimana del %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
+                        $subject = sprintf( __( 'Le notizie della settimana — %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
                         $headers = self::mail_headers();
 
                         $tick_sent = 0;
@@ -1249,11 +1249,12 @@ JS;
                         }
 
                         /* UNA SOLA chiamata AI: solo testo, niente JSON/markdown/link. */
+                        $style_block = Nexus_AI_Engine::editorial_style_block( 'digest', '' );
                         $result = Nexus_AI_Engine::chat(
                                 array(
                                         array(
                                                 'role'    => 'system',
-                                                'content' => "Sei il caporedattore di una newsletter italiana di un giornale online. Rispondi SOLO con testo italiano semplice: niente JSON, niente markdown, niente elenchi puntati, niente link.",
+                                                'content' => "Sei il caporedattore della newsletter di un giornale italiano. " . $style_block . "\nRispondi SOLO con testo italiano semplice: niente JSON, niente markdown, niente elenchi puntati, niente link.",
                                         ),
                                         array(
                                                 'role'    => 'user',
@@ -1307,7 +1308,7 @@ JS;
                 $items    = self::digest_items( $recent );
                 $intro    = self::digest_intro_html( $recent, $settings );
                 $sections = ( class_exists( 'Nexus_Digest' ) && method_exists( 'Nexus_Digest', 'sections_html' ) ) ? (string) Nexus_Digest::sections_html() : '';
-                $subject  = sprintf( __( 'Digest Nexus — settimana del %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
+                $subject  = sprintf( __( 'Le notizie della settimana — %s', 'nexus-news-ai' ), date_i18n( 'd/m/Y' ) );
 
                 return array(
                         'subject' => sprintf( __( 'Anteprima — %s', 'nexus-news-ai' ), $subject ),
@@ -1603,10 +1604,10 @@ JS;
 
                 $body  = '<div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#ffffff;">';
                 $body .= '<h2 style="font-size:18px;margin:0 0 12px;">' . esc_html( sprintf( __( "Un ultimo passo per completare l'iscrizione a %s", 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . '</h2>';
-                $body .= '<p style="line-height:1.6;">' . esc_html__( 'Ciao! Abbiamo ricevuto una richiesta di iscrizione alla newsletter da questo indirizzo email. Per confermarla clicca il pulsante qui sotto.', 'nexus-news-ai' ) . '</p>';
+                $body .= '<p style="line-height:1.6;">' . esc_html( sprintf( /* translators: %s: nome del sito. */ __( 'Abbiamo ricevuto una richiesta di iscrizione alla newsletter di %s da questo indirizzo email. Per confermarla, premi il pulsante qui sotto: il link vale 7 giorni.', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . '</p>';
                 $body .= '<p style="text-align:center;margin:24px 0;"><a href="' . esc_url( $confirm_url ) . '" style="display:inline-block;background:#1d4ed8;color:#ffffff;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;">' . esc_html__( 'Conferma iscrizione', 'nexus-news-ai' ) . '</a></p>';
                 $body .= '<p style="font-size:13px;color:#4b5563;line-height:1.6;">' . esc_html__( 'Se il pulsante non funziona, copia e incolla questo link nel browser:', 'nexus-news-ai' ) . '<br />' . esc_html( $confirm_url ) . '</p>';
-                $body .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;">' . esc_html__( 'Se non hai richiesto questa iscrizione ignora questa email: nessun account verrà creato.', 'nexus-news-ai' ) . '</p>';
+                $body .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;">' . esc_html( sprintf( /* translators: %s: nome del sito. */ __( 'Se non hai richiesto questa iscrizione, ignora questa email: nessun account verrà creato su %s.', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . '</p>';
                 $body .= '</div>';
 
                 return (bool) wp_mail( $email, $subject, $body, self::mail_headers() );
@@ -1852,7 +1853,7 @@ JS;
                                 . '</p>';
                 }
 
-                $out .= '<h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;">📰 ' . esc_html__( 'Digest settimanale', 'nexus-news-ai' ) . ' — ' . esc_html( get_bloginfo( 'name' ) ) . '</h1>';
+                $out .= '<h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;">' . esc_html( sprintf( __( 'Questa settimana su %s', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . '</h1>';
 
                 $out .= $intro_html;
 
@@ -1883,14 +1884,14 @@ JS;
                         // mantenendo l'iscrizione); la disiscrizione completa resta disponibile.
                         $digest_off_url = home_url( '/?nexus_unsub=' . rawurlencode( $token ) . '&nexus_digest=0' );
                         $out           .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0;">'
-                                . esc_html__( 'Ricevi questa email perché sei iscritto alla newsletter.', 'nexus-news-ai' ) . ' '
+                                . esc_html( sprintf( __( 'Ricevi questa email perché ti sei iscritto alla newsletter di %s. La mandiamo una volta a settimana.', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) ) . ' '
                                 . '<a href="' . esc_url( $digest_off_url ) . '" style="color:#6b7280;">' . esc_html__( 'Non ricevere il digest', 'nexus-news-ai' ) . '</a>'
                                 . ' · '
                                 . '<a href="' . esc_url( $unsub_url ) . '" style="color:#6b7280;">' . esc_html__( 'Disiscriviti', 'nexus-news-ai' ) . '</a>.'
                                 . '</p>';
                 } else {
                         $out .= '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0;">'
-                                . esc_html( sprintf( __( 'Ricevi questa email come destinatario fisso della newsletter di %s.', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) )
+                                . esc_html( sprintf( __( 'Ricevi questa email perché il tuo indirizzo è tra i destinatari fissi della newsletter di %s.', 'nexus-news-ai' ), get_bloginfo( 'name' ) ) )
                                 . '</p>';
                 }
 
