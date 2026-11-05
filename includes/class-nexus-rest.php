@@ -913,7 +913,10 @@ class Nexus_Rest {
                                 array(
                                         'methods'             => WP_REST_Server::READABLE,
                                         'callback'            => array( __CLASS__, 'rest_public_wire_runs' ),
-                                        'permission_callback' => '__return_true',
+                                        // v1.1.21 (fix sicurezza REST): la storia dei run Wire è
+                                        // materiale editoriale interno; la route (non consumata
+                                        // dalla UI pubblica) richiede ora manage_options.
+                                        'permission_callback' => $admin_permission,
                                         'args'                => array(
                                                 'limit'             => array(
                                                         'type'              => 'integer',
@@ -6434,15 +6437,47 @@ class Nexus_Rest {
          * @return array
          */
         private static function serialize_public_article( $a, $with_content = false ) {
-                $out = self::serialize_article( $a, $with_content );
+                // Whitelist STRETTA dei campi realmente necessari al pubblico (v1.1.21,
+                // fix sicurezza REST): niente metadati editoriali interni. Non vengono
+                // esposti: factcheck_score, quality_score, citations, campi capo
+                // redattore (chief_*), né i campi interni del post WP collegato
+                // (wp_post_id/wp_post_status/wp_edit_url/wp_preview_url) né le date
+                // di creazione/aggiornamento interne.
+                $summary = trim( (string) ( $a->summary ?? '' ) );
+                $base    = '' !== $summary ? $summary : (string) ( $a->content ?? '' );
+                $excerpt = wp_trim_words( wp_strip_all_tags( $base ), 30, '…' );
 
-                // Campi interni del capo redattore: rimossi dalla superficie pubblica.
-                unset(
-                        $out['chief_status'],
-                        $out['chief_note'],
-                        $out['chief_agent_name'],
-                        $out['chief_rounds']
+                $reactions = json_decode( (string) ( $a->reactions ?? '' ), true );
+
+                $out = array(
+                        'id'             => (int) $a->id,
+                        'title'          => (string) $a->title,
+                        'subtitle'       => (string) ( $a->subtitle ?? '' ),
+                        'summary'        => (string) ( $a->summary ?? '' ),
+                        'excerpt'        => $excerpt,
+                        'category'       => (string) $a->category,
+                        'image_url'      => esc_url_raw( (string) ( $a->image_url ?? '' ) ),
+                        'post_permalink' => self::wp_post_permalink( (int) ( $a->wp_post_id ?? 0 ) ),
+                        'agent_name'     => '',
+                        'agent_avatar'   => '',
+                        'source_name'    => (string) ( $a->source_name ?? '' ),
+                        'source_url'     => esc_url_raw( (string) ( $a->source_url ?? '' ) ),
+                        'published_at'   => self::date_or_empty( $a->published_at ?? '' ),
+                        'read_time'      => (int) $a->read_time,
+                        'views'          => (int) $a->views,
+                        'reactions'      => is_array( $reactions ) ? $reactions : array(),
                 );
+
+                // Byline pubblico: nome/avatar dell'agente redattore (usati dalla UI).
+                $agent = self::get_agent_cached( (int) $a->agent_id );
+                if ( $agent ) {
+                        $out['agent_name']   = (string) $agent->name;
+                        $out['agent_avatar'] = (string) $agent->avatar;
+                }
+
+                if ( $with_content ) {
+                        $out['content'] = (string) ( $a->content ?? '' );
+                }
 
                 return $out;
         }
