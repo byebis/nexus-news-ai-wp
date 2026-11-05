@@ -1,36 +1,36 @@
-<?php
+﻿<?php
 /**
  * Vista Admin: Impostazioni contenuti (pagina "settings-contenuti" di Nexus News AI).
  *
- * v1.1.6 (contratto T-02): le Impostazioni diventano 4 sottomenu WP; questa è
+ * v1.1.6 (contratto T-02): le Impostazioni diventano 4 sottomenu WP; questa Ã¨
  * la pagina del gruppo "Pipeline editoriale" (accordion: pipeline, limits) e
  * raccoglie la prima parte della vecchia settings.php (rimossa in v1.1.6).
  *
- * v1.1.13 (O3): l'handler accordion storico (IIFE ES5) è RIMOSSO: si annullava
- * con le IIFE degli altri 3 partial ed è sostituito dall'UNICO handler
+ * v1.1.13 (O3): l'handler accordion storico (IIFE ES5) Ã¨ RIMOSSO: si annullava
+ * con le IIFE degli altri 3 partial ed Ã¨ sostituito dall'UNICO handler
  * delegato nello script inline di admin/views/settings.php (toggle + snapshot
  * nella stessa chiave localStorage['nxa-settings-acc-contenuti']). Il blocco
- * di stile inline è stato spostato in assets/css/admin-tabs.css (stessi
+ * di stile inline Ã¨ stato spostato in assets/css/admin-tabs.css (stessi
  * selettori, token var(--nxa-*) invariati, dark theme via body.nexus-theme-dark).
  *
  * v1.1.12 (S8): nuova sezione accordion "Link interni". I name dei campi =
  * chiavi ESATTE di Nexus_DB::default_settings() v1.1.12: interlink_enabled,
  * interlink_max (modulo S4). Il gruppo nuovo nasce chiuso, stesso contratto
  * localStorage degli altri. DEBITO INTEGRAZIONE (S8): i name nuovi non
- * sono ancora negli array di collectSettings() in admin.js né nella whitelist
- * REST (file fuori perimetro S8): il markup segue già il contratto, il
+ * sono ancora negli array di collectSettings() in admin.js nÃ© nella whitelist
+ * REST (file fuori perimetro S8): il markup segue giÃ  il contratto, il
  * salvataggio effettivo arriva con l'estensione del glue (stesso percorso di
  * global_rss_sources in 1.1.11).
  *
  * I campi sono PRECOMPILATI server-side con Nexus_DB::get_settings()
- * (value / checked / selected): la pagina è già corretta prima che admin.js risponda.
+ * (value / checked / selected): la pagina Ã¨ giÃ  corretta prima che admin.js risponda.
  *
  * CONTRATTO FISSO CON admin.js (non rinominare id e name):
  * - div.wrap.nexus-admin con data-page="settings" INVARIATO: il boot di
  *   admin.js riconosce tutte e 4 le pagine impostazioni dalla stessa pagina
  *   logica "settings" e aggancia form#nxa-settings-form.nxa-settings-form;
- *   il submit è intercettato, i campi serializzati come name=value e inviati
- *   con PUT /settings (nexus/v1), che è PARZIALE con whitelist: ogni pagina
+ *   il submit Ã¨ intercettato, i campi serializzati come name=value e inviati
+ *   con PUT /settings (nexus/v1), che Ã¨ PARZIALE con whitelist: ogni pagina
  *   invia solo le proprie chiavi (i campi assenti non toccano il setting).
  * - I 4 toggle (auto_collect, auto_evaluate, auto_rewrite, auto_publish) sono
  *   checkbox value="1": admin.js li serializza come 0/1 (0 quando deselezionati).
@@ -38,10 +38,10 @@
  *   mode, collect_interval, max_articles_per_day, auto_approve_score.
  *   v1.1.11 (R1): + global_rss_sources (textarea "Fonti RSS globali", sezione
  *   "fonti"): chiave STRINGA di Nexus_DB::default_settings(), una URL http(s)
- *   per riga, whitelist REST già estesa in Nexus_Rest::sanitize_settings_payload.
- *   Il salvataggio ora è quello STANDARD di admin.js: dalla v1.1.11 (integrazione
- *   merge) la chiave 'global_rss_sources' è inclusa nell'array `simple` di
- *   collectSettings, quindi il micro-script PONTE temporaneo della wave è stato
+ *   per riga, whitelist REST giÃ  estesa in Nexus_Rest::sanitize_settings_payload.
+ *   Il salvataggio ora Ã¨ quello STANDARD di admin.js: dalla v1.1.11 (integrazione
+ *   merge) la chiave 'global_rss_sources' Ã¨ inclusa nell'array `simple` di
+ *   collectSettings, quindi il micro-script PONTE temporaneo della wave Ã¨ stato
  *   rimosso (era solo un wrapper fetch una-tantum in fondo a questa vista).
  * - Bottone SALVA IN CIMA (subito sotto l'h1) OLTRE quello in fondo: entrambi
  *   type="submit" nella stessa form; admin.js v1.1.6 mostra lo stato di
@@ -49,11 +49,11 @@
  * - Sezioni accordion section.nxa-acc[data-nxa-acc] con
  *   button.nxa-acc-toggle[aria-expanded][aria-controls], span.nxa-acc-label,
  *   span.nxa-acc-chevron, div.nxa-acc-panel[hidden]. Lo stato dei gruppi
- *   (array slug aperti) è persistito in localStorage['nxa-settings-acc-contenuti']
+ *   (array slug aperti) Ã¨ persistito in localStorage['nxa-settings-acc-contenuti']
  *   (chiave propria del tab, JSON con try/catch) dall'UNICO handler delegato
  *   in admin/views/settings.php (v1.1.13 O3: nessuna IIFE locale); default
  *   senza localStorage: pannello "pipeline" aperto, gli altri chiusi (stato
- *   renderizzato anche server-side, così senza JS la prima sezione resta
+ *   renderizzato anche server-side, cosÃ¬ senza JS la prima sezione resta
  *   leggibile; v1.1.11 (R1): il gruppo nuovo "fonti" segue la stessa regola,
  *   chiuso di default). Le classi accordion sono definite nel CSS condiviso
  *   assets/css/admin-tabs.css.
@@ -66,7 +66,7 @@ defined( 'ABSPATH' ) || exit;
 $settings = Nexus_DB::get_settings();
 
 // v1.1.11 (R1): fonti RSS globali (STRINGA, una URL http(s) per riga; get_settings
-// mergia già i default, il guard isset è difensivo).
+// mergia giÃ  i default, il guard isset Ã¨ difensivo).
 $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $settings['global_rss_sources'] : '';
 ?>
 <div class="wrap nexus-admin" data-page="settings">
@@ -86,13 +86,13 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                 <table class="form-table" role="presentation">
                                         <tbody>
                                                 <tr>
-                                                        <th scope="row"><label for="nxa-mode"><?php esc_html_e( 'Modalità operativa', 'nexus-news-ai' ); ?></label></th>
+                                                        <th scope="row"><label for="nxa-mode"><?php esc_html_e( 'ModalitÃ  operativa', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
                                                                 <select name="mode" id="nxa-mode">
                                                                         <option value="semi_autonomous" <?php selected( $settings['mode'], 'semi_autonomous' ); ?>><?php esc_html_e( 'Semi-autonoma (approvazione umana)', 'nexus-news-ai' ); ?></option>
                                                                         <option value="fully_autonomous" <?php selected( $settings['mode'], 'fully_autonomous' ); ?>><?php esc_html_e( 'Completamente autonoma', 'nexus-news-ai' ); ?></option>
                                                                 </select>
-                                                                <p class="description"><?php esc_html_e( "Semi-autonoma: la redazione AI lavora ma gli articoli attendono l'approvazione umana. Completamente autonoma: pubblicazione automatica oltre la soglia di qualità.", 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( "Semi-autonoma: la redazione AI lavora ma gli articoli attendono l'approvazione umana. Completamente autonoma: pubblicazione automatica oltre la soglia di qualitÃ .", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
@@ -100,7 +100,7 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <td>
                                                                 <label for="nxa-auto-collect">
                                                                         <input type="checkbox" name="auto_collect" id="nxa-auto-collect" value="1" <?php checked( (int) $settings['auto_collect'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Attiva la raccolta automatica', 'nexus-news-ai' ); ?>
                                                                 </label>
                                                                 <p class="description"><?php esc_html_e( 'La pipeline raccoglie automaticamente nuovi articoli dalle fonti RSS configurate.', 'nexus-news-ai' ); ?></p>
                                                         </td>
@@ -110,9 +110,9 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <td>
                                                                 <label for="nxa-auto-evaluate">
                                                                         <input type="checkbox" name="auto_evaluate" id="nxa-auto-evaluate" value="1" <?php checked( (int) $settings['auto_evaluate'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Attiva la valutazione automatica', 'nexus-news-ai' ); ?>
                                                                 </label>
-                                                                <p class="description"><?php esc_html_e( "Gli articoli raccolti vengono valutati automaticamente dall'AI (qualità e pertinenza editoriale).", 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( "Gli articoli raccolti vengono valutati automaticamente dall'AI (qualitÃ  e pertinenza editoriale).", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                                 <tr>
@@ -120,7 +120,7 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <td>
                                                                 <label for="nxa-auto-rewrite">
                                                                         <input type="checkbox" name="auto_rewrite" id="nxa-auto-rewrite" value="1" <?php checked( (int) $settings['auto_rewrite'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Attiva la riscrittura automatica', 'nexus-news-ai' ); ?>
                                                                 </label>
                                                                 <p class="description"><?php esc_html_e( 'Gli articoli valutati vengono riscritti in stile editoriale dalla redazione AI.', 'nexus-news-ai' ); ?></p>
                                                         </td>
@@ -130,7 +130,7 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <td>
                                                                 <label for="nxa-auto-publish">
                                                                         <input type="checkbox" name="auto_publish" id="nxa-auto-publish" value="1" <?php checked( (int) $settings['auto_publish'], 1 ); ?> />
-                                                                        <?php esc_html_e( 'Attiva', 'nexus-news-ai' ); ?>
+                                                                        <?php esc_html_e( 'Attiva la pubblicazione automatica', 'nexus-news-ai' ); ?>
                                                                 </label>
                                                                 <p class="description"><?php esc_html_e( 'Gli articoli riscritti vengono pubblicati automaticamente, senza attesa umana.', 'nexus-news-ai' ); ?></p>
                                                         </td>
@@ -162,7 +162,7 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
 
                 <section class="nxa-acc" data-nxa-acc="limits">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-limits">
-                                <span class="nxa-acc-label"><?php esc_html_e( 'Limiti e qualità', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Limiti e qualitÃ ', 'nexus-news-ai' ); ?></span>
                                 <span class="nxa-acc-chevron" aria-hidden="true"></span>
                         </button>
                         <div class="nxa-acc-panel" id="nxa-acc-panel-limits" hidden>
@@ -186,7 +186,7 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                         <th scope="row"><label for="nxa-auto-approve-score"><?php esc_html_e( 'Soglia di auto-approvazione', 'nexus-news-ai' ); ?></label></th>
                                                         <td>
                                                                 <input type="number" name="auto_approve_score" id="nxa-auto-approve-score" value="<?php echo esc_attr( $settings['auto_approve_score'] ); ?>" min="0" max="100" step="1" class="small-text" />
-                                                                <p class="description"><?php esc_html_e( 'In modalità autonoma, approva e pubblica oltre questa soglia (0-100).', 'nexus-news-ai' ); ?></p>
+                                                                <p class="description"><?php esc_html_e( 'In modalitÃ  autonoma, approva e pubblica oltre questa soglia (0-100).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
                                         </tbody>
