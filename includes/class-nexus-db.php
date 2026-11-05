@@ -1090,7 +1090,11 @@ class Nexus_DB {
                                 $formats[ $nxa_last_run_pos ] = 'NULL';
                         }
                 }
-                return $wpdb->update( self::tables()['agents'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                $nxa_updated = $wpdb->update( self::tables()['agents'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                if ( false !== $nxa_updated ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_updated;
         }
 
         /**
@@ -1138,6 +1142,9 @@ class Nexus_DB {
                         return 0;
                 }
                 $ok = $wpdb->insert( self::tables()['agents'], $row );
+                if ( $ok ) {
+                        self::flush_dashboard_cache();
+                }
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
@@ -1432,6 +1439,9 @@ class Nexus_DB {
                         return 0;
                 }
                 $ok = $wpdb->insert( self::tables()['articles'], $row );
+                if ( $ok ) {
+                        self::flush_dashboard_cache();
+                }
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
@@ -1467,7 +1477,11 @@ class Nexus_DB {
                                 $formats[] = '%s';
                         }
                 }
-                return $wpdb->update( self::tables()['articles'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                $nxa_updated = $wpdb->update( self::tables()['articles'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                if ( false !== $nxa_updated ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_updated;
         }
 
         public static function delete_article( $id ) {
@@ -1475,7 +1489,11 @@ class Nexus_DB {
                 $t = self::tables();
                 $wpdb->delete( $t['publish_logs'], array( 'article_id' => absint( $id ) ), array( '%d' ) );
                 $wpdb->delete( $t['approval_logs'], array( 'article_id' => absint( $id ) ), array( '%d' ) );
-                return $wpdb->delete( $t['articles'], array( 'id' => absint( $id ) ), array( '%d' ) );
+                $nxa_deleted = $wpdb->delete( $t['articles'], array( 'id' => absint( $id ) ), array( '%d' ) );
+                if ( $nxa_deleted ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_deleted;
         }
 
         /* ============ SUBSCRIBERS (v1.0.2) ============ */
@@ -1564,6 +1582,9 @@ class Nexus_DB {
                         ),
                         array( '%s', '%s', '%s', '%s' )
                 );
+                if ( $ok ) {
+                        self::flush_dashboard_cache();
+                }
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
@@ -1598,7 +1619,11 @@ class Nexus_DB {
                 foreach ( $allowed as $v ) {
                         $formats[] = is_int( $v ) ? '%d' : '%s';
                 }
-                return false !== $wpdb->update( self::tables()['subscribers'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                $nxa_updated = $wpdb->update( self::tables()['subscribers'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                if ( false !== $nxa_updated ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_updated;
         }
 
         /**
@@ -1606,7 +1631,11 @@ class Nexus_DB {
          */
         public static function delete_subscriber( $id ) {
                 global $wpdb;
-                return $wpdb->delete( self::tables()['subscribers'], array( 'id' => absint( $id ) ), array( '%d' ) );
+                $nxa_deleted = $wpdb->delete( self::tables()['subscribers'], array( 'id' => absint( $id ) ), array( '%d' ) );
+                if ( $nxa_deleted ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_deleted;
         }
 
         /* ============ USAGE AI (v1.0.3) ============ */
@@ -1635,6 +1664,9 @@ class Nexus_DB {
                         $row,
                         array( '%d', '%s', '%s', '%s', '%d', '%d', '%d', '%f', '%s' )
                 );
+                if ( $ok ) {
+                        self::flush_dashboard_cache();
+                }
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
@@ -1773,7 +1805,7 @@ class Nexus_DB {
                 // v1.1.6: quinto formato '%s' per created_at. Prima manava (4 formati
                 // per 5 campi): wpdb ricicla il primo formato quando finiscono, quindi
                 // created_at riceveva '%d' e la data diventava '0000-00-00 00:00:00'.
-                return $wpdb->insert(
+                $nxa_ok = $wpdb->insert(
                         self::tables()['activity_logs'],
                         array(
                                 'agent_id'   => absint( $agent_id ),
@@ -1784,6 +1816,10 @@ class Nexus_DB {
                         ),
                         array( '%d', '%s', '%s', '%s', '%s' )
                 );
+                if ( false !== $nxa_ok ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_ok;
         }
 
         public static function activity( $args = array() ) {
@@ -1920,7 +1956,7 @@ class Nexus_DB {
 
         public static function insert_publish_log( $article_id, $platform, $status = 'pending', $post_id = '', $post_url = '', $error = '' ) {
                 global $wpdb;
-                return $wpdb->insert(
+                $nxa_ok = $wpdb->insert(
                         self::tables()['publish_logs'],
                         array(
                                 'article_id'   => absint( $article_id ),
@@ -1934,6 +1970,10 @@ class Nexus_DB {
                         ),
                         array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
                 );
+                if ( false !== $nxa_ok ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_ok;
         }
 
         public static function publish_logs( $article_id ) {
@@ -2040,7 +2080,36 @@ class Nexus_DB {
 
         /* ============ STATS ============ */
 
+        /**
+         * Invalida le cache transient delle dashboard (stats + overview analytics).
+         * Chiamata dalle scritture DB rilevanti così le dashboard riflettono i dati
+         * aggiornati senza attendere la scadenza della cache.
+         *
+         * @return void
+         */
+        public static function flush_dashboard_cache() {
+                delete_transient( 'nexus_stats' );
+                foreach ( array( 7, 14, 21, 30, 45, 60, 90 ) as $nxa_days ) {
+                        delete_transient( 'nexus_overview_' . $nxa_days );
+                }
+        }
+
+        /**
+         * Statistiche dashboard (articoli per stato, oggi, views, agenti attivi,
+         * attività nelle 24h).
+         *
+         * v1.1.21 (perf/nexus-caching): risultato cachato in un transient per 120s
+         * (5 query aggregate a ogni load risparmiate); invalidato su scrittura da
+         * flush_dashboard_cache().
+         *
+         * @return array
+         */
         public static function stats() {
+                $cached = get_transient( 'nexus_stats' );
+                if ( is_array( $cached ) ) {
+                        return $cached;
+                }
+
                 global $wpdb;
                 $a    = self::tables()['articles'];
                 $act  = self::tables()['activity_logs'];
@@ -2057,7 +2126,7 @@ class Nexus_DB {
                         $by_status[ (string) $row->status ] = (int) $row->n;
                 }
 
-                return array(
+                $result = array(
                         'total'      => array_sum( $by_status ),
                         'published'  => isset( $by_status['published'] ) ? $by_status['published'] : 0,
                         'pending'    => isset( $by_status['pending_approval'] ) ? $by_status['pending_approval'] : 0,
@@ -2069,6 +2138,10 @@ class Nexus_DB {
                         'agents_active' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$ag} WHERE status = 'active'" ),
                         'activity_24h'  => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$act} WHERE created_at >= %s", $ago_24h ) ),
                 );
+
+                set_transient( 'nexus_stats', $result, 120 );
+
+                return $result;
         }
 
         /* ============ VIEWS & REACTIONS ============ */
@@ -2076,7 +2149,11 @@ class Nexus_DB {
         public static function bump_view( $id ) {
                 global $wpdb;
                 $table = self::tables()['articles'];
-                return $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET views = views + 1 WHERE id = %d", absint( $id ) ) );
+                $nxa_res = $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET views = views + 1 WHERE id = %d", absint( $id ) ) );
+                if ( false !== $nxa_res ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_res;
         }
 
         /**
@@ -2131,6 +2208,9 @@ class Nexus_DB {
                         ),
                         array( '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s' )
                 );
+                if ( $ok ) {
+                        self::flush_dashboard_cache();
+                }
                 return $ok ? (int) $wpdb->insert_id : 0;
         }
 
@@ -2174,7 +2254,11 @@ class Nexus_DB {
                                 $formats[] = '%s';
                         }
                 }
-                return $wpdb->update( self::tables()['jobs'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                $nxa_updated = $wpdb->update( self::tables()['jobs'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
+                if ( false !== $nxa_updated ) {
+                        self::flush_dashboard_cache();
+                }
+                return $nxa_updated;
         }
 
         /**
