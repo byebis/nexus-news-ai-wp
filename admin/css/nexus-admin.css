@@ -3191,3 +3191,37 @@ hr.nxa-hairline {
     display: none !important;
   }
 }
+
+/* ============================================================
+ * UI polish (branch ui/nexus-refinements)
+ * - allineamento controlli in riga (check) nelle form di impostazione
+ * - affordance chiara per i pulsanti disabilitati
+ * - spaziatura coerente tra checkbox e descrizione
+ * ============================================================ */
+
+/* Allinea checkbox+label in riga nelle form-table (impostazioni). */
+.nxa-acc-panel .form-table td label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.nxa-acc-panel .form-table td label input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* Ritmo verticale tra checkbox e <p.description> sottostante. */
+.nxa-acc-panel .form-table td label + .description {
+  margin-top: 2px;
+}
+
+/* Pulsanti disabilitati: affordance esplicita. */
+.nxa-btn[disabled],
+.nxa-btn.is-busy {
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
