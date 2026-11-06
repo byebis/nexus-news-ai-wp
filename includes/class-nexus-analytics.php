@@ -99,6 +99,14 @@ class Nexus_Analytics {
                 $days = min( 90, max( 7, absint( $days ) ) );
                 $now  = current_time( 'mysql' );
 
+                // v1.1.21 (perf/nexus-caching): cache transient 120s per finestra
+                // (il calcolo esegue ~9 query di aggregazione). Invalidata su
+                // scrittura da Nexus_DB::flush_dashboard_cache().
+                $cached = get_transient( 'nexus_overview_' . $days );
+                if ( is_array( $cached ) ) {
+                        return $cached;
+                }
+
                 // Degradazione grazia: fondamenta DB non integrate → struttura vuota coerente.
                 if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
                         return self::empty_overview( $days, $now );
@@ -268,7 +276,7 @@ class Nexus_Analytics {
 
                 /* ============ RISULTATO ============ */
 
-                return array(
+                $result = array(
                         'days'         => $days,
                         'generated_at' => $now,
                         'series'       => $series,
@@ -286,6 +294,10 @@ class Nexus_Analytics {
                         'top_articles' => $top_articles,
                         'subscribers'  => $subscribers,
                 );
+
+                set_transient( 'nexus_overview_' . $days, $result, 120 );
+
+                return $result;
         }
 
         /**
