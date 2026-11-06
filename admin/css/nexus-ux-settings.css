@@ -1,0 +1,193 @@
+/**
+ * Nexus News AI — Ritocchi UX pagina Impostazioni (v1.1.x)
+ *
+ * Foglio complementare a assets/css/admin-tabs.css: NON lo tocca, aggiunge
+ * solo rifiniture di leggibilità alla pagina unica a tab (settings.php).
+ * SOLO token var(--nxa-*): il tema dark (body.nexus-theme-dark) eredita
+ * automaticamente. Tutte le classi NUOVE hanno prefisso nxa-ux-; i selettori
+ * sugli elementi contrattuali (.nxa-acc / .nxa-status-*) restano dentro lo
+ * scope della pagina impostazioni per non toccare il resto del plugin.
+ *
+ * Indice:
+ *   1. Tab AI in evidenza quando manca la configurazione provider
+ *   2. Micro-descrizione di contesto in testa al pannello
+ *   3. Accordion: respiro, spaziatura e indicatore aperto/chiuso più chiaro
+ *   4. Tab Sistema: gruppo "Limiti e scala" e badge connessioni
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Tab AI in evidenza quando manca la configurazione provider
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="settings"] .nxa-ux-tab-attention {
+  position: relative;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-ux-tab-attention::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nxa-warn-text);
+  box-shadow: 0 0 0 3px var(--nxa-warn-bg);
+}
+
+@media (max-width: 782px) {
+  .wrap.nexus-admin[data-page="settings"] .nxa-ux-tab-attention::after {
+    bottom: 4px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Micro-descrizione di contesto in testa al pannello
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="settings"] .nxa-ux-panel-intro {
+  margin: 0 0 var(--nxa-space-5);
+  padding: var(--nxa-space-2) var(--nxa-space-4);
+  border-left: 3px solid var(--nxa-accent-line);
+  border-radius: 0 var(--nxa-radius-sm) var(--nxa-radius-sm) 0;
+  background: var(--nxa-accent-1-soft);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-ux-panel-intro p {
+  margin: 0;
+  color: var(--nxa-text-body);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Accordion: respiro, spaziatura e indicatore aperto/chiuso più chiaro.
+ *
+ * Le classi contrattuali (.nxa-acc / .nxa-acc-toggle / .nxa-acc-panel /
+ * .nxa-acc-chevron) restano INVARIATE: qui si aggiungono solo rifiniture
+ * scoped alla pagina impostazioni (file caricato dopo nexus-admin.css).
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="settings"] .nxa-acc {
+  margin-bottom: var(--nxa-space-2);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle {
+  position: relative;
+  padding: calc(var(--nxa-space-3) + 3px) var(--nxa-space-3);
+  border-radius: var(--nxa-radius);
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+
+/* Indicatore di stato: barra verticale a sinistra, visibile solo da aperto. */
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 0.2s ease;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle[aria-expanded="true"]::before {
+  background: var(--nxa-accent-1);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle:hover {
+  background: var(--nxa-row-hover-bg);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle[aria-expanded="true"] {
+  background: var(--nxa-accent-1-soft);
+}
+
+/* Chevron più nitido e tinto dall'accento quando la voce è aperta. */
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-chevron {
+  width: 9px;
+  height: 9px;
+  opacity: 0.6;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle[aria-expanded="true"] .nxa-acc-chevron {
+  opacity: 1;
+  color: var(--nxa-accent-1);
+}
+
+/* Pannello: più aria interna e separazione netta dal toggle. */
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-panel {
+  padding: 0 var(--nxa-space-3) var(--nxa-space-5) calc(var(--nxa-space-4) + 4px);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle[aria-expanded="true"] + .nxa-acc-panel {
+  margin-top: var(--nxa-space-1);
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Tab Sistema: gruppo "Limiti e scala" e badge connessioni
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="settings"] .nxa-acc[data-nxa-acc="limiti"] {
+  border: 1px solid var(--nxa-hairline);
+  border-radius: var(--nxa-radius);
+  padding: var(--nxa-space-1) 0;
+  overflow: hidden;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc[data-nxa-acc="limiti"] .form-table {
+  margin: 0 var(--nxa-space-3);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc[data-nxa-acc="limiti"] .form-table th {
+  width: 240px;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-acc[data-nxa-acc="limiti"] .small-text {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 110px;
+  text-align: right;
+}
+
+/* Fila badge connessioni: raggruppata in una superficie leggera. */
+.wrap.nexus-admin[data-page="settings"] .nxa-status-row {
+  margin: var(--nxa-space-4) 0 var(--nxa-space-1);
+  padding: var(--nxa-space-3) var(--nxa-space-4);
+  border: 1px solid var(--nxa-hairline);
+  border-radius: var(--nxa-radius);
+  background: var(--nxa-surface-2);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-status-row-label {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-status-badge {
+  font-size: 12.5px;
+  box-shadow: none;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-status-badge-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-status-badge--ok .nxa-status-badge-dot {
+  box-shadow: 0 0 0 3px var(--nxa-ok-bg);
+}
+
+.wrap.nexus-admin[data-page="settings"] .nxa-status-badge--off .nxa-status-badge-dot {
+  box-shadow: 0 0 0 3px var(--nxa-border-soft);
+}
+
+/* -------------------------------------------------------------------------
+ * Riduzione movimento
+ * ---------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle,
+  .wrap.nexus-admin[data-page="settings"] .nxa-acc-toggle::before,
+  .wrap.nexus-admin[data-page="settings"] .nxa-acc-chevron {
+    transition: none;
+  }
+}

@@ -96,30 +96,32 @@ defined( 'ABSPATH' ) || exit;
 
         <p class="nxa-page-subtitle"><?php esc_html_e( 'Articoli proposti dagli agenti: valuta qualità e fonte, poi approva, rifiuta o pubblica.', 'nexus-news-ai' ); ?></p>
 
-        <div class="nxa-toolbar">
-                <label class="screen-reader-text" for="nxa-queue-filter">
-                        <?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
-                </label>
-                <select id="nxa-queue-filter" class="nxa-queue-filter">
-                        <option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
-                        <option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
-                        <option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
-                        <option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
-                        <option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
-                </select>
+        <div class="nxa-toolbar nxa-ux-queue-toolbar">
+                <div class="nxa-ux-filter-group">
+                        <label class="screen-reader-text" for="nxa-queue-filter">
+                                <?php esc_html_e( 'Filtra articoli per stato', 'nexus-news-ai' ); ?>
+                        </label>
+                        <select id="nxa-queue-filter" class="nxa-queue-filter nxa-ux-filter">
+                                <option value="pending_approval" selected><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></option>
+                                <option value="approved"><?php esc_html_e( 'Approvati', 'nexus-news-ai' ); ?></option>
+                                <option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
+                                <option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
+                                <option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
+                        </select>
+                </div>
 
-                <button type="button" class="nxa-btn nxa-queue-refresh">
+                <button type="button" class="nxa-btn nxa-queue-refresh nxa-ux-refresh">
                         <?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
                 </button>
 
                 <!-- Hook fisso per il conteggio ("N articoli"), aria-live: è CONSUMATO
                      da admin.js (loadQueueList, v1.1.7 T-C2 — vedi punto 4 del docblock). -->
-                <span id="nxa-queue-count" class="nxa-queue-count" aria-live="polite"></span>
+                <span id="nxa-queue-count" class="nxa-queue-count nxa-ux-count" aria-live="polite"></span>
         </div>
 
         <!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.
              Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
-        <div id="nxa-queue-list" class="nxa-queue-list nxa-table-wrap" aria-live="polite" aria-busy="true">
+        <div id="nxa-queue-list" class="nxa-queue-list nxa-table-wrap nxa-ux-list" aria-live="polite" aria-busy="true">
                 <p class="screen-reader-text"><?php esc_html_e( 'Caricamento articoli…', 'nexus-news-ai' ); ?></p>
                 <div class="nxa-skeleton"></div>
                 <div class="nxa-skeleton"></div>

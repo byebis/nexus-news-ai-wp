@@ -87,10 +87,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
-/* Tab whitelist: slug => etichetta. L'ordine è l'ordine di navigazione. */
+/*
+ * Tab whitelist: slug => etichetta. L'ordine è l'ordine di navigazione,
+ * riallineato al flusso di setup: AI → Contenuti → Pubblicazione → Sistema.
+ */
 $nxa_settab_tabs = array(
-        'contenuti'     => __( 'Contenuti', 'nexus-news-ai' ),
         'ai'            => __( 'AI', 'nexus-news-ai' ),
+        'contenuti'     => __( 'Contenuti', 'nexus-news-ai' ),
         'pubblicazione' => __( 'Pubblicazione', 'nexus-news-ai' ),
         'sistema'       => __( 'Sistema', 'nexus-news-ai' ),
 );
@@ -102,6 +105,24 @@ $nxa_settab_files = array(
         'pubblicazione' => 'settings-pubblicazione',
         'sistema'       => 'settings-sistema',
 );
+
+/*
+ * Il provider AI è considerato configurato se esiste una chiave API attiva
+ * (ai_api_key o una delle prov_key_* dei provider supportati). Serve a
+ * (1) mettere in evidenza il tab AI quando manca la configurazione e
+ * (2) scegliere il tab di default in assenza di ?tab=/hash.
+ */
+$nxa_ai_settings = Nexus_DB::get_settings();
+$nxa_ai_configured = isset( $nxa_ai_settings['ai_api_key'] ) && '' !== trim( (string) $nxa_ai_settings['ai_api_key'] );
+if ( ! $nxa_ai_configured ) {
+        foreach ( array( 'openrouter', 'openai', 'anthropic', 'google', 'groq', 'deepseek', 'mistral', 'xai', 'custom', 'ollama' ) as $nxa_prov_id ) {
+                $nxa_prov_key = isset( $nxa_ai_settings[ 'prov_key_' . $nxa_prov_id ] ) ? trim( (string) $nxa_ai_settings[ 'prov_key_' . $nxa_prov_id ] ) : '';
+                if ( '' !== $nxa_prov_key ) {
+                        $nxa_ai_configured = true;
+                        break;
+                }
+        }
+}
 
 /*
  * Tab attivo server-side.
@@ -128,7 +149,8 @@ if ( '' === $nxa_settab_active ) {
         if ( $nxa_settab_tab && isset( $nxa_settab_tabs[ $nxa_settab_tab ] ) ) {
                 $nxa_settab_active = $nxa_settab_tab;
         } else {
-                $nxa_settab_active = 'contenuti';
+                /* Default: tab AI se il provider non è ancora configurato, altrimenti Contenuti. */
+                $nxa_settab_active = $nxa_ai_configured ? 'contenuti' : 'ai';
         }
 }
 ?>
@@ -140,8 +162,15 @@ if ( '' === $nxa_settab_active ) {
                         <?php foreach ( $nxa_settab_tabs as $nxa_settab_slug => $nxa_settab_label ) : ?>
                                 <?php
                                 $nxa_settab_is_active = ( $nxa_settab_slug === $nxa_settab_active );
+                                $nxa_settab_tab_classes = array( 'nxa-settab-tab' );
+                                if ( $nxa_settab_is_active ) {
+                                        $nxa_settab_tab_classes[] = 'is-active';
+                                }
+                                if ( 'ai' === $nxa_settab_slug && ! $nxa_ai_configured ) {
+                                        $nxa_settab_tab_classes[] = 'nxa-ux-tab-attention';
+                                }
                                 ?>
-                                <a class="nxa-settab-tab<?php echo $nxa_settab_is_active ? ' is-active' : ''; ?>"
+                                <a class="<?php echo esc_attr( implode( ' ', $nxa_settab_tab_classes ) ); ?>"
                                         role="tab"
                                         id="nxa-settab-tab-<?php echo esc_attr( $nxa_settab_slug ); ?>"
                                         href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=' . rawurlencode( $nxa_settab_slug ) ) ); ?>"
@@ -183,6 +212,17 @@ if ( '' === $nxa_settab_active ) {
                                         <span class="nxa-settab-dirtybanner-text"><?php esc_html_e( 'Hai modifiche non salvate in questa sezione.', 'nexus-news-ai' ); ?></span>
                                         <button type="button" class="button button-small nxa-settab-dirtybanner-save"><?php esc_html_e( 'Salva ora', 'nexus-news-ai' ); ?></button>
                                 </div>
+                                <div class="nxa-ux-panel-intro">
+                                        <?php if ( 'ai' === $nxa_settab_slug ) : ?>
+                                                <p><?php echo esc_html( $nxa_ai_configured ? 'Configura il provider che scrive i testi e governa le scelte editoriali: da qui si collega il motore di generazione.' : 'Non è ancora presente un provider AI attivo: senza una chiave valida il plugin non può generare né valutare i contenuti.' ); ?></p>
+                                        <?php elseif ( 'contenuti' === $nxa_settab_slug ) : ?>
+                                                <p><?php echo esc_html( 'Definisci come i materiali vengono raccolti, valutati e formattati prima di diventare bozze.' ); ?></p>
+                                        <?php elseif ( 'pubblicazione' === $nxa_settab_slug ) : ?>
+                                                <p><?php echo esc_html( 'Controlla dove e quando escono gli articoli: canali, formato e modalità di invio.' ); ?></p>
+                                        <?php else : ?>
+                                                <p><?php echo esc_html( 'Regola il funzionamento complessivo: coda, limiti di scala, integrazioni esterne e stato delle connessioni.' ); ?></p>
+                                        <?php endif; ?>
+                                </div>
                                 <?php
                                 $nxa_settab_file = NEXUS_PLUGIN_DIR . 'admin/views/' . $nxa_settab_view . '.php';
                                 if ( file_exists( $nxa_settab_file ) ) {
@@ -213,7 +253,7 @@ if ( '' === $nxa_settab_active ) {
 ( function () {
         'use strict';
 
-        var TABS = [ 'contenuti', 'ai', 'pubblicazione', 'sistema' ];
+        var TABS = [ 'ai', 'contenuti', 'pubblicazione', 'sistema' ];
         var FORM_ID = 'nxa-settings-form';
         var HASH_PREFIX = '#nxa-tab-';
 

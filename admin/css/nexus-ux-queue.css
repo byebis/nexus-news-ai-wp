@@ -1,0 +1,259 @@
+/**
+ * Nexus News AI — Vista "Coda Approvazioni" (admin/views/queue.php), pass UI "ux".
+ *
+ * Enqueue condizionato SOLO sulla pagina coda in admin/class-nexus-admin.php
+ * (enqueue_assets, hook "nexus-queue") con NEXUS_VERSION e dipendenza da
+ * nexus-admin-css (i token var(--nxa-*) vivono lì).
+ *
+ * Le righe live sono generate da admin.js (contratto nel docblock di queue.php):
+ * qui si stilizzano i selettori contrattuali esistenti (.nxa-queue-item,
+ * .nxa-btn-row, .nxa-score, .nxa-badge, .nxa-note-row, ...) SENZA modificare
+ * id/classi/data-attr consumati dal JS. Le classi NUOVE introdotte portano il
+ * prefisso nxa-ux- e agiscono solo sul markup statico della vista.
+ *
+ * Solo token var(--nxa-*): tema chiaro default, scuro ereditato dagli override
+ * su body.nexus-theme-dark.
+ *
+ * @package Nexus_News_AI
+ */
+
+/* ---------------------------------------------------------------------------
+ * Toolbar pagina (markup statico queue.php): filtro + refresh + contatore.
+ * ------------------------------------------------------------------------- */
+.nxa-ux-queue-toolbar {
+  flex-wrap: wrap;
+  row-gap: var(--nxa-space-3);
+}
+
+.nxa-ux-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nxa-space-2);
+}
+
+.nxa-ux-filter {
+  min-width: 180px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--nxa-input-line);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-input-bg);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  box-shadow: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.nxa-ux-filter:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+/* Refresh: mantiene la base .nxa-btn, aggiunge un target touch più comodo. */
+.nxa-ux-refresh {
+  min-height: 38px;
+}
+
+/* Contatore "N articoli" come pillola allineata a destra della toolbar. */
+.nxa-ux-count {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--nxa-border);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-text-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.nxa-ux-count::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nxa-accent-1);
+}
+.nxa-ux-count:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Riga coda (markup generato da admin.js — selettori contrattuali).
+ * ------------------------------------------------------------------------- */
+.nxa-queue-list .nxa-queue-item {
+  padding: var(--nxa-space-4) var(--nxa-space-3);
+  transition: background-color 0.15s ease;
+}
+
+/* Barra azioni per riga: flex ordinato, azioni di stato ben distinte. */
+.nxa-queue-item .nxa-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--nxa-space-3);
+}
+.nxa-queue-item .nxa-btn-row .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 4px 14px;
+  border-radius: var(--nxa-radius-sm);
+  font-weight: 600;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Approva = successo (verde). */
+.nxa-queue-item .nxa-btn-row .nxa-approve {
+  color: var(--nxa-on-accent);
+  background: var(--nxa-ok-text);
+  border-color: var(--nxa-ok-text);
+}
+.nxa-queue-item .nxa-btn-row .nxa-approve:hover {
+  filter: brightness(0.94);
+}
+
+/* Rifiuta = errore (rosso). */
+.nxa-queue-item .nxa-btn-row .nxa-reject {
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
+}
+.nxa-queue-item .nxa-btn-row .nxa-reject:hover {
+  color: var(--nxa-err-text-strong);
+  background: var(--nxa-err-bg-strong);
+  border-color: var(--nxa-err-line);
+}
+
+/* Pubblica = accento brand. */
+.nxa-queue-item .nxa-btn-row .nxa-publish-one {
+  color: var(--nxa-accent-1);
+  background: var(--nxa-accent-1-soft);
+  border-color: var(--nxa-accent-line);
+}
+.nxa-queue-item .nxa-btn-row .nxa-publish-one:hover {
+  color: var(--nxa-link-hover);
+  background: var(--nxa-accent-2-soft);
+  border-color: var(--nxa-accent-1);
+}
+
+/* Dettagli come link testuale in tinta link. */
+.nxa-queue-item .nxa-btn-row .nxa-detail {
+  color: var(--nxa-link);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.nxa-queue-item .nxa-btn-row .nxa-detail:hover {
+  color: var(--nxa-link-hover);
+  text-decoration: underline;
+}
+
+/* Form nota di rifiuto: superficie tenue che separa il riquadro dalle azioni. */
+.nxa-queue-item .nxa-note-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--nxa-space-2);
+  padding: var(--nxa-space-3);
+  background: var(--nxa-surface-2);
+  border: 1px solid var(--nxa-hairline);
+  border-radius: var(--nxa-radius);
+}
+.nxa-queue-item .nxa-note-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--nxa-input-line);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-input-bg);
+  color: var(--nxa-text);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.nxa-queue-item .nxa-note-input:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+.nxa-queue-item .nxa-note-row .nxa-reject-confirm {
+  color: var(--nxa-err-text);
+  background: var(--nxa-err-bg);
+  border-color: var(--nxa-err-line);
+}
+.nxa-queue-item .nxa-note-row .nxa-reject-cancel {
+  color: var(--nxa-muted);
+  text-decoration: none;
+}
+.nxa-queue-item .nxa-note-row .nxa-reject-cancel:hover {
+  color: var(--nxa-text);
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------------------
+ * Punteggio qualità (.nxa-score): badge più chiaro e leggibile.
+ * ------------------------------------------------------------------------- */
+.nxa-queue-item .nxa-score {
+  padding: 3px 12px;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+/* Chip categoria e badge stato: allineamento baseline coerente con lo score. */
+.nxa-queue-item .nxa-chip,
+.nxa-queue-item .nxa-badge {
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile: toolbar in colonna, filtro e contatore full-width.
+ * ------------------------------------------------------------------------- */
+@media (max-width: 782px) {
+  .nxa-ux-queue-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nxa-ux-filter-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nxa-ux-filter {
+    width: 100%;
+    min-width: 0;
+  }
+  .nxa-ux-count {
+    margin-left: 0;
+    justify-content: center;
+  }
+}
+
+/* Movimenti ridotti: solo transizioni, mai animazioni. */
+@media (prefers-reduced-motion: reduce) {
+  .nxa-ux-filter,
+  .nxa-queue-list .nxa-queue-item,
+  .nxa-queue-item .nxa-btn-row .button,
+  .nxa-queue-item .nxa-btn-row .nxa-detail {
+    transition: none;
+  }
+}
+
+@media print {
+  .nxa-ux-queue-toolbar,
+  .nxa-queue-item .nxa-btn-row,
+  .nxa-queue-item .nxa-note-row {
+    display: none !important;
+  }
+}

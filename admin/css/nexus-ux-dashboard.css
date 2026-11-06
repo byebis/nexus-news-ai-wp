@@ -1,0 +1,218 @@
+/**
+ * nexus-ux-dashboard.css
+ * Miglioramenti UI (solo frontend, nessuna feature nuova) per la Dashboard di
+ * Nexus News AI — vista admin/views/dashboard.php.
+ *
+ * VINCOLI RISPETTATI:
+ * - Solo classi nuove con prefisso "nxa-ux-"; regole SOLO in questo file.
+ * - Usa esclusivamente i token esistenti var(--nxa-*) e sintassi CSS base.
+ * - Nessun id / data-* / classe consumata da admin.js modificato o rimosso:
+ *   qui si AGGIUNGE stile a selettori già presenti, senza alterarli.
+ *
+ * Dipende da nexus-admin-css (enqueuato dopo, quindi le regole qui vincono
+ * su quelle di pari specificità del foglio base).
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. Micro-etichetta di contesto sopra la toolbar (stato cron)
+ * ------------------------------------------------------------------------ */
+.nxa-ux-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nxa-muted);
+}
+
+.nxa-ux-context-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--nxa-muted);
+}
+
+.nxa-ux-context-dot.is-live {
+  background: var(--nxa-ok-text);
+  box-shadow: 0 0 0 3px var(--nxa-ok-bg);
+  animation: nxa-pulse 1.8s ease-in-out infinite;
+}
+
+.nxa-ux-context-dot.is-slow {
+  background: var(--nxa-warn-text);
+  box-shadow: 0 0 0 3px var(--nxa-warn-bg);
+}
+
+.nxa-ux-context-dot.is-paused {
+  background: var(--nxa-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. Toolbar: azione primaria enfatizzata + secondarie separate
+ * ------------------------------------------------------------------------ */
+.nxa-ux-toolbar {
+  gap: 12px 14px;
+}
+
+.nxa-ux-toolbar-primary,
+.nxa-ux-toolbar-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Bottone "Avvia la redazione": primario. Gli attributi contrattuali
+ * (data-run-testata="1" e classe nxa-btn-run) restano intatti. */
+.nxa-ux-btn-primary,
+.nxa-ux-btn-primary.nxa-btn-run {
+  border-color: var(--nxa-accent-1);
+  background: var(--nxa-accent-1);
+  color: var(--nxa-on-accent);
+  font-size: 0.9rem;
+  padding: 11px 22px;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.35);
+}
+
+.nxa-ux-btn-primary:hover,
+.nxa-ux-btn-primary.nxa-btn-run:hover {
+  border-color: var(--nxa-accent-1);
+  background: var(--nxa-link-hover);
+  color: var(--nxa-on-accent);
+  filter: none;
+}
+
+.nxa-ux-btn-primary:active,
+.nxa-ux-btn-primary.nxa-btn-run:active {
+  transform: scale(0.98);
+}
+
+.nxa-ux-btn-primary:focus-visible,
+.nxa-ux-btn-primary.nxa-btn-run:focus-visible {
+  outline-color: var(--nxa-focus);
+}
+
+/* Separazione sottile tra primaria e secondarie (solo desktop). */
+@media (min-width: 783px) {
+  .nxa-ux-toolbar-primary {
+    margin-right: auto;
+  }
+
+  .nxa-ux-toolbar-secondary {
+    gap: 8px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. Sezioni statistiche: icona al titolo e ritmo verticale
+ * ------------------------------------------------------------------------ */
+.nxa-ux-stat-group {
+  margin-bottom: var(--nxa-space-3);
+}
+
+.nxa-ux-sec-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  flex: 0 0 auto;
+}
+
+.nxa-ux-sec-icon.dashicons {
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+}
+
+/* Ritmo più arioso tra valore ed etichette nelle card statistiche. */
+.nxa-ux-stat-group .nxa-stat-card {
+  padding-top: var(--nxa-space-2);
+  padding-bottom: var(--nxa-space-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. Pannelli con bordo e intestazione chiara (feed attività, stato agenti)
+ * ------------------------------------------------------------------------ */
+.nxa-ux-panel {
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-lg);
+  background: var(--nxa-surface);
+  overflow: hidden;
+}
+
+.nxa-ux-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--nxa-space-3) var(--nxa-space-4);
+  border-bottom: 1px solid var(--nxa-border-soft);
+  background: var(--nxa-surface-2);
+}
+
+.nxa-ux-panel__title {
+  margin: 0;
+  font-family: var(--nxa-font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nxa-text-body);
+}
+
+.nxa-ux-panel__body {
+  padding: var(--nxa-space-4);
+}
+
+/* La griglia mini-agenti ha un margine proprio (0 in una superficie con
+ * padding): lo azzeriamo dentro il pannello per un ritmo uniforme. */
+.nxa-ux-panel__body .nxa-agents-grid {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * 5. Responsive
+ * ------------------------------------------------------------------------ */
+@media (max-width: 782px) {
+  .nxa-ux-context {
+    margin-top: var(--nxa-space-2);
+  }
+
+  .nxa-ux-panel__body {
+    padding: var(--nxa-space-3);
+  }
+
+  .nxa-ux-panel__head {
+    padding: var(--nxa-space-3);
+  }
+}
+
+@media (max-width: 600px) {
+  .nxa-ux-stat-group .nxa-stat-grid {
+    gap: var(--nxa-space-3);
+  }
+
+  /* Su telefoni le azioni secondarie restano impilate e touch-friendly. */
+  .nxa-ux-toolbar-secondary .nxa-btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Riduzione del movimento
+ * ------------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .nxa-ux-context-dot.is-live {
+    animation: none;
+  }
+}
