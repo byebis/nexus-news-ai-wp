@@ -2094,6 +2094,42 @@ class Nexus_DB {
                 }
         }
 
+        /* ============ TRANSAZIONI DB ============ */
+
+        /**
+         * Avvia una transazione sul database WordPress ($wpdb).
+         *
+         * Usata per rendere atomiche le sequenze multi-scrittura della pipeline
+         * (publish_locked, apply_verdict): se uno step fallisce, tutto il gruppo
+         * viene annullato con ROLLBACK (nessuno stato parziale).
+         *
+         * @return void
+         */
+        public static function tx_begin() {
+                global $wpdb;
+                $wpdb->query( 'START TRANSACTION' );
+        }
+
+        /**
+         * Rende definitive le scritture della transazione corrente.
+         *
+         * @return void
+         */
+        public static function tx_commit() {
+                global $wpdb;
+                $wpdb->query( 'COMMIT' );
+        }
+
+        /**
+         * Annulla le scritture della transazione corrente (rollback).
+         *
+         * @return void
+         */
+        public static function tx_rollback() {
+                global $wpdb;
+                $wpdb->query( 'ROLLBACK' );
+        }
+
         /**
          * Statistiche dashboard (articoli per stato, oggi, views, agenti attivi,
          * attività nelle 24h).
