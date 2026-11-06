@@ -22,69 +22,45 @@ define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 /**
- * Caricamento classi core.
+ * Autoloader del plugin (v1.1.21, perf/nexus-autoload).
+ *
+ * Sostituisce la lista manuale di require_once con una mappa PSR-4-ish:
+ * Nexus_* → includes/, public/, admin/, vendor-shot-ui/. La classe viene caricata
+ * al primo utilizzo; il bootstrap (nexus_bootstrap) "riscalda" esplicitamente lo
+ * stesso insieme di classi di prima per preservare gli effetti collaterali a
+ * livello di file (es. l'auto-registrazione dei moduli su 'nexus_modules_init').
+ *
+ * @param string $class Nome classe completo.
+ * @return void
  */
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-db.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-utils.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rss.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-providers.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-ai-engine.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-publisher.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-pipeline.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-tools.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-chief.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cron.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-rest.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cpt.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-native.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-redazioni.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-caps.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-multilang.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-image.php';
-// v1.1.15 (WB1): Nexus_Readability non era mai richiesto dal bootstrap:
-// senza questa riga le fonti full=1 ("contenuto completo") restano dead code
-// (guardie/estrazione usate dal dispatcher fonti in class-nexus-sources.php).
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-readability.php';
-// v1.1.15 (contratto WB): Nexus_Sources non era mai richiesto dal bootstrap
-// (nessun autoloader nel repo): class_exists('Nexus_Sources') era sempre
-// false e il dispatcher multi-fonte degradava sempre su Nexus_Rss —
-// fetch_web/maybe_full_content restavano dead code alla radice. Sicuro solo
-// DOPO l'inversione della guardia binario/SVG di fetch_web (stessa release).
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-sources.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-seo.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-telegram.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-discord.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-x.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-social-linkedin.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-newsletter.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-ping.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-translate.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-queue.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-analytics.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-blocks.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-cli.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-i18n.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-public-api.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-multisite.php';
-// v1.1.12 — pacchetti feedback/SEO (S1-S7): file nuovi, init self-registrato
-// via action 'nexus_modules_init' (nessun'altra modifica al bootstrap richiesta).
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-google-auth.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-metrics.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-learn.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-dedup.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-interlink.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-news-sitemap.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-evergreen.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-notify.php';
-// v1.1.14 — pacchetti redazione che impara/organizzazione (P1-P6): file nuovi,
-// init self-registrato via action 'nexus_modules_init' (stesso pattern 1.1.12).
-// NB: class-nexus-digest.php è richiesto da class-nexus-newsletter.php,
-// class-nexus-video-sitemap.php da class-nexus-news-sitemap.php.
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-google-wizard.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-health.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-opportunities.php';
-require_once NEXUS_PLUGIN_DIR . 'includes/class-nexus-calendar.php';
-require_once NEXUS_PLUGIN_DIR . 'public/class-nexus-shortcodes.php';
+function nexus_autoload( $class ) {
+        if ( 'Shot_UI' !== $class && 0 !== strpos( $class, 'Nexus_' ) ) {
+                return;
+        }
+
+        if ( 'Shot_UI' === $class ) {
+                $rel = 'class-1shot-ui.php';
+        } else {
+                // 'Nexus_' = 6 caratteri.
+                $rel = 'class-nexus-' . str_replace( '_', '-', strtolower( substr( $class, 6 ) ) ) . '.php';
+        }
+
+        $dirs = array(
+                NEXUS_PLUGIN_DIR . 'includes/',
+                NEXUS_PLUGIN_DIR . 'public/',
+                NEXUS_PLUGIN_DIR . 'admin/',
+                NEXUS_PLUGIN_DIR . 'vendor-shot-ui/',
+        );
+
+        foreach ( $dirs as $dir ) {
+                $file = $dir . $rel;
+                if ( file_exists( $file ) ) {
+                        require_once $file;
+                        return;
+                }
+        }
+}
+spl_autoload_register( 'nexus_autoload' );
 
 register_activation_hook( __FILE__, array( 'Nexus_DB', 'install' ) );
 register_deactivation_hook( __FILE__, 'nexus_deactivate' );
@@ -143,6 +119,25 @@ register_activation_hook( __FILE__, 'nexus_activate' );
  * Bootstrap: inizializza i moduli dopo il caricamento di WordPress.
  */
 function nexus_bootstrap() {
+        // v1.1.21 (perf/nexus-autoload): riscalda lo stesso insieme di classi
+        // dell'ex elenco require_once, così gli effetti collaterali a livello di
+        // file (auto-registrazione dei moduli su 'nexus_modules_init') si
+        // preservano identici. class_exists() attiva l'autoloader.
+        foreach ( array(
+                'Nexus_DB', 'Nexus_Utils', 'Nexus_Rss', 'Nexus_Providers', 'Nexus_AI_Engine',
+                'Nexus_Publisher', 'Nexus_Pipeline', 'Nexus_Tools', 'Nexus_Chief', 'Nexus_Cron',
+                'Nexus_Rest', 'Nexus_Cpt', 'Nexus_Native', 'Nexus_Redazioni', 'Nexus_Caps',
+                'Nexus_Multilang', 'Nexus_Image', 'Nexus_Readability', 'Nexus_Sources', 'Nexus_SEO',
+                'Nexus_Social_Telegram', 'Nexus_Social_Discord', 'Nexus_Social_X', 'Nexus_Social_Linkedin',
+                'Nexus_Newsletter', 'Nexus_Ping', 'Nexus_Translate', 'Nexus_Queue', 'Nexus_Analytics',
+                'Nexus_Blocks', 'Nexus_Cli', 'Nexus_I18n', 'Nexus_Public_API', 'Nexus_Multisite',
+                'Nexus_Google_Auth', 'Nexus_Metrics', 'Nexus_Learn', 'Nexus_Dedup', 'Nexus_Interlink',
+                'Nexus_News_Sitemap', 'Nexus_Evergreen', 'Nexus_Notify', 'Nexus_Google_Wizard',
+                'Nexus_Health', 'Nexus_Opportunities', 'Nexus_Calendar', 'Nexus_Shortcodes',
+        ) as $nxa_class ) {
+                class_exists( $nxa_class );
+        }
+
         Nexus_DB::maybe_upgrade();
         Nexus_Rest::init();
         Nexus_Shortcodes::init();
