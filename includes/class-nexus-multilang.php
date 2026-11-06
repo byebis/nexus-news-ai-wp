@@ -49,6 +49,15 @@ class Nexus_Multilang {
         const META_SOURCE = '_nexus_source_post_id';
         const FILTER      = 'nexus_multilang_driver';
 
+        /**
+         * Cache per-request delle traduzioni per post (v1.1.21, perf/nexus-n1):
+         * evita get_posts/meta-query ripetute quando translations_of() è chiamata
+         * più volte sullo stesso post nello stesso request.
+         *
+         * @var array<int, array<string,int>>
+         */
+        private static $translations_cache = array();
+
         /* ========================= BOOTSTRAP ========================= */
 
         /**
@@ -359,6 +368,10 @@ class Nexus_Multilang {
                         return array();
                 }
 
+                if ( isset( self::$translations_cache[ $post_id ] ) ) {
+                        return self::$translations_cache[ $post_id ];
+                }
+
                 $d = self::driver();
 
                 if ( 'polylang' === $d && function_exists( 'pll_get_post_translations' ) ) {
@@ -373,7 +386,7 @@ class Nexus_Multilang {
                                         }
                                 }
                                 if ( ! empty( $out ) ) {
-                                        return $out;
+                                        return self::cache_translations( $post_id, $out );
                                 }
                         }
                 }
@@ -395,7 +408,7 @@ class Nexus_Multilang {
                                                 }
                                         }
                                         if ( ! empty( $out ) ) {
-                                                return $out;
+                                                return self::cache_translations( $post_id, $out );
                                         }
                                 }
                         }
@@ -404,7 +417,7 @@ class Nexus_Multilang {
                 // Driver nexus: cerca i post con lo stesso gruppo.
                 $group = self::group_of_post( $post_id );
                 if ( '' === $group ) {
-                        return array( self::lang_of_post( $post_id ) => $post_id );
+                        return self::cache_translations( $post_id, array( self::lang_of_post( $post_id ) => $post_id ) );
                 }
 
                 $ids = function_exists( 'get_posts' )
@@ -433,7 +446,19 @@ class Nexus_Multilang {
                         $out[ self::lang_of_post( $post_id ) ] = $post_id;
                 }
 
-                return $out;
+                return self::cache_translations( $post_id, $out );
+        }
+
+        /**
+         * Salva il risultato nella cache per-request e lo restituisce.
+         *
+         * @param int   $post_id Post ID.
+         * @param array $result  Mappa lingua → post id.
+         * @return array
+         */
+        private static function cache_translations( $post_id, array $result ) {
+                self::$translations_cache[ absint( $post_id ) ] = $result;
+                return $result;
         }
 
         /**

@@ -148,6 +148,14 @@ final class Nexus_Interlink {
         const BLOCK_CLASS = 'nexus-interlink';
 
         /**
+         * Cache per-request dei termini categoria (ids) per post id (v1.1.21,
+         * perf/nexus-n1): evita query wp_get_post_terms ripetute nello scoring.
+         *
+         * @var array<int, int[]>
+         */
+        private static $category_terms = array();
+
+        /**
          * Bootstrap: aggancia il modulo alla pipeline di pubblicazione.
          *
          * Chiamato su 'nexus_modules_init' (self-registrazione, fondo file).
@@ -389,6 +397,11 @@ final class Nexus_Interlink {
                         )
                 );
 
+                // v1.1.21 (perf/nexus-n1): carica in batch i termini categoria di tutti
+                // i candidati (+ post corrente) in una sola query, così lo scoring
+                // (shares_category) non genera N+1 wp_get_post_terms.
+                self::prime_category_terms( array_merge( array( $post_id ), (array) $query->posts ) );
+
                 // Scoring: id + titolo per ogni candidato (fields 'ids' + get_the_title).
                 $candidates = array();
                 foreach ( (array) $query->posts as $candidate_id ) {
@@ -465,19 +478,67 @@ final class Nexus_Interlink {
                         return false;
                 }
 
-                $current_terms = wp_get_post_terms( absint( $current_id ), 'category', array( 'fields' => 'ids' ) );
-                if ( empty( $current_terms ) || is_wp_error( $current_terms ) ) {
+                $current_terms = self::category_terms( $current_id );
+                if ( empty( $current_terms ) ) {
                         return false;
                 }
 
-                $candidate_terms = wp_get_post_terms( absint( $candidate_id ), 'category', array( 'fields' => 'ids' ) );
-                if ( empty( $candidate_terms ) || is_wp_error( $candidate_terms ) ) {
+                $candidate_terms = self::category_terms( $candidate_id );
+                if ( empty( $candidate_terms ) ) {
                         return false;
                 }
 
-                $shared = array_intersect( array_map( 'absint', $current_terms ), array_map( 'absint', $candidate_terms ) );
+                return count( array_intersect( $current_terms, $candidate_terms ) ) > 0;
+        }
 
-                return count( $shared ) > 0;
+        /**
+         * Termini categoria (ids) di un post, letti dalla cache per-request
+         * (popolata da prime_category_terms).
+         *
+         * @param int $post_id Post ID.
+         * @return int[]
+         */
+        private static function category_terms( $post_id ) {
+                $post_id = absint( $post_id );
+                if ( ! isset( self::$category_terms[ $post_id ] ) ) {
+                        self::prime_category_terms( array( $post_id ) );
+                }
+                return isset( self::$category_terms[ $post_id ] ) ? self::$category_terms[ $post_id ] : array();
+        }
+
+        /**
+         * Carica in batch i termini categoria (ids) dei post richiesti in un'unica
+         * query (wp_get_object_terms), popolando la cache per-request.
+         *
+         * @param int[] $post_ids Post ID.
+         * @return void
+         */
+        private static function prime_category_terms( array $post_ids ) {
+                $to_fetch = array();
+                foreach ( $post_ids as $pid ) {
+                        $pid = absint( $pid );
+                        if ( $pid > 0 && ! isset( self::$category_terms[ $pid ] ) ) {
+                                $to_fetch[] = $pid;
+                        }
+                }
+                if ( ! $to_fetch ) {
+                        return;
+                }
+                foreach ( $to_fetch as $pid ) {
+                        self::$category_terms[ $pid ] = array();
+                }
+                $objects = wp_get_object_terms( $to_fetch, 'category', array( 'fields' => 'id=>object_ids' ) );
+                if ( is_wp_error( $objects ) || ! is_array( $objects ) ) {
+                        return;
+                }
+                foreach ( $objects as $term_id => $ids ) {
+                        foreach ( (array) $ids as $pid ) {
+                                $pid = absint( $pid );
+                                if ( isset( self::$category_terms[ $pid ] ) ) {
+                                        self::$category_terms[ $pid ][] = (int) $term_id;
+                                }
+                        }
+                }
         }
 
         /**
