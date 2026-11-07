@@ -391,16 +391,35 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                 </a>
         </div>
 
-        <div class="nxa-toolbar sui-toolbar">
+        <div class="nxa-ux-context" role="status">
+                <span class="nxa-ux-context-dot <?php echo $nexus_cron_next > time() ? 'is-live' : ( $nexus_cron_next > 0 ? 'is-slow' : 'is-paused' ); ?>"></span>
+                <span class="nxa-ux-context-text">
+                        <?php
+                        if ( $nexus_cron_next > time() ) {
+                                echo esc_html__( 'Raccolta automatica attiva', 'nexus-news-ai' );
+                        } elseif ( $nexus_cron_next > 0 ) {
+                                echo esc_html__( 'Raccolta automatica in ritardo', 'nexus-news-ai' );
+                        } else {
+                                echo esc_html__( 'Raccolta automatica in pausa', 'nexus-news-ai' );
+                        }
+                        ?>
+                </span>
+        </div>
+
+        <div class="nxa-toolbar sui-toolbar nxa-ux-toolbar">
                 <!-- v1.1.5 (T-04): avvio dell'intera testata. Handler delegato in admin.js
                      (sezione AVVII MIRATI): conferma inline (v1.1.13.1 Q2) con il numero
                      di agenti già caricato, poi POST pipeline/run {agent_id:0} (contratto §4.1).
                      v1.1.6: il vecchio bottone "Esegui pipeline completa" è stato RIMOSSO
                      (duplicava la stessa azione su due bottoni distinti). -->
-                <button type="button" class="nxa-btn nxa-btn-run" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia la redazione', 'nexus-news-ai' ); ?></button>
-                <button type="button" class="nxa-btn nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
-                <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
-                <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
+                <div class="nxa-ux-toolbar-primary">
+                        <button type="button" class="nxa-btn nxa-btn-run nxa-ux-btn-primary" data-run-testata="1">▶ <?php echo esc_html__( 'Avvia la redazione', 'nexus-news-ai' ); ?></button>
+                </div>
+                <div class="nxa-ux-toolbar-secondary">
+                        <button type="button" class="nxa-btn nxa-collect-all"><?php echo esc_html__( 'Raccogli notizie ora', 'nexus-news-ai' ); ?></button>
+                        <a class="nxa-btn" href="<?php echo esc_url( home_url( '/' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html__( 'Vedi magazine', 'nexus-news-ai' ); ?></a>
+                        <a class="nxa-btn is-sm" href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents' ) ); ?>"><?php echo esc_html__( 'Gestisci agenti', 'nexus-news-ai' ); ?></a>
+                </div>
         </div>
 
         <?php
@@ -516,8 +535,8 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
              con bottone "Riprova" per GET /stats (loadStats di admin.js lo riempie
              solo a fetch fallita e lo ripulisce a successo). -->
         <div class="nxa-stat-groups" id="nxa-stats-grid">
-                <section class="nxa-stat-group">
-                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Produzione', 'nexus-news-ai' ); ?></h2>
+                <section class="nxa-stat-group nxa-ux-stat-group">
+                        <h2 class="nxa-stat-group__title"><span class="nxa-ux-sec-icon dashicons dashicons-megaphone" aria-hidden="true"></span> <?php echo esc_html__( 'Produzione', 'nexus-news-ai' ); ?></h2>
                         <div class="nxa-stat-grid">
                                 <div class="nxa-stat-card">
                                         <span class="nxa-stat-value" id="nxa-stat-published">—</span>
@@ -545,8 +564,8 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                         </div>
                 </section>
 
-                <section class="nxa-stat-group">
-                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Redazione', 'nexus-news-ai' ); ?></h2>
+                <section class="nxa-stat-group nxa-ux-stat-group">
+                        <h2 class="nxa-stat-group__title"><span class="nxa-ux-sec-icon dashicons dashicons-groups" aria-hidden="true"></span> <?php echo esc_html__( 'Redazione', 'nexus-news-ai' ); ?></h2>
                         <div class="nxa-stat-grid">
                                 <div class="nxa-stat-card">
                                         <span class="nxa-stat-value" id="nxa-stat-agents">—</span>
@@ -597,8 +616,8 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                         </div>
                 </section>
 
-                <section class="nxa-stat-group">
-                        <h2 class="nxa-stat-group__title"><?php echo esc_html__( 'Pubblico', 'nexus-news-ai' ); ?></h2>
+                <section class="nxa-stat-group nxa-ux-stat-group">
+                        <h2 class="nxa-stat-group__title"><span class="nxa-ux-sec-icon dashicons dashicons-visibility" aria-hidden="true"></span> <?php echo esc_html__( 'Pubblico', 'nexus-news-ai' ); ?></h2>
                         <div class="nxa-stat-grid">
                                 <div class="nxa-stat-card">
                                         <span class="nxa-stat-value" id="nxa-stat-views">—</span>
@@ -682,28 +701,40 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
         </div>
 
         <div class="nxa-section nxa-section-activity">
-                <h2><?php echo esc_html__( 'Feed attività', 'nexus-news-ai' ); ?></h2>
-                <!-- v1.1.5 (T-04): pannello live "In redazione ora" (contratto §5.2).
-                     Contenitore vuoto: intestazione .nxa-live-updated e righe
-                     .nxa-live-agent sono renderizzate da admin.js (GET /live + polling
-                     5s solo con la dashboard visibile; endpoint assente → la strip
-                     viene nascosta in silenzio, senza lasciare titoli orfani). -->
-                <div id="nxa-live-strip" class="nxa-live-strip"></div>
-                <div id="nxa-activity-feed" class="nxa-activity-feed">
-                        <p class="screen-reader-text"><?php echo esc_html__( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
-                        <div class="nxa-skeleton"></div>
-                        <div class="nxa-skeleton"></div>
-                        <div class="nxa-skeleton"></div>
+                <div class="nxa-ux-panel">
+                        <div class="nxa-ux-panel__head">
+                                <h2 class="nxa-ux-panel__title"><?php echo esc_html__( 'Feed attività', 'nexus-news-ai' ); ?></h2>
+                        </div>
+                        <div class="nxa-ux-panel__body">
+                                <!-- v1.1.5 (T-04): pannello live "In redazione ora" (contratto §5.2).
+                                     Contenitore vuoto: intestazione .nxa-live-updated e righe
+                                     .nxa-live-agent sono renderizzate da admin.js (GET /live + polling
+                                     5s solo con la dashboard visibile; endpoint assente → la strip
+                                     viene nascosta in silenzio, senza lasciare titoli orfani). -->
+                                <div id="nxa-live-strip" class="nxa-live-strip"></div>
+                                <div id="nxa-activity-feed" class="nxa-activity-feed">
+                                        <p class="screen-reader-text"><?php echo esc_html__( 'Caricamento attività…', 'nexus-news-ai' ); ?></p>
+                                        <div class="nxa-skeleton"></div>
+                                        <div class="nxa-skeleton"></div>
+                                        <div class="nxa-skeleton"></div>
+                                </div>
+                        </div>
                 </div>
         </div>
 
         <div class="nxa-section nxa-section-agents">
-                <h2><?php echo esc_html__( 'Stato agenti', 'nexus-news-ai' ); ?></h2>
-                <div id="nxa-agents-mini" class="nxa-agents-grid">
-                        <p class="screen-reader-text"><?php echo esc_html__( 'Caricamento agenti…', 'nexus-news-ai' ); ?></p>
-                        <div class="nxa-skeleton"></div>
-                        <div class="nxa-skeleton"></div>
-                        <div class="nxa-skeleton"></div>
+                <div class="nxa-ux-panel">
+                        <div class="nxa-ux-panel__head">
+                                <h2 class="nxa-ux-panel__title"><?php echo esc_html__( 'Stato agenti', 'nexus-news-ai' ); ?></h2>
+                        </div>
+                        <div class="nxa-ux-panel__body">
+                                <div id="nxa-agents-mini" class="nxa-agents-grid">
+                                        <p class="screen-reader-text"><?php echo esc_html__( 'Caricamento agenti…', 'nexus-news-ai' ); ?></p>
+                                        <div class="nxa-skeleton"></div>
+                                        <div class="nxa-skeleton"></div>
+                                        <div class="nxa-skeleton"></div>
+                                </div>
+                        </div>
                 </div>
         </div>
 

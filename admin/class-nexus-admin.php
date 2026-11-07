@@ -299,6 +299,19 @@ class Nexus_Admin {
                         NEXUS_VERSION
                 );
 
+                // v1.1.x (UX): rifiniture di leggibilità della pagina Impostazioni
+                // unica (tab AI in evidenza, introduzioni, accordion, badge).
+                // Solo sulla pagina impostazioni (canonica + slug storici BC), solo
+                // se il file esiste, e dopo admin-tabs.css (che gestisce i tab).
+                if ( false !== strpos( (string) $hook, 'nexus-settings' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-settings.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-settings-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-settings.css',
+                                array( 'nexus-admin-css', 'nexus-admin-tabs-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+
                 /*
                  * v1.1.13 (O4): fogli di stile PER VISTA, enqueuati solo sulla pagina
                  * corrispondente (check dello slug nell'hook, stesso stile della guard
@@ -327,6 +340,56 @@ class Nexus_Admin {
                         wp_enqueue_style(
                                 'nexus-tools-css',
                                 NEXUS_PLUGIN_URL . 'admin/css/nexus-tools.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                // v1.1.20 (UX dashboard): miglioramenti UI della Dashboard (hook
+                // toplevel 'toplevel_page_nexus-news'), solo frontend. Stesso
+                // pattern dei fogli per-vista: dipende da nexus-admin-css e si
+                // carica SOLO sulla pagina corrispondente e SOLO se il file esiste.
+                if ( false !== strpos( (string) $hook, 'toplevel_page_nexus-news' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-dashboard.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-dashboard-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-dashboard.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-wire' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-wire.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-wire-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-wire.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-agents' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-agents.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-agents-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-agents.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                /*
+                 * Pass UI "ux" (v1.1.20): fogli per vista, caricati DOPO
+                 * nexus-admin-css (e, per jobs, dopo nexus-jobs-css) per raffinare
+                 * la UI di coda approvazioni e coda lavori. Classi nuove SOLO con
+                 * prefisso nxa-ux-; i selettori contrattuali restano intatti.
+                 */
+                if ( false !== strpos( (string) $hook, 'nexus-queue' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-queue.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-queue-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-queue.css',
+                                array( 'nexus-admin-css' ),
+                                NEXUS_VERSION
+                        );
+                }
+                if ( false !== strpos( (string) $hook, 'nexus-jobs' ) && file_exists( NEXUS_PLUGIN_DIR . 'admin/css/nexus-ux-jobs.css' ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-jobs-css',
+                                NEXUS_PLUGIN_URL . 'admin/css/nexus-ux-jobs.css',
                                 array( 'nexus-admin-css' ),
                                 NEXUS_VERSION
                         );

@@ -81,7 +81,7 @@ defined( 'ABSPATH' ) || exit;
         </p>
 
         <!-- STAT-CARD: numeri riempiti dallo script inline via GET /jobs (stats). -->
-        <div class="nxa-jb-cards">
+        <div class="nxa-jb-cards nxa-ux-job-cards">
                 <div class="nxa-jb-card nxa-jb-card--pending">
                         <span class="nxa-jb-card-value" id="nxa-jb-stat-pending">&mdash;</span>
                         <span class="nxa-jb-card-label"><?php esc_html_e( 'In attesa', 'nexus-news-ai' ); ?></span>
@@ -112,7 +112,7 @@ defined( 'ABSPATH' ) || exit;
         </div>
 
         <!-- TOOLBAR: filtro stato, process batch, pulizia, auto-refresh. -->
-        <div class="nxa-jb-toolbar nxa-toolbar">
+        <div class="nxa-jb-toolbar nxa-toolbar nxa-ux-job-toolbar">
                 <label class="screen-reader-text" for="nxa-jb-status">
                         <?php esc_html_e( 'Filtra lavori per stato', 'nexus-news-ai' ); ?>
                 </label>
@@ -144,8 +144,8 @@ defined( 'ABSPATH' ) || exit;
         </div>
 
         <!-- TABELLA CODA: tbody riempito dallo script inline (GET /jobs?per_page=50). -->
-        <div class="nxa-jb-table-wrap nxa-table-wrap">
-                <table class="widefat striped nxa-jb-table">
+        <div class="nxa-jb-table-wrap nxa-table-wrap nxa-ux-job-table-wrap">
+                <table class="widefat striped nxa-jb-table nxa-ux-job-table">
                         <thead>
                                 <tr>
                                         <th scope="col"><?php esc_html_e( 'ID', 'nexus-news-ai' ); ?></th>

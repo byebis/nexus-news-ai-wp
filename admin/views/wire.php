@@ -51,20 +51,40 @@
  * storico porta lo stato d'errore con bottone Riprova (delega .nxa-retry
  * di admin.js, WE5).
  *
+ * v1.1.20 (UX) — miglioramenti UI della pagina (P1 Nexus Wire) senza nuove
+ * feature: testata chiara (eyebrow + intro, testo italiano senza _()),
+ * form a card con suggerimento e storico più leggibile (card dei run,
+ * esito evidenziato da bordo colorato via :has(), gerarchia
+ * titolo/meta/azioni, responsive su mobile). Stili SOLO in
+ * admin/css/nexus-ux-wire.css (nuove classi prefisso nxa-ux-),
+ * enqueuato sulla pagina nexus-wire. Nessun id, data-* o selettore
+ * consumato da admin.js modificato.
+ *
  * @package Nexus_News_AI
  */
 
 defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap nexus-admin" data-page="wire">
-        <h1><?php esc_html_e( 'Nexus Wire', 'nexus-news-ai' ); ?></h1>
+        <div class="nxa-ux-wire-head">
+                <span class="nxa-ux-wire-eyebrow">
+                        <span class="dashicons dashicons-groups" aria-hidden="true"></span>
+                        Redazione collettiva AI
+                </span>
 
-        <p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva: tre giornalisti propongono i loro angoli su un tema e il capo redattore li unisce in un articolo.', 'nexus-news-ai' ); ?></p>
+                <h1><?php esc_html_e( 'Nexus Wire', 'nexus-news-ai' ); ?></h1>
 
-        <form id="nxa-wire-form" class="nxa-wire-form">
+                <p class="nxa-page-subtitle"><?php esc_html_e( 'La redazione collettiva: tre giornalisti propongono i loro angoli su un tema e il capo redattore li unisce in un articolo.', 'nexus-news-ai' ); ?></p>
+
+                <p class="nxa-ux-wire-intro">Scrivi un tema qui sotto e avvia una redazione: gli esiti di ogni edizione compaiono nello storico, ciascuno col proprio indicatore di stato.</p>
+        </div>
+
+        <form id="nxa-wire-form" class="nxa-wire-form nxa-ux-wire-form">
                 <label class="screen-reader-text" for="nxa-wire-topic"><?php esc_html_e( 'Tema da sviluppare', 'nexus-news-ai' ); ?></label>
                 <input type="text" id="nxa-wire-topic" name="topic" class="nxa-wire-topic regular-text" maxlength="200" autocomplete="off" placeholder="<?php esc_attr_e( "Tema da sviluppare (es. l'impatto dell'AI sulle notizie elettorali)", 'nexus-news-ai' ); ?>" />
                 <button type="submit" class="nxa-btn nxa-btn-primary"><?php esc_html_e( 'Avvia redazione collettiva', 'nexus-news-ai' ); ?></button>
+
+                <p class="nxa-ux-wire-form-hint">Redazione in corso? Ti mostriamo le fasi reali dei tre agenti in tempo reale: impiega 1–3 minuti, non chiudere la pagina.</p>
         </form>
 
         <hr class="nxa-hairline" />
@@ -72,7 +92,7 @@ defined( 'ABSPATH' ) || exit;
         <h2><?php esc_html_e( 'Storico delle redazioni collettive', 'nexus-news-ai' ); ?></h2>
 
         <!-- SKELETON: righe statiche di caricamento, rimpiazzate dal render di admin.js (GET /wire/runs). -->
-        <div id="nxa-wire-runs" class="nxa-wire-runs nxa-table-wrap" aria-live="polite" aria-busy="true">
+        <div id="nxa-wire-runs" class="nxa-wire-runs nxa-table-wrap nxa-ux-wire-list" aria-live="polite" aria-busy="true">
                 <p class="screen-reader-text"><?php esc_html_e( 'Caricamento dello storico…', 'nexus-news-ai' ); ?></p>
                 <div class="nxa-skeleton"></div>
                 <div class="nxa-skeleton"></div>

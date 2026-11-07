@@ -1,0 +1,171 @@
+/**
+ * Nexus News AI — Agenti admin UX (layer di miglioramento, P1).
+ *
+ * Caricato SOLO sulla pagina "Agenti" (hook nexus-news_page_nexus-agents),
+ * quando dipendenza da nexus-admin.css, quindi le regole qui sopra vincono
+ * per ordine sul design system base. Nessuna modifica a nexus-admin.css né a
+ * admin.js: i selettori contrattuali (.nxa-agent-card, .nxa-badge,
+ * .nxa-dot, .nxa-agent-model, …) restano intatti e ricevono qui solo
+ * miglioramenti di stato/allineamento/spaziatura.
+ *
+ * Regole:
+ *   - Tutte le classi NUOVE hanno prefisso nxa-ux-.
+ *   - Solo token var(--nxa-*): tema chiaro e scuro ereditati dagli override
+ *     su body.nexus-theme-dark (nessun colore hardcoded).
+ *   - Mobile-first come il resto del pannello (breakpoint WP 782px).
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Riepilogo in testa alla griglia (.nxa-ux-summary)
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: var(--nxa-space-4) 0 var(--nxa-space-3);
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 14px;
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-hairline);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--nxa-muted);
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-summary-count {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--nxa-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-summary-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Barra "Creazione rapida" — preset a card (.nxa-ux-preset-*)
+ *     I bottoni mantengono classe .nxa-preset-btn e data-preset (contratto
+ *     admin.js T-06); la struttura interna è solo presentazionale.
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="agents"] .nxa-preset-bar {
+  align-items: stretch;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-preset-btn {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--nxa-radius);
+  background: var(--nxa-surface);
+  border-color: var(--nxa-hairline);
+  text-align: left;
+  box-shadow: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-preset-btn:hover,
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-preset-btn:focus-visible {
+  background: var(--nxa-surface);
+  border-color: var(--nxa-accent-line);
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-preset-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--nxa-text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-ux-preset-desc {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--nxa-muted);
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Card agente (.nxa-agent-card) — stato più visibile e gerarchia.
+ *     La card live generata da admin.js non ha stili inline a livello di
+ *     contenitore, quindi qui possiamo intervenire senza !important.
+ * ---------------------------------------------------------------------- */
+.wrap.nexus-admin[data-page="agents"] .nxa-agent-card {
+  position: relative;
+  gap: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wrap.nexus-admin[data-page="agents"] .nxa-agent-card:hover {
+  border-color: var(--nxa-accent-line);
+}
+
+/* Badge di stato: più leggibile (gap interno e respirto) mantenendo le
+ * tinte template già definite per le varianti --success/--warning/--error. */
+.wrap.nexus-admin[data-page="agents"] .nxa-badge {
+  gap: 7px;
+  padding: 4px 12px;
+}
+
+/* Dot di stato (.nxa-dot): nelle card live non aveva dimensioni definite
+ * (solo background inline) — qui gli diamo dimensione e forma visibile. */
+.wrap.nexus-admin[data-page="agents"] .nxa-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+/* Riga azioni (generata da admin.js con flex inline): bottoni WP .button
+ * più comodi, target touch-friendly, senza toccare il layout flex inline. */
+.wrap.nexus-admin[data-page="agents"] .nxa-agent-card .button {
+  min-height: 34px;
+  border-radius: var(--nxa-radius-sm);
+}
+
+/* Input modello nelle card: coerenza tipografica col resto della card. */
+.wrap.nexus-admin[data-page="agents"] .nxa-agent-model {
+  font-size: 0.78rem;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Mobile — target touch per summary e preset.
+ * ---------------------------------------------------------------------- */
+@media (max-width: 782px) {
+  .wrap.nexus-admin[data-page="agents"] .nxa-ux-summary-item {
+    min-height: 40px;
+  }
+}
+
+/* Movimenti ridotti: disattiva il pulse del dot di stato. */
+@media (prefers-reduced-motion: reduce) {
+  .wrap.nexus-admin[data-page="agents"] .nxa-dot {
+    animation: none !important;
+  }
+}
