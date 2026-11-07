@@ -1642,22 +1642,22 @@ class Nexus_Pipeline {
                                 }
                         } elseif ( $rewritten_now ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (modalità semi_autonomous).', $article_id );
-                        } elseif ( empty( $settings['auto_rewrite'] ) ) {
-                                // v1.1.22 (fix/nexus-pipeline-flow): con auto_rewrite disabilitato
-                                // (o riscrittura saltata) un articolo VALUTATO sopra soglia deve
-                                // comunque avanzare a 'pending_approval' (pronto per la coda di
-                                // approvazione) e non restare in 'draft'. Se $ score non è
-                                // interpretabile o è sotto soglia resta in bozza (revisione umana).
-                                if ( $score_parsed && $score >= $threshold ) {
-                                        $status_set = Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
-                                        if ( false !== $status_set ) {
-                                                $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (valutato %.0f/100, auto_rewrite disabilitato).', $article_id, $score );
-                                        } else {
-                                                $summary['messages'][] = sprintf( 'Articolo #%d: errore avanzamento a pending_approval.', $article_id );
-                                        }
+                        } elseif ( 'draft' === $article->status && $score_parsed && $score >= $threshold ) {
+                                // v1.1.22 (fix/nexus-pipeline-promote): promozione definitiva
+                                // draft → pending_approval. Copre ogni caso in cui l'articolo
+                                // è rimasto in bozza pur avendo superato la soglia di qualità
+                                // (auto_approve_score): riscrittura saltata (budget/tempo),
+                                // auto_rewrite disabilitato, o fact-check che prima riportava
+                                // a draft. Sotto soglia o punteggio non interpretabile resta
+                                // in bozza (revisione umana).
+                                $status_set = Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
+                                if ( false !== $status_set ) {
+                                        $summary['messages'][] = sprintf( 'Articolo #%d promosso a pending_approval (valutato %.0f/100).', $article_id, $score );
                                 } else {
-                                        $summary['messages'][] = sprintf( 'Articolo #%d lasciato in stato bozza (auto_rewrite disabilitato).', $article_id );
+                                        $summary['messages'][] = sprintf( 'Articolo #%d: errore avanzamento a pending_approval.', $article_id );
                                 }
+                        } else {
+                                $summary['messages'][] = sprintf( 'Articolo #%d lasciato in stato bozza (punteggio sotto soglia o non interpretabile).', $article_id );
                         }
 
                         // v1.1.4 — CAPO REDATTORE AI: se dopo la riscrittura l'articolo e'
@@ -3494,8 +3494,13 @@ class Nexus_Pipeline {
                 $min_score = isset( $settings['factcheck_min_score'] ) ? (float) $settings['factcheck_min_score'] : 60.0;
 
                 if ( $score < $min_score ) {
-                        // Sotto soglia: l'articolo torna in bozza per revisione umana.
-                        Nexus_DB::update_article( $article_id, array( 'status' => 'draft' ) );
+                        // v1.1.22 (fix/nexus-pipeline-promote): il fact-check NON riporta più
+                        // l'articolo a 'draft'. Prima bloccava la promozione a
+                        // 'pending_approval' (e l'auto-publish) anche per articoli sopra la
+                        // soglia di qualità (auto_approve_score): il flusso si fermava.
+                        // Ora il fact-check sotto soglia resta un segnale INFORMATIVO
+                        // (factcheck_score + log dei problemi) e non altera lo stato;
+                        // la decisione di avanzamento resta alla valutazione di qualità.
 
                         $issues      = array();
                         $issues_text = '';
@@ -3510,7 +3515,7 @@ class Nexus_Pipeline {
                                 $issues_text = 'nessun dettaglio fornito dal modello';
                         }
 
-                        self::log_phase( 0, 'factcheck', sprintf( 'Fact-check %.0f/100 sotto soglia %.0f: articolo #%d in bozza. Problemi: %s', $score, $min_score, $article_id, $issues_text ), 'error' );
+                        self::log_phase( 0, 'factcheck', sprintf( 'Fact-check %.0f/100 sotto soglia %.0f: articolo #%d segnalato (si procede comunque con lo stato corrente). Problemi: %s', $score, $min_score, $article_id, $issues_text ), 'warning' );
                         return;
                 }
 
