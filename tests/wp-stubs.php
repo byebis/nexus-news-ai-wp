@@ -44,6 +44,42 @@ function is_wp_error( $thing ) {
 	return $thing instanceof WP_Error;
 }
 
+/* ============ I18N (polyfill) ============ */
+
+/**
+ * Polyfill di __() per gli harness standalone (fuori da WordPress).
+ *
+ * Dalla v1.1.23 il plugin avvolge alcune stringhe in __() (es. in
+ * class-nexus-tools.php). Gli harness in tests/ girano senza WordPress:
+ * senza questa definizione il quality gate fallisce con "Call to undefined
+ * function __()". Il polyfill restituisce la stringa invariata (nessuna
+ * traduzione): i test verificano il comportamento funzionale, non il testo.
+ */
+if ( ! function_exists( '__' ) ) {
+	function __( $text, $domain = null ) {
+		unset( $domain );
+		return (string) $text;
+	}
+}
+if ( ! function_exists( 'esc_html__' ) ) {
+	function esc_html__( $text, $domain = null ) {
+		unset( $domain );
+		return (string) $text;
+	}
+}
+if ( ! function_exists( 'esc_attr__' ) ) {
+	function esc_attr__( $text, $domain = null ) {
+		unset( $domain );
+		return (string) $text;
+	}
+}
+if ( ! function_exists( '_e' ) ) {
+	function _e( $text, $domain = null ) {
+		unset( $domain );
+		echo (string) $text;
+	}
+}
+
 /* ============ URL ============ */
 
 function wp_parse_url( $url, $component = -1 ) {
