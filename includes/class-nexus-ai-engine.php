@@ -307,7 +307,7 @@ class Nexus_AI_Engine {
                 );
 
                 if ( ! class_exists( 'Nexus_DB' ) ) {
-                        $fail['error'] = 'Il layer dati Nexus_DB non è disponibile: il plugin Nexus News AI non è caricato correttamente.';
+                        $fail['error'] = __( 'Il layer dati Nexus_DB non è disponibile: il plugin Nexus News AI non è caricato correttamente.', 'nexus-news-ai' );
                         return $fail;
                 }
 
@@ -343,7 +343,7 @@ class Nexus_AI_Engine {
                 }
 
                 if ( empty( $normalized ) ) {
-                        $fail['error'] = 'Nessun messaggio valido da inviare al modello AI.';
+                        $fail['error'] = __( 'Nessun messaggio valido da inviare al modello AI.', 'nexus-news-ai' );
                         return $fail;
                 }
 
@@ -440,7 +440,7 @@ class Nexus_AI_Engine {
                 // (es. Ollama locale) puo' ammettere la chiave vuota e la validazione
                 // della chiave e' gia' fatta da Nexus_Providers::resolve().
                 if ( '' === $api_key && ! $explicit_provider ) {
-                        $fail['error'] = 'Chiave API AI non configurata: imposta la chiave API (ai_api_key) nelle impostazioni del plugin Nexus News AI.';
+                        $fail['error'] = __( 'Chiave API AI non configurata: imposta la chiave API (ai_api_key) nelle impostazioni del plugin Nexus News AI.', 'nexus-news-ai' );
                         return $fail;
                 }
 
@@ -518,14 +518,14 @@ class Nexus_AI_Engine {
 
                 $encoded_body = self::build_request_body( $model, $normalized, $temperature, $max_tokens, $json_active );
                 if ( false === $encoded_body ) {
-                        $fail['error'] = 'Impossibile preparare la richiesta per il modello AI (encoding JSON fallito).';
+                        $fail['error'] = __( 'Impossibile preparare la richiesta per il modello AI (encoding JSON fallito).', 'nexus-news-ai' );
                         return $fail;
                 }
 
                 // v1.1.9 — circuit breaker: dopo 3 429 consecutivi sul provider il
                 // motore evita di buttare altre chiamate per 60 secondi (cooldown).
                 if ( self::breaker_open( $provider_id ) ) {
-                        $fail['error'] = 'Rate limit AI attivo per il provider ' . ( '' !== $provider_id ? $provider_id : 'globale' ) . ': riprova tra circa un minuto (cooldown automatico).';
+                        $fail['error'] = __( 'Rate limit AI attivo per il provider ' . ( '' !== $provider_id ? $provider_id : 'globale' ) . ': riprova tra circa un minuto (cooldown automatico).', 'nexus-news-ai' );
                         return $fail;
                 }
 
@@ -788,11 +788,11 @@ class Nexus_AI_Engine {
         private static function base_url_guard_error( $base_url, $provider_id, $settings ) {
                 $parsed = wp_parse_url( (string) $base_url );
                 if ( ! is_array( $parsed ) || empty( $parsed['host'] ) ) {
-                        return 'Base URL del provider AI non valida.';
+                        return __( 'Base URL del provider AI non valida.', 'nexus-news-ai' );
                 }
                 $scheme = strtolower( (string) ( $parsed['scheme'] ?? '' ) );
                 if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
-                        return 'Base URL del provider AI non valida: sono ammessi solo http e https.';
+                        return __( 'Base URL del provider AI non valida: sono ammessi solo http e https.', 'nexus-news-ai' );
                 }
                 if ( 'ollama' === (string) $provider_id ) {
                         return ''; // Ollama locale ammesso di diritto.
@@ -804,7 +804,7 @@ class Nexus_AI_Engine {
                 if ( $allow_private ) {
                         return '';
                 }
-                return 'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l’endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).';
+                return __( 'Endpoint AI su IP privati/localhost non consentito: attiva l’opzione “Consenti endpoint AI su IP privati/localhost” nelle impostazioni se l’endpoint è il tuo server locale (LM Studio, vLLM, Ollama su LAN).', 'nexus-news-ai' );
         }
 
         /**
@@ -1094,11 +1094,11 @@ class Nexus_AI_Engine {
                 if ( 200 !== $code ) {
                         $detail = self::error_detail_from_body( $raw );
                         if ( 401 === $code || 403 === $code ) {
-                                $fail['error'] = 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica ai_api_key nelle impostazioni del plugin.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' );
+                                $fail['error'] = __( 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica ai_api_key nelle impostazioni del plugin.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' ), 'nexus-news-ai' );
                         } elseif ( 429 === $code ) {
-                                $fail['error'] = 'Limite di richieste verso il servizio AI raggiunto (HTTP 429). Riprova più tardi.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' );
+                                $fail['error'] = __( 'Limite di richieste verso il servizio AI raggiunto (HTTP 429). Riprova più tardi.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' ), 'nexus-news-ai' );
                         } else {
-                                $fail['error'] = 'Il servizio AI ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' );
+                                $fail['error'] = __( 'Il servizio AI ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' ), 'nexus-news-ai' );
                         }
                         $fail['http_code'] = $code;
                         return $fail;
@@ -1460,12 +1460,12 @@ class Nexus_AI_Engine {
                 $raw    = (string) wp_remote_retrieve_body( $response );
                 $detail = self::error_detail_from_body( $raw );
                 if ( 401 === $code || 403 === $code ) {
-                        return 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica ai_api_key nelle impostazioni del plugin.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' );
+                        return __( 'Chiave API non valida o non autorizzata (HTTP ' . $code . '). Verifica ai_api_key nelle impostazioni del plugin.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' ), 'nexus-news-ai' );
                 }
                 if ( 429 === $code ) {
-                        return 'Limite di richieste verso il servizio AI raggiunto (HTTP 429). Riprova più tardi.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' );
+                        return __( 'Limite di richieste verso il servizio AI raggiunto (HTTP 429). Riprova più tardi.' . ( '' !== $detail ? ' Dettaglio: ' . $detail : '' ), 'nexus-news-ai' );
                 }
-                return 'Il servizio AI ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' );
+                return __( 'Il servizio AI ha risposto con errore HTTP ' . $code . ( '' !== $detail ? ': ' . $detail : '.' ), 'nexus-news-ai' );
         }
 
         /**

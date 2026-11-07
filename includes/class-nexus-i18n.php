@@ -105,16 +105,17 @@ class Nexus_I18n {
         }
 
         /**
-         * Dizionario IT => EN: base + extra (file dedicato) + filtro.
+         * Carica e consolida i dizionari (base + extra + filtro) in UNA sola
+         * passata, restituendo la coppia `dict`/`patterns`. È l'unico punto
+         * di caricamento: sia dictionary() sia patterns() leggono da qui, così
+         * il "doppio meccanismo" di caricamento (una volta per dictionary, una
+         * per patterns) è ridotto a una via unica senza cambiare l'output.
          *
-         * @return array
+         * @return array{ dict: array, patterns: array }
          */
-        public static function dictionary() {
-                if ( null !== self::$dict ) {
-                        return self::$dict;
-                }
-
-                $dict = array();
+        private static function load_dictionaries() {
+                $dict     = array();
+                $patterns = array();
 
                 $base_file = NEXUS_PLUGIN_DIR . 'includes/class-nexus-i18n-dict.php';
                 if ( file_exists( $base_file ) ) {
@@ -131,9 +132,13 @@ class Nexus_I18n {
                         if ( function_exists( 'nexus_i18n_extra_dict' ) ) {
                                 $dict = array_merge( $dict, (array) nexus_i18n_extra_dict() );
                         }
+                        if ( function_exists( 'nexus_i18n_extra_patterns' ) ) {
+                                $patterns = array_values( (array) nexus_i18n_extra_patterns() );
+                        }
                 }
 
                 $dict = array_merge( $dict, (array) apply_filters( 'nexus_i18n_dictionary', array() ) );
+                $patterns = array_merge( $patterns, (array) apply_filters( 'nexus_i18n_patterns', array() ) );
 
                 // Solo voci valide: chiave e valore stringhe non vuote e diverse.
                 $clean = array();
@@ -143,7 +148,40 @@ class Nexus_I18n {
                         }
                 }
 
-                self::$dict = $clean;
+                // Solo pattern validi: 're' e 'tpl' stringhe non vuote.
+                $clean_patterns = array();
+                foreach ( $patterns as $pattern ) {
+                        if (
+                                is_array( $pattern )
+                                && isset( $pattern['re'], $pattern['tpl'] )
+                                && is_string( $pattern['re'] ) && is_string( $pattern['tpl'] )
+                                && '' !== $pattern['re'] && '' !== $pattern['tpl']
+                        ) {
+                                $clean_patterns[] = array(
+                                        're'  => $pattern['re'],
+                                        'tpl' => $pattern['tpl'],
+                                );
+                        }
+                }
+
+                return array(
+                        'dict'     => $clean,
+                        'patterns' => $clean_patterns,
+                );
+        }
+
+        /**
+         * Dizionario IT => EN: base + extra (file dedicato) + filtro.
+         *
+         * @return array
+         */
+        public static function dictionary() {
+                if ( null !== self::$dict ) {
+                        return self::$dict;
+                }
+
+                $loaded = self::load_dictionaries();
+                self::$dict = $loaded['dict'];
                 return self::$dict;
         }
 
@@ -152,11 +190,8 @@ class Nexus_I18n {
          * toast e frasi composite di admin.js): lista di coppie
          * array( 're' => regex senza delimitatori, 'tpl' => template EN con $1/$2 ).
          *
-         * Stesso schema di dictionary(): i pattern EXTRA (terza mappa di
-         * includes/class-nexus-i18n-dict-extra.php, nexus_i18n_extra_patterns())
-         * vengono caricati se il file esiste e merge con il filtro
-         * 'nexus_i18n_patterns'; vengono mantenuti solo i pattern validi
-         * (chiavi 're' e 'tpl' stringhe non vuote).
+         * Caricati da load_dictionaries(): l'unica via di caricamento
+         * condivisa con dictionary().
          *
          * @return array Lista indicizzata di array( 're' => string, 'tpl' => string ).
          */
@@ -165,35 +200,8 @@ class Nexus_I18n {
                         return self::$patterns;
                 }
 
-                $patterns = array();
-
-                $extra_file = NEXUS_PLUGIN_DIR . 'includes/class-nexus-i18n-dict-extra.php';
-                if ( file_exists( $extra_file ) ) {
-                        require_once $extra_file;
-                        if ( function_exists( 'nexus_i18n_extra_patterns' ) ) {
-                                $patterns = array_values( (array) nexus_i18n_extra_patterns() );
-                        }
-                }
-
-                $patterns = array_merge( $patterns, (array) apply_filters( 'nexus_i18n_patterns', array() ) );
-
-                // Solo pattern validi: 're' e 'tpl' stringhe non vuote.
-                $clean = array();
-                foreach ( $patterns as $pattern ) {
-                        if (
-                                is_array( $pattern )
-                                && isset( $pattern['re'], $pattern['tpl'] )
-                                && is_string( $pattern['re'] ) && is_string( $pattern['tpl'] )
-                                && '' !== $pattern['re'] && '' !== $pattern['tpl']
-                        ) {
-                                $clean[] = array(
-                                        're'  => $pattern['re'],
-                                        'tpl' => $pattern['tpl'],
-                                );
-                        }
-                }
-
-                self::$patterns = $clean;
+                $loaded = self::load_dictionaries();
+                self::$patterns = $loaded['patterns'];
                 return self::$patterns;
         }
 
