@@ -5631,6 +5631,15 @@ class Nexus_Rest {
                         return $result;
                 }
 
+                // v1.1.22 (fix/nexus-pipeline-flow): se la review non è riuscita
+                // (esempio: stato non valido, articolo in bozza) rispondi con un
+                // errore REALE invece di success:true. Prima l'esito array con
+                // 'ok' => false veniva ignorato.
+                if ( ! is_array( $result ) || empty( $result['ok'] ) ) {
+                        $error = ( is_array( $result ) && ! empty( $result['error'] ) ) ? $result['error'] : __( 'Operazione di approvazione non riuscita.', 'nexus-news-ai' );
+                        return self::err( 'nexus_rest_review_failed', (string) $error, 400 );
+                }
+
                 $fresh = Nexus_DB::get_article( $id );
 
                 return rest_ensure_response(
