@@ -351,7 +351,7 @@ class Nexus_Image {
                         'n'      => 1,
                 ) );
                 if ( false === $encoded_body || '' === $encoded_body ) {
-                        return 'encoding JSON della richiesta fallito';
+                        return __( 'encoding JSON della richiesta fallito', 'nexus-news-ai' );
                 }
 
                 $response = wp_remote_post(
@@ -371,19 +371,19 @@ class Nexus_Image {
                 );
 
                 if ( is_wp_error( $response ) ) {
-                        return 'errore di connessione al servizio immagini: ' . $response->get_error_message();
+                        return __( 'errore di connessione al servizio immagini: ', 'nexus-news-ai' ) . $response->get_error_message();
                 }
 
                 $code = (int) wp_remote_retrieve_response_code( $response );
                 $raw  = (string) wp_remote_retrieve_body( $response );
 
                 if ( 200 !== $code ) {
-                        return 'il servizio immagini ha risposto con errore HTTP ' . $code;
+                        return __( 'il servizio immagini ha risposto con errore HTTP ', 'nexus-news-ai' ) . $code;
                 }
 
                 $data = json_decode( $raw, true );
                 if ( ! is_array( $data ) || empty( $data['data'][0] ) || ! is_array( $data['data'][0] ) ) {
-                        return 'risposta del servizio immagini non valida';
+                        return __( 'risposta del servizio immagini non valida', 'nexus-news-ai' );
                 }
 
                 $item   = $data['data'][0];
@@ -393,22 +393,22 @@ class Nexus_Image {
                 if ( ! empty( $item['b64_json'] ) ) {
                         $binary = base64_decode( (string) $item['b64_json'] );
                         if ( false === $binary || '' === $binary ) {
-                                return 'decodifica base64 dell\'immagine generata fallita';
+                                return __( 'decodifica base64 dell\'immagine generata fallita', 'nexus-news-ai' );
                         }
                 } elseif ( ! empty( $item['url'] ) ) {
                         // Caso 2: URL temporaneo da scaricare (es. DALL·E).
                         $downloaded = self::download_image( (string) $item['url'], 30 );
                         if ( ! is_array( $downloaded ) ) {
-                                return 'download immagine generata fallito: ' . (string) $downloaded;
+                                return __( 'download immagine generata fallito: ', 'nexus-news-ai' ) . (string) $downloaded;
                         }
                         $binary = $downloaded['binary'];
                 } else {
-                        return 'il servizio immagini non ha restituito né b64_json né url';
+                        return __( 'il servizio immagini non ha restituito né b64_json né url', 'nexus-news-ai' );
                 }
 
                 $ext = self::detect_image_ext( $binary );
                 if ( '' === $ext ) {
-                        return 'l\'immagine generata non è in un formato riconosciuto';
+                        return __( 'l\'immagine generata non è in un formato riconosciuto', 'nexus-news-ai' );
                 }
 
                 return array(
@@ -455,7 +455,7 @@ class Nexus_Image {
         private static function download_image( $url, $timeout = 20 ) {
                 $url = esc_url_raw( trim( (string) $url ) );
                 if ( '' === $url ) {
-                        return 'URL immagine vuoto o non valido';
+                        return __( 'URL immagine vuoto o non valido', 'nexus-news-ai' );
                 }
 
                 // SSRF guard (v1.1.9): l'URL (dall'articolo o dal provider AI) non deve
@@ -475,7 +475,7 @@ class Nexus_Image {
                 if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'pin_http_resolve' ) ) {
                         $pin = Nexus_Tools::pin_http_resolve( $url, true );
                         if ( is_wp_error( $pin ) ) {
-                                return 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.';
+                                return __( 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.', 'nexus-news-ai' );
                         }
                 }
 
@@ -497,17 +497,17 @@ class Nexus_Image {
                 );
 
                 if ( is_wp_error( $response ) ) {
-                        return 'errore di download: ' . $response->get_error_message();
+                        return __( 'errore di download: ', 'nexus-news-ai' ) . $response->get_error_message();
                 }
 
                 $code = (int) wp_remote_retrieve_response_code( $response );
                 $body = (string) wp_remote_retrieve_body( $response );
 
                 if ( 200 !== $code ) {
-                        return 'download con errore HTTP ' . $code;
+                        return __( 'download con errore HTTP ', 'nexus-news-ai' ) . $code;
                 }
                 if ( '' === $body ) {
-                        return 'download: contenuto vuoto';
+                        return __( 'download: contenuto vuoto', 'nexus-news-ai' );
                 }
 
                 // SVG BAN (v1.1.9): content-type dichiarato o sniffing del contenuto
@@ -522,7 +522,7 @@ class Nexus_Image {
                         return 'il file remoto è un SVG: formato non ammesso per le immagini degli articoli';
                 }
                 if ( '' === $ext ) {
-                        return 'il file scaricato non è un\'immagine riconosciuta';
+                        return __( 'il file scaricato non è un\'immagine riconosciuta', 'nexus-news-ai' );
                 }
 
                 // Validazione del MIME REALE del corpo scaricato (firma strutturale,
@@ -530,7 +530,7 @@ class Nexus_Image {
                 // presentano come PNG ma non sono immagini valide.
                 $mime = self::real_image_mime( $body );
                 if ( '' === $mime ) {
-                        return 'il file scaricato non è un\'immagine valida';
+                        return __( 'il file scaricato non è un\'immagine valida', 'nexus-news-ai' );
                 }
                 if ( false !== strpos( $mime, 'svg' ) ) {
                         return 'il file remoto è un SVG: formato non ammesso per le immagini degli articoli';
@@ -558,7 +558,7 @@ class Nexus_Image {
         private static function guard_url( $url ) {
                 $url = trim( (string) $url );
                 if ( '' === $url || ! function_exists( 'wp_http_validate_url' ) ) {
-                        return 'URL non consentito: sono ammessi solo URL http/https con host valido.';
+                        return __( 'URL non consentito: sono ammessi solo URL http/https con host valido.', 'nexus-news-ai' );
                 }
 
                 $validated = wp_http_validate_url( $url );
@@ -568,18 +568,18 @@ class Nexus_Image {
 
                 $host = (string) ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $validated, PHP_URL_HOST ) : parse_url( $validated, PHP_URL_HOST ) );
                 if ( '' === $host ) {
-                        return 'URL non consentito: host mancante.';
+                        return __( 'URL non consentito: host mancante.', 'nexus-news-ai' );
                 }
 
                 $ips = self::resolve_host_ips( $host );
                 if ( empty( $ips ) ) {
-                        return 'URL non consentito: impossibile risolvere il nome host.';
+                        return __( 'URL non consentito: impossibile risolvere il nome host.', 'nexus-news-ai' );
                 }
 
                 foreach ( $ips as $ip ) {
                         if ( self::is_banned_ip( $ip ) ) {
                                 // Messaggio generico di proposito: non rivelare la topologia interna.
-                                return 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.';
+                                return __( 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.', 'nexus-news-ai' );
                         }
                 }
 
@@ -835,7 +835,7 @@ class Nexus_Image {
 
                 $query = self::pixabay_query( $title, $category );
                 if ( '' === $query ) {
-                        return 'pixabay: nessuna keyword utilizzabile (titolo e categoria vuoti o composti solo da stopwords)';
+                        return __( 'pixabay: nessuna keyword utilizzabile (titolo e categoria vuoti o composti solo da stopwords)', 'nexus-news-ai' );
                 }
 
                 $hits = self::pixabay_search( $query, $key );
@@ -898,7 +898,7 @@ class Nexus_Image {
 
                 $guard = self::guard_url( $endpoint );
                 if ( '' !== $guard ) {
-                        return 'pixabay: ' . $guard;
+                        return __( 'pixabay: ', 'nexus-news-ai' ) . $guard;
                 }
 
                 $response = wp_remote_get( $endpoint, array(
@@ -910,7 +910,7 @@ class Nexus_Image {
                 ) );
 
                 if ( is_wp_error( $response ) ) {
-                        return 'pixabay: errore di connessione all\'API (' . $response->get_error_message() . ')';
+                        return __( 'pixabay: errore di connessione all\'API (' . $response->get_error_message() . ')', 'nexus-news-ai' );
                 }
 
                 $code = (int) wp_remote_retrieve_response_code( $response );
@@ -918,12 +918,12 @@ class Nexus_Image {
 
                 if ( 200 !== $code ) {
                         // 401 chiave invalida, 429 rate limit, ecc.: messaggio onesto, senza corpo.
-                        return 'pixabay: API ha risposto con errore HTTP ' . $code;
+                        return __( 'pixabay: API ha risposto con errore HTTP ', 'nexus-news-ai' ) . $code;
                 }
 
                 $data = json_decode( $raw, true );
                 if ( ! is_array( $data ) || ! isset( $data['hits'] ) || ! is_array( $data['hits'] ) ) {
-                        return 'pixabay: risposta API non valida';
+                        return __( 'pixabay: risposta API non valida', 'nexus-news-ai' );
                 }
 
                 $hits = array();

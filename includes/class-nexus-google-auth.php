@@ -416,7 +416,7 @@ final class Nexus_Google_Auth {
 
                         // Ultimo tentativo: l'holder potrebbe aver appena rilasciato.
                         if ( ! self::acquire_refresh_lock() ) {
-                                return new WP_Error( 'nexus_gsc_oauth', 'Rinnovo del token Google già in corso da un altro processo: riprova tra qualche secondo.' );
+                                return new WP_Error( 'nexus_gsc_oauth', __( 'Rinnovo del token Google già in corso da un altro processo: riprova tra qualche secondo.', 'nexus-news-ai' ) );
                         }
                 }
 

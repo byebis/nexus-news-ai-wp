@@ -2010,7 +2010,7 @@ class Nexus_Pipeline {
                                         'status'      => 'failed',
                                         'finished_at' => $now,
                                         'duration_ms' => $duration,
-                                        'error'       => 'reaper: run fantasma (timeout)',
+                                        'error'       => __( 'reaper: run fantasma (timeout)', 'nexus-news-ai' ),
                                 ),
                                 array(
                                         'id'     => $run_id,

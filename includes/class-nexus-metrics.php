@@ -1389,7 +1389,7 @@ final class Nexus_Metrics {
                 $message = trim( (string) sanitize_text_field( $message ) );
 
                 if ( '' === $message ) {
-                        return 'errore sconosciuto';
+                        return __( 'errore sconosciuto', 'nexus-news-ai' );
                 }
 
                 if ( strlen( $message ) > 120 ) {

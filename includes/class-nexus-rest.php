@@ -4038,7 +4038,7 @@ class Nexus_Rest {
 
                 if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
                         // Stile degli errori del motore (chat() non localizza i suoi errori).
-                        $gen_error = 'Il motore AI (Nexus_AI_Engine) non è disponibile: test di generazione non eseguibile.';
+                        $gen_error = __( 'Il motore AI (Nexus_AI_Engine) non è disponibile: test di generazione non eseguibile.', 'nexus-news-ai' );
                 } else {
                         $gen_opts = array(
                                 'provider'    => $provider,
@@ -4098,7 +4098,7 @@ class Nexus_Rest {
                 Nexus_DB::insert_activity(
                         0,
                         'provider_test',
-                        sprintf( 'Test connessione provider %1$s riuscito: %2$d modelli in %3$d ms.', isset( $entry['label'] ) ? $entry['label'] : $provider, count( $models ), $latency_ms ),
+                        sprintf( __( 'Test connessione provider %1$s riuscito: %2$d modelli in %3$d ms.', 'nexus-news-ai' ), isset( $entry['label'] ) ? $entry['label'] : $provider, count( $models ), $latency_ms ),
                         'success'
                 );
 
@@ -6775,7 +6775,7 @@ class Nexus_Rest {
                                 if ( $inserted > 0 ) {
                                         $agents_inserted++;
                                 } else {
-                                        $errors[] = 'Agente non valido: ' . sanitize_text_field( $name );
+                                        $errors[] = __( 'Agente non valido: ', 'nexus-news-ai' ) . sanitize_text_field( $name );
                                 }
                         }
                 }

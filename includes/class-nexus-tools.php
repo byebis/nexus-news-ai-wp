@@ -197,7 +197,7 @@ class Nexus_Tools {
                 foreach ( $ips as $ip ) {
                         if ( self::is_banned_ip( $ip ) ) {
                                 // Messaggio generico di proposito: non rivelare la topologia interna.
-                                return new WP_Error( 'nexus_url_not_allowed', 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.' );
+                                return new WP_Error( 'nexus_url_not_allowed', __( 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.', 'nexus-news-ai' ) );
                         }
                 }
 
@@ -431,7 +431,7 @@ class Nexus_Tools {
                 $url = trim( (string) $url );
                 if ( '' === $url || ! function_exists( 'wp_parse_url' ) ) {
                         return $fail_closed
-                                ? new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' )
+                                ? new WP_Error( 'nexus_pin_dns_check_failed', __( 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.', 'nexus-news-ai' ) )
                                 : true;
                 }
 
@@ -443,7 +443,7 @@ class Nexus_Tools {
                 }
                 if ( '' === $host ) {
                         return $fail_closed
-                                ? new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' )
+                                ? new WP_Error( 'nexus_pin_dns_check_failed', __( 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.', 'nexus-news-ai' ) )
                                 : true;
                 }
 
@@ -471,12 +471,12 @@ class Nexus_Tools {
                         // Il DNS ora risolve a un IP interno: firma del rebinding dopo la
                         // guard. Messaggio identico a quello della guard (non rivelare la
                         // topologia interna).
-                        return new WP_Error( 'nexus_url_not_allowed', 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.' );
+                        return new WP_Error( 'nexus_url_not_allowed', __( 'URL non consentito: l\'host risolve a un indirizzo privato o riservato.', 'nexus-news-ai' ) );
                 }
 
                 if ( empty( $ips ) ) {
                         if ( $fail_closed ) {
-                                return new WP_Error( 'nexus_pin_dns_check_failed', 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.' );
+                                return new WP_Error( 'nexus_pin_dns_check_failed', __( 'URL non consentito: la verifica di sicurezza del dominio è fallita subito prima della richiesta.', 'nexus-news-ai' ) );
                         }
                         // Endpoint di fiducia non risolvibile dal resolver di PHP in
                         // questo ambiente: la richiesta prosegue senza pin (curl userà
@@ -2185,7 +2185,7 @@ class Nexus_Tools {
                 return array(
                         'ok'        => false,
                         'content'   => '',
-                        'error'     => 'Il motore AI Nexus_AI_Engine non è disponibile: il plugin Nexus News AI non è caricato correttamente.',
+                        'error'     => __( 'Il motore AI Nexus_AI_Engine non è disponibile: il plugin Nexus News AI non è caricato correttamente.', 'nexus-news-ai' ),
                         'simulated' => false,
                 );
         }
@@ -2312,7 +2312,7 @@ class Nexus_Tools {
                                 return array(
                                         'ok'    => false,
                                         'data'  => null,
-                                        'error' => 'La lettura di pagine web non è attiva nelle impostazioni del plugin.',
+                                        'error' => __( 'La lettura di pagine web non è attiva nelle impostazioni del plugin.', 'nexus-news-ai' ),
                                 );
                         }
                         $url       = isset( $args['url'] ) ? (string) $args['url'] : '';
