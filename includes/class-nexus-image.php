@@ -351,7 +351,7 @@ class Nexus_Image {
                         'n'      => 1,
                 ) );
                 if ( false === $encoded_body || '' === $encoded_body ) {
-                        return 'encoding JSON della richiesta fallito';
+                        return __( 'encoding JSON della richiesta fallito', 'nexus-news-ai' );
                 }
 
                 $response = wp_remote_post(
@@ -371,19 +371,19 @@ class Nexus_Image {
                 );
 
                 if ( is_wp_error( $response ) ) {
-                        return 'errore di connessione al servizio immagini: ' . $response->get_error_message();
+                        return __( 'errore di connessione al servizio immagini: ', 'nexus-news-ai' ) . $response->get_error_message();
                 }
 
                 $code = (int) wp_remote_retrieve_response_code( $response );
                 $raw  = (string) wp_remote_retrieve_body( $response );
 
                 if ( 200 !== $code ) {
-                        return 'il servizio immagini ha risposto con errore HTTP ' . $code;
+                        return __( 'il servizio immagini ha risposto con errore HTTP ', 'nexus-news-ai' ) . $code;
                 }
 
                 $data = json_decode( $raw, true );
                 if ( ! is_array( $data ) || empty( $data['data'][0] ) || ! is_array( $data['data'][0] ) ) {
-                        return 'risposta del servizio immagini non valida';
+                        return __( 'risposta del servizio immagini non valida', 'nexus-news-ai' );
                 }
 
                 $item   = $data['data'][0];
@@ -393,13 +393,13 @@ class Nexus_Image {
                 if ( ! empty( $item['b64_json'] ) ) {
                         $binary = base64_decode( (string) $item['b64_json'] );
                         if ( false === $binary || '' === $binary ) {
-                                return 'decodifica base64 dell\'immagine generata fallita';
+                                return __( 'decodifica base64 dell\'immagine generata fallita', 'nexus-news-ai' );
                         }
                 } elseif ( ! empty( $item['url'] ) ) {
                         // Caso 2: URL temporaneo da scaricare (es. DALL·E).
                         $downloaded = self::download_image( (string) $item['url'], 30 );
                         if ( ! is_array( $downloaded ) ) {
-                                return 'download immagine generata fallito: ' . (string) $downloaded;
+                                return __( 'download immagine generata fallito: ', 'nexus-news-ai' ) . (string) $downloaded;
                         }
                         $binary = $downloaded['binary'];
                 } else {

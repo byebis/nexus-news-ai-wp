@@ -302,11 +302,11 @@ final class Nexus_Evergreen {
                         $source = trim( wp_strip_all_tags( (string) $row['content'] ) );
                 }
                 if ( '' === $source ) {
-                        return 'contenuto di partenza vuoto.';
+                        return __( 'contenuto di partenza vuoto.', 'nexus-news-ai' );
                 }
 
                 if ( ! class_exists( 'Nexus_AI_Engine' ) || ! method_exists( 'Nexus_AI_Engine', 'chat' ) ) {
-                        return 'motore AI non disponibile.';
+                        return __( 'motore AI non disponibile.', 'nexus-news-ai' );
                 }
 
                 $agent_id = isset( $row['agent_id'] ) ? absint( $row['agent_id'] ) : 0;

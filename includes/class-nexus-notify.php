@@ -777,7 +777,7 @@ final class Nexus_Notify {
                 $message = trim( (string) sanitize_text_field( $message ) );
 
                 if ( '' === $message ) {
-                        return 'errore sconosciuto';
+                        return __( 'errore sconosciuto', 'nexus-news-ai' );
                 }
 
                 $cap = max( 20, (int) $cap );
