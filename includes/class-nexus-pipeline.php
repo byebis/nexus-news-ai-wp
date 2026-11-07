@@ -1531,12 +1531,14 @@ class Nexus_Pipeline {
                                         );
                                         $article = Nexus_DB::get_article( $article_id );
 
-                                        // Fact-check sotto soglia (v1.0.3): l'articolo è tornato in bozza,
-                                        // nessuna approvazione/pubblicazione automatica in questo tick.
-                                        if ( $article && 'draft' === $article->status ) {
-                                                $summary['messages'][] = sprintf( 'Articolo #%d rimesso in bozza dal fact-check: serve revisione umana.', $article_id );
-                                                continue;
-                                        }
+                                        // v1.1.25 (fix/nexus-threshold-final): RIMOSSO il 'continue' che
+                                        // bloccava la promozione. Era un residuo del vecchio comportamento
+                                        // in cui il fact-check rimetteva a 'draft' gli articoli sotto la sua
+                                        // soglia. Dalla v1.1.22 il fact-check NON altera più lo stato, e la
+                                        // riscrittura lascia l'articolo in 'draft' (la promozione avviene
+                                        // solo dopo, in base alla soglia auto_approve_score). Questo
+                                        // 'continue' era quindi SEMPRE vero dopo una rewrite riuscita e
+                                        // saltava l'intera catena di promozione a pending_approval.
                                 } else {
                                         $summary['messages'][] = sprintf( 'Riscrittura articolo #%d fallita: %s', $article_id, $rewriting['error'] );
                                         // v1.1.16 (WD1): fase fallita → run 'partial' + ultimo errore.
