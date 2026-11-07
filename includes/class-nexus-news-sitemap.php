@@ -136,6 +136,9 @@ final class Nexus_News_Sitemap {
          */
         const CACHE_KEY_IMAGES = 'nexus_image_sitemap_cache';
 
+        /** Chiave transient per la cache XML della news sitemap (v1.1.21). */
+        const CACHE_KEY_NEWS = 'nexus_news_sitemap_cache';
+
         /**
          * Bootstrap modulo (self-registrato su nexus_modules_init a fondo file).
          *
@@ -247,6 +250,23 @@ final class Nexus_News_Sitemap {
                 header( 'Content-Type: application/xml; charset=UTF-8' );
                 nocache_headers();
 
+                // v1.1.21 (perf/nexus-sitemap): cache dell'output XML in un transient
+                // (stesso pattern della sitemap immagini, TTL/filtro condivisi):
+                // il costo di rigenerazione (query + rendering) scade a una volta
+                // per TTL. Invalidazione su pubblicazione/save_post.
+                $ttl = self::cache_ttl();
+
+                if ( $ttl > 0 ) {
+                        $cached = get_transient( self::CACHE_KEY_NEWS );
+
+                        if ( is_string( $cached ) && '' !== $cached ) {
+                                echo $cached;
+                                exit;
+                        }
+                }
+
+                ob_start();
+
                 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
                 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">' . "\n";
 
@@ -255,6 +275,14 @@ final class Nexus_News_Sitemap {
                 }
 
                 echo '</urlset>' . "\n";
+
+                $xml = (string) ob_get_clean();
+
+                if ( $ttl > 0 ) {
+                        set_transient( self::CACHE_KEY_NEWS, $xml, $ttl );
+                }
+
+                echo $xml;
                 exit;
         }
 
@@ -347,6 +375,7 @@ final class Nexus_News_Sitemap {
          */
         public static function flush_xml_cache() {
                 delete_transient( self::CACHE_KEY_IMAGES );
+                delete_transient( self::CACHE_KEY_NEWS );
         }
 
         /**
@@ -513,31 +542,29 @@ final class Nexus_News_Sitemap {
          * @return WP_Post[]
          */
         private static function query_recent_posts() {
+                global $wpdb;
+
                 $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
                         ? Nexus_Native::query_post_types()
                         : array( 'post', 'nexus_article' );
+                $types = array_values( array_filter( array_map( 'sanitize_key', (array) $types ) ) );
+                if ( empty( $types ) ) {
+                        $types = array( 'post' );
+                }
+                $placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
+                $since        = gmdate( 'Y-m-d H:i:s', time() - 48 * HOUR_IN_SECONDS );
 
-                $query = new WP_Query(
-                        array(
-                                'post_type'              => $types,
-                                'post_status'            => 'publish',
-                                'posts_per_page'         => self::MAX_URLS,
-                                'orderby'                => 'date',
-                                'order'                  => 'DESC',
-                                'ignore_sticky_posts'    => true,
-                                'no_found_rows'          => true,
-                                'update_post_meta_cache' => false,
-                                'update_post_term_cache' => false,
-                                'date_query'             => array(
-                                        array(
-                                                'column' => 'post_date_gmt',
-                                                'after'  => gmdate( 'Y-m-d H:i:s', time() - 48 * HOUR_IN_SECONDS ),
-                                        ),
-                                ),
-                        )
+                // v1.1.21 (perf/nexus-sitemap): query diretta che seleziona SOLO
+                // i campi necessari alla news sitemap (ID, titolo, date) invece di
+                // caricare fino a 1000 WP_Post completi (post_content LONGTEXT
+                // incluso) via WP_Query.
+                $sql  = $wpdb->prepare(
+                        "SELECT ID, post_title, post_date, post_date_gmt FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ({$placeholders}) AND post_date_gmt >= %s ORDER BY post_date DESC LIMIT %d",
+                        array_merge( $types, array( $since, self::MAX_URLS ) )
                 );
+                $rows = $wpdb->get_results( $sql );
 
-                return $query->posts;
+                return is_array( $rows ) ? $rows : array();
         }
 
         /**
@@ -551,25 +578,27 @@ final class Nexus_News_Sitemap {
          * @return WP_Post[]
          */
         private static function query_posts_for_images() {
+                global $wpdb;
+
                 $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
                         ? Nexus_Native::query_post_types()
                         : array( 'post', 'nexus_article' );
+                $types = array_values( array_filter( array_map( 'sanitize_key', (array) $types ) ) );
+                if ( empty( $types ) ) {
+                        $types = array( 'post' );
+                }
+                $placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
 
-                $query = new WP_Query(
-                        array(
-                                'post_type'              => $types,
-                                'post_status'            => 'publish',
-                                'posts_per_page'         => self::MAX_POSTS_IMAGES,
-                                'orderby'                => 'date',
-                                'order'                  => 'DESC',
-                                'ignore_sticky_posts'    => true,
-                                'no_found_rows'          => true,
-                                'update_post_meta_cache' => true,
-                                'update_post_term_cache' => false,
-                        )
+                // v1.1.21 (perf/nexus-sitemap): query diretta che seleziona SOLO
+                // ID e post_content (serve a estrarre le classi wp-image-{ID}); gli
+                // altri campi gordi (guid, post_excerpt, ecc.) non vengono caricati.
+                $sql  = $wpdb->prepare(
+                        "SELECT ID, post_content FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ({$placeholders}) ORDER BY post_date DESC LIMIT %d",
+                        array_merge( $types, array( self::MAX_POSTS_IMAGES ) )
                 );
+                $rows = $wpdb->get_results( $sql );
 
-                return $query->posts;
+                return is_array( $rows ) ? $rows : array();
         }
 
         /**
@@ -597,12 +626,13 @@ final class Nexus_News_Sitemap {
                 $ids = array();
 
                 foreach ( (array) $posts as $post ) {
-                        if ( ! $post instanceof WP_Post ) {
+                        if ( ! isset( $post->ID ) ) {
                                 continue;
                         }
 
-                        // Featured image: _thumbnail_id è già in cache meta (query post).
-                        $thumb_id = (int) get_post_thumbnail_id( $post );
+                        // Featured image: lettura diretta della meta _thumbnail_id
+                        // (query dei campi snella: la cache meta di WP non è primata).
+                        $thumb_id = (int) get_post_meta( (int) $post->ID, '_thumbnail_id', true );
 
                         if ( $thumb_id > 0 ) {
                                 $ids[ $thumb_id ] = $thumb_id;
@@ -665,7 +695,7 @@ final class Nexus_News_Sitemap {
                 $seen   = array();
 
                 // 1) Featured image (attachment del sito, metadati reali).
-                $thumb_id = (int) get_post_thumbnail_id( $post );
+                $thumb_id = (int) get_post_meta( (int) $post->ID, '_thumbnail_id', true );
                 if ( $thumb_id > 0 ) {
                         $entry = self::attachment_image_entry( $thumb_id );
 
@@ -751,7 +781,8 @@ final class Nexus_News_Sitemap {
          * @return void
          */
         private static function render_image_url_entry( $post, $images ) {
-                $permalink = get_permalink( $post );
+                // $post è una riga stdClass da query_posts_for_images(): permalink per ID.
+                $permalink = get_permalink( (int) $post->ID );
 
                 if ( ! is_string( $permalink ) || '' === $permalink || empty( $images ) ) {
                         return;
@@ -814,7 +845,8 @@ final class Nexus_News_Sitemap {
          * @return void
          */
         private static function render_url_entry( $post ) {
-                $permalink = get_permalink( $post );
+                // $post è una riga stdClass da query_recent_posts(): permalink per ID.
+                $permalink = get_permalink( (int) $post->ID );
 
                 if ( ! is_string( $permalink ) || '' === $permalink ) {
                         return;

@@ -366,25 +366,27 @@ final class Nexus_Video_Sitemap {
          * @return WP_Post[]
          */
         private static function query_published_posts() {
+                global $wpdb;
+
                 $types = class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'query_post_types' )
                         ? Nexus_Native::query_post_types()
                         : array( 'post', 'nexus_article' );
+                $types = array_values( array_filter( array_map( 'sanitize_key', (array) $types ) ) );
+                if ( empty( $types ) ) {
+                        $types = array( 'post' );
+                }
+                $placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
 
-                $query = new WP_Query(
-                        array(
-                                'post_type'              => $types,
-                                'post_status'            => 'publish',
-                                'posts_per_page'         => self::MAX_POSTS,
-                                'orderby'                => 'date',
-                                'order'                  => 'DESC',
-                                'ignore_sticky_posts'    => true,
-                                'no_found_rows'          => true,
-                                'update_post_meta_cache' => false,
-                                'update_post_term_cache' => false,
-                        )
+                // v1.1.21 (perf/nexus-sitemap): query diretta che seleziona SOLO
+                // i campi necessari (ID, titolo, contenuto per gli embed, excerpt,
+                // date) invece di caricare fino a 1000 WP_Post completi.
+                $sql  = $wpdb->prepare(
+                        "SELECT ID, post_title, post_content, post_excerpt, post_date, post_date_gmt FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ({$placeholders}) ORDER BY post_date DESC LIMIT %d",
+                        array_merge( $types, array( self::MAX_POSTS ) )
                 );
+                $rows = $wpdb->get_results( $sql );
 
-                return $query->posts;
+                return is_array( $rows ) ? $rows : array();
         }
 
         /**
@@ -396,7 +398,8 @@ final class Nexus_Video_Sitemap {
          * @return void
          */
         private static function render_url_entry( $post ) {
-                $permalink = get_permalink( $post );
+                // $post è una riga stdClass da query_published_posts(): permalink per ID.
+                $permalink = get_permalink( (int) $post->ID );
 
                 if ( ! is_string( $permalink ) || '' === $permalink ) {
                         return;
@@ -518,7 +521,7 @@ final class Nexus_Video_Sitemap {
          * @return string
          */
         private static function video_description( $post ) {
-                $desc = self::xml_text( (string) get_post_field( 'post_excerpt', $post->ID ) );
+                $desc = self::xml_text( (string) ( $post->post_excerpt ?? '' ) );
 
                 if ( '' === $desc ) {
                         $desc = self::clip( self::xml_text( (string) $post->post_content ), 300 );
