@@ -932,7 +932,11 @@ class Nexus_Pipeline {
                                 'subtitle'  => $subtitle,
                                 'content'   => $content,
                                 'summary'   => $summary,
-                                'status'    => 'pending_approval',
+                                // v1.1.23 (fix/nexus-threshold-bom): NON impostare più
+                                // 'pending_approval' incondizionatamente. La promozione
+                                // draft→pending_approval è decisa in run_full_agent() e
+                                // SOLO per articoli sopra la soglia auto_approve_score.
+                                // Qui lo stato resta invariato (tipicamente 'draft').
                                 'read_time' => $read_time,
                         )
                 );
@@ -940,7 +944,7 @@ class Nexus_Pipeline {
                 self::log_phase(
                         (int) $article->agent_id,
                         'rewriting',
-                        sprintf( 'Articolo #%d riscritto (%d parole, %d min di lettura) e messo in coda di approvazione.', $article_id, self::word_count( $content ), $read_time ),
+                        sprintf( 'Articolo #%d riscritto (%d parole, %d min di lettura).', $article_id, self::word_count( $content ), $read_time ),
                         'success'
                 );
 
@@ -1572,6 +1576,12 @@ class Nexus_Pipeline {
                         $chief_gate = $is_full_auto && self::awaiting_chief_review( $article );
 
                         if ( $rewritten_now && $is_full_auto && $score_parsed && $score >= $threshold && ! $chief_gate ) {
+                                // v1.1.23 (fix/nexus-threshold-bom): la rewrite non promuove più
+                                // a pending_approval; in fully_autonomous portiamo l'articolo
+                                // a pending_approval prima della approve (che lo richiede).
+                                if ( 'draft' === $article->status ) {
+                                        Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
+                                }
                                 $approval = self::approve(
                                         $article_id,
                                         sprintf( 'Approvazione automatica: punteggio %.0f >= %d (modalità fully autonomous).', $score, $threshold )
@@ -1640,8 +1650,16 @@ class Nexus_Pipeline {
                                         $run['phase_error'] = true;
                                         $run['error']       = self::clip( (string) $publication['error'], 300 );
                                 }
-                        } elseif ( $rewritten_now ) {
-                                $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (modalità semi_autonomous).', $article_id );
+                        } elseif ( $rewritten_now && 'draft' === $article->status && $score_parsed && $score >= $threshold ) {
+                                // v1.1.23 (fix/nexus-threshold-bom): semi_autonomous con
+                                // riscrittura avvenuta e articolo sopra soglia → promozione
+                                // a pending_approval (la rewrite non promuove più da sola).
+                                $status_set = Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
+                                if ( false !== $status_set ) {
+                                        $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (valutato %.0f/100, modalità semi_autonomous).', $article_id, $score );
+                                } else {
+                                        $summary['messages'][] = sprintf( 'Articolo #%d: errore avanzamento a pending_approval.', $article_id );
+                                }
                         } elseif ( 'draft' === $article->status && $score_parsed && $score >= $threshold ) {
                                 // v1.1.22 (fix/nexus-pipeline-promote): promozione definitiva
                                 // draft → pending_approval. Copre ogni caso in cui l'articolo
@@ -2368,8 +2386,18 @@ class Nexus_Pipeline {
                                 if ( $auto_rewrite ) {
                                         $rewriting = self::rewrite( $article_id );
                                         if ( ! empty( $rewriting['ok'] ) ) {
-                                                $out['resumed']++;
-                                                $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto e messo in coda di approvazione.', $article_id );
+                                                // v1.1.23 (fix/nexus-threshold-bom): promozione condizionata
+                                                // anche nel resume — solo sopra la soglia auto_approve_score.
+                                                $fresh = Nexus_DB::get_article( $article_id );
+                                                $threshold = absint( isset( $settings['auto_approve_score'] ) ? $settings['auto_approve_score'] : 75 );
+                                                if ( $fresh && (float) $fresh->quality_score >= $threshold ) {
+                                                        Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
+                                                        $out['resumed']++;
+                                                        $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto e messo in coda di approvazione (score %.0f >= %d).', $article_id, (float) $fresh->quality_score, $threshold );
+                                                } else {
+                                                        $out['resumed']++;
+                                                        $out['messages'][] = sprintf( 'Articolo #%d ripreso dopo stallo: riscritto (score sotto soglia, resta in bozza).', $article_id );
+                                                }
                                         } else {
                                                 // Resta in bozza: il prossimo tick tenterà di nuovo il resume.
                                                 $out['messages'][] = sprintf( 'Articolo #%d: riscrittura fallita nel resume: %s', $article_id, (string) $rewriting['error'] );
