@@ -1,0 +1,187 @@
+/**
+ * Nexus UX — Vista admin "Nexus Wire".
+ *
+ * Miglioramenti UI (P1 Nexus Wire) per la pagina admin/views/wire.php,
+ * senza aggiungere feature.
+ *
+ * Regole:
+ * - Le NUOVE classi introdotte da questa vista hanno prefisso .nxa-ux-.
+ * - Ogni regola è scoped su .nexus-admin[data-page="wire"] per non
+ *   contaminare le altre viste admin.
+ * - Si usano SOLO token tematici var(--nxa-*) (admin/css/nexus-admin.css).
+ * - Nessun selettore contrattuale consumato da admin.js viene modificato:
+ *   si aggiunge stile a elementi già presenti (.nxa-wire-run, badge, …).
+ * - Il file è enqueuato solo sulla pagina nexus-wire (class-nexus-admin.php).
+ *
+ * @package Nexus_News_AI
+ */
+
+/* ==================================================================
+ * Intestazione di pagina
+ * ================================================================== */
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-head {
+        margin-bottom: var(--nxa-space-5);
+}
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--nxa-space-2);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--nxa-accent-1);
+        background: var(--nxa-accent-1-soft);
+        border: 1px solid var(--nxa-accent-line);
+        border-radius: 999px;
+        padding: 4px 12px;
+        margin-bottom: var(--nxa-space-3);
+}
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-eyebrow .dashicons {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+}
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-intro {
+        max-width: 64ch;
+        margin: var(--nxa-space-3) 0 0;
+        color: var(--nxa-muted);
+        font-size: 13.5px;
+        line-height: 1.6;
+}
+
+/* ==================================================================
+ * Form "launcher" della redazione
+ * ================================================================== */
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--nxa-space-3);
+        background: var(--nxa-surface);
+        border: 1px solid var(--nxa-border);
+        border-radius: var(--nxa-radius-lg);
+        padding: var(--nxa-space-4);
+}
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-form #nxa-wire-topic {
+        flex: 1 1 280px;
+        min-width: 0;
+}
+
+.nexus-admin[data-page="wire"] .nxa-ux-wire-form-hint {
+        flex-basis: 100%;
+        margin: 0;
+        color: var(--nxa-muted);
+        font-size: 12.5px;
+        line-height: 1.5;
+}
+
+/* Suggerimenti argomenti (chip) e box fasi in tempo reale: occupano tutta
+ * la larghezza della card-form. */
+.nexus-admin[data-page="wire"] #nxa-wire-ideas {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--nxa-space-2);
+}
+
+.nexus-admin[data-page="wire"] #nxa-wire-ideas .nxa-idea {
+        border: 1px solid var(--nxa-border);
+        border-radius: 999px;
+        background: var(--nxa-surface-2);
+        color: var(--nxa-text-body);
+        font-size: 12.5px;
+        line-height: 1;
+        padding: 7px 12px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.nexus-admin[data-page="wire"] #nxa-wire-ideas .nxa-idea:hover {
+        border-color: var(--nxa-accent-line);
+        background: var(--nxa-accent-1-soft);
+        color: var(--nxa-accent-1);
+}
+
+.nexus-admin[data-page="wire"] .nxa-wire-status {
+        flex-basis: 100%;
+        margin-top: 0;
+}
+
+/* ==================================================================
+ * Storico — card dei run (DOM generato da admin.js, non modificato)
+ * ================================================================== */
+
+.nexus-admin[data-page="wire"] .nxa-wire-run {
+        padding: var(--nxa-space-4);
+        border-radius: var(--nxa-radius-lg);
+        background: var(--nxa-surface);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nexus-admin[data-page="wire"] .nxa-wire-run:hover {
+        border-color: var(--nxa-accent-line);
+}
+
+/* Gerarchia informativa: titolo più leggibile, meta attenuata. */
+.nexus-admin[data-page="wire"] .nxa-wire-run strong {
+        font-size: 14.5px;
+        line-height: 1.4;
+        color: var(--nxa-heading);
+}
+
+.nexus-admin[data-page="wire"] .nxa-wire-run > div:first-child > span {
+        font-size: 12px;
+        color: var(--nxa-muted);
+}
+
+/* Link "Vedi articolo": più riconoscibile. */
+.nexus-admin[data-page="wire"] .nxa-wire-article {
+        font-weight: 600;
+        color: var(--nxa-link);
+}
+
+/* Indicatore di esito: bordo sinistro colorato in base allo stato del badge
+ * (successo / errore / parziale-in corso). :has() è supportato nei browser
+ * moderni; la maggior specificità prevale sullo stile inline di admin.js. */
+.nexus-admin[data-page="wire"] .nxa-wire-run:has(.nxa-badge--success) {
+        border-left: 4px solid var(--nxa-ok-text);
+}
+
+.nexus-admin[data-page="wire"] .nxa-wire-run:has(.nxa-badge--error) {
+        border-left: 4px solid var(--nxa-err-text);
+}
+
+.nexus-admin[data-page="wire"] .nxa-wire-run:has(.nxa-badge--warning) {
+        border-left: 4px solid var(--nxa-warn-text);
+}
+
+/* ==================================================================
+ * Responsive (mobile): le card si impilano verticalmente.
+ * ================================================================== */
+
+@media (max-width: 600px) {
+        .nexus-admin[data-page="wire"] .nxa-wire-run {
+                align-items: stretch;
+                flex-direction: column;
+        }
+
+        .nexus-admin[data-page="wire"] .nxa-wire-run > div:last-child {
+                justify-content: space-between;
+                width: 100%;
+        }
+
+        .nexus-admin[data-page="wire"] .nxa-ux-wire-form {
+                padding: var(--nxa-space-3);
+        }
+
+        .nexus-admin[data-page="wire"] .nxa-ux-wire-form .nxa-btn {
+                width: 100%;
+        }
+}

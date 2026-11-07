@@ -1,0 +1,196 @@
+/**
+ * Nexus News AI — Vista "Coda Lavori" (admin/views/jobs.php), pass UI "ux".
+ *
+ * Enqueue condizionato SOLO sulla pagina jobs in admin/class-nexus-admin.php
+ * (enqueue_assets, hook "nexus-jobs") con NEXUS_VERSION, caricato DOPO
+ * nexus-admin-css e nexus-jobs-css (i token var(--nxa-*) vivono in
+ * nexus-admin.css). Le righe della tabella sono generate dallo script inline di
+ * jobs.php (contratto DOM nel docblock): qui si stilizzano i selettori
+ * contrattuali esistenti (.nxa-jb-table, .nxa-jb-badge--*, .nxa-jb-act, ...)
+ * SENZA modificare id/classi/data-attr consumati dal JS. Le classi NUOVE
+ * introdotte portano il prefisso nxa-ux- e agiscono sul markup statico.
+ *
+ * Solo token var(--nxa-*): tema chiaro default, scuro ereditato dagli override
+ * su body.nexus-theme-dark.
+ *
+ * @package Nexus_News_AI
+ */
+
+/* ---------------------------------------------------------------------------
+ * Toolbar pagina (markup statico jobs.php).
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-toolbar {
+  flex-wrap: wrap;
+  row-gap: var(--nxa-space-2);
+}
+.nxa-ux-job-toolbar select#nxa-jb-status {
+  min-width: 178px;
+  max-width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--nxa-input-line);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-input-bg);
+  color: var(--nxa-text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Stat-card: leggibilità dei numeri (già temate in nexus-jobs.css).
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-cards {
+  row-gap: var(--nxa-space-4);
+}
+
+/* ---------------------------------------------------------------------------
+ * Wrapper tabella: superficie con hairline che delimita la zona dati su ogni
+ * tema (il wrapper contrattuale .nxa-jb-table-wrap resta il target scroll).
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-table-wrap {
+  background: var(--nxa-surface);
+  border: 1px solid var(--nxa-hairline);
+  border-radius: var(--nxa-radius);
+}
+
+.nxa-ux-job-table {
+  border: 0;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+.nxa-ux-job-table thead th {
+  padding: 10px 12px;
+  background: var(--nxa-surface-2);
+  color: var(--nxa-muted);
+  border-bottom: 1px solid var(--nxa-border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nxa-ux-job-table tbody td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  color: var(--nxa-text-body);
+}
+.nxa-ux-job-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+.nxa-ux-job-table tbody tr:hover {
+  background: var(--nxa-row-hover-bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * Badge stato: forma uniforme con puntino semantico (tinte già via token).
+ * ------------------------------------------------------------------------- */
+.nxa-jb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.nxa-jb-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Colonna "Lavoro": hook (code) e argomenti leggibili.
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-table td code {
+  padding: 2px 6px;
+  border: 1px solid var(--nxa-border);
+  border-radius: 6px;
+  background: var(--nxa-surface-2);
+  color: var(--nxa-code-text);
+  overflow-wrap: anywhere;
+}
+.nxa-jb-args {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--nxa-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------------
+ * Errore di riga: leggibile, con titanio nel title.
+ * ------------------------------------------------------------------------- */
+.nxa-jb-err {
+  display: inline-block;
+  max-width: 260px;
+  padding: 2px 8px;
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-err-bg);
+  color: var(--nxa-err-text);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------------------
+ * Azioni riga (retry / cancel): target touch comodo, tinte di stato.
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-table .nxa-jb-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border-radius: var(--nxa-radius-sm);
+  font-weight: 600;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+.nxa-ux-job-table .nxa-jb-act--cancel {
+  color: var(--nxa-err-text);
+  border-color: var(--nxa-err-line);
+  background: var(--nxa-err-bg);
+}
+.nxa-ux-job-table .nxa-jb-act--cancel:hover {
+  color: var(--nxa-err-text-strong);
+  background: var(--nxa-err-bg-strong);
+}
+
+/* ---------------------------------------------------------------------------
+ * Riga messaggio / empty state.
+ * ------------------------------------------------------------------------- */
+.nxa-ux-job-table .nxa-jb-message td,
+.nxa-ux-job-table .nxa-jb-empty td {
+  padding: var(--nxa-space-5) 12px;
+  text-align: center;
+  color: var(--nxa-muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile: toolbar in colonna, controlli full-width.
+ * ------------------------------------------------------------------------- */
+@media (max-width: 782px) {
+  .nxa-ux-job-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .nxa-ux-job-toolbar select#nxa-jb-status {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Movimenti ridotti. */
+@media (prefers-reduced-motion: reduce) {
+  .nxa-ux-job-table tbody tr,
+  .nxa-ux-job-table .nxa-jb-act {
+    transition: none;
+  }
+}

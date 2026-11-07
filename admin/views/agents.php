@@ -229,6 +229,18 @@ foreach ( $nxa_agents as $nxa_agent ) {
 }
 $nxa_categories = array_keys( $nxa_categories );
 
+/* Riepilogo statico in testa alla griglia (P1): conteggi server-side dalla
+ * stessa sorgente del fallback noscript. La griglia live è generata da
+ * admin.js via REST e NON è toccata: questo blocco sta FUORI da
+ * #nxa-agents-grid (che admin.js svuota a ogni render). */
+$nxa_ux_total  = count( $nxa_agents );
+$nxa_ux_active = 0;
+foreach ( $nxa_agents as $nxa_agent ) {
+        if ( isset( $nxa_agent->status ) && 'active' === (string) $nxa_agent->status ) {
+                $nxa_ux_active++;
+        }
+}
+
 /* Nexus_Utils::status_label_it() copre gli stati ARTICOLO: per gli STATI
  * AGENTE si usa questa mappa (coerente con STATUS_META di admin.js). */
 $nxa_agent_status_labels = array(
@@ -261,17 +273,31 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
 
         <!-- Creazione rapida (v1.1.4): preset agenti in un click. I bottoni sono
              consumati da admin.js (T-06): click → prefill del form agente
-             e apertura del modal editor, poi invio POST /agents standard. -->
+             e apertura del modal editor, poi invio POST /agents standard. La
+             struttura interna (label + descrizione ruolo) è SOLO presentazionale:
+             admin.js legge esclusivamente data-preset e la classe .nxa-preset-btn,
+             quindi le classi contrattuali restano intatte; le nuove classi CSS
+             hanno prefisso nxa-ux-. Descrizioni riusate da AGENT_PRESETS (admin.js). -->
+        <?php
+        $nxa_ux_presets = array(
+                'tech'     => array( 'Tecnologia', 'Segue tecnologia, intelligenza artificiale e innovazione.' ),
+                'sport'    => array( 'Sport', 'Copre calcio, campionati e sport internazionali con risultati, statistiche e contesto.' ),
+                'economia' => array( 'Economia', 'Segue mercati, imprese e finanze personali con dati verificabili e confronti nel tempo.' ),
+                'politica' => array( 'Politica', 'Copre politica italiana ed estera ricostruendo decisioni, attori e conseguenze.' ),
+                'scienza'  => array( 'Scienza', 'Racconta ricerca, spazio, ambiente e scoperte scientifiche spiegando metodi e limiti.' ),
+                'cultura'  => array( 'Cultura', 'Segue cinema, libri, musica e mostre con riferimenti storici e giudizio argomentato.' ),
+                'salute'   => array( 'Salute', 'Copre salute, prevenzione e medicina distinguendo evidenze consolidate e ipotesi.' ),
+                'capo'     => array( 'Capo redattore', 'Legge gli articoli dei giornalisti e decide cosa pubblicare, correggere, rimandare o scartare.' ),
+        );
+        ?>
         <div class="nxa-preset-bar" role="group" aria-label="<?php esc_attr_e( 'Creazione rapida agenti', 'nexus-news-ai' ); ?>">
                 <span class="nxa-preset-bar-label"><?php echo esc_html__( 'Crea da un modello:', 'nexus-news-ai' ); ?></span>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="tech"><?php echo esc_html( 'Tecnologia' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="sport"><?php echo esc_html( 'Sport' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="economia"><?php echo esc_html( 'Economia' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="politica"><?php echo esc_html( 'Politica' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="scienza"><?php echo esc_html( 'Scienza' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="cultura"><?php echo esc_html( 'Cultura' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="salute"><?php echo esc_html( 'Salute' ); ?></button>
-                <button type="button" class="nxa-btn nxa-preset-btn" data-preset="capo"><?php echo esc_html( 'Capo redattore' ); ?></button>
+                <?php foreach ( $nxa_ux_presets as $nxa_ux_key => $nxa_ux_preset ) : ?>
+                        <button type="button" class="nxa-btn nxa-preset-btn nxa-ux-preset-btn" data-preset="<?php echo esc_attr( $nxa_ux_key ); ?>">
+                                <span class="nxa-ux-preset-label"><?php echo esc_html( $nxa_ux_preset[0] ); ?></span>
+                                <span class="nxa-ux-preset-desc"><?php echo esc_html( $nxa_ux_preset[1] ); ?></span>
+                        </button>
+                <?php endforeach; ?>
         </div>
 
         <!-- Modello AI per agente (v1.0.3): il campo input.nxa-agent-model[data-agent-id]
@@ -288,6 +314,19 @@ $nxa_global_base_host = '' !== $nxa_global_base ? (string) wp_parse_url( $nxa_gl
                         <?php endforeach; ?>
                 </p>
         <?php endif; ?>
+
+        <!-- Riepilogo statico (P1): conteggi server-side. Sta FUORI da
+             #nxa-agents-grid così la griglia live (admin.js) non lo tocca. -->
+        <div class="nxa-ux-summary" role="group" aria-label="Riepilogo agenti">
+                <span class="nxa-ux-summary-item">
+                        <strong class="nxa-ux-summary-count"><?php echo esc_html( (string) $nxa_ux_total ); ?></strong>
+                        <span class="nxa-ux-summary-label"><?php echo esc_html( 'agenti' ); ?></span>
+                </span>
+                <span class="nxa-ux-summary-item">
+                        <strong class="nxa-ux-summary-count"><?php echo esc_html( (string) $nxa_ux_active ); ?></strong>
+                        <span class="nxa-ux-summary-label"><?php echo esc_html( 'attivi' ); ?></span>
+                </span>
+        </div>
 
         <!-- GRIGLIA AGENTI: riempita da admin.js (GET /agents). Contratto nel docblock di testa.
              Le barre .nxa-skeleton coprono il tempo prima del primo render REST. -->
