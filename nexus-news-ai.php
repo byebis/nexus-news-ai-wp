@@ -1,9 +1,9 @@
-<?php
+﻿<?php
 /**
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai
  * Description: Il giornale di nuova generazione, scritto da intelligenze artificiali. Crea la tua redazione con il wizard di onboarding: agenti giornalisti AI con preset one-click (zero agenti predefiniti) e pipeline editoriale completa: raccolta RSS, valutazione, riscrittura AI, approvazione e pubblicazione multi-piattaforma. Include admin panel, Nexus Wire (redazione collettiva), shortcode magazine e cron automatico.
- * Version:     1.1.22
+ * Version:     1.1.23
  * Author:      ai4wp
  * Author URI:  https://github.com/byebis
  * License:     MIT
@@ -16,7 +16,7 @@
 // impedisci accesso diretto
 defined( 'ABSPATH' ) || exit;
 
-define( 'NEXUS_VERSION', '1.1.22' );
+define( 'NEXUS_VERSION', '1.1.23' );
 define( 'NEXUS_PLUGIN_FILE', __FILE__ );
 define( 'NEXUS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -25,7 +25,7 @@ define( 'NEXUS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
  * Autoloader del plugin (v1.1.21, perf/nexus-autoload).
  *
  * Sostituisce la lista manuale di require_once con una mappa PSR-4-ish:
- * Nexus_* → includes/, public/, admin/, vendor-shot-ui/. La classe viene caricata
+ * Nexus_* â†’ includes/, public/, admin/, vendor-shot-ui/. La classe viene caricata
  * al primo utilizzo; il bootstrap (nexus_bootstrap) "riscalda" esplicitamente lo
  * stesso insieme di classi di prima per preservare gli effetti collaterali a
  * livello di file (es. l'auto-registrazione dei moduli su 'nexus_modules_init').
@@ -91,7 +91,7 @@ function nexus_deactivate() {
         wp_clear_scheduled_hook( 'nexus_weekly_digest' );
 
         // v1.1.15 (WB4): flush canonico delle rewrite rules alla disattivazione
-        // (pattern WP): senza flush le regole /nexus/… e le sitemap restano
+        // (pattern WP): senza flush le regole /nexus/â€¦ e le sitemap restano
         // nell'option rewrite_rules con il plugin inattivo (soft-404) fino al
         // prossimo flush naturale.
         flush_rewrite_rules();
@@ -99,7 +99,7 @@ function nexus_deactivate() {
 
 /**
  * Attivazione v1.0.1: dopo l'installazione registra il CPT nexus_article
- * e ripulisce le rewrite rules, così i permalink /nexus/{slug}/ funzionano subito.
+ * e ripulisce le rewrite rules, cosÃ¬ i permalink /nexus/{slug}/ funzionano subito.
  * v1.1.0: registra anche il ruolo "Giornalista AI" per gli utenti bot degli agenti.
  * v1.1.1: registra la tassonomia gerarchica delle redazioni prima del flush.
  */
@@ -120,7 +120,7 @@ register_activation_hook( __FILE__, 'nexus_activate' );
  */
 function nexus_bootstrap() {
         // v1.1.21 (perf/nexus-autoload): riscalda lo stesso insieme di classi
-        // dell'ex elenco require_once, così gli effetti collaterali a livello di
+        // dell'ex elenco require_once, cosÃ¬ gli effetti collaterali a livello di
         // file (auto-registrazione dei moduli su 'nexus_modules_init') si
         // preservano identici. class_exists() attiva l'autoloader.
         foreach ( array(
@@ -181,15 +181,15 @@ add_action( 'plugins_loaded', 'nexus_bootstrap' );
 
 /**
  * v1.1.18 (FIX-8): carica il text domain dichiarato negli header del plugin
- * (Text Domain: nexus-news-ai, Domain Path: /languages — dove vive il .pot).
- * L'hook corretto è init: load_plugin_textdomain() non va chiamato prima.
+ * (Text Domain: nexus-news-ai, Domain Path: /languages â€” dove vive il .pot).
+ * L'hook corretto Ã¨ init: load_plugin_textdomain() non va chiamato prima.
  * La localizzazione REALE della UI resta il dict custom Nexus_I18n (IT
- * sorgente → EN), ma senza questa chiamata eventuali .mo (es. generati da
+ * sorgente â†’ EN), ma senza questa chiamata eventuali .mo (es. generati da
  * translate.wordpress.org o iniettati via filtro 'load_textdomain_mofile')
  * non venivano MAI caricati e le __()/esc_html__() delle viste restavano in
  * italiano. Innocuo oggi (nessun .mo distribuito): chiude l'incoerenza
  * header/meccanismo (audit A8, finding M2). La path usa la costante
- * NEXUS_PLUGIN_FILE (il file principale, non __FILE__ locale) come già
+ * NEXUS_PLUGIN_FILE (il file principale, non __FILE__ locale) come giÃ 
  * fatto per le altre costanti del bootstrap.
  */
 function nexus_load_textdomain() {
