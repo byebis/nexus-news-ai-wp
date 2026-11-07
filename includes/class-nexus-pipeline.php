@@ -909,15 +909,29 @@ class Nexus_Pipeline {
                         }
                 }
 
+                // v1.1.22 (ai/nexus-content-quality): polish leggero (via codice, SENZA
+                // chiamate AI aggiuntive) su titolo, sottotitolo e riassunto: corregge
+                // refusi comuni e normalizza spazi/maiuscole. Se il polish non è
+                // disponibile si usano i valori raw (mai fatale).
+                $title    = ! empty( $data['title'] ) ? (string) $data['title'] : (string) $article->title;
+                $subtitle = isset( $data['subtitle'] ) ? (string) $data['subtitle'] : '';
+                $summary   = ! empty( $data['summary'] ) ? (string) $data['summary'] : (string) $article->summary;
+
+                if ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'ai_polish_text' ) ) {
+                        $title    = Nexus_Utils::ai_polish_text( $title );
+                        $subtitle = Nexus_Utils::ai_polish_text( $subtitle );
+                        $summary   = Nexus_Utils::ai_polish_text( $summary );
+                }
+
                 $read_time = max( 1, (int) ceil( self::word_count( $content ) / 200 ) );
 
                 Nexus_DB::update_article(
                         $article_id,
                         array(
-                                'title'     => ! empty( $data['title'] ) ? (string) $data['title'] : (string) $article->title,
-                                'subtitle'  => isset( $data['subtitle'] ) ? (string) $data['subtitle'] : '',
+                                'title'     => $title,
+                                'subtitle'  => $subtitle,
                                 'content'   => $content,
-                                'summary'   => ! empty( $data['summary'] ) ? (string) $data['summary'] : (string) $article->summary,
+                                'summary'   => $summary,
                                 'status'    => 'pending_approval',
                                 'read_time' => $read_time,
                         )

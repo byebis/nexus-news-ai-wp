@@ -394,6 +394,56 @@ class Nexus_Utils {
         }
 
         /**
+         * Polish leggero dell'output AI (v1.1.22, ai/nexus-content-quality).
+         *
+         * NON fa chiamate AI: corregge, via codice, i refusi e le dittografie
+         * più comuni (soprattutto nel titolo) e normalizza spazi/maiuscole.
+         * È una rete di sicurezza estetica sopra le istruzioni di qualità dei
+         * prompt; non sostituisce la verifica del modello.
+         *
+         * @param string $text Testo da rifinire.
+         * @return string
+         */
+        public static function ai_polish_text( $text ) {
+                $text = (string) $text;
+                if ( '' === trim( $text ) ) {
+                        return $text;
+                }
+
+                // Refusi/dittografie comuni (parola giusta => varianti errate).
+                $typos = array(
+                        'rallenta'    => array( 'rallegha' ),
+                        'perché'      => array( 'perchè', 'perche' ),
+                        'però'        => array( 'pero', 'peró' ),
+                        'soprattutto' => array( 'sopratutto' ),
+                        'più'         => array( 'piu', 'piú' ),
+                        'struttura'   => array( 'strutura' ),
+                        'città'       => array( 'citta', 'cittá' ),
+                );
+
+                foreach ( $typos as $correct => $wrong_forms ) {
+                        foreach ( $wrong_forms as $wrong ) {
+                                if ( $wrong !== $correct ) {
+                                        $text = str_ireplace( $wrong, $correct, $text );
+                                }
+                        }
+                }
+
+                // Normalizzazione: collassa spazi multipli, rimuove spazi prima di
+                // punteggiatura, capitalizza l'inizio del testo (per i titoli).
+                if ( function_exists( 'mb_strtolower' ) && function_exists( 'mb_strtoupper' ) && function_exists( 'mb_substr' ) ) {
+                        $text = preg_replace( '/\s+/u', ' ', $text );
+                        $text = preg_replace( '/\s+([,.;:!?])/u', '$1', $text );
+                        if ( '' !== $text ) {
+                                $first = mb_strtoupper( mb_substr( $text, 0, 1 ) );
+                                $text  = $first . mb_substr( $text, 1 );
+                        }
+                }
+
+                return trim( $text );
+        }
+
+        /**
          * Flag di qualità dell'output AI (WP7): lista onesta di etichette per il
          * log attività. NON blocca nulla e non modifica il contenuto: serve solo a
          * rendere visibili i casi limite dell'output del modello.
