@@ -1837,6 +1837,7 @@ class Nexus_AI_Engine {
                         '- Usa SOLO le notizie fornite sopra (non inventare notizie)',
                         '- Riporta i fatti reali con i dettagli presenti negli estratti',
                         '- I title e summary possono essere leggermente riformulati in stile giornalistico',
+                        '- Scrivi i titoli in italiano corretto: niente refusi o dittografie, verifica implicitamente l\'ortografia prima di restituirli.',
                         '- "score" = punteggio di rilevanza editoriale da 0 a 100 per la categoria (escludi le notizie banali: seleziona solo punteggi >= 50)',
                         '- Se meno di 2 notizie sono rilevanti, restituisci solo quelle valide',
                         '- NON includere commenti o testo fuori dal JSON',
@@ -1873,6 +1874,7 @@ class Nexus_AI_Engine {
                         '  }',
                         ']',
                         '',
+                        'Scrivi il titolo in italiano corretto: niente refusi o dittografie, verifica implicitamente l\'ortografia.',
                         'NON includere commenti o testo fuori dal JSON',
                 );
 
@@ -2031,6 +2033,12 @@ class Nexus_AI_Engine {
                         '  "content": "Articolo completo in HTML, minimo 400 parole: lede di 25-40 parole, corpo con fatti e contesto, chiusura su un fatto o una conseguenza",',
                         '  "summary": "Riassunto di 2-3 frasi con i fatti essenziali"',
                         '}',
+                        '',
+                        'Requisiti linguistici (IMPOSSIBILI da violare):',
+                        '- Scrivi ESCLUSIVAMENTE in italiano corretto: niente refusi, dittografie o doppie lettere per errore ("rallegha", "perchè", "è" usato male).',
+                        '- Verifica implicitamente ortografia e grammatica PRIMA di restituire il testo: un titolo o un contenuto con errori di battitura è un fallimento.',
+                        '- Mantieni la coerenza terminologica: non cambiare i nomi propri, i toponimi o i termini tecnici tra titolo, sottotitolo, riassunto e corpo.',
+                        '- Nel titolo usa la forma corretta del verbo (tempo, persona, coniugazione) e maiuscola solo l’inizio e i nomi propri.',
                         '',
                         'NON includere markdown, commenti o testo fuori dal JSON.',
                 );
