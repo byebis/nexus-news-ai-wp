@@ -2025,6 +2025,138 @@ class Nexus_DB {
          */
         private static $settings_cache = null;
 
+        /* ============ CIFRATURA AT-REST CHIAVI (v1.1.21) ============ */
+
+        /** Prefisso che marca un valore cifrato (consente il fallback legacy). */
+        const ENC_PREFIX = 'NEXUS:ENC:v1:';
+
+        /**
+         * Chiave di cifratura derivata dalle costanti WordPress (AUTH_KEY +
+         * wp_salt('auth')): niente secret hardcoded nel repo; se le costanti
+         * cambiano le chiavi cifrate non sono più decifrabili (comportamento
+         * atteso: si risalvano le chiavi).
+         *
+         * @return string Chiave binaria 32 byte.
+         */
+        private static function encryption_key() {
+                $auth = defined( 'AUTH_KEY' ) ? (string) AUTH_KEY : '';
+                $salt = function_exists( 'wp_salt' ) ? (string) wp_salt( 'auth' ) : '';
+                return hash( 'sha256', $auth . '|' . $salt . '|nexus', true );
+        }
+
+        /**
+         * Cifra un segreto (AES-256-CBC, IV random incluso nel payload).
+         * Già cifrato → invariato; openssl assente o errore → valore originale
+         * (degradazione sicura: mai perdere una chiave).
+         *
+         * @param string $value Valore in chiaro.
+         * @return string
+         */
+        public static function encrypt_secret( $value ) {
+                $value = (string) $value;
+                if ( '' === $value || 0 === strpos( $value, self::ENC_PREFIX ) ) {
+                        return $value;
+                }
+                if ( ! function_exists( 'openssl_encrypt' ) ) {
+                        return $value;
+                }
+                $key    = self::encryption_key();
+                $iv     = random_bytes( 16 );
+                $cipher = openssl_encrypt( $value, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv );
+                if ( false === $cipher ) {
+                        return $value;
+                }
+                return self::ENC_PREFIX . base64_encode( $iv . $cipher );
+        }
+
+        /**
+         * Decifra un segreto. Valore senza prefisso (legacy in chiaro) → restituito
+         * invariato (compatibilità con chiavi salvate prima della v1.1.21).
+         *
+         * @param string $value Valore eventualmente cifrato.
+         * @return string
+         */
+        public static function decrypt_secret( $value ) {
+                $value = (string) $value;
+                if ( '' === $value || 0 !== strpos( $value, self::ENC_PREFIX ) ) {
+                        return $value;
+                }
+                $raw = base64_decode( substr( $value, strlen( self::ENC_PREFIX ) ), true );
+                if ( false === $raw || strlen( $raw ) <= 16 ) {
+                        return $value;
+                }
+                $iv    = substr( $raw, 0, 16 );
+                $ct    = substr( $raw, 16 );
+                $plain = openssl_decrypt( $ct, 'aes-256-cbc', self::encryption_key(), OPENSSL_RAW_DATA, $iv );
+                return ( false === $plain ) ? $value : $plain;
+        }
+
+        /**
+         * Chiavi settings da cifrare at-rest (in chiaro oggi in wp_options).
+         * public_api_key è già un hash SHA-256, quindi esclusa.
+         *
+         * @return string[]
+         */
+        private static function secret_settings_keys_db() {
+                return array(
+                        'ai_api_key',
+                        'prov_key_openrouter',
+                        'prov_key_openai',
+                        'prov_key_anthropic',
+                        'prov_key_google',
+                        'prov_key_groq',
+                        'prov_key_deepseek',
+                        'prov_key_mistral',
+                        'prov_key_xai',
+                        'prov_key_custom',
+                        'prov_key_ollama',
+                        'youtube_api_key',
+                        'pixabay_key',
+                        'reddit_client_secret',
+                        'tools_search_key',
+                        'telegram_bot_token',
+                        'discord_webhook_url',
+                        'x_api_key',
+                        'x_api_secret',
+                        'x_access_token',
+                        'x_access_secret',
+                        'linkedin_access_token',
+                        'gsc_oauth_client_secret',
+                        'notify_webhook_url',
+                        'indexnow_key',
+                );
+        }
+
+        /**
+         * Decifra i campi sensibili di un array settings (usato da get_settings).
+         *
+         * @param array $settings Settings.
+         * @return array
+         */
+        private static function decrypt_settings_secrets( array $settings ) {
+                foreach ( self::secret_settings_keys_db() as $key ) {
+                        if ( isset( $settings[ $key ] ) && is_string( $settings[ $key ] ) ) {
+                                $settings[ $key ] = self::decrypt_secret( $settings[ $key ] );
+                        }
+                }
+                return $settings;
+        }
+
+        /**
+         * Cifra i campi sensibili di un array settings (usato da update_settings).
+         *
+         * @param array $settings Settings.
+         * @return array
+         */
+        private static function encrypt_settings_secrets( array $settings ) {
+                foreach ( self::secret_settings_keys_db() as $key ) {
+                        if ( isset( $settings[ $key ] ) && is_string( $settings[ $key ] ) ) {
+                                $settings[ $key ] = self::encrypt_secret( $settings[ $key ] );
+                        }
+                }
+                return $settings;
+        }
+
         public static function get_settings() {
                 // v1.1.15 (WA9): cache statica di request — il merge default+saved è
                 // identico a ogni chiamata nella stessa request, lo ricalcolo una volta.
@@ -2037,6 +2169,9 @@ class Nexus_DB {
                         $saved = array();
                 }
                 $merged                = array_merge( self::default_settings(), $saved );
+                // v1.1.21 (fix/nexus-keys): decifratura at-rest dei campi sensibili
+                // (fallback legacy: valori in chiaro passano invariati).
+                $merged                = self::decrypt_settings_secrets( $merged );
                 self::$settings_cache = $merged;
                 return $merged;
         }
@@ -2049,6 +2184,9 @@ class Nexus_DB {
                                 $current[ $k ] = is_bool( $v ) ? (int) $v : $v;
                         }
                 }
+                // v1.1.21 (fix/nexus-keys): cifratura at-rest dei campi sensibili
+                // prima della persistenza (le chiavi non restano in chiaro in wp_options).
+                $current = self::encrypt_settings_secrets( $current );
                 update_option( self::OPTION_SETTINGS, $current, false );
                 // v1.1.15 (WA9): invalidazione esplicita della cache di request:
                 // il valore riletto sotto riflette SEMPRE ciò che è appena salvato.
