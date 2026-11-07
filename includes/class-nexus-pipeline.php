@@ -1087,9 +1087,17 @@ class Nexus_Pipeline {
                         return $out;
                 }
 
+                // v1.1.21 (fix/nexus-transactions): le scritture correlate — inserimento
+                // dei publish_log + aggiornamento stato/published_at dell'articolo — sono
+                // avvolte in una transazione atomica: se una fallisce, ROLLBACK annulla
+                // tutto (nessuno stato parziale, nessun log orfano).
                 $published_platforms = array();
+                $tx_ok              = true;
+
+                Nexus_DB::tx_begin();
+
                 foreach ( $logs as $log ) {
-                        Nexus_DB::insert_publish_log(
+                        $ins = Nexus_DB::insert_publish_log(
                                 $article_id,
                                 isset( $log['platform'] ) ? $log['platform'] : '',
                                 isset( $log['status'] ) ? $log['status'] : 'failed',
@@ -1097,20 +1105,41 @@ class Nexus_Pipeline {
                                 isset( $log['post_url'] ) ? $log['post_url'] : '',
                                 isset( $log['error'] ) ? $log['error'] : ''
                         );
+                        if ( false === $ins ) {
+                                $tx_ok = false;
+                                break;
+                        }
                         if ( isset( $log['status'] ) && 'published' === $log['status'] ) {
                                 $published_platforms[] = (string) $log['platform'];
                         }
                 }
-                $out['logs'] = $logs;
 
-                if ( ! empty( $published_platforms ) ) {
-                        Nexus_DB::update_article(
+                if ( $tx_ok && ! empty( $published_platforms ) ) {
+                        $upd = Nexus_DB::update_article(
                                 $article_id,
                                 array(
                                         'status'       => 'published',
                                         'published_at' => current_time( 'mysql' ),
                                 )
                         );
+                        if ( false === $upd ) {
+                                $tx_ok = false;
+                        }
+                }
+
+                if ( ! $tx_ok ) {
+                        Nexus_DB::tx_rollback();
+                        $out['logs']  = $logs;
+                        $out['error'] = 'Errore di persistenza durante la pubblicazione: operazione annullata (nessun log parziale salvato).';
+                        self::log_phase( (int) $article->agent_id, 'publishing', sprintf( 'Pubblicazione articolo #%d: rollback su errore di persistenza.', $article_id ), 'error' );
+                        return $out;
+                }
+
+                Nexus_DB::tx_commit();
+
+                $out['logs'] = $logs;
+
+                if ( ! empty( $published_platforms ) ) {
                         self::touch_agent( (int) $article->agent_id );
                         self::log_phase(
                                 (int) $article->agent_id,

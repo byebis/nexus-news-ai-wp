@@ -726,6 +726,11 @@ class Nexus_Chief {
                 if ( 'approva' === $verdict ) {
                         $chief_status = $has_edits ? 'modificato' : 'visto';
 
+                        // v1.1.21 (fix/nexus-transactions): la sequenza di scritture
+                        // correlate (edits + colonne chief + stato/approvazione) è atomica.
+                        // La chiamata di pubblicazione (rete) resta FUORI dalla transazione.
+                        Nexus_DB::tx_begin();
+
                         if ( $has_edits ) {
                                 // v1.1.9: snapshot PRIMA dell'edit (schema v2): l'originale non resta
                                 // solo nel log attività ma è ripristinabile dall'admin (revisioni).
@@ -741,7 +746,12 @@ class Nexus_Chief {
                                         $fields['summary'] = $edited_summary;
                                 }
                                 if ( method_exists( 'Nexus_DB', 'update_article' ) ) {
-                                        Nexus_DB::update_article( $article_id, $fields );
+                                        if ( false === Nexus_DB::update_article( $article_id, $fields ) ) {
+                                                Nexus_DB::tx_rollback();
+                                                $out['error'] = 'Errore salvataggio modifiche del capo redattore: operazione annullata.';
+                                                self::log( $agent_id, sprintf( "Capo redattore: salvataggio modifiche sull'articolo #%d fallito: %s", $article_id, 'aggiornamento database fallito' ), 'error' );
+                                                return $out;
+                                        }
                                 }
                                 self::log( $agent_id, sprintf( "Capo redattore ha modificato l'articolo #%d (versione originale nel log). Titolo precedente: \"%s\". Nota: %s", $article_id, self::clip( (string) $article->title, 100 ), self::clip( '' !== $note ? $note : 'nessuna nota', 200 ) ), 'warning' );
                         }
@@ -756,6 +766,7 @@ class Nexus_Chief {
                                 )
                         );
                         if ( ! $saved['ok'] ) {
+                                Nexus_DB::tx_rollback();
                                 $out['error'] = $saved['error'];
                                 self::log( $agent_id, sprintf( 'Capo redattore: salvataggio esito su articolo #%d fallito: %s', $article_id, $saved['error'] ), 'error' );
                                 return $out;
@@ -764,12 +775,20 @@ class Nexus_Chief {
 
                         if ( $auto_publish ) {
                                 // Pubblicazione automatica: approva + pubblica (stesso percorso umano).
+                                $tx_ok = true;
                                 if ( method_exists( 'Nexus_DB', 'update_article' ) ) {
-                                        Nexus_DB::update_article( $article_id, array( 'status' => 'approved' ) );
+                                        $tx_ok = $tx_ok && ( false !== Nexus_DB::update_article( $article_id, array( 'status' => 'approved' ) ) );
                                 }
                                 if ( method_exists( 'Nexus_DB', 'set_approval' ) ) {
-                                        Nexus_DB::set_approval( $article_id, 'approved', '' !== $note ? 'Capo redattore AI: ' . $note : 'Approvato dal capo redattore AI.' );
+                                        $tx_ok = $tx_ok && ( false !== Nexus_DB::set_approval( $article_id, 'approved', '' !== $note ? 'Capo redattore AI: ' . $note : 'Approvato dal capo redattore AI.' ) );
                                 }
+                                if ( ! $tx_ok ) {
+                                        Nexus_DB::tx_rollback();
+                                        $out['error'] = 'Errore salvataggio approvazione del capo redattore: operazione annullata.';
+                                        self::log( $agent_id, sprintf( 'Capo redattore: salvataggio approvazione articolo #%d fallito.', $article_id ), 'error' );
+                                        return $out;
+                                }
+                                Nexus_DB::tx_commit();
                                 self::log( $agent_id, sprintf( 'Capo redattore: articolo #%d approvato%s.', $article_id, $has_edits ? ' nella versione modificata' : '' ), 'success' );
 
                                 if ( class_exists( 'Nexus_Pipeline' ) && method_exists( 'Nexus_Pipeline', 'publish' ) ) {
@@ -785,6 +804,7 @@ class Nexus_Chief {
                                         self::log( $agent_id, sprintf( 'Capo redattore: articolo #%d in stato approved (modulo di pubblicazione non disponibile).', $article_id ), 'info' );
                                 }
                         } else {
+                                Nexus_DB::tx_commit();
                                 self::log( $agent_id, sprintf( 'Capo redattore: articolo #%d visto%s. In attesa di approvazione umana.', $article_id, $has_edits ? ' e modificato' : '' ), 'success' );
                         }
 
