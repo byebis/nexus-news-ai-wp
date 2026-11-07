@@ -1278,7 +1278,7 @@ class Nexus_Queue {
                 $message = trim( (string) $message );
 
                 if ( '' === $message ) {
-                        return 'errore sconosciuto';
+                        return __( 'errore sconosciuto', 'nexus-news-ai' );
                 }
 
                 if ( function_exists( 'mb_substr' ) ) {

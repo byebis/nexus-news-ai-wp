@@ -428,7 +428,7 @@ class Nexus_Translate {
                         return array(
                                 'ok'          => false,
                                 'already'     => false,
-                                'error'       => 'Traduzione già in corso per questo articolo e questa lingua: riprova più tardi.',
+                                'error'       => __( 'Traduzione già in corso per questo articolo e questa lingua: riprova più tardi.', 'nexus-news-ai' ),
                                 'translation' => null,
                                 'partial'     => false,
                         );
@@ -766,7 +766,7 @@ class Nexus_Translate {
                 if ( ! empty( $res['truncated'] ) ) {
                         return array(
                                 'ok'    => false,
-                                'error' => 'AI: risposta troncata (max_tokens esauriti): la traduzione è incompleta e NON viene salvata. Riprova o scegli un modello con più token di output.',
+                                'error' => __( 'AI: risposta troncata (max_tokens esauriti): la traduzione è incompleta e NON viene salvata. Riprova o scegli un modello con più token di output.', 'nexus-news-ai' ),
                                 'data'  => array(),
                         );
                 }

@@ -1307,7 +1307,7 @@ class Nexus_AI_Engine {
                 if ( $budget_cut ) {
                         return array(
                                 'response'   => null,
-                                'error'      => 'Tentativi AI interrotti: superato il budget di tempo per questa chiamata (limite anti-blocco). Riprova più tardi.',
+                                'error'      => __( 'Tentativi AI interrotti: superato il budget di tempo per questa chiamata (limite anti-blocco). Riprova più tardi.', 'nexus-news-ai' ),
                                 'budget_cut' => true,
                         );
                 }
