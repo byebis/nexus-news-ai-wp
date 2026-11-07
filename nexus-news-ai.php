@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Plugin Name: Nexus News AI
  * Plugin URI:  https://github.com/byebis/nexus-news-ai

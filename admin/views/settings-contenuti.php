@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Vista Admin: Impostazioni contenuti (pagina "settings-contenuti" di Nexus News AI).
  *
