@@ -1629,7 +1629,21 @@ class Nexus_Pipeline {
                         } elseif ( $rewritten_now ) {
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (modalità semi_autonomous).', $article_id );
                         } elseif ( empty( $settings['auto_rewrite'] ) ) {
-                                $summary['messages'][] = sprintf( 'Articolo #%d lasciato in stato bozza (auto_rewrite disabilitato).', $article_id );
+                                // v1.1.22 (fix/nexus-pipeline-flow): con auto_rewrite disabilitato
+                                // (o riscrittura saltata) un articolo VALUTATO sopra soglia deve
+                                // comunque avanzare a 'pending_approval' (pronto per la coda di
+                                // approvazione) e non restare in 'draft'. Se $ score non è
+                                // interpretabile o è sotto soglia resta in bozza (revisione umana).
+                                if ( $score_parsed && $score >= $threshold ) {
+                                        $status_set = Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
+                                        if ( false !== $status_set ) {
+                                                $summary['messages'][] = sprintf( 'Articolo #%d in coda di approvazione (valutato %.0f/100, auto_rewrite disabilitato).', $article_id, $score );
+                                        } else {
+                                                $summary['messages'][] = sprintf( 'Articolo #%d: errore avanzamento a pending_approval.', $article_id );
+                                        }
+                                } else {
+                                        $summary['messages'][] = sprintf( 'Articolo #%d lasciato in stato bozza (auto_rewrite disabilitato).', $article_id );
+                                }
                         }
 
                         // v1.1.4 — CAPO REDATTORE AI: se dopo la riscrittura l'articolo e'
@@ -2995,8 +3009,20 @@ class Nexus_Pipeline {
                         }
                 }
 
-                Nexus_DB::update_article( $article_id, array( 'status' => $action ) );
-                Nexus_DB::set_approval( $article_id, $action, (string) $note );
+                // v1.1.22 (fix/nexus-pipeline-flow): verifica l'ESITO reale degli
+                // update. Prima l'esito veniva ignorato e 'ok' restava true anche se
+                // lo scatto di stato falliva (l'endpoint /approve rispondeva
+                // success:true senza aver davvero cambiato lo stato).
+                $status_updated = Nexus_DB::update_article( $article_id, array( 'status' => $action ) );
+                if ( false === $status_updated ) {
+                        $out['error'] = sprintf( 'Errore aggiornamento stato "%s" per l\'articolo #%d.', $action, $article_id );
+                        return $out;
+                }
+                $approval_saved = Nexus_DB::set_approval( $article_id, $action, (string) $note );
+                if ( false === $approval_saved ) {
+                        $out['error'] = sprintf( 'Errore salvataggio log di approvazione per l\'articolo #%d.', $article_id );
+                        return $out;
+                }
 
                 $verb     = ( 'approved' === $action ) ? 'approvato' : 'rifiutato';
                 $detail   = sprintf( 'Articolo #%d "%s" %s dal revisore.', $article_id, self::clip( $article->title, 60 ), $verb );
