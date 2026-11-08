@@ -347,6 +347,7 @@ final class Nexus_Shortcodes {
                 }
                 $n_agents = count( $active_agents );
 
+                // v1.1.26 (feat/nexus-native-shortcodes): front-end su POST NATIVI via WP_Query.
                 if ( $redazione_term instanceof WP_Term ) {
                         /* Ramo completo della redazione (sub-redazioni incluse). */
                         $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
@@ -354,23 +355,19 @@ final class Nexus_Shortcodes {
                                 /* Intersezione ramo redazione e lingua richiesta (v1.1.2). */
                                 $branch_post_ids = array_values( array_intersect( $branch_post_ids, $lang_state['post_ids'] ) );
                         }
-                        $published_count = self::redazione_count_articles( $branch_post_ids );
-                        $articles        = self::redazione_articles( $branch_post_ids, $per_page );
+                        $res           = self::query_published_posts( $per_page, '', $branch_post_ids );
+                        $published_count = $res['total'];
+                        $articles        = $res['posts'];
                 } elseif ( $lang_state['active'] ) {
                         /* Filtro lingua senza redazione (v1.1.2): gli helper per post ID
                          * del filtro redazione sono generici e vengono riusati qui. */
-                        $published_count = self::redazione_count_articles( $lang_state['post_ids'] );
-                        $articles        = self::redazione_articles( $lang_state['post_ids'], $per_page );
+                        $res           = self::query_published_posts( $per_page, '', $lang_state['post_ids'] );
+                        $published_count = $res['total'];
+                        $articles        = $res['posts'];
                 } else {
-                        $published_count = Nexus_DB::count_articles( array( 'status' => 'published' ) );
-                        $articles        = Nexus_DB::articles(
-                                array(
-                                        'status'   => 'published',
-                                        'per_page' => $per_page,
-                                        'orderby'  => 'published_at',
-                                        'order'    => 'desc',
-                                )
-                        );
+                        $res           = self::query_published_posts( $per_page );
+                        $published_count = $res['total'];
+                        $articles        = $res['posts'];
                 }
 
                 $out  = '';
@@ -435,7 +432,7 @@ final class Nexus_Shortcodes {
                 $out .= '<div class="nxa-grid" id="nxa-magazine-grid">';
                 if ( $articles ) {
                         foreach ( $articles as $article ) {
-                                $out .= self::render_card( $article );
+                                $out .= self::post_to_card( $article );
                         }
                 } else {
                         $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento.', 'nexus-news-ai' ) . '</p>';
@@ -581,6 +578,81 @@ final class Nexus_Shortcodes {
                 $out .= '</article>';
 
                 return $out;
+        }
+
+        /* ========================= TUTTO NATIVO (v1.1.26) ========================= */
+
+        /**
+         * Query dei post WP NATIVI pubblicati (post_type=post, post_status=publish).
+         *
+         * Sostituisce la lettura diretta di nexus_articles nel front-end.
+         *
+         * @param int    $per_page Limite (max 24).
+         * @param string $category Slug categoria (vuoto = tutte).
+         * @param array  $post_ids Post ID (vuoto = tutti). Usato dai rami redazione/lingua.
+         * @return array {posts: WP_Post[], total: int}
+         */
+        public static function query_published_posts( $per_page = 12, $category = '', $post_ids = array() ) {
+                $per_page = min( 24, max( 1, absint( $per_page ) ) );
+                $args = array(
+                        'post_type'              => 'post',
+                        'post_status'            => 'publish',
+                        'posts_per_page'         => $per_page,
+                        'orderby'                => 'date',
+                        'order'                  => 'DESC',
+                        'ignore_sticky_posts'    => true,
+                        'update_post_term_cache' => false,
+                );
+                $category = sanitize_title( (string) $category );
+                if ( '' !== $category ) {
+                        $args['category_name'] = $category;
+                }
+                $post_ids = array_values( array_filter( array_map( 'absint', (array) $post_ids ) ) );
+                if ( $post_ids ) {
+                        $args['post__in'] = $post_ids;
+                }
+                $q = new WP_Query( $args );
+                return array(
+                        'posts' => is_array( $q->posts ) ? $q->posts : array(),
+                        'total' => (int) $q->found_posts,
+                );
+        }
+
+        /**
+         * Render di una card da un POST WP NATIVO (v1.1.26).
+         *
+         * Replica render_card() costruendo un proxy di riga dai meta del post
+         * (_nexus_*) così il markup resta identico senza duplicare il template.
+         *
+         * @param WP_Post $post Post WP nativo.
+         * @return string
+         */
+        public static function post_to_card( $post ) {
+                if ( ! $post instanceof WP_Post ) {
+                        return '';
+                }
+                $meta = get_post_meta( $post->ID );
+                $g    = static function ( $key ) use ( $meta ) {
+                        return isset( $meta[ $key ][0] ) ? $meta[ $key ][0] : '';
+                };
+
+                $proxy = (object) array(
+                        'id'              => (int) $post->ID,
+                        'agent_id'        => (int) $g( '_nexus_agent_id' ),
+                        'category'        => (string) $g( '_nexus_category' ),
+                        'title'           => (string) get_the_title( $post ),
+                        'subtitle'        => (string) $g( '_nexus_subtitle' ),
+                        'image_url'       => (string) $g( '_nexus_image_url' ),
+                        'summary'         => (string) $post->post_excerpt,
+                        'content'         => (string) $post->post_content,
+                        'published_at'    => (string) $g( '_nexus_published_at' ),
+                        'created_at'      => (string) $post->post_date,
+                        'read_time'       => (int) $g( '_nexus_read_time' ),
+                        'factcheck_score' => (float) $g( '_nexus_factcheck_score' ),
+                        'citations'       => (string) $g( '_nexus_citations' ),
+                );
+
+                return self::render_card( $proxy );
         }
 
         /* ========================= Fact-check & citazioni (v1.0.3) ========================= */
@@ -767,6 +839,7 @@ final class Nexus_Shortcodes {
 
                 self::enqueue_assets();
 
+                // v1.1.26 (feat/nexus-native-shortcodes): front-end su POST NATIVI via WP_Query.
                 if ( $redazione_term instanceof WP_Term ) {
                         /* Ramo completo della redazione (sub-redazioni incluse). */
                         $branch_post_ids = self::redazione_branch_post_ids( $redazione_term );
@@ -774,22 +847,13 @@ final class Nexus_Shortcodes {
                                 /* Intersezione ramo redazione e lingua richiesta (v1.1.2). */
                                 $branch_post_ids = array_values( array_intersect( $branch_post_ids, $lang_state['post_ids'] ) );
                         }
-                        $articles = self::redazione_articles( $branch_post_ids, $limit );
+                        $articles = self::query_published_posts( $limit, '', $branch_post_ids )['posts'];
                 } elseif ( $lang_state['active'] ) {
                         /* Filtro lingua senza redazione (v1.1.2): gli helper per post ID
                          * del filtro redazione sono generici e vengono riusati qui. */
-                        $articles = self::redazione_articles( $lang_state['post_ids'], $limit );
+                        $articles = self::query_published_posts( $limit, '', $lang_state['post_ids'] )['posts'];
                 } else {
-                        $args = array(
-                                'status'   => 'published',
-                                'per_page' => $limit,
-                                'orderby'  => 'published_at',
-                                'order'    => 'desc',
-                        );
-                        if ( '' !== $category ) {
-                                $args['category'] = $category;
-                        }
-                        $articles = Nexus_DB::articles( $args );
+                        $articles = self::query_published_posts( $limit, $category )['posts'];
                 }
 
                 $wrapper_class = ( 'list' === $layout ) ? 'nxa-grid nxa-grid--list' : 'nxa-grid';
@@ -799,7 +863,7 @@ final class Nexus_Shortcodes {
                 $out .= '<div class="' . esc_attr( $wrapper_class ) . '">';
                 if ( $articles ) {
                         foreach ( $articles as $article ) {
-                                $out .= self::render_card( $article );
+                                $out .= self::post_to_card( $article );
                         }
                 } else {
                         $out .= '<p class="nxa-empty">' . esc_html__( 'Nessun articolo pubblicato per il momento.', 'nexus-news-ai' ) . '</p>';

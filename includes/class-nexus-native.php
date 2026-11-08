@@ -53,6 +53,9 @@ class Nexus_Native {
          */
         public static function init() {
                 add_action( 'init', array( __CLASS__, 'register_role' ) );
+                // v1.1.26 (feat/nexus-native-shortcodes): backfill one-shot dei post
+                // nativi per gli articoli esistenti (solo al primo load).
+                add_action( 'init', array( __CLASS__, 'maybe_backfill' ), 20 );
 
                 // BOT LOCKOUT (v1.1.9): gli utenti bot sono autori tecnici senza login.
                 // Stesso pattern degli altri hook della classe: azioni/filtri agganciati
@@ -536,6 +539,49 @@ class Nexus_Native {
                 }
 
                 return $new_post_id;
+        }
+
+        /**
+         * Backfill: crea il post WP nativo per gli articoli Nexus esistenti che
+         * non ne hanno ancora uno (wp_post_id nullo/0). Best-effort, mai fatale.
+         *
+         * @param int $limit Massimo articoli per chiamata.
+         * @return int Numero di post creati.
+         */
+        public static function backfill_posts( $limit = 50 ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) || ! method_exists( 'Nexus_DB', 'get_article' ) ) {
+                        return 0;
+                }
+                global $wpdb;
+                $table = Nexus_DB::tables()['articles'];
+                $rows  = $wpdb->get_results(
+                        $wpdb->prepare(
+                                "SELECT id FROM {$table} WHERE wp_post_id IS NULL OR wp_post_id = 0 ORDER BY id ASC LIMIT %d",
+                                absint( $limit )
+                        )
+                );
+                $created = 0;
+                foreach ( (array) $rows as $row ) {
+                        $article = Nexus_DB::get_article( (int) $row->id );
+                        if ( $article && self::sync_post_from_article( $article ) ) {
+                                $created++;
+                        }
+                }
+                return $created;
+        }
+
+        /**
+         * Esegue il backfill una sola volta (flag option) al primo load, così gli
+         * articoli esistenti pre-1.1.26 ricevono il loro post WP nativo.
+         *
+         * @return void
+         */
+        public static function maybe_backfill() {
+                if ( get_option( 'nexus_native_backfill_done', 0 ) ) {
+                        return;
+                }
+                self::backfill_posts( 50 );
+                update_option( 'nexus_native_backfill_done', 1 );
         }
 
         /**
