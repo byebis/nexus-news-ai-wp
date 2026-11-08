@@ -379,6 +379,149 @@ class Nexus_Native {
                 return isset( $created['term_id'] ) ? absint( $created['term_id'] ) : 0;
         }
 
+        /* ============ SYNC POST NATIVO (v1.1.26 feat/nexus-native-ful) ============ */
+
+        /**
+         * Mappa lo stato Nexus a uno stato post WP nativo (decisione board).
+         *
+         * @param string $status Stato Nexus (draft|pending_approval|approved|published|rejected).
+         * @return string Stato post WP.
+         */
+        public static function map_status_to_wp( $status ) {
+                switch ( (string) $status ) {
+                        case 'pending_approval':
+                        case 'approved':
+                                return 'pending';
+                        case 'published':
+                                return 'publish';
+                        case 'rejected':
+                                return 'trash';
+                        case 'draft':
+                        default:
+                                return 'draft';
+                }
+        }
+
+        /**
+         * Crea o aggiorna il post WP nativo corrispondente a un articolo Nexus.
+         *
+         * È il punto unico di scrittura del post WP "tutto nativo": viene chiamata
+         * alla creazione del primo draft (collect) e a ogni transizione di stato.
+         * Il post riflette lo stato Nexus via map_status_to_wp(). I dati operativi
+         * Nexus (score, factcheck, source, views, reazioni, read_time, immagine)
+         * vengono salvati come post meta per alimentare il front-end basato su
+         * WP_Query.
+         *
+         * Best-effort: mai fatale. Ritorna l'ID post (0 su errore).
+         *
+         * @param object|array $article Articolo Nexus (riga nexus_articles).
+         * @return int Post ID (0 se non determinabile / errore).
+         */
+        public static function sync_post_from_article( $article ) {
+                $article = is_array( $article ) ? (object) $article : $article;
+                if ( ! is_object( $article ) || empty( $article->id ) || ! function_exists( 'wp_insert_post' ) ) {
+                        return 0;
+                }
+
+                $article_id = absint( $article->id );
+                $wp_post_id = isset( $article->wp_post_id ) ? absint( $article->wp_post_id ) : 0;
+                $exists     = ( $wp_post_id > 0 && get_post( $wp_post_id ) );
+
+                $title = isset( $article->title ) ? sanitize_text_field( (string) $article->title ) : '';
+                if ( '' === $title ) {
+                        $title = sprintf( 'Articolo Nexus #%d', $article_id );
+                }
+                $content = isset( $article->content ) ? wp_kses_post( (string) $article->content ) : '';
+                $excerpt = isset( $article->summary ) ? wp_strip_all_tags( (string) $article->summary ) : '';
+
+                // Blocco "Fonti verificate" (citazioni fact-check) nel contenuto del post
+                // (come faceva il publisher): best-effort, mai duplicato.
+                if ( class_exists( 'Nexus_Shortcodes' ) && method_exists( 'Nexus_Shortcodes', 'citations_block' ) ) {
+                        try {
+                                $citations = Nexus_Shortcodes::citations_block( $article );
+                                if ( '' !== $citations && false === strpos( $content, 'nexus-citations' ) ) {
+                                        $content .= $citations;
+                                }
+                        } catch ( \Throwable $e ) { // Ignora.
+                        }
+                }
+
+                $post_status = self::map_status_to_wp( isset( $article->status ) ? $article->status : 'draft' );
+
+                $post_args = array(
+                        'post_title'   => wp_slash( $title ),
+                        'post_content' => wp_slash( $content ),
+                        'post_excerpt' => wp_slash( $excerpt ),
+                        'post_status'  => $post_status,
+                        'post_name'    => sanitize_title( $title ),
+                );
+
+                if ( $exists ) {
+                        $post_args['ID'] = $wp_post_id;
+                } else {
+                        $post_args['post_type'] = apply_filters( 'nexus_native_post_type', 'post' );
+                }
+
+                // Autore bot dell'agente.
+                $author = self::article_author_id( $article );
+                if ( $author > 0 ) {
+                        $post_args['post_author'] = $author;
+                }
+
+                // Tag nativi.
+                $tags = self::article_tags( $article );
+                if ( ! empty( $tags ) ) {
+                        $post_args['tags_input'] = $tags;
+                }
+
+                $result = $exists ? wp_update_post( $post_args, true ) : wp_insert_post( $post_args, true );
+                if ( is_wp_error( $result ) || 0 === absint( $result ) ) {
+                        return 0;
+                }
+                $new_post_id = absint( $result );
+
+                // Categoria nativa.
+                $term_id = self::article_term_id( $article );
+                if ( $term_id > 0 ) {
+                        wp_set_post_categories( $new_post_id, array( $term_id ) );
+                }
+
+                // Redazione → tassonomia nativa.
+                if ( ! empty( $article->agent_id ) && class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'assign_post_terms' ) ) {
+                        try {
+                                Nexus_Redazioni::assign_post_terms( $new_post_id, absint( $article->agent_id ) );
+                        } catch ( \Throwable $e ) { // Best-effort silenzioso.
+                        }
+                }
+
+                // Meta di collegamento e dati operativi Nexus.
+                update_post_meta( $new_post_id, '_nexus_article_id', $article_id );
+                $meta_map = array(
+                        '_nexus_status'         => isset( $article->status ) ? (string) $article->status : 'draft',
+                        '_nexus_category'       => isset( $article->category ) ? (string) $article->category : '',
+                        '_nexus_image_url'      => isset( $article->image_url ) ? esc_url_raw( (string) $article->image_url ) : '',
+                        '_nexus_read_time'      => isset( $article->read_time ) ? (int) $article->read_time : 0,
+                        '_nexus_views'          => isset( $article->views ) ? (int) $article->views : 0,
+                        '_nexus_reactions'      => isset( $article->reactions ) ? (string) $article->reactions : '',
+                        '_nexus_factcheck_score'=> isset( $article->factcheck_score ) ? (float) $article->factcheck_score : 0,
+                        '_nexus_citations'      => isset( $article->citations ) ? (string) $article->citations : '',
+                        '_nexus_source_name'     => isset( $article->source_name ) ? (string) $article->source_name : '',
+                        '_nexus_source_url'      => isset( $article->source_url ) ? esc_url_raw( (string) $article->source_url ) : '',
+                        '_nexus_agent_id'       => isset( $article->agent_id ) ? (int) $article->agent_id : 0,
+                        '_nexus_published_at'   => isset( $article->published_at ) ? (string) $article->published_at : '',
+                );
+                foreach ( $meta_map as $key => $value ) {
+                        update_post_meta( $new_post_id, $key, $value );
+                }
+
+                // Persisti il riferimento su Nexus (solo se cambiato, evita ricorsione).
+                if ( $new_post_id !== $wp_post_id && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'update_article' ) ) {
+                        Nexus_DB::update_article( $article_id, array( 'wp_post_id' => $new_post_id ) );
+                }
+
+                return $new_post_id;
+        }
+
         /**
          * Tag deterministici per un articolo (nessuna chiamata AI): token dal
          * titolo+estratto, stopwords IT/EN filtrate, frequenza, top 5.
