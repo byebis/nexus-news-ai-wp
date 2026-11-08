@@ -1442,7 +1442,17 @@ class Nexus_DB {
                 if ( $ok ) {
                         self::flush_dashboard_cache();
                 }
-                return $ok ? (int) $wpdb->insert_id : 0;
+                $insert_id = $ok ? (int) $wpdb->insert_id : 0;
+                if ( $insert_id ) {
+                        // "Tutto nativo": crea subito il post WP nativo (stato draft).
+                        if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'sync_post_from_article' ) ) {
+                                $fresh = self::get_article( $insert_id );
+                                if ( $fresh ) {
+                                        Nexus_Native::sync_post_from_article( $fresh );
+                                }
+                        }
+                }
+                return $insert_id;
         }
 
         /**
@@ -1480,6 +1490,17 @@ class Nexus_DB {
                 $nxa_updated = $wpdb->update( self::tables()['articles'], $allowed, array( 'id' => absint( $id ) ), $formats, array( '%d' ) );
                 if ( false !== $nxa_updated ) {
                         self::flush_dashboard_cache();
+                }
+                // "Tutto nativo": se è cambiato lo stato, allinea il post WP nativo.
+                // La chiamata a sync_post_from_article() NON rientra qui (scrive solo
+                // wp_post_id, senza status) quindi non c'è ricorsione.
+                if ( isset( $allowed['status'] )
+                        && class_exists( 'Nexus_Native' )
+                        && method_exists( 'Nexus_Native', 'sync_post_from_article' ) ) {
+                        $fresh = self::get_article( absint( $id ) );
+                        if ( $fresh ) {
+                                Nexus_Native::sync_post_from_article( $fresh );
+                        }
                 }
                 return $nxa_updated;
         }

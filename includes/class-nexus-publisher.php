@@ -379,104 +379,18 @@ class Nexus_Publisher {
                         return array( self::legacy_blog_log( $article_id ) );
                 }
 
-                $title = isset( $article->title ) ? sanitize_text_field( (string) $article->title ) : '';
-                if ( '' === $title ) {
-                        $title = sprintf( 'Articolo Nexus #%d', $article_id );
+                // v1.1.26 (feat/nexus-native-ful): il post WP nativo è creato/aggiornato
+                // dal sync unico (Nexus_Native::sync_post_from_article), che riflette lo
+                // stato Nexus (qui 'published' → 'publish'). Niente più doppia scrittura:
+                // publish() si riduce a sincronizzare il post a 'publish' + distribuire.
+                $post_id = 0;
+                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'sync_post_from_article' ) ) {
+                        $post_id = absint( Nexus_Native::sync_post_from_article( $article ) );
                 }
-                $content = isset( $article->content ) ? wp_kses_post( (string) $article->content ) : '';
-                $excerpt = isset( $article->summary ) ? wp_strip_all_tags( (string) $article->summary ) : '';
-
-                // v1.0.3 — Citazioni del fact-check: blocco "Fonti verificate" (max 8, escape
-                // completo) incluso nel contenuto iniziale, PRIMA di wp_insert_post/
-                // wp_update_post. Se il contenuto contiene già il blocco (aggiornamento del
-                // post) non viene duplicato. Nessun effetto sul resto del publisher v1.0.2.
-                $citations = self::citations_block( $article );
-                if ( '' !== $citations && false === strpos( $content, 'nexus-citations' ) ) {
-                        $content .= $citations;
+                if ( ! $post_id ) {
+                        return self::failed_with_legacy_fallback( $article_id, 'impossibile sincronizzare il post WordPress nativo.' );
                 }
-
-                // Stato del post ammesso: 'publish' | 'draft' | 'pending' (v1.1.0: revisione WP nativa).
-                $post_status = isset( $settings['post_status'] ) ? sanitize_key( (string) $settings['post_status'] ) : 'publish';
-                if ( ! in_array( $post_status, array( 'publish', 'draft', 'pending' ), true ) ) {
-                        $post_status = 'publish';
-                }
-
-                // Se l'articolo è già collegato a un post WP esistente si aggiorna, senza duplicare.
-                $wp_post_id = isset( $article->wp_post_id ) ? absint( $article->wp_post_id ) : 0;
-
-                // v1.1.0 "Tutto nativo": autore bot dell'agente, categoria nativa e tag.
-                // v1.1.18 (audit A6 M1) — wp_insert_post()/wp_update_post() si aspettano
-                // dati SLASHED (fanno wp_unslash prima del write): senza wp_slash ogni
-                // backslash nel contenuto AI (blocchi codice, JSON, regex) viene mangiato
-                // all'insert/update. Applicato a title/content/excerpt DOPO la
-                // sanitizzazione (kses/strip); il ramo update sotto usa lo stesso
-                // $post_args, quindi l'aggiornamento è coperto. Lo slug non serve
-                // (sanitize_title già rimuove i backslash).
-                $post_args = array(
-                        'post_title'   => wp_slash( $title ),
-                        'post_content' => wp_slash( $content ),
-                        'post_excerpt' => wp_slash( $excerpt ),
-                        'post_status'  => $post_status,
-                        'post_name'    => sanitize_title( $title ),
-                );
-                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_author_id' ) ) {
-                        $nxa_author = absint( Nexus_Native::article_author_id( $article ) );
-                        if ( $nxa_author > 0 ) {
-                                $post_args['post_author'] = $nxa_author;
-                        }
-                }
-                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_tags' ) ) {
-                        $nxa_tags = Nexus_Native::article_tags( $article );
-                        if ( ! empty( $nxa_tags ) ) {
-                                $post_args['tags_input'] = $nxa_tags;
-                        }
-                }
-
-                if ( $wp_post_id > 0 && get_post( $wp_post_id ) ) {
-                        // Aggiornamento del post esistente (title/content/excerpt aggiornati).
-                        $post_args['ID'] = $wp_post_id;
-                        $result          = wp_update_post( $post_args, true );
-                        $note            = 'Aggiornato post WordPress esistente';
-                } else {
-                        // v1.1.0: inserimento come POST NATIVO (filtrabile con 'nexus_native_post_type').
-                        $post_args['post_type'] = apply_filters( 'nexus_native_post_type', 'post' );
-                        $result                 = wp_insert_post( $post_args, true );
-                        $note                   = 'Post WordPress nativo';
-                }
-
-                if ( is_wp_error( $result ) || 0 === absint( $result ) ) {
-                        $error = is_wp_error( $result ) ? $result->get_error_message() : 'wp_insert_post/wp_update_post ha restituito 0.';
-                        return self::failed_with_legacy_fallback( $article_id, $error );
-                }
-
-                $post_id = absint( $result );
-
-                // Redazioni (v1.1.1): assegna al post i termini redazione dell'agente
-                // (tassonomia nativa nexus_redazione), best-effort silenzioso — la
-                // pubblicazione non deve mai fallire per la tassonomizzazione.
-                if ( class_exists( 'Nexus_Redazioni' ) && method_exists( 'Nexus_Redazioni', 'assign_post_terms' ) ) {
-                        $nxa_agent_id = isset( $article->agent_id ) ? absint( $article->agent_id ) : 0;
-                        try {
-                                Nexus_Redazioni::assign_post_terms( (int) $post_id, $nxa_agent_id );
-                        } catch ( \Throwable $e ) { // Ignora: errore non bloccante, come per immagine e SEO.
-                        }
-                }
-
-                // Categoria WP nativa (v1.1.0): prima il term dell'agente, fallback dal nome articolo.
-                if ( class_exists( 'Nexus_Native' ) && method_exists( 'Nexus_Native', 'article_term_id' ) ) {
-                        $category_id = absint( Nexus_Native::article_term_id( $article ) );
-                } else {
-                        $category_id = self::ensure_category( $article );
-                }
-                if ( $category_id > 0 ) {
-                        wp_set_post_categories( $post_id, array( $category_id ) );
-                }
-
-                // Meta di collegamento post WP ↔ articolo Nexus.
-                update_post_meta( $post_id, '_nexus_article_id', $article_id );
-
-                // Persisti il riferimento nel database Nexus SUBITO dopo insert/update riuscito.
-                Nexus_DB::update_article( $article_id, array( 'wp_post_id' => $post_id ) );
+                $note = 'Post WordPress nativo (sync)';
 
                 // Auto-traduzione post-publish (v1.1.2 "Multilingua nativo"): qui il post
                 // esiste e il meta _nexus_article_id è già scritto. Se il setting
