@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.22
+Stable tag: 1.1.25
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,27 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.25 =
+* Fixed: promozione a pending_approval per articoli sopra soglia che non veniva più saltata dal time budget (il budget resta applicato solo alle azioni con costi AI/rete).
+* Rimossi i log diagnostici temporanei di debug della soglia.
+
+= 1.1.24 =
+* Fixed: promozione draft → pending_approval per articoli sopra soglia (rimozione del «continue» post-riscrittura che bloccava la catena di promozione).
+
+= 1.1.23 =
+* Fixed: soglia auto_approve_score ora coerente — sopra soglia si promuove a pending_approval, sotto soglia resta in bozza.
+* Fixed: rimozione dei BOM UTF-8 che corrompevano le risposte REST.
+* Fixed: polyfill i18n per gli harness di test standalone (quality gate CI).
+
+= 1.1.22 =
+* Qualità contenuti AI: istruzioni linguistiche rafforzate nei prompt (italiano corretto, niente refusi) e fase di polish leggera su titolo/riassunto prima del salvataggio, senza chiamate AI aggiuntive.
+
+= 1.1.21 =
+* Sicurezza: le route REST pubbliche espongono solo i dati strettamente necessari (whitelist); /public/wire/runs protetta da capability admin.
+* Cifratura at-rest delle chiavi API/integrazioni (AES-256, chiave da AUTH_KEY) con fallback legacy.
+* Transazioni DB atomiche per le sequenze multi-scrittura della pipeline.
+* Prestazioni: transient caching per dashboard/stats; autoloader al posto dei require_once eager; eliminazione di query N+1; sitemap news/video non bloccanti (query snelle + cache).
 
 = 1.1.20 =
 * Restyling editoriale di pannello admin e sito pubblico: superfici neutre, un solo accento blu, titoli in serif e componenti piatti, senza gradienti né effetti decorativi.
