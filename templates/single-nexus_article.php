@@ -81,19 +81,37 @@ while ( have_posts() ) :
 
         /* ====================== Dati Nexus collegati al post ====================== */
 
-        $nexus_article_id = absint( get_post_meta( get_the_ID(), '_nexus_article_id', true ) );
-        $nexus_article    = null;
-        $nexus_agent      = null;
+        /* v1.1.26 (feat/nexus-native-shortcodes): dati dal POST WP NATIVO + meta
+         * _nexus_* (nessuna lettura di nexus_articles). Costruiamo un proxy di
+         * riga per riusare gli helper condivisi (factcheck_badge/citations_block). */
+        $nexus_post_id = (int) get_the_ID();
+        $nexus_meta    = get_post_meta( $nexus_post_id );
+        $nexus_mget    = static function ( $key ) use ( $nexus_meta ) {
+                return isset( $nexus_meta[ $key ][0] ) ? $nexus_meta[ $key ][0] : '';
+        };
 
-        if ( $nexus_article_id > 0 && class_exists( 'Nexus_DB' ) ) {
-                $nexus_article = Nexus_DB::get_article( $nexus_article_id );
-                if ( $nexus_article && ! empty( $nexus_article->agent_id ) ) {
-                        $nexus_agent = Nexus_DB::get_agent( (int) $nexus_article->agent_id );
-                }
-        }
+        $nexus_article_id = absint( $nexus_mget( '_nexus_article_id' ) );
+        $nexus_article    = (object) array(
+                'id'              => $nexus_article_id,
+                'agent_id'        => (int) $nexus_mget( '_nexus_agent_id' ),
+                'category'        => (string) $nexus_mget( '_nexus_category' ),
+                'title'           => (string) get_the_title(),
+                'subtitle'        => (string) $nexus_mget( '_nexus_subtitle' ),
+                'image_url'       => (string) $nexus_mget( '_nexus_image_url' ),
+                'summary'         => (string) get_the_excerpt(),
+                'content'         => (string) get_post_field( 'post_content', $nexus_post_id ),
+                'published_at'    => (string) $nexus_mget( '_nexus_published_at' ),
+                'read_time'       => (int) $nexus_mget( '_nexus_read_time' ),
+                'views'           => (int) $nexus_mget( '_nexus_views' ),
+                'reactions'       => (string) $nexus_mget( '_nexus_reactions' ),
+                'factcheck_score' => (float) $nexus_mget( '_nexus_factcheck_score' ),
+                'citations'       => (string) $nexus_mget( '_nexus_citations' ),
+                'source_name'     => (string) $nexus_mget( '_nexus_source_name' ),
+                'source_url'      => (string) $nexus_mget( '_nexus_source_url' ),
+        );
 
         /* Categoria: prima quella Nexus, fallback alla prima categoria WP nativa. */
-        $nexus_cat = ( $nexus_article && ! empty( $nexus_article->category ) ) ? (string) $nexus_article->category : '';
+        $nexus_cat = (string) $nexus_article->category;
         if ( '' === $nexus_cat ) {
                 $nexus_wp_cats = get_the_category();
                 if ( ! empty( $nexus_wp_cats ) && is_array( $nexus_wp_cats ) ) {
@@ -101,43 +119,44 @@ while ( have_posts() ) :
                 }
         }
 
-        /* Tempo di lettura: ricalcolato sul contenuto, fallback al campo Nexus. */
+        /* Tempo di lettura: ricalcolato sul contenuto, fallback al meta Nexus. */
         $nexus_read_time = '';
         if ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'reading_time_it' ) ) {
                 $nexus_read_time = Nexus_Utils::reading_time_it( get_the_content() );
-        } elseif ( $nexus_article && ! empty( $nexus_article->read_time ) ) {
+        } elseif ( $nexus_article->read_time > 0 ) {
                 $nexus_read_time = sprintf(
                         /* translators: %d: minuti di lettura. */
                         __( '%d min di lettura', 'nexus-news-ai' ),
-                        (int) $nexus_article->read_time
+                        $nexus_article->read_time
                 );
         }
 
         /* Letture (contatore Nexus, aggiornato via JS al primo view di sessione). */
-        $nexus_views = $nexus_article ? absint( $nexus_article->views ) : 0;
+        $nexus_views = $nexus_article->views;
         $nexus_views_label = sprintf(
                 /* translators: %s: numero di letture. */
                 _n( '%s lettura', '%s letture', $nexus_views, 'nexus-news-ai' ),
                 esc_html( number_format_i18n( $nexus_views ) )
         );
 
-        /* Byline: agente Nexus (iniziale, nome, categoria). Le emoji salvate
-           nelle versioni precedenti vengono ignorate: si usa la prima lettera
-           del nome, così la firma resta sobria e coerente. */
-        $nexus_agent_name = ( $nexus_agent && ! empty( $nexus_agent->name ) ) ? (string) $nexus_agent->name : __( 'Redazione', 'nexus-news-ai' );
-        $nexus_agent_cat  = ( $nexus_agent && ! empty( $nexus_agent->category ) ) ? (string) $nexus_agent->category : '';
-        $nexus_avatar     = ( $nexus_agent && ! empty( $nexus_agent->avatar ) ) ? trim( (string) $nexus_agent->avatar ) : '';
+        /* Byline: agente Nexus (iniziale, nome) dai meta. */
+        $nexus_agent_name = (string) $nexus_mget( '_nexus_agent_name' );
+        if ( '' === $nexus_agent_name ) {
+                $nexus_agent_name = __( 'Redazione', 'nexus-news-ai' );
+        }
+        $nexus_agent_cat = '';
+        $nexus_avatar    = trim( (string) $nexus_mget( '_nexus_agent_avatar' ) );
         if ( ! preg_match( '/^[\p{L}\p{N}]{1,2}$/u', $nexus_avatar ) ) {
                 $nexus_avatar = function_exists( 'mb_substr' ) ? mb_substr( $nexus_agent_name, 0, 1 ) : substr( $nexus_agent_name, 0, 1 );
         }
         $nexus_avatar = function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $nexus_avatar, 'UTF-8' ) : strtoupper( $nexus_avatar );
 
-        /* Reazioni: emoji ammesse + conteggi correnti (JSON colonna "reactions"). */
+        /* Reazioni: emoji ammesse + conteggi correnti (JSON meta "reactions"). */
         $nexus_emojis = ( class_exists( 'Nexus_Utils' ) && method_exists( 'Nexus_Utils', 'reaction_emojis' ) )
                 ? Nexus_Utils::reaction_emojis()
                 : array( '❤️', '👏', '🔥', '😮', '😂', '🤔' );
 
-        $nexus_counts = $nexus_article ? json_decode( (string) $nexus_article->reactions, true ) : array();
+        $nexus_counts = json_decode( (string) $nexus_article->reactions, true );
         if ( ! is_array( $nexus_counts ) ) {
                 $nexus_counts = array();
         }
@@ -156,7 +175,7 @@ while ( have_posts() ) :
            e modal. Guard difensivi su classe/metodo (nessun errore fatale). */
         $nexus_factcheck_badge = '';
         $nexus_citations_html  = '';
-        if ( $nexus_article && class_exists( 'Nexus_Shortcodes' ) ) {
+        if ( $nexus_article_id > 0 && class_exists( 'Nexus_Shortcodes' ) ) {
                 if ( method_exists( 'Nexus_Shortcodes', 'factcheck_badge' ) ) {
                         $nexus_factcheck_badge = Nexus_Shortcodes::factcheck_badge( $nexus_article );
                 }
@@ -182,7 +201,7 @@ while ( have_posts() ) :
                                         <span class="nxa-sep" aria-hidden="true">·</span>
                                         <span class="nexus-single-read"><?php echo esc_html( $nexus_read_time ); ?></span>
                                 <?php endif; ?>
-                                <?php if ( $nexus_article ) : ?>
+                                <?php if ( $nexus_article_id > 0 ) : ?>
                                         <span class="nxa-sep" aria-hidden="true">·</span>
                                         <span class="nexus-single-views"><?php echo esc_html( $nexus_views_label ); ?></span>
                                 <?php endif; ?>
@@ -256,8 +275,8 @@ while ( have_posts() ) :
                 <?php endif; ?>
 
                 <!-- ============ Reazioni Nexus (data-article-id = ID NEXUS, non WP) ============ -->
-                <?php if ( $nexus_article && ! empty( $nexus_emojis ) ) : ?>
-                        <div class="nexus-single-reactions" data-article-id="<?php echo esc_attr( absint( $nexus_article_id ) ); ?>">
+                <?php if ( $nexus_article_id > 0 && ! empty( $nexus_emojis ) ) : ?>
+                        <div class="nexus-single-reactions" data-article-id="<?php echo esc_attr( absint( $nexus_post_id ) ); ?>">
                                 <div class="nxa-reactions" role="group" aria-label="<?php esc_attr_e( 'Reazioni all’articolo', 'nexus-news-ai' ); ?>">
                                         <?php foreach ( $nexus_emojis as $nexus_emoji ) : ?>
                                                 <?php
