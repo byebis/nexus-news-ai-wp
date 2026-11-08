@@ -5169,26 +5169,37 @@ class Nexus_Rest {
          * @return WP_REST_Response
          */
         public static function rest_public_articles( $request ) {
-                $args = array(
-                        'status'   => 'published',
-                        'category' => (string) $request->get_param( 'category' ),
-                        'search'   => (string) $request->get_param( 'search' ),
-                        'page'     => max( 1, absint( $request->get_param( 'page' ) ) ),
-                        'per_page' => min( 24, max( 1, absint( $request->get_param( 'per_page' ) ) ) ),
-                        'orderby'  => 'published_at',
-                        'order'    => 'desc',
+                // v1.1.26 (feat/nexus-native-ful): front-end su post nativi via WP_Query.
+                $per_page = min( 24, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
+                $page     = max( 1, absint( $request->get_param( 'page' ) ) );
+
+                $query = new WP_Query(
+                        array(
+                                'post_type'              => 'post',
+                                'post_status'            => 'publish',
+                                'posts_per_page'         => $per_page,
+                                'paged'                  => $page,
+                                'orderby'                => 'date',
+                                'order'                  => 'DESC',
+                                'ignore_sticky_posts'    => true,
+                                'update_post_term_cache' => false,
+                        )
                 );
 
-                $rows  = Nexus_DB::articles( $args );
-                $total = Nexus_DB::count_articles( $args );
+                $items = array();
+                foreach ( (array) $query->posts as $post ) {
+                        if ( $post instanceof WP_Post ) {
+                                $items[] = self::serialize_public_post( $post );
+                        }
+                }
 
                 return rest_ensure_response(
                         array(
-                                'items'       => array_map( array( __CLASS__, 'serialize_public_article' ), $rows ),
-                                'total'       => (int) $total,
-                                'page'        => (int) $args['page'],
-                                'per_page'    => (int) $args['per_page'],
-                                'total_pages' => (int) ceil( $total / $args['per_page'] ),
+                                'items'       => $items,
+                                'total'       => (int) $query->found_posts,
+                                'page'        => $page,
+                                'per_page'    => $per_page,
+                                'total_pages' => (int) $query->max_num_pages,
                         )
                 );
         }
@@ -5200,15 +5211,14 @@ class Nexus_Rest {
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_public_article_get( $request ) {
-                $id      = absint( $request->get_param( 'id' ) );
-                $article = self::get_published_article_or_404( $id );
-                if ( is_wp_error( $article ) ) {
-                        return $article;
+                // v1.1.26 (feat/nexus-native-ful): id = ID post WP nativo.
+                $id   = absint( $request->get_param( 'id' ) );
+                $post = $id > 0 ? get_post( $id ) : null;
+                if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status || 'post' !== $post->post_type ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
                 }
 
-                // v1.1.9: anche il singolo articolo pubblico usa il serializzatore
-                // pubblico (senza campi interni del capo redattore).
-                return rest_ensure_response( self::serialize_public_article( $article, true ) );
+                return rest_ensure_response( self::serialize_public_post( $post, true ) );
         }
 
         /**
@@ -5596,7 +5606,14 @@ class Nexus_Rest {
          * @return object|WP_Error
          */
         private static function get_published_article_or_404( $id ) {
-                $article = Nexus_DB::get_article( $id );
+                // v1.1.26 (feat/nexus-native-ful): $id è l'ID del post WP nativo;
+                // risolve l'articolo Nexus collegato via meta _nexus_article_id.
+                $post = $id > 0 ? get_post( absint( $id ) ) : null;
+                if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+                $article_id = absint( get_post_meta( $post->ID, '_nexus_article_id', true ) );
+                $article    = ( $article_id > 0 && class_exists( 'Nexus_DB' ) ) ? Nexus_DB::get_article( $article_id ) : null;
                 if ( ! $article || 'published' !== $article->status ) {
                         return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
                 }
@@ -6486,6 +6503,56 @@ class Nexus_Rest {
 
                 if ( $with_content ) {
                         $out['content'] = (string) ( $a->content ?? '' );
+                }
+
+                return $out;
+        }
+
+        /**
+         * Serializza un post WP NATIVO per le rotte pubbliche (v1.1.26,
+         * feat/nexus-native-ful). Legge SOLO da post + post meta (_nexus_*):
+         * nessuna lettura della tabella nexus_articles. Stesso contratto di
+         * serialize_public_article (whitelist stretta, senza dati interni).
+         *
+         * @param WP_Post $post        Post WP nativo pubblicato.
+         * @param bool    $with_content Includere il contenuto completo (solo dettaglio).
+         * @return array
+         */
+        private static function serialize_public_post( $post, $with_content = false ) {
+                $post_id = (int) $post->ID;
+                $meta    = get_post_meta( $post_id );
+                $mget    = static function ( $key ) use ( $meta ) {
+                        return isset( $meta[ $key ][0] ) ? $meta[ $key ][0] : '';
+                };
+
+                $title    = get_the_title( $post );
+                $subtitle = (string) $mget( '_nexus_subtitle' );
+                $summary   = (string) $post->post_excerpt;
+                $base     = '' !== $summary ? $summary : (string) $post->post_content;
+
+                $reactions = json_decode( (string) $mget( '_nexus_reactions' ), true );
+
+                $out = array(
+                        'id'             => $post_id,
+                        'title'          => $title,
+                        'subtitle'       => $subtitle,
+                        'summary'        => $summary,
+                        'excerpt'        => wp_trim_words( wp_strip_all_tags( $base ), 30, '…' ),
+                        'category'       => (string) $mget( '_nexus_category' ),
+                        'image_url'      => esc_url_raw( (string) $mget( '_nexus_image_url' ) ),
+                        'post_permalink' => get_permalink( $post ),
+                        'agent_name'     => (string) $mget( '_nexus_agent_name' ),
+                        'agent_avatar'   => (string) $mget( '_nexus_agent_avatar' ),
+                        'source_name'    => (string) $mget( '_nexus_source_name' ),
+                        'source_url'     => esc_url_raw( (string) $mget( '_nexus_source_url' ) ),
+                        'published_at'   => self::date_or_empty( (string) $mget( '_nexus_published_at' ) ),
+                        'read_time'      => (int) $mget( '_nexus_read_time' ),
+                        'views'          => (int) $mget( '_nexus_views' ),
+                        'reactions'      => is_array( $reactions ) ? $reactions : array(),
+                );
+
+                if ( $with_content ) {
+                        $out['content'] = (string) $post->post_content;
                 }
 
                 return $out;

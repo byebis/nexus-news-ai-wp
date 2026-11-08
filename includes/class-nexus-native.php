@@ -496,19 +496,35 @@ class Nexus_Native {
 
                 // Meta di collegamento e dati operativi Nexus.
                 update_post_meta( $new_post_id, '_nexus_article_id', $article_id );
+
+                // Nome/avatar agente (derivazione una tantum, per il front-end WP_Query).
+                $agent_name   = '';
+                $agent_avatar = '';
+                $agent_id     = isset( $article->agent_id ) ? (int) $article->agent_id : 0;
+                if ( $agent_id > 0 && class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_agent' ) ) {
+                        $agent = Nexus_DB::get_agent( $agent_id );
+                        if ( $agent ) {
+                                $agent_name   = isset( $agent->name ) ? (string) $agent->name : '';
+                                $agent_avatar = isset( $agent->avatar ) ? (string) $agent->avatar : '';
+                        }
+                }
+
                 $meta_map = array(
-                        '_nexus_status'         => isset( $article->status ) ? (string) $article->status : 'draft',
-                        '_nexus_category'       => isset( $article->category ) ? (string) $article->category : '',
-                        '_nexus_image_url'      => isset( $article->image_url ) ? esc_url_raw( (string) $article->image_url ) : '',
-                        '_nexus_read_time'      => isset( $article->read_time ) ? (int) $article->read_time : 0,
-                        '_nexus_views'          => isset( $article->views ) ? (int) $article->views : 0,
-                        '_nexus_reactions'      => isset( $article->reactions ) ? (string) $article->reactions : '',
-                        '_nexus_factcheck_score'=> isset( $article->factcheck_score ) ? (float) $article->factcheck_score : 0,
-                        '_nexus_citations'      => isset( $article->citations ) ? (string) $article->citations : '',
-                        '_nexus_source_name'     => isset( $article->source_name ) ? (string) $article->source_name : '',
-                        '_nexus_source_url'      => isset( $article->source_url ) ? esc_url_raw( (string) $article->source_url ) : '',
-                        '_nexus_agent_id'       => isset( $article->agent_id ) ? (int) $article->agent_id : 0,
-                        '_nexus_published_at'   => isset( $article->published_at ) ? (string) $article->published_at : '',
+                        '_nexus_status'          => isset( $article->status ) ? (string) $article->status : 'draft',
+                        '_nexus_subtitle'        => isset( $article->subtitle ) ? (string) $article->subtitle : '',
+                        '_nexus_category'        => isset( $article->category ) ? (string) $article->category : '',
+                        '_nexus_image_url'       => isset( $article->image_url ) ? esc_url_raw( (string) $article->image_url ) : '',
+                        '_nexus_read_time'       => isset( $article->read_time ) ? (int) $article->read_time : 0,
+                        '_nexus_views'           => isset( $article->views ) ? (int) $article->views : 0,
+                        '_nexus_reactions'       => isset( $article->reactions ) ? (string) $article->reactions : '',
+                        '_nexus_factcheck_score' => isset( $article->factcheck_score ) ? (float) $article->factcheck_score : 0,
+                        '_nexus_citations'       => isset( $article->citations ) ? (string) $article->citations : '',
+                        '_nexus_source_name'      => isset( $article->source_name ) ? (string) $article->source_name : '',
+                        '_nexus_source_url'       => isset( $article->source_url ) ? esc_url_raw( (string) $article->source_url ) : '',
+                        '_nexus_agent_id'        => $agent_id,
+                        '_nexus_agent_name'      => $agent_name,
+                        '_nexus_agent_avatar'    => $agent_avatar,
+                        '_nexus_published_at'    => isset( $article->published_at ) ? (string) $article->published_at : '',
                 );
                 foreach ( $meta_map as $key => $value ) {
                         update_post_meta( $new_post_id, $key, $value );
