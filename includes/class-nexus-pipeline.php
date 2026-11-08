@@ -1461,9 +1461,6 @@ class Nexus_Pipeline {
                                 continue;
                         }
 
-                        // [DEBUG TEMPORANEO v1.1.25] Log diagnostico promozione soglia.
-                        error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d mode=%s status_in=%s quality_score=%s auto_evaluate=%d auto_rewrite=%d auto_approve_score=%d', $article_id, isset( $mode ) ? $mode : '?', isset( $article->status ) ? $article->status : '?', isset( $article->quality_score ) ? $article->quality_score : '?', ! empty( $settings['auto_evaluate'] ) ? 1 : 0, ! empty( $settings['auto_rewrite'] ) ? 1 : 0, absint( isset( $settings['auto_approve_score'] ) ? $settings['auto_approve_score'] : 75 ) ) );
-
                         // v1.1.9 — Time budget per articolo: le fasi AI di UN solo articolo non
                         // devono poter occupare il tick all'infinito (un modello lento non deve
                         // bloccare il lavoro degli altri). Superato il budget le fasi successive
@@ -1557,13 +1554,8 @@ class Nexus_Pipeline {
                         }
 
                         if ( ! $article ) {
-                                // [DEBUG TEMPORANEO v1.1.25] articolo non trovato dopo la rewrite.
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d POST-FASE3 articolo_non_trovato', $article_id ) );
                                 continue;
                         }
-
-                        // [DEBUG TEMPORANEO v1.1.25] Stato dopo la FASE 3 (riscrittura).
-                        error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d POST-FASE3 rewritten_now=%d status=%s quality_score=%s', $article_id, $rewritten_now ? 1 : 0, isset( $article->status ) ? $article->status : '?', isset( $article->quality_score ) ? $article->quality_score : '?' ) );
 
                         // v1.1.26 (fix/nexus-budget-promote):
                         // La PROMOZIONE draft→pending_approval (solo update di stato, nessuna
@@ -1587,20 +1579,15 @@ class Nexus_Pipeline {
                         // MAI, qualunque sia la soglia: va in attesa di revisione umana.
                         $chief_gate = $is_full_auto && self::awaiting_chief_review( $article );
 
-                        // [DEBUG TEMPORANEO v1.1.25] Valori decisionali prima della catena.
-                        error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d AT-CATENA rewritten_now=%d score_parsed=%d score=%.2f threshold=%d is_full_auto=%d chief_gate=%d status=%s', $article_id, $rewritten_now ? 1 : 0, $score_parsed ? 1 : 0, $score, $threshold, $is_full_auto ? 1 : 0, $chief_gate ? 1 : 0, isset( $article->status ) ? $article->status : '?' ) );
-
                         // --- PROMOZIONE (sempre, fuori dal budget) ---
                         // Se l'articolo è sopra soglia, in 'draft' e con punteggio
                         // interpretabile, lo promuoviamo a pending_approval SUBITO.
                         // Questo copre sia il caso semi_autonomous (coda umana) sia il
                         // caso fully_autonomous (dove poi approve+publish avvengono sotto
                         // budget). Non è una chiamata AI: è solo un update di stato.
-                        $promoted = false;
                         if ( 'draft' === $article->status && $score_parsed && $score >= $threshold ) {
                                 $status_set = Nexus_DB::update_article( $article_id, array( 'status' => 'pending_approval' ) );
                                 if ( false !== $status_set ) {
-                                        $promoted = true;
                                         $article = Nexus_DB::get_article( $article_id );
                                         $summary['messages'][] = sprintf( 'Articolo #%d promosso a pending_approval (valutato %.0f/100).', $article_id, $score );
                                 } else {
@@ -1611,13 +1598,10 @@ class Nexus_Pipeline {
                         // FASI 4-5: azioni con costi reali (approve/publish) SOLO se il
                         // budget lo consente. La promozione di sopra è già avvenuta.
                         if ( ! self::article_time_available( $article_id, (int) $article->agent_id, $article_started_at, $phase_budget, 'approvazione/pubblicazione' ) ) {
-                                // [DEBUG TEMPORANEO v1.1.25] budget non disponibile per approve/publish.
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d BUDGET-NON-DISPONIBILE per approve/publish (promozione già gestita: %d)', $article_id, $promoted ? 1 : 0 ) );
                                 continue;
                         }
 
                         if ( $rewritten_now && $is_full_auto && $score_parsed && $score >= $threshold && ! $chief_gate ) {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=fully_auto_approva_pubblica', $article_id ) );
                                 // Siamo già a pending_approval (promozione sopra) oppure a
                                 // un altro stato valido per approve().
                                 $approval = self::approve(
@@ -1657,20 +1641,16 @@ class Nexus_Pipeline {
                                         $run['error']       = self::clip( (string) ( isset( $approval['error'] ) ? $approval['error'] : '' ), 300 );
                                 }
                         } elseif ( $rewritten_now && $chief_gate ) {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=chief_gate', $article_id ) );
                                 $summary['messages'][] = sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione e pubblicazione automatiche saltate.', $article_id );
                                 self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d in attesa del capo redattore: auto-approvazione saltata (modalità fully autonomous).', $article_id ), 'info', 'pending' );
                         } elseif ( $rewritten_now && $is_full_auto && ! $score_parsed ) {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=full_auto_non_parsato', $article_id ) );
                                 // v1.1.13 (O1): log onesto del motivo — nessuna valutazione reale
                                 // disponibile, l'articolo resta in coda per un revisore umano.
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione umana: punteggio AI assente o non interpretabile, auto-approvazione bloccata.', $article_id );
                                 self::log_phase( (int) $article->agent_id, 'evaluating', sprintf( 'Articolo #%d: punteggio AI assente o non interpretabile: auto-approvazione bloccata, richiesta revisione umana.', $article_id ), 'info', 'pending' );
                         } elseif ( $rewritten_now && $is_full_auto ) {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=full_auto_sotto_soglia score=%.2f threshold=%d', $article_id, $score, $threshold ) );
                                 $summary['messages'][] = sprintf( 'Articolo #%d in coda di revisione: punteggio %.0f sotto la soglia di auto-approvazione (%d).', $article_id, $score, $threshold );
                         } elseif ( $rewritten_now && ! empty( $settings['auto_publish'] ) && 'approved' === $article->status ) {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=semi_auto_publish_già_approvato', $article_id ) );
                                 // semi_autonomous con auto_publish attivo: pubblica solo ciò che risulta già approvato.
                                 $step_t      = microtime( true );
                                 $publication = self::publish( $article_id );
@@ -1692,8 +1672,6 @@ class Nexus_Pipeline {
                                         $run['phase_error'] = true;
                                         $run['error']       = self::clip( (string) $publication['error'], 300 );
                                 }
-                        } else {
-                                error_log( sprintf( '[NEXUS-SOGLIA] articolo=%d RAMO=nesuna_azione_budget (promozione già gestita: %d) score=%.2f threshold=%d score_parsed=%d status=%s', $article_id, $promoted ? 1 : 0, $score, $threshold, $score_parsed ? 1 : 0, isset( $article->status ) ? $article->status : '?' ) );
                         }
 
                         // v1.1.4 — CAPO REDATTORE AI: se dopo la riscrittura l'articolo e'
