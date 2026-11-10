@@ -332,6 +332,35 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
 ?>
 <div class="wrap nexus-admin sui-wrap" data-page="dashboard">
 
+        <?php
+        /* v1.1.28 (Freemium UI): banner discreto del piano Free. I dati
+         * (limiti + conteggi correnti + URL upgrade) vengono dal backend
+         * (Nexus_Admin::license_state), mai hardcodati qui. */
+        $nexus_lic = ( class_exists( 'Nexus_Admin' ) && method_exists( 'Nexus_Admin', 'license_state' ) )
+                ? (array) Nexus_Admin::license_state()
+                : array( 'is_pro' => false, 'limits' => array(), 'counts' => array(), 'upgrade_url' => '' );
+        if ( empty( $nexus_lic['is_pro'] ) ) :
+                $nexus_free_agents   = isset( $nexus_lic['counts']['agents'] ) ? (int) $nexus_lic['counts']['agents'] : 0;
+                $nexus_free_sources  = isset( $nexus_lic['counts']['sources'] ) ? (int) $nexus_lic['counts']['sources'] : 0;
+                $nexus_free_src_max  = isset( $nexus_lic['limits']['sources'] ) ? (int) $nexus_lic['limits']['sources'] : 10;
+                $nexus_free_url      = isset( $nexus_lic['upgrade_url'] ) ? (string) $nexus_lic['upgrade_url'] : '';
+        ?>
+        <div class="notice is-dismissible nxa-ban-banner" style="margin:0 0 16px;padding:10px 14px;border-left:4px solid #b8860b;background:#fffdf3;color:#3d3d3d">
+                <span><?php
+                        echo esc_html( sprintf(
+                                /* translators: 1: agenti usati, 2: fonti usate, 3: massimo fonti. */
+                                __( 'Piano Free — %1$d agenti usati, %2$d/%3$d fonti.', 'nexus-news-ai' ),
+                                $nexus_free_agents,
+                                $nexus_free_sources,
+                                $nexus_free_src_max
+                        ) );
+                ?></span>
+                <?php if ( '' !== $nexus_free_url ) : ?>
+                        <a href="<?php echo esc_url( $nexus_free_url ); ?>" style="margin-left:8px;font-weight:600"><?php esc_html_e( 'Passa a Pro', 'nexus-news-ai' ); ?></a>
+                <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
         <div class="sui-page-head" style="margin-bottom:16px;">
                 <h1 class="sui-page-head__title"><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
                 <?php if ( '' !== $nexus_tagline ) : ?>
