@@ -237,6 +237,13 @@ class Nexus_Admin {
                         'nexus-settings' => __( 'Impostazioni', 'nexus-news-ai' ),
                 );
 
+                // v1.1.26 (feat/nexus-onboarding-api): gating dei submenu avanzati.
+                // Finché non c'è un articolo pubblicato (o l'utente ha attivato
+                // "mostra avanzate") i moduli avanzati restano nascosti, così
+                // l'onboarding guida il primo utilizzo.
+                $advanced_slugs = array( 'nexus-jobs', 'nexus-activity', 'nexus-wire', 'nexus-analytics', 'nexus-tools' );
+                $show_advanced  = self::should_show_advanced();
+
                 // BC v1.1.11 (R2): i 4 slug storici restano REGISTRATI (URL vecchi
                 // e link esterni page=nexus-settings-* funzionanti, ognuno mappa
                 // sulla vista a tab col proprio tab aperto) ma la voce di menu è
@@ -249,6 +256,9 @@ class Nexus_Admin {
                 );
 
                 foreach ( $submenus as $slug => $title ) {
+                        if ( ! $show_advanced && in_array( $slug, $advanced_slugs, true ) ) {
+                                continue; // Gating onboarding: modulo avanzato nascosto.
+                        }
                         add_submenu_page(
                                 'nexus-news',
                                 $title, // <title> pagina.
@@ -286,6 +296,27 @@ class Nexus_Admin {
 
                 // Nessuna rimozione per nexus-settings: dalla v1.1.11 (R2) è la voce
                 // "Impostazioni" VISIBILE del menu (logica BC v1.1.6 invertita).
+        }
+
+        /**
+         * v1.1.26 (feat/nexus-onboarding-api): i submenu avanzati diventano
+         * visibili quando c'è almeno un articolo pubblicato oppure l'utente ha
+         * attivato l'opzione "mostra avanzate".
+         *
+         * @return bool
+         */
+        public static function should_show_advanced() {
+                // Opzione esplicita "mostra avanzate".
+                if ( get_option( 'nexus_show_advanced', 0 ) ) {
+                        return true;
+                }
+                // Almeno un articolo pubblicato → redazione operativa, menu completo.
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'count_articles' ) ) {
+                        if ( (int) Nexus_DB::count_articles( array( 'status' => 'published' ) ) > 0 ) {
+                                return true;
+                        }
+                }
+                return false;
         }
 
         /**

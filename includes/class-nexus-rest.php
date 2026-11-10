@@ -943,6 +943,20 @@ class Nexus_Rest {
                         )
                 );
 
+                /* ---------------- ONBOARDING STATUS (v1.1.26) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/onboarding/status',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_onboarding_status' ),
+                                        'permission_callback' => array( __CLASS__, 'perm_admin' ),
+                                ),
+                        )
+                );
+
                 /* ---------------- ADMIN: CODA LAVORI (v1.0.4) ---------------- */
 
                 register_rest_route(
@@ -4010,6 +4024,12 @@ class Nexus_Rest {
                         'models_count' => count( $models ),
                         'sample'       => array_slice( $models, 0, 5 ),
                         'latency_ms'   => $latency_ms,
+                        'message'      => sprintf(
+                                /* translators: %1$s: provider, %2$d: numero modelli. */
+                                __( 'Connessione al provider %1$s riuscita: %2$d modelli disponibili.', 'nexus-news-ai' ),
+                                $provider,
+                                count( $models )
+                        ),
                 );
 
                 // OpenRouter: info account già raccolte dalla validazione /key qui sopra.
@@ -5358,6 +5378,83 @@ class Nexus_Rest {
                                 'version'   => defined( 'NEXUS_VERSION' ) ? NEXUS_VERSION : '',
                                 'mode'      => isset( $settings['mode'] ) ? (string) $settings['mode'] : '',
                                 'cron_next' => $cron_next ? (int) $cron_next : null,
+                        )
+                );
+        }
+
+        /**
+         * GET /onboarding/status — stato dei passi dell'onboarding (v1.1.26).
+         *
+         * Restituisce i booleani per la checklist UI:
+         *  - ai_connected    → chiave AI valida presente (ai_api_key o prov_key_*);
+         *  - agent_created   → almeno un agente attivo;
+         *  - sources_added   → almeno una fonte RSS configurata (global_rss_sources);
+         *  - run_done        → almeno una run di pipeline eseguita (nexus_agent_runs);
+         *  - article_published → almeno un articolo pubblicato.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_onboarding_status( $request ) {
+                unset( $request );
+
+                $settings = class_exists( 'Nexus_DB' ) ? Nexus_DB::get_settings() : array();
+                if ( ! is_array( $settings ) ) {
+                        $settings = array();
+                }
+
+                // ai_connected: chiave AI (globale o per-provider) presente.
+                $ai_connected = false;
+                if ( ! empty( $settings['ai_api_key'] ) && '' !== trim( (string) $settings['ai_api_key'] ) ) {
+                        $ai_connected = true;
+                } else {
+                        foreach ( $settings as $key => $value ) {
+                                if ( 0 === strpos( (string) $key, 'prov_key_' ) && is_string( $value ) && '' !== trim( $value ) ) {
+                                        $ai_connected = true;
+                                        break;
+                                }
+                        }
+                }
+
+                // agent_created: almeno un agente attivo.
+                $agent_created = false;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
+                        foreach ( Nexus_DB::agents() as $agent ) {
+                                if ( isset( $agent->status ) && 'active' === $agent->status ) {
+                                        $agent_created = true;
+                                        break;
+                                }
+                        }
+                }
+
+                // sources_added: almeno una fonte RSS globale.
+                $sources_added = false;
+                if ( isset( $settings['global_rss_sources'] ) && '' !== trim( (string) $settings['global_rss_sources'] ) ) {
+                        $sources_added = true;
+                }
+
+                // run_done: almeno una riga in nexus_agent_runs.
+                $run_done = false;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) {
+                        global $wpdb;
+                        $runs_table = Nexus_DB::tables()['agent_runs'];
+                        $run_done   = (bool) $wpdb->get_var( "SELECT 1 FROM {$runs_table} LIMIT 1" );
+                }
+
+                // article_published: almeno un articolo pubblicato.
+                $article_published = false;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'count_articles' ) ) {
+                        $article_published = ( (int) Nexus_DB::count_articles( array( 'status' => 'published' ) ) > 0 );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'               => true,
+                                'ai_connected'     => (bool) $ai_connected,
+                                'agent_created'    => (bool) $agent_created,
+                                'sources_added'    => (bool) $sources_added,
+                                'run_done'         => (bool) $run_done,
+                                'article_published' => (bool) $article_published,
                         )
                 );
         }
