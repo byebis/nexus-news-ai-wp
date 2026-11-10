@@ -332,12 +332,6 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
 ?>
 <div class="wrap nexus-admin sui-wrap" data-page="dashboard">
 
-        <?php
-        if ( class_exists( 'OneShot_Suite' ) ) {
-                \OneShot_Suite::render_suite_strip( 'nexus-news-ai' );
-        }
-        ?>
-
         <div class="sui-page-head" style="margin-bottom:16px;">
                 <h1 class="sui-page-head__title"><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
                 <?php if ( '' !== $nexus_tagline ) : ?>
