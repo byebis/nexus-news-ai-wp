@@ -5417,10 +5417,15 @@ class Nexus_Rest {
                 }
 
                 // agent_created: almeno un agente attivo.
+                // Il valore canonico è 'active' (default colonna, insert_agent e
+                // route POST /agents/{id}/status). Per robustezza normalizziamo lo
+                // status (lowercase + trim) e accettiamo anche le varianti usate
+                // storicamente ('attivo', 'enabled', '1', 'yes').
                 $agent_created = false;
+                $active_statuses = array( 'active', 'attivo', 'enabled', '1', 'yes' );
                 if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
                         foreach ( Nexus_DB::agents() as $agent ) {
-                                if ( isset( $agent->status ) && 'active' === $agent->status ) {
+                                if ( isset( $agent->status ) && in_array( strtolower( trim( (string) $agent->status ) ), $active_statuses, true ) ) {
                                         $agent_created = true;
                                         break;
                                 }
