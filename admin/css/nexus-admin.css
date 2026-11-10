@@ -3225,3 +3225,28 @@ hr.nxa-hairline {
   box-shadow: none;
   transform: none;
 }
+
+/* ============================================================
+ * Freemium UI (branch feat/nexus-freemius-ui)
+ * - badge "Pro" accanto alle voci di menu Pro
+ * - banner discreto del piano Free (dashboard / wizard)
+ * ============================================================ */
+
+.nxa-pro-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #f3e9c8;
+  color: #7a5c00;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.6;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.nxa-ban-banner a {
+  text-decoration: underline;
+}

@@ -128,6 +128,33 @@ if ( ! $nxa_obs_has_ai_key && class_exists( 'Nexus_Providers' ) && method_exists
                 <h2 id="nxa-onboarding-title"><?php esc_html_e( 'Crea la tua redazione', 'nexus-news-ai' ); ?></h2>
                 <p class="nxa-obs-sub"><?php esc_html_e( 'Scegli un punto di partenza. Potrai modificare, aggiungere o togliere giornalisti in qualsiasi momento.', 'nexus-news-ai' ); ?></p>
 
+                <?php
+                /* v1.1.28 (Freemium UI): banner discreto Free nel wizard. */
+                $nxa_obs_lic = ( class_exists( 'Nexus_Admin' ) && method_exists( 'Nexus_Admin', 'license_state' ) )
+                        ? (array) Nexus_Admin::license_state()
+                        : array( 'is_pro' => false, 'limits' => array(), 'counts' => array(), 'upgrade_url' => '' );
+                if ( empty( $nxa_obs_lic['is_pro'] ) ) :
+                        $nxa_obs_agents  = isset( $nxa_obs_lic['counts']['agents'] ) ? (int) $nxa_obs_lic['counts']['agents'] : 0;
+                        $nxa_obs_sources = isset( $nxa_obs_lic['counts']['sources'] ) ? (int) $nxa_obs_lic['counts']['sources'] : 0;
+                        $nxa_obs_srcmax = isset( $nxa_obs_lic['limits']['sources'] ) ? (int) $nxa_obs_lic['limits']['sources'] : 10;
+                        $nxa_obs_url    = isset( $nxa_obs_lic['upgrade_url'] ) ? (string) $nxa_obs_lic['upgrade_url'] : '';
+                ?>
+                <div class="nxa-obs-free-banner" style="margin:0 0 14px;padding:8px 12px;border-left:4px solid #b8860b;background:#fffdf3;color:#3d3d3d;font-size:0.85rem;line-height:1.5">
+                        <span><?php
+                                echo esc_html( sprintf(
+                                        /* translators: 1: agenti usati, 2: fonti usate, 3: massimo fonti. */
+                                        __( 'Piano Free — %1$d agenti usati, %2$d/%3$d fonti.', 'nexus-news-ai' ),
+                                        $nxa_obs_agents,
+                                        $nxa_obs_sources,
+                                        $nxa_obs_srcmax
+                                ) );
+                        ?></span>
+                        <?php if ( '' !== $nxa_obs_url ) : ?>
+                                <a href="<?php echo esc_url( $nxa_obs_url ); ?>" style="margin-left:8px;font-weight:600"><?php esc_html_e( 'Passa a Pro', 'nexus-news-ai' ); ?></a>
+                        <?php endif; ?>
+                </div>
+                <?php endif; ?>
+
                 <!-- STEP 0 (v1.1.19) — chiave AI: SOLO se nessuna chiave è
                      configurata (guard PHP in testa). Se assente il wizard parte
                      direttamente dallo step 1 (admin.js: nxaOnboardingReset). -->
