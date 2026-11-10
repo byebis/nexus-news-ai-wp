@@ -67,8 +67,59 @@ class Nexus_Admin {
          */
         public static function init() {
                 add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
+                add_action( 'admin_menu', array( __CLASS__, 'maybe_hide_advanced_menu' ), 999 );
                 add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
                 add_filter( 'admin_body_class', array( __CLASS__, 'admin_body_class' ) );
+        }
+
+        /**
+         * Menu semplificato (v1.1.27, onboarding UX): finché non esiste un
+         * primo articolo pubblicato (E l'utente non ha scelto esplicitamente
+         * le funzioni avanzate), le voci più tecniche vengono nascoste:
+         * restano Dashboard, Agenti, Redazioni (fonti), Coda Approvazioni e
+         * Impostazioni. Appena arriva il primo articolo pubblicato (o si
+         * imposta la user meta 'nexus_advanced_menu') il menu torna completo.
+         *
+         * Hook a priorità 999: gira dopo la registrazione di TUTTI i
+         * sottomenu (inclusi Calendario/Google, registrati a priorità 20).
+         *
+         * @return void
+         */
+        public static function maybe_hide_advanced_menu() {
+                if ( ! current_user_can( 'manage_options' ) ) {
+                        return;
+                }
+
+                // Primo articolo pubblicato? (fonti della checklist "Primi passi".)
+                $has_published = false;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'count_articles' ) ) {
+                        try {
+                                $has_published = Nexus_DB::count_articles( array( 'status' => 'published' ) ) > 0;
+                        } catch ( \Throwable $e ) {
+                                $has_published = false; // tabella assente → menu completo per sicurezza.
+                        }
+                }
+
+                // Opt-in esplicito dell'utente ("Mostra funzioni avanzate").
+                $advanced_optin = (bool) get_user_meta( get_current_user_id(), 'nexus_advanced_menu', true );
+
+                if ( $has_published || $advanced_optin ) {
+                        return; // menu completo.
+                }
+
+                $hidden = array(
+                        'nexus-wire',
+                        'nexus-analytics',
+                        'nexus-tools',
+                        'nexus-jobs',
+                        'nexus-activity',
+                        'nexus-calendar',
+                        'nexus-google-wizard',
+                );
+
+                foreach ( $hidden as $slug ) {
+                        remove_submenu_page( 'nexus-news', $slug );
+                }
         }
 
         /**
@@ -243,6 +294,13 @@ class Nexus_Admin {
          * @return void
          */
         public static function render_dashboard_page() {
+                // Toggle "Mostra funzioni avanzate" (onboarding UX): opt-in esplicito
+                // per sbloccare le voci di menu avanzate prima del primo articolo
+                // pubblicato. Uso a senso unico (non-cyc di sicurezza, non è un POST).
+                if ( isset( $_GET['nxa_show_advanced'] ) && '1' === sanitize_key( wp_unslash( $_GET['nxa_show_advanced'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- toggle non distruttivo.
+                        update_user_meta( get_current_user_id(), 'nexus_advanced_menu', 1 );
+                }
+
                 self::render_view( 'dashboard' );
         }
 

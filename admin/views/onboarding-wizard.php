@@ -156,6 +156,10 @@ if ( ! $nxa_obs_has_ai_key && class_exists( 'Nexus_Providers' ) && method_exists
                                 <button type="button" class="nxa-btn nxa-btn-primary" id="nxa-obs-key-save"><?php esc_html_e( 'Salva e continua', 'nexus-news-ai' ); ?></button>
                                 <button type="button" class="button-link" id="nxa-obs-key-skip"><?php esc_html_e( 'Lo farò dopo', 'nexus-news-ai' ); ?></button>
                         </p>
+                        <p class="nxa-obs-key-test-wrap" style="margin-top:12px">
+                                <button type="button" class="button" id="nxa-obs-key-test"><?php esc_html_e( 'Testa la connessione', 'nexus-news-ai' ); ?></button>
+                                <span id="nxa-obs-key-test-status" class="nxa-obs-key-test-status" role="status" style="margin-left:8px;font-size:0.85rem"></span>
+                        </p>
                 </div>
                 <?php endif; ?>
 

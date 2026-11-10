@@ -332,12 +332,6 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
 ?>
 <div class="wrap nexus-admin sui-wrap" data-page="dashboard">
 
-        <?php
-        if ( class_exists( 'OneShot_Suite' ) ) {
-                \OneShot_Suite::render_suite_strip( 'nexus-news-ai' );
-        }
-        ?>
-
         <div class="sui-page-head" style="margin-bottom:16px;">
                 <h1 class="sui-page-head__title"><?php echo esc_html__( 'Nexus News AI', 'nexus-news-ai' ); ?></h1>
                 <?php if ( '' !== $nexus_tagline ) : ?>
@@ -456,7 +450,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['ai'] ) : ?>
                                                 <?php esc_html_e( 'Chiave AI configurata', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <?php esc_html_e( 'Configura la chiave AI', 'nexus-news-ai' ); ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=ai' ) ); ?>"><?php esc_html_e( 'Configura la chiave AI', 'nexus-news-ai' ); ?></a>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['agents'] ? 'is-done' : ''; ?>">
@@ -464,7 +458,7 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['agents'] ) : ?>
                                                 <?php esc_html_e( 'Redazione creata', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <?php esc_html_e( 'Crea la redazione con il wizard', 'nexus-news-ai' ); ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-agents#nxa-onboarding' ) ); ?>"><?php esc_html_e( 'Crea la redazione con il wizard', 'nexus-news-ai' ); ?></a>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['rss'] ? 'is-done' : ''; ?>">
@@ -472,19 +466,39 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                                         <?php if ( $nexus_checklist['rss'] ) : ?>
                                                 <?php esc_html_e( 'Fonti RSS impostate', 'nexus-news-ai' ); ?>
                                         <?php else : ?>
-                                                <?php esc_html_e( 'Aggiungi le fonti RSS', 'nexus-news-ai' ); ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-settings&tab=contenuti' ) ); ?>"><?php esc_html_e( 'Aggiungi le fonti RSS', 'nexus-news-ai' ); ?></a>
                                         <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['collected'] ? 'is-done' : ''; ?>">
                                         <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['collected'] ? '✓' : '○'; ?></span>
-                                        <?php esc_html_e( 'Prima raccolta eseguita', 'nexus-news-ai' ); ?>
+                                        <?php if ( $nexus_checklist['collected'] ) : ?>
+                                                <?php esc_html_e( 'Prima raccolta eseguita', 'nexus-news-ai' ); ?>
+                                        <?php else : ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-jobs' ) ); ?>"><?php esc_html_e( 'Prima raccolta eseguita', 'nexus-news-ai' ); ?></a>
+                                        <?php endif; ?>
                                 </li>
                                 <li class="<?php echo $nexus_checklist['published'] ? 'is-done' : ''; ?>">
                                         <span class="nxa-setup-check" aria-hidden="true"><?php echo $nexus_checklist['published'] ? '✓' : '○'; ?></span>
-                                        <?php esc_html_e( 'Primo articolo pubblicato', 'nexus-news-ai' ); ?>
+                                        <?php if ( $nexus_checklist['published'] ) : ?>
+                                                <?php esc_html_e( 'Primo articolo pubblicato', 'nexus-news-ai' ); ?>
+                                        <?php else : ?>
+                                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-news' ) ); ?>"><?php esc_html_e( 'Primo articolo pubblicato', 'nexus-news-ai' ); ?></a>
+                                        <?php endif; ?>
                                 </li>
                         </ul>
                 </div>
+                <?php
+                /* v1.1.27 (onboarding UX): se il menu è in versione semplificata
+                 * (nessun articolo pubblicato e nessun opt-in), offri il link per
+                 * mostrare le funzioni avanzate (imposta la user meta via
+                 * ?nxa_show_advanced=1, gestito in render_dashboard_page). */
+                $nexus_menu_simplified = ( ! $nexus_checklist['published'] && ! (bool) get_user_meta( get_current_user_id(), 'nexus_advanced_menu', true ) );
+                if ( $nexus_menu_simplified ) :
+                ?>
+                <p class="nxa-setup-advanced" style="margin-top:10px;font-size:12px">
+                        <a href="<?php echo esc_url( admin_url( 'admin.php?page=nexus-news&nxa_show_advanced=1' ) ); ?>"><?php esc_html_e( 'Mostra funzioni avanzate (Wire, Analytics, Strumenti, Calendario…)', 'nexus-news-ai' ); ?></a>
+                </p>
+                <?php endif; ?>
                 <script>
                 /* v1.1.19 — Dismiss checklist: POST /setup/dismiss (user meta
                  * per-utente). Niente hide ottimistico: la card sparisce solo a
