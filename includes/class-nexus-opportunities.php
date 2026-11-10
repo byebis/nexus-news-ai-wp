@@ -456,6 +456,16 @@ class Nexus_Opportunities {
                         );
                 }
 
+                // v1.1.28 (Freemius): l'assegnazione opportunità lancia un Nexus
+                // Wire, che è una feature Pro.
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        return new WP_Error(
+                                'nexus_pro_required',
+                                __( 'L\'assegnazione delle opportunità richiede il piano Pro.', 'nexus-news-ai' ),
+                                array( 'status' => 403 )
+                        );
+                }
+
                 return true;
         }
 

@@ -250,6 +250,15 @@ final class Nexus_Google_Wizard {
                         );
                 }
 
+                // v1.1.28 (Freemius): il wizard Google (GSC/GA4) è Pro.
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        return new WP_Error(
+                                'nexus_pro_required',
+                                __( 'La connessione Google (Analytics) richiede il piano Pro.', 'nexus-news-ai' ),
+                                array( 'status' => 403 )
+                        );
+                }
+
                 return true;
         }
 

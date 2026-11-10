@@ -354,7 +354,7 @@ class Nexus_Calendar {
 
                 // Notifiche post-redirect (whitelist chiavi, numeri assinti).
                 $notice_key  = isset( $_GET['nxa_cal_notice'] ) ? sanitize_key( wp_unslash( $_GET['nxa_cal_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- sola lettura esito redirect, nessuna azione.
-                $notice_key  = in_array( $notice_key, array( 'saved', 'run', 'err' ), true ) ? $notice_key : '';
+                $notice_key  = in_array( $notice_key, array( 'saved', 'run', 'err', 'pro' ), true ) ? $notice_key : '';
                 $notice_moved   = isset( $_GET['moved'] ) ? absint( $_GET['moved'] ) : 0;     // phpcs:ignore WordPress.Security.NonceVerification.Recommended
                 $notice_checked = isset( $_GET['checked'] ) ? absint( $_GET['checked'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
                 $notice_bad     = isset( $_GET['bad'] ) ? absint( $_GET['bad'] ) : 0;         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -1151,6 +1151,11 @@ class Nexus_Calendar {
         public static function handle_save_slots() {
                 self::guard_admin( self::NONCE_SLOTS );
 
+                // v1.1.28 (Freemius): il calendario editoriale è Pro.
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        self::redirect_self( array( 'nxa_cal_notice' => 'pro' ) );
+                }
+
                 $cfg = self::slots_config();
 
                 // phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce verificato sopra con check_admin_referer.
@@ -1207,6 +1212,11 @@ class Nexus_Calendar {
          */
         public static function handle_run_now() {
                 self::guard_admin( self::NONCE_RUN );
+
+                // v1.1.28 (Freemius): il calendario editoriale è Pro.
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        self::redirect_self( array( 'nxa_cal_notice' => 'pro' ) );
+                }
 
                 $res = self::realign_now();
 

@@ -103,8 +103,27 @@ class Nexus_Admin {
                 // Opt-in esplicito dell'utente ("Mostra funzioni avanzate").
                 $advanced_optin = (bool) get_user_meta( get_current_user_id(), 'nexus_advanced_menu', true );
 
+                // v1.1.28 (Freemius): senza licenza Pro i moduli Pro (inclusi
+                // Calendario/Google, registrati da altri moduli) restano nascosti
+                // anche quando il menu è "completo".
+                $is_pro = class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && Nexus_License::is_pro();
+
                 if ( $has_published || $advanced_optin ) {
-                        return; // menu completo.
+                        if ( $is_pro ) {
+                                return; // Pro: menu completo.
+                        }
+                        // Free con contenuto operativo: nascondi solo i moduli Pro.
+                        $pro_hidden = array(
+                                'nexus-wire',
+                                'nexus-analytics',
+                                'nexus-tools',
+                                'nexus-calendar',
+                                'nexus-google-wizard',
+                        );
+                        foreach ( $pro_hidden as $slug ) {
+                                remove_submenu_page( 'nexus-news', $slug );
+                        }
+                        return;
                 }
 
                 $hidden = array(
@@ -243,6 +262,10 @@ class Nexus_Admin {
                 // l'onboarding guida il primo utilizzo.
                 $advanced_slugs = array( 'nexus-jobs', 'nexus-activity', 'nexus-wire', 'nexus-analytics', 'nexus-tools' );
                 $show_advanced  = self::should_show_advanced();
+
+                // v1.1.28 (Freemius): i moduli Pro restano nascosti senza licenza.
+                $pro_slugs = array( 'nexus-wire', 'nexus-analytics', 'nexus-tools' );
+                $is_pro    = class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) ? Nexus_License::is_pro() : false;
 
                 // BC v1.1.11 (R2): i 4 slug storici restano REGISTRATI (URL vecchi
                 // e link esterni page=nexus-settings-* funzionanti, ognuno mappa

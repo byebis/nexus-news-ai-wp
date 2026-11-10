@@ -2013,6 +2013,17 @@ class Nexus_Rest {
                         );
                 }
 
+                // v1.1.28 (Freemius): limite agenti Free (3 di default).
+                $limit_check = self::enforce_free_limit(
+                        'nexus_free_limit_agents',
+                        count( (array) Nexus_DB::agents() ),
+                        3,
+                        __( 'Il piano Free consente fino a 3 agenti AI. Passa a Pro per agenti illimitati.', 'nexus-news-ai' )
+                );
+                if ( true !== $limit_check ) {
+                        return $limit_check;
+                }
+
                 $fields['status'] = $fields['status'] ?? 'active';
                 $new_id           = Nexus_DB::insert_agent( $fields );
                 if ( ! $new_id ) {
@@ -2093,6 +2104,17 @@ class Nexus_Rest {
                         $candidate = mb_substr( $candidate, 0, 100 );
                         ++$suffix_n;
                 } while ( Nexus_DB::get_agent_by_category( $candidate ) && $suffix_n < 50 );
+
+                // v1.1.28 (Freemius): limite agenti Free (3 di default).
+                $limit_check = self::enforce_free_limit(
+                        'nexus_free_limit_agents',
+                        count( (array) Nexus_DB::agents() ),
+                        3,
+                        __( 'Il piano Free consente fino a 3 agenti AI. Passa a Pro per agenti illimitati.', 'nexus-news-ai' )
+                );
+                if ( true !== $limit_check ) {
+                        return $limit_check;
+                }
 
                 $new_id = Nexus_DB::insert_agent(
                         array(
@@ -4641,6 +4663,39 @@ class Nexus_Rest {
                         }
                 }
 
+                // v1.1.28 (Freemius): limite fonti RSS globali Free (10 di default).
+                if ( isset( $payload['global_rss_sources'] ) && ! self::pro_active() ) {
+                        $sources_limit = (int) apply_filters( 'nexus_free_limit_sources', 10 );
+                        $sources_count  = 0;
+                        foreach ( preg_split( '/\r\n|\r|\n/', (string) $payload['global_rss_sources'] ) as $line ) {
+                                $line = trim( $line );
+                                if ( '' !== $line && 0 !== strpos( $line, '#' ) ) {
+                                        $sources_count++;
+                                }
+                        }
+                        if ( $sources_limit > 0 && $sources_count > $sources_limit ) {
+                                return self::err(
+                                        'nexus_pro_required',
+                                        sprintf( __( 'Il piano Free consente fino a %d fonti RSS globali. Passa a Pro per fonti illimitate.', 'nexus-news-ai' ), $sources_limit ),
+                                        403
+                                );
+                        }
+                }
+
+                // v1.1.28 (Freemius): la pubblicazione multi-piattaforma è Pro.
+                // social_platforms è una stringa CSV (es. "blog,twitter"). La
+                // pubblicazione nativa 'blog' è libera; i canali esterni sono Pro.
+                if ( isset( $payload['social_platforms'] ) && ! self::pro_active() ) {
+                        $platforms = array_filter( array_map( 'trim', explode( ',', (string) $payload['social_platforms'] ) ) );
+                        if ( ! empty( array_diff( $platforms, array( 'blog' ) ) ) ) {
+                                return self::err(
+                                        'nexus_pro_required',
+                                        __( 'La pubblicazione multi-piattaforma richiede il piano Pro.', 'nexus-news-ai' ),
+                                        403
+                                );
+                        }
+                }
+
                 $updated = Nexus_DB::update_settings( $payload );
                 Nexus_DB::insert_activity( 0, 'settings_update', __( 'Impostazioni aggiornate via API.', 'nexus-news-ai' ), 'info' );
 
@@ -5094,6 +5149,10 @@ class Nexus_Rest {
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_wire_run( $request ) {
+                // v1.1.28 (Freemius): Nexus Wire è Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'Nexus Wire richiede il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
                 $gate = self::sync_gate_acquire( 'wire_run', 1200, 15 );
                 if ( is_wp_error( $gate ) ) {
                         return $gate;
@@ -5143,6 +5202,10 @@ class Nexus_Rest {
          * @return WP_REST_Response
          */
         public static function rest_wire_runs( $request ) {
+                // v1.1.28 (Freemius): Nexus Wire è Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'Nexus Wire richiede il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
                 $limit = min( 50, max( 1, absint( $request->get_param( 'limit' ) ) ) );
 
                 if ( ! is_callable( array( 'Nexus_Pipeline', 'wire_runs' ) ) ) {
@@ -5645,6 +5708,10 @@ class Nexus_Rest {
          * @return WP_REST_Response|WP_Error
          */
         public static function rest_analytics( $request ) {
+                // v1.1.28 (Freemius): Analytics è Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'Analytics richiede il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
                 if ( ! class_exists( 'Nexus_Analytics' ) || ! method_exists( 'Nexus_Analytics', 'overview' ) ) {
                         return self::err( 'nexus_not_available', __( 'Analytics non disponibile.', 'nexus-news-ai' ), 501 );
                 }
@@ -5685,6 +5752,47 @@ class Nexus_Rest {
          */
         private static function err( $code, $message, $status ) {
                 return new WP_Error( $code, $message, array( 'status' => (int) $status ) );
+        }
+
+        /**
+         * v1.1.28 (Freemius): true se la licenza Pro è attiva.
+         * Fail-closed: senza modulo licenza (o non configurato) → false.
+         *
+         * @return bool
+         */
+        private static function pro_active() {
+                return class_exists( 'Nexus_License' )
+                        && method_exists( 'Nexus_License', 'is_pro' )
+                        && Nexus_License::is_pro();
+        }
+
+        /**
+         * v1.1.28 (Freemius): applica il limite del piano Free.
+         *
+         * Se la licenza Pro è attiva non c'è limite (ritorna true). Altrimenti
+         * ritorna true se $current < limite (filtro configurabile), oppure un
+         * WP_Error 'nexus_pro_required' (403) quando il limite è raggiunto.
+         * $limit_gt 0 disabilita il limite.
+         *
+         * @param string $filter_key Filtro limite (es. 'nexus_free_limit_agents').
+         * @param int    $current    Conteggio corrente.
+         * @param int    $default    Default limite.
+         * @param string $message    Messaggio errore.
+         * @return true|WP_Error
+         */
+        private static function enforce_free_limit( $filter_key, $current, $default, $message ) {
+                if ( self::pro_active() ) {
+                        return true;
+                }
+                $limit = (int) apply_filters( $filter_key, $default );
+                if ( $limit > 0 && (int) $current >= $limit ) {
+                        return self::err(
+                                'nexus_pro_required',
+                                $message,
+                                403
+                        );
+                }
+                return true;
         }
 
         /**
@@ -6940,6 +7048,15 @@ class Nexus_Rest {
                                         continue;
                                 }
 
+                                // v1.1.28 (Freemius): limite agenti Free (3 di default).
+                                if ( ! self::pro_active() ) {
+                                        $limit = (int) apply_filters( 'nexus_free_limit_agents', 3 );
+                                        if ( $limit > 0 && count( (array) Nexus_DB::agents() ) >= $limit ) {
+                                                $errors[] = __( 'Limite agenti Free raggiunto (3): passa a Pro per importarne altri: ', 'nexus-news-ai' ) . sanitize_text_field( $name );
+                                                continue;
+                                        }
+                                }
+
                                 $inserted = (int) Nexus_DB::insert_agent( $fields );
                                 if ( $inserted > 0 ) {
                                         $agents_inserted++;
@@ -7040,6 +7157,10 @@ class Nexus_Rest {
          */
         public static function rest_tools_api_key( $request ) {
                 unset( $request );
+                // v1.1.28 (Freemius): API esterna nexus-public è Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'La generazione della chiave API esterna richiede il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
                 if ( ! class_exists( 'Nexus_DB' ) ) {
                         return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
                 }
@@ -7347,6 +7468,19 @@ class Nexus_Rest {
                 $name = sanitize_text_field( (string) $request->get_param( 'name' ) );
                 if ( '' === $name ) {
                         return self::err( 'nexus_rest_redazione_name_required', __( 'Il nome della redazione è obbligatorio.', 'nexus-news-ai' ), 400 );
+                }
+
+                // v1.1.28 (Freemius): limite redazioni Free (1 di default).
+                if ( ! self::pro_active() ) {
+                        $redazioni_limit = (int) apply_filters( 'nexus_free_limit_redazioni', 1 );
+                        $redazioni_count  = count( (array) Nexus_Redazioni::all_terms() );
+                        if ( $redazioni_limit > 0 && $redazioni_count >= $redazioni_limit ) {
+                                return self::err(
+                                        'nexus_pro_required',
+                                        __( 'Il piano Free consente una sola redazione. Passa a Pro per redazioni multiple.', 'nexus-news-ai' ),
+                                        403
+                                );
+                        }
                 }
 
                 $parent    = absint( $request->get_param( 'parent' ) );
@@ -7945,6 +8079,11 @@ class Nexus_Rest {
         public static function rest_tools_catalog( $request ) {
                 unset( $request );
 
+                // v1.1.28 (Freemius): strumenti avanzati + MCP sono Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'Gli strumenti avanzati (incluso MCP) richiedono il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
+
                 if ( ! class_exists( 'Nexus_Tools' ) || ! method_exists( 'Nexus_Tools', 'catalog' ) ) {
                         return self::err(
                                 'nexus_rest_tools_missing',
@@ -7982,6 +8121,10 @@ class Nexus_Rest {
         // read/feeds/mcp fanno fetch remote sincrone (fino a 30s). Release in
         // try/finally; TTL 180s come safety net.
         public static function rest_tools_test( $request ) {
+                // v1.1.28 (Freemius): strumenti avanzati + MCP sono Pro.
+                if ( ! self::pro_active() ) {
+                        return self::err( 'nexus_pro_required', __( 'Gli strumenti avanzati (incluso MCP) richiedono il piano Pro.', 'nexus-news-ai' ), 403 );
+                }
                 $gate = self::sync_gate_acquire( 'tools_test', 180, 15 );
                 if ( is_wp_error( $gate ) ) {
                         return $gate;

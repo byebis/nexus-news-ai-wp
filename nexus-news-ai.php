@@ -134,9 +134,14 @@ function nexus_bootstrap() {
                 'Nexus_Google_Auth', 'Nexus_Metrics', 'Nexus_Learn', 'Nexus_Dedup', 'Nexus_Interlink',
                 'Nexus_News_Sitemap', 'Nexus_Evergreen', 'Nexus_Notify', 'Nexus_Google_Wizard',
                 'Nexus_Health', 'Nexus_Opportunities', 'Nexus_Calendar', 'Nexus_Shortcodes',
+                'Nexus_License',
         ) as $nxa_class ) {
                 class_exists( $nxa_class );
         }
+
+        // v1.1.28 (Freemius): registra il gate licenza su ogni richiesta
+        // (il filtro 'nexus_is_pro' deve essere attivo anche sulle REST).
+        Nexus_License::init();
 
         Nexus_DB::maybe_upgrade();
         Nexus_Rest::init();

@@ -296,6 +296,11 @@ class Nexus_Public_API {
                 // 0. CORS v1.1.9 (D6): stesso ACAO su 200 ed errori, inviato subito.
                 @header( 'Access-Control-Allow-Origin: *' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 
+                // 0.5 v1.1.28 (Freemius): l'API esterna nexus-public è Pro.
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        return new WP_Error( 'nexus_pro_required', 'L\'API pubblica esterna richiede il piano Pro.', array( 'status' => 403 ) );
+                }
+
                 // 1. Nexus_DB è il modulo base: senza di esso l'API non può rispondere.
                 if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
                         return new WP_Error( 'nexus_not_available', 'Nexus non disponibile.', array( 'status' => 501 ) );
