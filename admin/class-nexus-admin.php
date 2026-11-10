@@ -278,17 +278,23 @@ class Nexus_Admin {
                         'nexus-settings-sistema'       => __( 'Impostazioni sistema', 'nexus-news-ai' ),
                 );
 
+                // v1.1.28 (Freemium UI): voci Pro → badge 'Pro' accanto al titolo
+                // di menu quando la licenza non è Pro (la UI intercetta il click).
+                $pro_slugs = array( 'nexus-wire', 'nexus-analytics', 'nexus-tools', 'nexus-google-wizard', 'nexus-calendar' );
+                $is_pro    = self::license_state()['is_pro'];
+
                 foreach ( $submenus as $slug => $title ) {
                         if ( ! $show_advanced && in_array( $slug, $advanced_slugs, true ) ) {
                                 continue; // Gating onboarding: modulo avanzato nascosto.
                         }
+                        $menu_title = $title;
                         if ( ! $is_pro && in_array( $slug, $pro_slugs, true ) ) {
-                                continue; // Gating Pro: modulo Pro nascosto senza licenza.
+                                $menu_title .= ' <span class="nxa-pro-badge">Pro</span>';
                         }
                         add_submenu_page(
                                 'nexus-news',
                                 $title, // <title> pagina.
-                                $title, // Voce di menu.
+                                $menu_title, // Voce di menu (con badge Pro).
                                 'manage_options',
                                 $slug,
                                 array( __CLASS__, 'render_current_page' )
@@ -343,6 +349,59 @@ class Nexus_Admin {
                         }
                 }
                 return false;
+        }
+
+        /**
+         * Stato licenza (Freemium UI, v1.1.28). Il backend espone lo stato
+         * corrente del piano; la UI legge SOLO da qui (window.nexusLicense),
+         * niente numeri hardcodati nel markup.
+         *
+         * Contratto:
+         *   - is_pro        (bool)   true = piano Pro attivo.
+         *   - limits        (array)   limiti del piano Free {agents, sources, redazioni}.
+         *   - upgrade_url   (string)  URL checkout Pro (segnaposto configurabile).
+         *
+         * @return array
+         */
+        public static function license_state() {
+                $is_pro = (bool) apply_filters( 'nexus_is_pro', false );
+
+                $limits = array(
+                        'agents'     => (int) apply_filters( 'nexus_free_limit_agents', 3 ),
+                        'sources'    => (int) apply_filters( 'nexus_free_limit_sources', 10 ),
+                        'redazioni'  => (int) apply_filters( 'nexus_free_limit_redazioni', 1 ),
+                );
+
+                $upgrade_url = (string) get_option( 'nexus_upgrade_url', 'https://example.com/upgrade' );
+                $upgrade_url = (string) apply_filters( 'nexus_upgrade_url', $upgrade_url );
+
+                // Conteggi correnti (per i contatori dei limiti nel banner Free).
+                $agents_used = 0;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
+                        $agents_used = count( (array) Nexus_DB::agents() );
+                }
+
+                $sources_used = 0;
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        $settings = (array) Nexus_DB::get_settings();
+                        $raw      = isset( $settings['global_rss_sources'] ) ? (string) $settings['global_rss_sources'] : '';
+                        foreach ( preg_split( '/\r\n|\r|\n/', $raw ) as $line ) {
+                                $line = trim( $line );
+                                if ( '' !== $line && 0 !== strpos( $line, '#' ) ) {
+                                        $sources_used++;
+                                }
+                        }
+                }
+
+                return array(
+                        'is_pro'      => $is_pro,
+                        'limits'      => $limits,
+                        'counts'      => array(
+                                'agents'  => $agents_used,
+                                'sources' => $sources_used,
+                        ),
+                        'upgrade_url' => esc_url_raw( $upgrade_url ),
+                );
         }
 
         /**
@@ -553,7 +612,16 @@ class Nexus_Admin {
                                 'version' => NEXUS_VERSION,
                                 'siteUrl' => home_url( '/' ),
                                 'theme'   => self::current_theme(),
+                                'license' => self::license_state(),
                         )
+                );
+
+                // Espone lo stato licenza su window.nexusLicense (contratto UI
+                // Freemium): la UI legge da qui, mai hardcodato.
+                wp_add_inline_script(
+                        'nexus-admin',
+                        'window.nexusLicense = ( window.NexusAdminData && window.NexusAdminData.license ) || { is_pro: false };',
+                        'before'
                 );
         }
 
