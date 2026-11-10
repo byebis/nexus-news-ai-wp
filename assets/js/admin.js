@@ -7539,6 +7539,80 @@
                 } );
         }
 
+        /**
+         * v1.1.27 (onboarding UX): "Testa la connessione" nello step 0.
+         * Prima salva la chiave sul canale legacy (stesso body di
+         * nxaObsSaveKey, ma SENZA avanzare di step), poi chiama
+         * /ai/test/{provider} e mostra un feedback chiaro (verde/rosso).
+         */
+        function nxaObsTestKey() {
+                var modal = nxaOnboardingModal();
+                if ( ! modal ) {
+                        return;
+                }
+                var sel   = qs( '#nxa-obs-provider', modal );
+                var keyEl = qs( '#nxa-obs-key', modal );
+                var stEl  = qs( '#nxa-obs-key-test-status', modal );
+                var btn   = qs( '#nxa-obs-key-test', modal );
+
+                var key = keyEl ? String( keyEl.value || '' ).replace( /^\s+|\s+$/g, '' ) : '';
+                var setStatus = function ( text, ok ) {
+                        if ( ! stEl ) {
+                                return;
+                        }
+                        stEl.textContent = text;
+                        stEl.style.color = ok ? '#2e7d32' : '#c62828';
+                };
+
+                if ( stEl ) {
+                        stEl.textContent = '';
+                        stEl.style.color = '';
+                }
+                if ( ! sel || ! key ) {
+                        setStatus( nxaT( 'Inserisci la chiave API prima del test.' ), false );
+                        return;
+                }
+
+                var opt = sel.options[ sel.selectedIndex ];
+                var provider = String( opt ? opt.value : '' );
+                var body = { ai_api_key: key };
+                var base = opt ? String( opt.getAttribute( 'data-base' ) || '' ) : '';
+                if ( base ) {
+                        body.ai_base_url = base;
+                }
+                var model = opt ? String( opt.getAttribute( 'data-model' ) || '' ) : '';
+                if ( model ) {
+                        body.ai_model = model;
+                }
+
+                if ( btn ) {
+                        btn.disabled = true;
+                }
+                setStatus( nxaT( 'Salvo e provo la connessione…' ), null );
+
+                api( 'settings', { method: 'PUT', body: body } ).then( function () {
+                        nxaObsSettings = null;
+                        // Il test usa la chiave appena salvata (legge dalle settings).
+                        return api( 'ai/test/' + encodeURIComponent( provider ), { method: 'POST' } );
+                } ).then( function ( res ) {
+                        if ( btn ) {
+                                btn.disabled = false;
+                        }
+                        var ok = res && res.ok === true;
+                        if ( ok ) {
+                                var n = ( res && res.models_count !== undefined ) ? res.models_count : '?';
+                                setStatus( nxaT( 'Connessione riuscita (' ) + n + nxaT( ' modelli)' ), true );
+                        } else {
+                                setStatus( nxaT( 'Connessione fallita: ' ) + ( ( res && res.error ) ? res.error : '' ), false );
+                        }
+                } ).catch( function ( err ) {
+                        if ( btn ) {
+                                btn.disabled = false;
+                        }
+                        setStatus( nxaT( 'Errore durante il test: ' ) + ( ( err && err.message ) ? err.message : '' ), false );
+                } );
+        }
+
         /** Binding del wizard: una sola volta per pagina (guard sul markup). */
         function nxaOnboardingBind() {
                 var modal = nxaOnboardingModal();
@@ -7634,6 +7708,10 @@
                         keySkipBtn.addEventListener( 'click', function () {
                                 nxaOnboardingShowStep( 1 );
                         } );
+                }
+                var keyTestBtn = qs( '#nxa-obs-key-test', modal );
+                if ( keyTestBtn ) {
+                        keyTestBtn.addEventListener( 'click', nxaObsTestKey );
                 }
                 var keyProvSel = qs( '#nxa-obs-provider', modal );
                 if ( keyProvSel ) {
