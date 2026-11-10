@@ -121,6 +121,10 @@ for ( $cal_i = 0; $cal_i < 7; $cal_i++ ) {
                 <div class="notice notice-error is-dismissible">
                         <p><?php esc_html_e( 'Salvataggio non riuscito: agente non valido o richiesta incompleta.', 'nexus-news-ai' ); ?></p>
                 </div>
+        <?php elseif ( 'pro' === $notice_key ) : ?>
+                <div class="notice notice-error is-dismissible">
+                        <p><?php esc_html_e( 'Il calendario editoriale richiede il piano Pro.', 'nexus-news-ai' ); ?></p>
+                </div>
         <?php endif; ?>
 
         <!-- ================= VISTA CALENDARIO (mese) ================= -->
