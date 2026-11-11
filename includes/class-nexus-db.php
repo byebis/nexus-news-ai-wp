@@ -181,7 +181,7 @@ class Nexus_DB {
         //           STATISTICS + check versione + try/catch: server senza FULLTEXT
         //           InnoDB (MySQL < 5.6 / MariaDB < 10.0.5) restano su LIKE, senza
         //           errori e senza DDL.
-        const DB_REVISION     = 9;
+        const DB_REVISION     = 10;
 
         /**
          * Nome dell'indice FULLTEXT della tabella articoli (schema v9, v1.1.18).
@@ -467,6 +467,7 @@ class Nexus_DB {
                                 views INT UNSIGNED NOT NULL DEFAULT 0,
                                 reactions LONGTEXT NULL,
                                 published_at DATETIME NULL DEFAULT NULL,
+                                scheduled_at DATETIME NULL DEFAULT NULL,
                                 created_at DATETIME NOT NULL,
                                 updated_at DATETIME NOT NULL,
                                 PRIMARY KEY  (id),
@@ -476,6 +477,7 @@ class Nexus_DB {
                                 KEY wp_post_id (wp_post_id),
                                 KEY created_at (created_at),
                                 KEY published_at (published_at),
+                                KEY scheduled_at (scheduled_at),
                                 KEY views (views),
                                 UNIQUE KEY content_hash (content_hash)
                         ) {$charset};",
@@ -673,6 +675,7 @@ class Nexus_DB {
                 self::migrate_schema_v3();
                 self::migrate_schema_v7();
                 self::migrate_schema_v9();
+                self::migrate_schema_v10();
                 update_option( self::DB_VERSION_KEY, NEXUS_VERSION );
                 update_option( self::DB_REVISION_KEY, (string) self::DB_REVISION );
                 if ( ! get_option( self::OPTION_SETTINGS ) ) {
@@ -870,6 +873,35 @@ class Nexus_DB {
                 // 3) Creazione protetta: fallimento NON fatale (ricerca resta LIKE).
                 try {
                         $wpdb->query( "ALTER TABLE {$arts} ADD FULLTEXT KEY " . self::ARTICLES_FT_INDEX . " (title, summary, content)" ); // phpcs:ignore WordPress.DB
+                } catch ( Exception $e ) {
+                        return;
+                } catch ( Throwable $e ) {
+                        return;
+                }
+        }
+
+        /**
+         * Migrazione schema v10 (pianificazione pubblicazione): aggiunge la
+         * colonna scheduled_at alla tabella articoli per installazioni esistenti.
+         * Idempotente: guard su information_schema, nessuna DDL se già presente.
+         *
+         * @return void
+         */
+        private static function migrate_schema_v10() {
+                global $wpdb;
+                $arts = self::tables()['articles'];
+
+                $exists = (int) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'scheduled_at'",
+                        DB_NAME, $arts
+                ) );
+                if ( $exists ) {
+                        return;
+                }
+
+                try {
+                        $wpdb->query( "ALTER TABLE {$arts} ADD COLUMN scheduled_at DATETIME NULL DEFAULT NULL AFTER published_at" ); // phpcs:ignore WordPress.DB
+                        $wpdb->query( "ALTER TABLE {$arts} ADD KEY scheduled_at (scheduled_at)" ); // phpcs:ignore WordPress.DB
                 } catch ( Exception $e ) {
                         return;
                 } catch ( Throwable $e ) {
@@ -1243,7 +1275,7 @@ class Nexus_DB {
                         $where[] = self::article_search_condition( (string) $args['search'], $params );
                 }
 
-                $orderby  = in_array( (string) ( $args['orderby'] ?? '' ), array( 'id', 'created_at', 'published_at', 'quality_score', 'views' ), true )
+                $orderby  = in_array( (string) ( $args['orderby'] ?? '' ), array( 'id', 'created_at', 'published_at', 'scheduled_at', 'quality_score', 'views' ), true )
                         ? $args['orderby'] : 'created_at';
                 $order    = ( 'asc' === strtolower( (string) ( $args['order'] ?? 'desc' ) ) ) ? 'ASC' : 'DESC';
                 $page     = max( 1, absint( $args['page'] ?? 1 ) );
@@ -1258,6 +1290,23 @@ class Nexus_DB {
                         $sql = $wpdb->prepare( $sql, ...$params );
                 }
                 return $wpdb->get_results( $sql );
+        }
+
+        /**
+         * Articoli programmati (status 'scheduled') la cui data di pubblicazione
+         * è già scaduta (scheduled_at <= adesso). Usato dal check delta nel cron
+         * per ripescare eventi singoli mancati (rallentamenti/crash WP-Cron).
+         *
+         * @param int $limit Numero massimo di righe (default 50).
+         * @return array Riga articoli programmati scaduti.
+         */
+        public static function get_due_scheduled_articles( $limit = 50 ) {
+                global $wpdb;
+                $table = self::tables()['articles'];
+                $limit = min( 200, max( 1, absint( $limit ) ) );
+
+                $sql = "SELECT * FROM {$table} WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= %s ORDER BY scheduled_at ASC LIMIT %d";
+                return (array) $wpdb->get_results( $wpdb->prepare( $sql, current_time( 'mysql' ), $limit ) );
         }
 
         /**
@@ -1462,7 +1511,7 @@ class Nexus_DB {
                 global $wpdb;
                 $allowed = array_intersect_key(
                         (array) $fields,
-                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'source_type', 'image_url', 'wp_post_id', 'content_hash', 'factcheck_score', 'citations', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at' ) )
+                        array_flip( array( 'title', 'subtitle', 'content', 'summary', 'category', 'agent_id', 'source_name', 'source_url', 'source_type', 'image_url', 'wp_post_id', 'content_hash', 'factcheck_score', 'citations', 'status', 'quality_score', 'read_time', 'views', 'reactions', 'published_at', 'scheduled_at' ) )
                 );
                 if ( ! $allowed ) {
                         return false;
@@ -1473,7 +1522,7 @@ class Nexus_DB {
                 $allowed['updated_at'] = current_time( 'mysql' );
                 $int_fields = array( 'agent_id', 'read_time', 'views', 'wp_post_id' );
                 $float_fields = array( 'quality_score', 'factcheck_score' );
-                $nonce_fields = array( 'published_at' );
+                $nonce_fields = array( 'published_at', 'scheduled_at' );
                 $formats = array();
                 foreach ( $allowed as $k => $v ) {
                         if ( in_array( $k, $int_fields, true ) ) {

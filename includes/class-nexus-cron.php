@@ -29,6 +29,12 @@ class Nexus_Cron {
         const HOOK_TICK = 'nexus_cron_tick';
 
         /**
+         * Hook WP-Cron dell'evento singolo di pubblicazione programmata
+         * (v1.1.29, priorità 1). Argomento: ID articolo.
+         */
+        const HOOK_SCHEDULED_PUBLISH = 'nexus_publish_scheduled';
+
+        /**
          * Slug dello schedule custom registrato via filtro cron_schedules.
          */
         const SCHEDULE_SLUG = 'nexus_interval';
@@ -69,6 +75,7 @@ class Nexus_Cron {
         public static function init() {
                 add_filter( 'cron_schedules', array( __CLASS__, 'add_schedule' ) );
                 add_action( self::HOOK_TICK, array( __CLASS__, 'handle_tick' ) );
+                add_action( self::HOOK_SCHEDULED_PUBLISH, array( __CLASS__, 'handle_scheduled_publish' ), 10, 1 );
                 add_action( 'update_option_nexus_settings', array( __CLASS__, 'on_settings_updated' ), 10, 2 );
 
                 self::sync_schedule();
@@ -197,6 +204,11 @@ class Nexus_Cron {
                         }
                         $lock_acquired = true;
 
+                        // v1.1.29: check delta dei programmati — pubblica gli articoli
+                        // il cui scheduled_at è scaduto (rete di sicurezza per singoli
+                        // eventi WP-Cron mancati). Idempotente (publish() è protetto).
+                        self::process_due_scheduled();
+
                         Nexus_Pipeline::cron_tick();
                 } catch ( Exception $e ) {
                         self::debug_log( 'Errore durante cron tick: ' . $e->getMessage() );
@@ -210,6 +222,52 @@ class Nexus_Cron {
                         if ( $lock_acquired ) {
                                 self::release_lock( self::TICK_LOCK );
                         }
+                }
+        }
+
+        /**
+         * Handler dell'evento singolo 'nexus_publish_scheduled' (v1.1.29):
+         * pubblica un articolo programmato quando scatta la sua data.
+         *
+         * La pubblicazione passa dal percorso standard Nexus_Pipeline::publish()
+         * (mutex per-articolo, log, sync nativo, multi-piattaforma): nessuna
+         * duplicazione di logica. Se l'articolo non è più nello stato 'scheduled'
+         * (già pubblicato/cancellato) il publish() risponde ok/already senza
+         * effetti collaterali.
+         *
+         * @param int $article_id ID articolo.
+         * @return void
+         */
+        public static function handle_scheduled_publish( $article_id ) {
+                $article_id = absint( $article_id );
+                if ( $article_id <= 0 || ! class_exists( 'Nexus_Pipeline' ) || ! method_exists( 'Nexus_Pipeline', 'publish' ) ) {
+                        return;
+                }
+
+                try {
+                        Nexus_Pipeline::publish( $article_id );
+                } catch ( Exception $e ) {
+                        self::debug_log( 'Errore pubblicazione programmata (articolo ' . $article_id . '): ' . $e->getMessage() );
+                } catch ( Throwable $e ) {
+                        self::debug_log( 'Errore fatale pubblicazione programmata (articolo ' . $article_id . '): ' . $e->getMessage() );
+                }
+        }
+
+        /**
+         * Check delta dei programmati (v1.1.29): pubblica tutti gli articoli con
+         * status 'scheduled' e scheduled_at scaduto. Copre il caso in cui un
+         * evento singolo WP-Cron sia stato mancato (rallentamenti, crash, timeout).
+         * Idempotente grazie al mutex per-articolo di publish().
+         *
+         * @return void
+         */
+        public static function process_due_scheduled() {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_due_scheduled_articles' ) ) {
+                        return;
+                }
+
+                foreach ( Nexus_DB::get_due_scheduled_articles() as $article ) {
+                        self::handle_scheduled_publish( isset( $article->id ) ? $article->id : 0 );
                 }
         }
 

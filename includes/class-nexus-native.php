@@ -397,6 +397,8 @@ class Nexus_Native {
                                 return 'pending';
                         case 'published':
                                 return 'publish';
+                        case 'scheduled':
+                                return 'future';
                         case 'rejected':
                                 return 'trash';
                         case 'draft':
@@ -458,6 +460,12 @@ class Nexus_Native {
                         'post_status'  => $post_status,
                         'post_name'    => sanitize_title( $title ),
                 );
+
+                // Pianificazione: il post nativo diventa 'future' con post_date =
+                // scheduled_at, così anche WordPress core lo pubblica alla data.
+                if ( 'future' === $post_status && ! empty( $article->scheduled_at ) ) {
+                        $post_args['post_date'] = (string) $article->scheduled_at;
+                }
 
                 if ( $exists ) {
                         $post_args['ID'] = $wp_post_id;
