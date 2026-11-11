@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.25
+Stable tag: 1.1.29
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,11 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.29 =
+* New: programmazione della pubblicazione — pianifica un articolo in data/ora futura (coda), via endpoint /nexus/v1/schedule e WP-Cron.
+* New: statistiche avanzate in dashboard — articoli pubblicati/mese, errori AI recenti, costo API stimato per articolo (endpoint /nexus/v1/stats).
+* UI: selettore "Programma pubblicazione", vista coda con filtro "Programmati", card statistiche con mini-grafico.
 
 = 1.1.25 =
 * Fixed: promozione a pending_approval per articoli sopra soglia che non veniva più saltata dal time budget (il budget resta applicato solo alle azioni con costi AI/rete).
