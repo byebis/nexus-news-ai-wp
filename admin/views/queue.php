@@ -107,6 +107,7 @@ defined( 'ABSPATH' ) || exit;
                                 <option value="rejected"><?php esc_html_e( 'Rifiutati', 'nexus-news-ai' ); ?></option>
                                 <option value="draft"><?php esc_html_e( 'Bozze', 'nexus-news-ai' ); ?></option>
                                 <option value="published"><?php esc_html_e( 'Pubblicati', 'nexus-news-ai' ); ?></option>
+                                <option value="scheduled"><?php esc_html_e( 'Programmati', 'nexus-news-ai' ); ?></option>
                         </select>
                 </div>
 

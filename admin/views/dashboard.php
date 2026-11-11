@@ -695,6 +695,29 @@ if ( empty( $nexus_flags['ai_provider_active'] ) ) {
                         </div>
                 </section>
         </div>
+
+        <!-- v1.1.29 (feat/nexus-sched-stats): card statistiche avanzate.
+             I dati arrivano da window.nexusStats (backend) o dal fallback di
+             admin.js su GET /stats; i campi non esposti mostrano "n/d". -->
+        <section class="nxa-stat-group nxa-ux-stat-group" id="nxa-stats-advanced">
+                <h2 class="nxa-stat-group__title"><span class="nxa-ux-sec-icon dashicons dashicons-chart-area" aria-hidden="true"></span> <?php echo esc_html__( 'Statistiche avanzate', 'nexus-news-ai' ); ?></h2>
+                <div class="nxa-stat-grid">
+                        <div class="nxa-stat-card">
+                                <span class="nxa-stat-value" id="nxa-stats-per-month">n/d</span>
+                                <span class="nxa-stat-label"><?php echo esc_html__( 'Pubblicati (mese)', 'nexus-news-ai' ); ?></span>
+                                <div id="nxa-stats-minichart" aria-hidden="true" style="margin-top:8px;min-height:44px"></div>
+                        </div>
+                        <div class="nxa-stat-card">
+                                <span class="nxa-stat-value" id="nxa-stats-ai-errors">n/d</span>
+                                <span class="nxa-stat-label"><?php echo esc_html__( 'Errori AI recenti', 'nexus-news-ai' ); ?></span>
+                        </div>
+                        <div class="nxa-stat-card">
+                                <span class="nxa-stat-value" id="nxa-stats-cost-per-article">n/d</span>
+                                <span class="nxa-stat-label"><?php echo esc_html__( 'Costo API stimato per articolo', 'nexus-news-ai' ); ?></span>
+                        </div>
+                </div>
+        </section>
+
         <div id="nxa-stats-error"></div>
 
         <?php
