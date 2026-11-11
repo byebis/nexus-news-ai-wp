@@ -1089,6 +1089,10 @@ class Nexus_Pipeline {
                         }
 
                         Nexus_DB::set_approval( $article_id, 'approved', 'Approvazione automatica prima della pubblicazione (modalità fully autonomous).' );
+                } elseif ( 'scheduled' === $article->status ) {
+                        // v1.1.29 (pianificazione pubblicazione): l'articolo è già
+                        // stato approvato/validato al momento della programmazione;
+                        // nessuna approvazione aggiuntiva qui, si pubblica.
                 } else {
                         $out['error'] = sprintf( 'L\'articolo #%d non è pubblicabile nello stato attuale (%s): serve lo stato "approved".', $article_id, $article->status );
                         return $out;

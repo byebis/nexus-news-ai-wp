@@ -763,6 +763,58 @@ class Nexus_Rest {
                         )
                 );
 
+                /* ---------------- SCHEDULAZIONE PUBBLICAZIONE (v1.1.29) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/schedule',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_schedule_get' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'page'     => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 1,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'per_page' => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 50,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/schedule',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_schedule_post' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'id'          => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                                'scheduled_at' => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
                 // v1.1.5: stato live della redazione (pannello "In redazione ora",
                 // polling ~5s dalla dashboard: solo query raggruppate, niente N+1).
                 register_rest_route(
@@ -4823,7 +4875,173 @@ class Nexus_Rest {
          */
         public static function rest_stats( $request ) {
                 unset( $request );
-                return rest_ensure_response( Nexus_DB::stats() );
+
+                $stats                    = (array) Nexus_DB::stats();
+                $stats['articles_by_month'] = self::stats_articles_by_month();
+                $stats['ai_errors_recent'] = self::stats_ai_errors();
+                // Costo API per articolo: non attribuibile dalla schema corrente
+                // (usage_logs è chiave per agente/azione, non per articolo).
+                $stats['cost_per_article']  = null;
+
+                return rest_ensure_response( $stats );
+        }
+
+        /**
+         * Articoli pubblicati per mese (ultimi 12, chiave 'Y-m' → conteggio).
+         * I mesi senza pubblicazioni compaiono a 0.
+         *
+         * @return array
+         */
+        private static function stats_articles_by_month() {
+                global $wpdb;
+
+                $out = array();
+                $base = current_time( 'mysql' );
+                for ( $i = 11; $i >= 0; $i-- ) {
+                        $key = date( 'Y-m', strtotime( $base . " -{$i} months" ) ); // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date
+                        $out[ $key ] = 0;
+                }
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return $out;
+                }
+
+                $table = Nexus_DB::tables()['articles'];
+                $start = date( 'Y-m-01', strtotime( $base . ' -11 months' ) ); // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date
+
+                $rows = $wpdb->get_results( $wpdb->prepare(
+                        "SELECT DATE_FORMAT(published_at, '%Y-%m') AS m, COUNT(*) AS c FROM {$table} WHERE published_at IS NOT NULL AND published_at >= %s GROUP BY m",
+                        $start
+                ) );
+
+                foreach ( (array) $rows as $r ) {
+                        if ( isset( $out[ $r->m ] ) ) {
+                                $out[ $r->m ] = (int) $r->c;
+                        }
+                }
+
+                return $out;
+        }
+
+        /**
+         * Ultimi 20 errori AI/run (data + messaggio), dagli agent run falliti.
+         *
+         * @return array array( array( 'date' => string, 'message' => string ) )
+         */
+        private static function stats_ai_errors() {
+                global $wpdb;
+
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'tables' ) ) {
+                        return array();
+                }
+
+                $table = Nexus_DB::tables()['agent_runs'];
+
+                $rows = $wpdb->get_results(
+                        "SELECT started_at, error FROM {$table} WHERE error IS NOT NULL AND error <> '' ORDER BY started_at DESC LIMIT 20" // phpcs:ignore WordPress.DB
+                );
+
+                $out = array();
+                foreach ( (array) $rows as $r ) {
+                        $out[] = array(
+                                'date'    => self::date_or_empty( isset( $r->started_at ) ? $r->started_at : '' ),
+                                'message' => isset( $r->error ) ? (string) $r->error : '',
+                        );
+                }
+
+                return $out;
+        }
+
+        /**
+         * GET /schedule — elenco articoli programmati (v1.1.29).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_schedule_get( $request ) {
+                $page     = max( 1, absint( $request->get_param( 'page' ) ) );
+                $per_page = min( 100, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
+
+                $args = array(
+                        'status'   => 'scheduled',
+                        'orderby'  => 'scheduled_at',
+                        'order'    => 'asc',
+                        'page'     => $page,
+                        'per_page' => $per_page,
+                );
+
+                $items = Nexus_DB::articles( $args );
+                $total = Nexus_DB::count_articles( array( 'status' => 'scheduled' ) );
+
+                $items = array_map(
+                        static function ( $a ) {
+                                return self::serialize_article( $a, false );
+                        },
+                        (array) $items
+                );
+
+                return rest_ensure_response(
+                        array(
+                                'items'    => $items,
+                                'total'    => (int) $total,
+                                'page'     => $page,
+                                'per_page' => $per_page,
+                        )
+                );
+        }
+
+        /**
+         * POST /schedule — programma la pubblicazione di un articolo (v1.1.29).
+         *
+         * Body: {id: int, scheduled_at: string}. La data/ora deve essere futura.
+         * Lo stato passa a 'scheduled'; viene schedulato l'evento singolo
+         * WP-Cron 'nexus_publish_scheduled' + un check delta nel tick (rete di
+         * sicurezza). Il post WP nativo diventa 'future' con post_date.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_schedule_post( $request ) {
+                $id          = absint( $request->get_param( 'id' ) );
+                $scheduled_at = (string) $request->get_param( 'scheduled_at' );
+
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+
+                $article = Nexus_DB::get_article( $id );
+                if ( ! $article ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $ts = strtotime( $scheduled_at );
+                if ( false === $ts ) {
+                        return self::err( 'nexus_rest_invalid_scheduled_at', __( 'Data/ora di pubblicazione non valida.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( $ts <= (int) current_time( 'timestamp' ) ) {
+                        return self::err( 'nexus_rest_scheduled_at_past', __( 'La data di pubblicazione deve essere futura.', 'nexus-news-ai' ), 400 );
+                }
+
+                $allowed_from = array( 'draft', 'pending_approval', 'approved' );
+                if ( ! in_array( (string) $article->status, $allowed_from, true ) ) {
+                        return self::err( 'nexus_rest_cannot_schedule', __( 'L\'articolo non può essere programmato nello stato attuale.', 'nexus-news-ai' ), 409 );
+                }
+
+                $scheduled_mysql = date( 'Y-m-d H:i:s', $ts ); // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date
+
+                Nexus_DB::update_article( $id, array( 'status' => 'scheduled', 'scheduled_at' => $scheduled_mysql ) );
+
+                // Evento singolo WP-Cron.
+                if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+                        wp_clear_scheduled_hook( Nexus_Cron::HOOK_SCHEDULED_PUBLISH, array( $id ) );
+                }
+                if ( function_exists( 'wp_schedule_single_event' ) ) {
+                        wp_schedule_single_event( $ts, Nexus_Cron::HOOK_SCHEDULED_PUBLISH, array( $id ) );
+                }
+
+                $fresh = Nexus_DB::get_article( $id );
+                return rest_ensure_response( self::serialize_article( $fresh, true ) );
         }
 
         /**
@@ -6650,6 +6868,7 @@ class Nexus_Rest {
                         'reactions'     => is_array( $reactions ) ? $reactions : array(),
                         'excerpt'       => $excerpt,
                         'published_at'  => self::date_or_empty( $a->published_at ?? '' ),
+                        'scheduled_at'  => self::date_or_empty( $a->scheduled_at ?? '' ),
                         'created_at'    => self::date_or_empty( $a->created_at ?? '' ),
                         'updated_at'    => self::date_or_empty( $a->updated_at ?? '' ),
                 );
