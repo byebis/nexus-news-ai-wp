@@ -286,6 +286,20 @@
                 }
         }
 
+        /** v1.1.29 (scheduling): formatta una data ISO per l'etichetta
+         *  "Pianificato". Fallback al dato grezzo se non parsabile. */
+        function fmtDateTimeLocal( iso ) {
+                var date = new Date( String( iso || '' ).replace( ' ', 'T' ) );
+                if ( isNaN( date.getTime() ) ) {
+                        return esc( iso || '' );
+                }
+                try {
+                        return date.toLocaleString( 'it-IT', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' } );
+                } catch ( e ) {
+                        return esc( iso );
+                }
+        }
+
         /** Chip categoria colorata: i colori vivono nel CSS (token --nxa-cat
          *  mappati da [data-category]); qui solo attributo + struttura. */
         function categoryChip( category ) {
@@ -1641,6 +1655,32 @@
                 }
         }
 
+        /** v1.1.29 (scheduling/stats): mini-grafico SVG di barre per i
+         *  pubblicati/mese. Input: array di numeri. Squarta ogni valore sul
+         *  massimo; se il massimo è 0 (o non valido) non disegna nulla.
+         *  Puro SVG inline: nessuna libreria esterna. */
+        function miniBarChartSvg( data ) {
+                if ( ! Array.isArray( data ) || ! data.length ) {
+                        return '';
+                }
+                var values = data.map( function ( v ) { return Number( v ) || 0; } );
+                var max = Math.max.apply( null, values );
+                if ( ! max || max <= 0 ) {
+                        return '';
+                }
+                var w = 100;
+                var h = 44;
+                var barW = Math.max( 3, Math.floor( ( w - ( values.length - 1 ) * 2 ) / values.length ) );
+                var bars = '';
+                for ( var i = 0; i < values.length; i++ ) {
+                        var bh = Math.max( 2, Math.round( ( values[i] / max ) * ( h - 6 ) ) );
+                        var x = i * ( barW + 2 );
+                        var y = h - bh;
+                        bars += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + bh + '" rx="1" style="fill:var(--nxa-primary,#2563eb)" />';
+                }
+                return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:' + h + 'px;display:block">' + bars + '</svg>';
+        }
+
         function loadStats() {
                 // v1.1.16 (WE5): lo stato d'errore (con Riprova) vive nel contenitore
                 // #nxa-stats-error della dashboard; a successo viene ripulito — mai
@@ -1657,6 +1697,31 @@
                         setStat( '#nxa-stat-today', pick( s, 'today' ) );
                         setStat( '#nxa-stat-agents', pick( s, 'agents_active', 'agents' ) );
                         setStat( '#nxa-stat-views', pick( s, 'views' ) );
+
+                        // v1.1.29 (feat/nexus-sched-stats): card statistiche avanzate.
+                        // Fonte primaria window.nexusStats (backend), fallback sul payload
+                        // /stats; i campi non esposti mostrano "n/d" (mai errori fatali).
+                        var adv = ( window.nexusStats && typeof window.nexusStats === 'object' ) ? window.nexusStats : s;
+
+                        var monthly = ( adv.published_per_month !== undefined ) ? adv.published_per_month : null;
+                        if ( Array.isArray( monthly ) && monthly.length && typeof monthly[0] === 'object' ) {
+                                monthly = monthly.map( function ( m ) { return m.count !== undefined ? m.count : m.value; } );
+                        }
+                        setStat( '#nxa-stats-per-month', ( Array.isArray( monthly ) && monthly.length ) ? monthly.length : ( monthly !== null && monthly !== undefined ? monthly : 'n/d' ) );
+
+                        var chartEl = qs( '#nxa-stats-minichart' );
+                        if ( chartEl ) {
+                                if ( Array.isArray( monthly ) && monthly.length ) {
+                                        chartEl.innerHTML = miniBarChartSvg( monthly );
+                                } else {
+                                        chartEl.innerHTML = '';
+                                }
+                        }
+
+                        setStat( '#nxa-stats-ai-errors', ( adv.recent_ai_errors !== undefined ) ? adv.recent_ai_errors : 'n/d' );
+
+                        var cpa = adv.cost_per_article;
+                        setStat( '#nxa-stats-cost-per-article', ( typeof cpa === 'number' ) ? '$' + cpa.toFixed( 2 ) : ( cpa !== undefined ? cpa : 'n/d' ) );
                 } ).catch( function ( err ) {
                         if ( errorBox ) {
                                 errorBox.innerHTML = errorState( '⚠️', 'Impossibile caricare le statistiche', err.message || '', 'stats' );
@@ -4470,6 +4535,10 @@
                         // inviamo article_id al run della pipeline; se il backend non supporta
                         // ancora la pubblicazione puntuale risponderà 400 e mostriamo un toast chiaro.
                         ( status === 'approved' ? '<button type="button" class="button nxa-publish-one" data-id="' + id + '">Pubblica</button>' : '' ) +
+                        // v1.1.29 (scheduling): programma pubblicazione (solo approved).
+                        // L'endpoint /schedule sarà aggiunto dal backend; se assente il
+                        // submit fallisce con toast chiaro, senza rompere la pagina.
+                        ( status === 'approved' ? '<button type="button" class="button nxa-schedule-open" data-id="' + id + '">Programma</button>' : '' ) +
                         // v1.1.4: revisione capo redattore forzata (solo pending_approval);
                         // data-chief-status alimenta la conferma extra se già verificato.
                         ( status === 'pending_approval' ? chiefRunButtonHtml( chiefStatusOf( a ), 'data-id="' + id + '"' ) : '' ) +
@@ -4493,7 +4562,17 @@
                         ( pick( a, 'subtitle', 'subTitle' ) ? '<p style="margin:0 0 6px;font-size:13px;color:var(--nxa-muted)">' + esc( pick( a, 'subtitle', 'subTitle' ) ) + '</p>' : '' ) +
                         ( summary ? '<p style="margin:0 0 8px;font-size:12.5px;color:var(--nxa-muted);line-height:1.55">' + excerpt( summary, 220 ) + '</p>' : '' ) +
                         ( sourceUrl ? '<p style="margin:0 0 4px;font-size:12px">' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) + '</p>' : '' ) +
+                        ( a.scheduled_at ? '<p style="margin:0 0 4px;font-size:12px">' +
+                                '<span class="nxa-badge nxa-badge--primary">Pianificato: ' + esc( fmtDateTimeLocal( a.scheduled_at ) ) + '</span>' +
+                        '</p>' : '' ) +
                         actions +
+                        // v1.1.29 (scheduling): mini-form data/ora, nascosto finché non si
+                        // apre con "Programma". L'endpoint /schedule è disaccoppiato.
+                        '<div class="nxa-schedule-form" hidden>' +
+                                '<input type="datetime-local" class="nxa-schedule-input" data-id="' + id + '" /> ' +
+                                '<button type="button" class="button nxa-schedule-set" data-id="' + id + '">Pianifica</button> ' +
+                                '<button type="button" class="button-link nxa-schedule-cancel" data-id="' + id + '">Annulla</button>' +
+                        '</div>' +
                 '</article>';
         }
 
@@ -4641,6 +4720,49 @@
                                                 chiefRun,
                                                 loadQueueList
                                         );
+                                        return;
+                                }
+
+                                // v1.1.29 (scheduling): apri/chiudi il mini-form data/ora.
+                                var schedOpen = target.closest ? target.closest( '.nxa-schedule-open' ) : null;
+                                if ( schedOpen ) {
+                                        var sRow = schedOpen.closest( '.nxa-queue-item' );
+                                        var sForm = sRow ? sRow.querySelector( '.nxa-schedule-form' ) : null;
+                                        if ( sForm ) {
+                                                sForm.hidden = ! sForm.hidden;
+                                        }
+                                        return;
+                                }
+                                var schedCancel = target.closest ? target.closest( '.nxa-schedule-cancel' ) : null;
+                                if ( schedCancel ) {
+                                        var cRow = schedCancel.closest( '.nxa-queue-item' );
+                                        var cForm = cRow ? cRow.querySelector( '.nxa-schedule-form' ) : null;
+                                        if ( cForm ) {
+                                                cForm.hidden = true;
+                                        }
+                                        return;
+                                }
+                                var schedSet = target.closest ? target.closest( '.nxa-schedule-set' ) : null;
+                                if ( schedSet ) {
+                                        var sId = num( schedSet.getAttribute( 'data-id' ) );
+                                        var setRow = schedSet.closest( '.nxa-queue-item' );
+                                        var input = setRow ? setRow.querySelector( '.nxa-schedule-input' ) : null;
+                                        var when = input ? String( input.value || '' ).trim() : '';
+                                        if ( ! when ) {
+                                                toast( 'Scegli data e ora di pubblicazione.', 'error', 'Programmazione' );
+                                                return;
+                                        }
+                                        setBtnLoading( schedSet, true, 'Pianifico…' );
+                                        // Endpoint /schedule (sarà aggiunto dal backend). Se assente
+                                        // la chiamata fallisce e mostriamo un toast chiaro.
+                                        api( 'schedule', { method: 'POST', body: { article_id: sId, scheduled_at: when } } ).then( function () {
+                                                setBtnLoading( schedSet, false );
+                                                toast( 'Articolo programmato.', 'success', 'Programmazione' );
+                                                return loadQueueList();
+                                        } ).catch( function ( err ) {
+                                                setBtnLoading( schedSet, false );
+                                                apiErrorToast( err, 'Programmazione non disponibile' );
+                                        } );
                                         return;
                                 }
                         } );
