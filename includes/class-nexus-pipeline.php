@@ -1583,6 +1583,16 @@ class Nexus_Pipeline {
                         // MAI, qualunque sia la soglia: va in attesa di revisione umana.
                         $chief_gate = $is_full_auto && self::awaiting_chief_review( $article );
 
+                        // v1.1.31: valutatore regole workflow (dopo valutazione AI,
+                        // prima della promozione). Best-effort, mai fatale.
+                        if ( class_exists( 'Nexus_Workflow' ) && method_exists( 'Nexus_Workflow', 'evaluate_article' ) ) {
+                                try {
+                                        Nexus_Workflow::evaluate_article( Nexus_DB::get_article( $article_id ) );
+                                } catch ( \Throwable $e ) {
+                                        // Le regole non devono mai rompere la pipeline.
+                                }
+                        }
+
                         // --- PROMOZIONE (sempre, fuori dal budget) ---
                         // Se l'articolo è sopra soglia, in 'draft' e con punteggio
                         // interpretabile, lo promuoviamo a pending_approval SUBITO.

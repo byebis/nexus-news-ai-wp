@@ -1494,6 +1494,58 @@ class Nexus_Rest {
                         )
                 );
 
+                /* ---------------- MEDIA (v1.1.31) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/media/set',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_media_set' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'article_id' => array( 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ),
+                                                'image_url'  => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ),
+                                        ),
+                                ),
+                        )
+                );
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/media/regenerate',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_media_regenerate' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'article_id' => array( 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ),
+                                        ),
+                                ),
+                        )
+                );
+
+                /* ---------------- WORKFLOW RULES (v1.1.31) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/workflow/rules',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_workflow_rules_get' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_workflow_rules_post' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
                 // v1.1.30: configurazione canali notifica (webhook, Telegram, email).
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -8887,6 +8939,163 @@ class Nexus_Rest {
                         'sample'       => $sample,
                         'error'        => empty( $items ) ? __( 'Fonte irraggiungibile o senza item validi.', 'nexus-news-ai' ) : '',
                 ) );
+        }
+
+        /**
+         * POST /media/set — imposta/aggiorna l'immagine di anteprima di un
+         * articolo Nexus (salva l'URL; se il post WP nativo esiste, scarica
+         * in media library e imposta la featured image).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_media_set( $request ) {
+                $article_id = absint( $request->get_param( 'article_id' ) );
+                $image_url  = trim( (string) $request->get_param( 'image_url' ) );
+
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+                $article = Nexus_DB::get_article( $article_id );
+                if ( ! $article ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+                if ( '' === $image_url ) {
+                        return self::err( 'nexus_rest_missing_image', __( 'URL immagine mancante.', 'nexus-news-ai' ), 400 );
+                }
+
+                // SSRF guard (stesso pattern delle altre route).
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'assert_safe_url' )
+                        && is_wp_error( Nexus_Tools::assert_safe_url( $image_url ) ) ) {
+                        return self::err( 'nexus_rest_unsafe_image', __( 'URL immagine non sicuro o non valido.', 'nexus-news-ai' ), 400 );
+                }
+
+                $image_url = esc_url_raw( $image_url );
+                Nexus_DB::update_article( $article_id, array( 'image_url' => $image_url ) );
+
+                $attachment_id = 0;
+                $wp_post_id = (int) ( $article->wp_post_id ?? 0 );
+                if ( $wp_post_id > 0 ) {
+                        $attachment_id = self::sideload_image( $image_url, $wp_post_id );
+                        if ( $attachment_id > 0 ) {
+                                set_post_thumbnail( $wp_post_id, $attachment_id );
+                        }
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'           => true,
+                                'message'       => __( 'Immagine aggiornata.', 'nexus-news-ai' ),
+                                'image_url'     => $image_url,
+                                'attachment_id' => $attachment_id,
+                        )
+                );
+        }
+
+        /**
+         * POST /media/regenerate — rigenera/riscarica l'immagine di anteprima
+         * di un articolo (provider media se configurato; fallback: immagine
+         * originale dell'articolo).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_media_regenerate( $request ) {
+                $article_id = absint( $request->get_param( 'article_id' ) );
+                if ( ! class_exists( 'Nexus_DB' ) ) {
+                        return self::err( 'nexus_not_available', __( 'DB non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+                $article = Nexus_DB::get_article( $article_id );
+                if ( ! $article ) {
+                        return self::err( 'nexus_rest_article_not_found', __( 'Articolo non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                $result = '';
+                $wp_post_id = (int) ( $article->wp_post_id ?? 0 );
+
+                if ( $wp_post_id > 0 && function_exists( 'has_post_thumbnail' ) && has_post_thumbnail( $wp_post_id ) ) {
+                        delete_post_thumbnail( $wp_post_id ); // forza la rigenerazione.
+                }
+                if ( $wp_post_id > 0 && class_exists( 'Nexus_Image' ) && method_exists( 'Nexus_Image', 'ensure_featured' ) ) {
+                        Nexus_Image::ensure_featured( $article, $wp_post_id );
+                        $thumb = function_exists( 'get_the_post_thumbnail_url' ) ? get_the_post_thumbnail_url( $wp_post_id, 'large' ) : '';
+                        if ( is_string( $thumb ) && '' !== $thumb ) {
+                                $result = $thumb;
+                        }
+                }
+
+                if ( '' === $result ) {
+                        $original = trim( (string) ( $article->image_url ?? '' ) );
+                        if ( '' !== $original ) {
+                                $result = $original;
+                        }
+                }
+
+                if ( '' === $result ) {
+                        return self::err( 'nexus_rest_no_image', __( 'Nessuna immagine rigenerabile per questo articolo.', 'nexus-news-ai' ), 422 );
+                }
+
+                Nexus_DB::update_article( $article_id, array( 'image_url' => esc_url_raw( $result ) ) );
+
+                return rest_ensure_response(
+                        array(
+                                'ok'       => true,
+                                'message'   => __( 'Immagine rigenerata.', 'nexus-news-ai' ),
+                                'image_url' => esc_url_raw( $result ),
+                        )
+                );
+        }
+
+        /**
+         * GET /workflow/rules — elenco regole workflow salvate.
+         *
+         * @return WP_REST_Response
+         */
+        public static function rest_workflow_rules_get() {
+                $rules = class_exists( 'Nexus_Workflow' ) ? Nexus_Workflow::get_rules() : array();
+                return rest_ensure_response( array( 'rules' => $rules ) );
+        }
+
+        /**
+         * POST /workflow/rules — salva le regole workflow (sanitizzate).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_workflow_rules_post( $request ) {
+                if ( ! class_exists( 'Nexus_Workflow' ) ) {
+                        return self::err( 'nexus_not_available', __( 'Modulo workflow non disponibile.', 'nexus-news-ai' ), 501 );
+                }
+                $body = $request->get_json_params();
+                if ( ! is_array( $body ) || ! isset( $body['rules'] ) ) {
+                        return self::err( 'nexus_rest_empty_body', __( 'Campo "rules" mancante.', 'nexus-news-ai' ), 400 );
+                }
+                $rules = Nexus_Workflow::save_rules( $body['rules'] );
+                return rest_ensure_response( array( 'rules' => $rules, 'ok' => true ) );
+        }
+
+        /**
+         * Scarica un'immagine da URL nella media library e ritorna l'attachment ID
+         * (0 su errore).
+         *
+         * @param string $url       URL immagine.
+         * @param int    $post_id   Post di riferimento.
+         * @return int
+         */
+        private static function sideload_image( $url, $post_id ) {
+                if ( ! function_exists( 'media_sideload_image' ) ) {
+                        require_once ABSPATH . 'wp-admin/includes/media.php';
+                        require_once ABSPATH . 'wp-admin/includes/image.php';
+                        require_once ABSPATH . 'wp-admin/includes/file.php';
+                }
+                if ( ! function_exists( 'media_sideload_image' ) ) {
+                        return 0;
+                }
+                $attachment_id = media_sideload_image( $url, (int) $post_id, null, 'id' );
+                if ( is_wp_error( $attachment_id ) || ! $attachment_id ) {
+                        return 0;
+                }
+                return (int) $attachment_id;
         }
 
         /**
