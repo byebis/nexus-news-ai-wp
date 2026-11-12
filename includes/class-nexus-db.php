@@ -253,6 +253,11 @@ class Nexus_DB {
                         'ai_model'           => 'openai/gpt-4o-mini',
                         // Qualità minima per auto-approvazione in modalità fully_autonomous.
                         'auto_approve_score' => 75,
+                        // v1.1.30 — auto-pubblicazione a soglia: quando attivo, gli
+                        // articoli con qualità_score >= auto_approve_score vengono
+                        // approvati e pubblicati automaticamente (anche in modalità
+                        // semi_autonomous). Default 0: resta il flusso manuale/fully.
+                        'auto_publish_enabled' => 0,
                         // v1.0.1 — Post WordPress reali (CPT nexus_article).
                         'enable_wp_posts'    => 1, // 1 = pubblica post WP reali, 0 = solo front-end Nexus legacy
                         'post_status'        => 'publish', // publish | draft (stato del post WP creato)
@@ -383,6 +388,13 @@ class Nexus_DB {
                         // le credenziali enable_telegram/telegram_bot_token esistenti.
                         'notify_webhook_url'      => '', // segreto-like: mascherato in GET /settings
                         'notify_events'           => 'error,pending', // csv: error,pending,published
+                        // v1.1.30 — notifiche: chat Telegram OPS dedicata (invio
+                        // diretto, mai nel canale pubblico) ed email (elenco indirizzi).
+                        'nexus_notify_telegram_chat' => '',
+                        'notify_email'             => '',
+                        // v1.1.30 — filtri categoria sui feed RSS globali (CSV).
+                        'rss_include_categories'   => '',
+                        'rss_exclude_categories'   => '',
                         // v1.1.12 (S6) — PACCHETTO EVERGREEN (S6): refresh pillar dei migliori
                         // articoli pubblicati da più di evergreen_refresh_days giorni.
                         'evergreen_enabled'       => 0,

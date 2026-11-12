@@ -276,11 +276,28 @@ class Nexus_Rss {
                         $description = trim( wp_strip_all_tags( (string) $rss_item->get_description() ) );
                         $description = self::clip( preg_replace( '/\s+/', ' ', $description ), 400 );
 
+                        // v1.1.30: categorie del feed (per i filtri include/exclude).
+                        $cats = array();
+                        if ( method_exists( $rss_item, 'get_categories' ) ) {
+                                $rss_cats = $rss_item->get_categories();
+                                if ( is_array( $rss_cats ) ) {
+                                        foreach ( $rss_cats as $cat ) {
+                                                if ( is_object( $cat ) && method_exists( $cat, 'get_term' ) ) {
+                                                        $t = trim( (string) $cat->get_term() );
+                                                        if ( '' !== $t ) {
+                                                                $cats[] = strtolower( $t );
+                                                        }
+                                                }
+                                        }
+                                }
+                        }
+
                         $out[] = array(
                                 'title'       => $title,
                                 'description' => $description,
                                 'link'        => esc_url_raw( $link ),
                                 'source'      => self::source_from_url( $feed_url ),
+                                'categories'  => $cats,
                         );
                 }
 
@@ -402,8 +419,11 @@ class Nexus_Rss {
                 }
 
                 $feeds = self::sources_for_category( $category );
-                $items = array();
-                $seen  = array();
+                $items  = array();
+                $seen   = array();
+                $settings = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_settings' ) )
+                        ? Nexus_DB::get_settings()
+                        : array();
 
                 foreach ( $feeds as $feed_url ) {
                         if ( count( $items ) >= self::MAX_ITEMS ) {
@@ -421,6 +441,7 @@ class Nexus_Rss {
                         }
 
                         $rss_items = self::fetch_feed_items( $feed_url, self::MAX_ITEMS - count( $items ) );
+                        $rss_items = self::filter_by_category( $rss_items, $settings );
                         if ( empty( $rss_items ) ) {
                                 // v1.1.15 (WB2): esito vuoto = fallimento per il circuit
                                 // breaker (fail-counter + cooldown dopo soglia).
@@ -460,6 +481,60 @@ class Nexus_Rss {
                 }
 
                 return $items;
+        }
+
+        /**
+         * v1.1.30 — filtri per categoria sui feed RSS globali. Applica le liste
+         * include/esclude (CSV dai settings rss_include_categories /
+         * rss_exclude_categories) confrontando le categorie dell'item (già
+         * estratte dal feed). Un item con liste vuote passa sempre.
+         *
+         * @param array $items    Items {title, description, link, source, categories}.
+         * @param array $settings Impostazioni plugin.
+         * @return array Items filtrati.
+         */
+        public static function filter_by_category( array $items, $settings = array() ) {
+                $include = self::category_set( isset( $settings['rss_include_categories'] ) ? $settings['rss_include_categories'] : '' );
+                $exclude = self::category_set( isset( $settings['rss_exclude_categories'] ) ? $settings['rss_exclude_categories'] : '' );
+
+                if ( ! $include && ! $exclude ) {
+                        return $items;
+                }
+
+                $out = array();
+                foreach ( $items as $item ) {
+                        $cats = ( isset( $item['categories'] ) && is_array( $item['categories'] ) )
+                                ? $item['categories']
+                                : array();
+                        $cats = array_map( 'strtolower', $cats );
+
+                        if ( $include && ! array_intersect( $cats, $include ) ) {
+                                continue; // include: deve combaciare almeno una categoria.
+                        }
+                        if ( $exclude && array_intersect( $cats, $exclude ) ) {
+                                continue; // exclude: scarta se combacia.
+                        }
+                        $out[] = $item;
+                }
+
+                return $out;
+        }
+
+        /**
+         * Converte una stringa CSV di categorie in un set normalizzato (lowercase,
+         * trim, vuoti rimossi).
+         *
+         * @param mixed $csv CSV grezzo.
+         * @return array
+         */
+        private static function category_set( $csv ) {
+                $raw = trim( (string) $csv );
+                if ( '' === $raw ) {
+                        return array();
+                }
+                $parts = array_map( 'trim', explode( ',', $raw ) );
+                $parts = array_map( 'strtolower', $parts );
+                return array_values( array_filter( $parts, 'strlen' ) );
         }
 
         /**

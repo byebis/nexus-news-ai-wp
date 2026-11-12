@@ -326,6 +326,7 @@ final class Nexus_Notify {
 
                 self::send_webhook( $message, $settings );
                 self::send_telegram( $message, $settings );
+                self::send_email( $message, $settings );
         }
 
         /**
@@ -351,6 +352,12 @@ final class Nexus_Notify {
                 if ( '' !== self::telegram_ops_chat( $settings )
                         && isset( $settings['telegram_bot_token'] )
                         && '' !== trim( (string) $settings['telegram_bot_token'] ) ) {
+                        return true;
+                }
+
+                // v1.1.30: canale email (elenco destinatari).
+                if ( isset( $settings['notify_email'] )
+                        && '' !== trim( (string) $settings['notify_email'] ) ) {
                         return true;
                 }
 
@@ -621,6 +628,39 @@ final class Nexus_Notify {
                 // riportare il chat id) né token.
                 if ( $code < 200 || $code >= 300 || ! is_array( $data ) || empty( $data['ok'] ) ) {
                         self::log_failure( sprintf( 'Notifica Telegram ops fallita (HTTP %d).', $code ) );
+                }
+        }
+
+        /**
+         * Canale email (v1.1.30): invia il messaggio via wp_mail agli
+         * indirizzi configurati in notify_email (elenco separato da virgola).
+         * Fallimenti di invio → activity log generico, senza email complete
+         * (evita di loggare indirizzi/segreti).
+         *
+         * @param string $message  Messaggio già costruito.
+         * @param array  $settings Impostazioni plugin.
+         * @return void
+         */
+        private static function send_email( $message, $settings ) {
+                $raw = ( is_array( $settings ) && isset( $settings['notify_email'] ) )
+                        ? (string) $settings['notify_email']
+                        : '';
+                $recipients = array_values( array_filter( array_map( 'trim', explode( ',', $raw ) ), 'strlen' ) );
+                if ( ! $recipients ) {
+                        return;
+                }
+
+                $subject = 'Nexus: notifica ' . gmdate( 'Y-m-d H:i' );
+                $body    = wp_strip_all_tags( (string) $message );
+
+                foreach ( $recipients as $email ) {
+                        if ( ! is_email( $email ) ) {
+                                continue;
+                        }
+                        $sent = wp_mail( $email, $subject, $body );
+                        if ( ! $sent ) {
+                                self::log_failure( 'Notifica email non inviata (wp_mail fallito).' );
+                        }
                 }
         }
 

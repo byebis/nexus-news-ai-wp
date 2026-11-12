@@ -1442,6 +1442,51 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.30: test di un feed RSS globale (fetch + validazione +
+                // conteggio item + dedup già presenti) SENZA salvare nulla.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/sources/test-feed',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_sources_test_feed' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'url'      => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'max_items' => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 10,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
+                // v1.1.30: configurazione canali notifica (webhook, Telegram, email).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/notify/channels',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_notify_channels_get' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_notify_channels_post' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
                 // v1.1.4: revisione forzata del capo redattore su un articolo.
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -6205,6 +6250,7 @@ class Nexus_Rest {
                         'ai_base_url'          => 'esc_url_raw',
                         'ai_model'             => 'sanitize_text_field',
                         'auto_approve_score'   => 'absint',
+                        'auto_publish_enabled' => 'absint',
                         'enable_wp_posts'      => 'absint',
                         'post_status'          => 'sanitize_key',
                         'enable_ai_images'     => 'absint',
@@ -6318,6 +6364,10 @@ class Nexus_Rest {
                         'learn_window_days'    => 'absint',
                         'notify_webhook_url'   => 'sanitize_text_field',
                         'notify_events'        => 'sanitize_text_field',
+                        'nexus_notify_telegram_chat' => 'sanitize_text_field',
+                        'notify_email'          => 'sanitize_text_field',
+                        'rss_include_categories' => 'sanitize_text_field',
+                        'rss_exclude_categories' => 'sanitize_text_field',
                         'evergreen_enabled'    => 'absint',
                         'evergreen_refresh_days' => 'absint',
                         'evergreen_max_posts'  => 'absint',
@@ -8674,6 +8724,142 @@ class Nexus_Rest {
                         return mb_substr( $text, 0, (int) $length );
                 }
                 return substr( $text, 0, (int) $length );
+        }
+
+        /**
+         * POST /sources/test-feed — test di un feed RSS/Atom globale: fetch +
+         * validazione SSRF + conteggio item + conteggio duplicati già presenti in
+         * tabella (dedup per hash del titolo). Non salva nulla.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_sources_test_feed( $request ) {
+                $url      = trim( (string) $request->get_param( 'url' ) );
+                $max_items = min( 50, max( 1, absint( $request->get_param( 'max_items' ) ) ) );
+
+                if ( '' === $url ) {
+                        return rest_ensure_response( array( 'ok' => false, 'items_found' => 0, 'duplicates' => 0, 'sample' => array(), 'error' => __( 'URL feed mancante.', 'nexus-news-ai' ) ) );
+                }
+
+                // SSRF guard (stessa di fetch_feed_items).
+                if ( class_exists( 'Nexus_Tools' ) && method_exists( 'Nexus_Tools', 'assert_safe_url' )
+                        && is_wp_error( Nexus_Tools::assert_safe_url( $url ) ) ) {
+                        return rest_ensure_response( array( 'ok' => false, 'items_found' => 0, 'duplicates' => 0, 'sample' => array(), 'error' => __( 'URL feed non sicuro o non valido.', 'nexus-news-ai' ) ) );
+                }
+
+                if ( ! class_exists( 'Nexus_Rss' ) || ! method_exists( 'Nexus_Rss', 'fetch_feed_items' ) ) {
+                        return rest_ensure_response( array( 'ok' => false, 'items_found' => 0, 'duplicates' => 0, 'sample' => array(), 'error' => __( 'Modulo RSS non disponibile.', 'nexus-news-ai' ) ) );
+                }
+
+                $items = Nexus_Rss::fetch_feed_items( $url, $max_items );
+
+                $duplicates = 0;
+                $sample     = array();
+                foreach ( array_slice( $items, 0, 5 ) as $item ) {
+                        if ( ! is_array( $item ) ) {
+                                continue;
+                        }
+                        $title = (string) ( isset( $item['title'] ) ? $item['title'] : '' );
+                        $sample[] = array(
+                                'title' => sanitize_text_field( $title ),
+                                'link'  => esc_url_raw( (string) ( isset( $item['link'] ) ? $item['link'] : '' ) ),
+                        );
+
+                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'article_hash_exists' ) ) {
+                                $hash = self::feed_title_hash( $title );
+                                if ( $hash && Nexus_DB::article_hash_exists( $hash ) ) {
+                                        $duplicates++;
+                                }
+                        }
+                }
+
+                return rest_ensure_response( array(
+                        'ok'          => ! empty( $items ),
+                        'items_found' => count( $items ),
+                        'duplicates'  => $duplicates,
+                        'sample'       => $sample,
+                        'error'        => empty( $items ) ? __( 'Feed irraggiungibile o senza item validi.', 'nexus-news-ai' ) : '',
+                ) );
+        }
+
+        /**
+         * Normalizza e hasha il titolo di un articolo per il dedup (stessa
+         * semantica di Nexus_Pipeline::title_hash: md5 di titolo normalizzato).
+         *
+         * @param string $title Titolo.
+         * @return string Hash hex-32 o '' se vuoto.
+         */
+        private static function feed_title_hash( $title ) {
+                $title = trim( (string) preg_replace( '/\s+/', ' ', wp_strip_all_tags( (string) $title ) ) );
+                if ( '' === $title ) {
+                        return '';
+                }
+                $title = function_exists( 'mb_strtolower' ) ? mb_strtolower( $title, 'UTF-8' ) : strtolower( $title );
+                return md5( $title );
+        }
+
+        /**
+         * GET /notify/channels — stato configurazione canali notifica (mascherato):
+         * i segreti (webhook URL, bot token) tornano solo come flag di presenza.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_notify_channels_get( $request ) {
+                unset( $request );
+                $settings = Nexus_DB::get_settings();
+
+                return rest_ensure_response( array(
+                        'webhook_set'       => ! empty( $settings['notify_webhook_url'] ),
+                        'telegram_bot_set'  => ! empty( $settings['telegram_bot_token'] ),
+                        'telegram_chat_id'  => (string) ( isset( $settings['telegram_chat_id'] ) ? $settings['telegram_chat_id'] : '' ),
+                        'telegram_ops_chat' => (string) ( isset( $settings['nexus_notify_telegram_chat'] ) ? $settings['nexus_notify_telegram_chat'] : '' ),
+                        'email'             => (string) ( isset( $settings['notify_email'] ) ? $settings['notify_email'] : '' ),
+                ) );
+        }
+
+        /**
+         * POST /notify/channels — configura i canali di notifica. Body opzionale
+         * {webhook_url, telegram_bot_token, telegram_chat_id, telegram_ops_chat,
+         * email}; le chiavi presenti vengono sanificate e salvate. I segreti
+         * possono essere cancellati inviando stringa vuota.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_notify_channels_post( $request ) {
+                $body = $request->get_json_params();
+                if ( ! is_array( $body ) || empty( $body ) ) {
+                        $body = (array) $request->get_body_params();
+                }
+                if ( empty( $body ) ) {
+                        return self::err( 'nexus_rest_empty_body', __( 'Nessun campo da configurare.', 'nexus-news-ai' ), 400 );
+                }
+
+                $map = array(
+                        'webhook_url'        => 'notify_webhook_url',
+                        'telegram_bot_token' => 'telegram_bot_token',
+                        'telegram_chat_id'   => 'telegram_chat_id',
+                        'telegram_ops_chat'  => 'nexus_notify_telegram_chat',
+                        'email'              => 'notify_email',
+                );
+
+                $clean = array();
+                foreach ( $map as $input_key => $setting_key ) {
+                        if ( ! array_key_exists( $input_key, $body ) ) {
+                                continue;
+                        }
+                        $clean[ $setting_key ] = sanitize_text_field( (string) $body[ $input_key ] );
+                }
+
+                if ( ! $clean ) {
+                        return self::err( 'nexus_rest_no_valid_fields', __( 'Nessuna chiave riconosciuta.', 'nexus-news-ai' ), 400 );
+                }
+
+                Nexus_DB::update_settings( $clean );
+
+                return self::rest_notify_channels_get( $request );
         }
 
         /**
