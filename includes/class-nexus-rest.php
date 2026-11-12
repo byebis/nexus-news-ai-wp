@@ -1469,6 +1469,31 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.31 (gap #2): test ingest multi-formato (XML/JSON/CSV/HTML).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/sources/test-ingest',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_sources_test_ingest' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'url'    => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
+                                                'format' => array(
+                                                        'type'              => 'string',
+                                                        'required'          => true,
+                                                        'sanitize_callback' => 'sanitize_key',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
                 // v1.1.30: configurazione canali notifica (webhook, Telegram, email).
                 register_rest_route(
                         self::NAMESPACE_URI,
@@ -6258,6 +6283,11 @@ class Nexus_Rest {
                         'image_size'           => 'sanitize_text_field',
                         'enable_seo'           => 'absint',
                         'seo_generate'         => 'absint',
+                        'seo_schema_enabled'   => 'absint',
+                        'seo_keywords_enabled' => 'absint',
+                        'seo_toc_enabled'      => 'absint',
+                        'news_sitemap_keywords_enabled' => 'absint',
+                        'nexus_ingest_sources' => array( __CLASS__, 'sanitize_ingest_sources' ),
                         // Distribuzione sociale (v1.0.2).
                         'enable_telegram'      => 'absint',
                         'telegram_bot_token'   => 'sanitize_text_field',
@@ -6631,6 +6661,33 @@ class Nexus_Rest {
          */
         private static function sanitize_secret_multiline( $value ) {
                 return trim( (string) sanitize_textarea_field( (string) $value ) );
+        }
+
+        /**
+         * v1.1.31 (gap #2): sanitizer per le fonti ingest multi-formato.
+         * Accetta un JSON array [{url, format}] e lo normalizza; cattivo → ''.
+         *
+         * @param mixed $value Valore grezzo.
+         * @return string JSON normalizzato (o '').
+         */
+        private static function sanitize_ingest_sources( $value ) {
+                $decoded = json_decode( (string) $value, true );
+                if ( ! is_array( $decoded ) ) {
+                        return '';
+                }
+                $out = array();
+                foreach ( $decoded as $entry ) {
+                        if ( ! is_array( $entry ) ) {
+                                continue;
+                        }
+                        $url = trim( (string) ( $entry['url'] ?? '' ) );
+                        $format = isset( $entry['format'] ) ? sanitize_key( (string) $entry['format'] ) : 'xml';
+                        if ( '' === $url || ! in_array( $format, array( 'xml', 'json', 'csv', 'html' ), true ) ) {
+                                continue;
+                        }
+                        $out[] = array( 'url' => esc_url_raw( $url ), 'format' => $format );
+                }
+                return wp_json_encode( $out, JSON_UNESCAPED_UNICODE );
         }
 
         /**
@@ -8780,6 +8837,55 @@ class Nexus_Rest {
                         'duplicates'  => $duplicates,
                         'sample'       => $sample,
                         'error'        => empty( $items ) ? __( 'Feed irraggiungibile o senza item validi.', 'nexus-news-ai' ) : '',
+                ) );
+        }
+
+        /**
+         * POST /sources/test-ingest — test di una fonte multi-formato
+         * (XML/JSON/CSV/HTML): fetch + parse + conteggio item + dedup già
+         * presenti, senza salvare nulla.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_sources_test_ingest( $request ) {
+                $url    = trim( (string) $request->get_param( 'url' ) );
+                $format = sanitize_key( (string) $request->get_param( 'format' ) );
+
+                if ( '' === $url || ! in_array( $format, array( 'xml', 'json', 'csv', 'html' ), true ) ) {
+                        return rest_ensure_response( array( 'ok' => false, 'items_found' => 0, 'duplicates' => 0, 'sample' => array(), 'error' => __( 'URL o formato non validi.', 'nexus-news-ai' ) ) );
+                }
+                if ( ! class_exists( 'Nexus_Ingest' ) || ! method_exists( 'Nexus_Ingest', 'fetch_and_parse' ) ) {
+                        return rest_ensure_response( array( 'ok' => false, 'items_found' => 0, 'duplicates' => 0, 'sample' => array(), 'error' => __( 'Modulo ingest non disponibile.', 'nexus-news-ai' ) ) );
+                }
+
+                $items = Nexus_Ingest::fetch_and_parse( $url, $format, 10 );
+
+                $duplicates = 0;
+                $sample     = array();
+                foreach ( array_slice( $items, 0, 5 ) as $item ) {
+                        if ( ! is_array( $item ) ) {
+                                continue;
+                        }
+                        $title = (string) ( isset( $item['title'] ) ? $item['title'] : '' );
+                        $sample[] = array(
+                                'title' => sanitize_text_field( $title ),
+                                'link'  => esc_url_raw( (string) ( isset( $item['link'] ) ? $item['link'] : '' ) ),
+                        );
+                        if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'article_hash_exists' ) ) {
+                                $hash = self::feed_title_hash( $title );
+                                if ( $hash && Nexus_DB::article_hash_exists( $hash ) ) {
+                                        $duplicates++;
+                                }
+                        }
+                }
+
+                return rest_ensure_response( array(
+                        'ok'          => ! empty( $items ),
+                        'items_found' => count( $items ),
+                        'duplicates'  => $duplicates,
+                        'sample'       => $sample,
+                        'error'        => empty( $items ) ? __( 'Fonte irraggiungibile o senza item validi.', 'nexus-news-ai' ) : '',
                 ) );
         }
 

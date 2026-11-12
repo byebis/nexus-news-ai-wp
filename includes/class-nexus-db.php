@@ -268,6 +268,13 @@ class Nexus_DB {
                         // v1.0.1 — SEO.
                         'enable_seo'         => 1,
                         'seo_generate'       => 1, // genera meta title/description con l'AI alla pubblicazione
+                        // v1.1.31 (gap #3): SEO avanzato + schema (configurabile).
+                        'seo_schema_enabled' => 1, // JSON-LD NewsArticle/Article
+                        'seo_keywords_enabled' => 1, // meta keywords + schema keywords
+                        'seo_toc_enabled'   => 0, // TOC opzionale nel contenuto
+                        'news_sitemap_keywords_enabled' => 1,
+                        // v1.1.31 (gap #2): fonti ingest multi-formato (JSON [{url,format}]).
+                        'nexus_ingest_sources' => '',
                         // v1.0.2 — Distribuzione reale: Telegram.
                         'enable_telegram'    => 0,
                         'telegram_bot_token' => '',
