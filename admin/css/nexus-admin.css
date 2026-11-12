@@ -67,8 +67,8 @@
   --nxa-surface: #ffffff;
   --nxa-surface-2: #f4f4f2;
   --nxa-surface-3: #ebebe7;
-  --nxa-border: #e3e5e8;
-  --nxa-border-soft: rgba(20, 24, 31, 0.09);
+  --nxa-border: #cfd4da;
+  --nxa-border-soft: rgba(20, 24, 31, 0.14);
   /* Hairline (v1.1.5): la separazione interna di default. 1px, molto tenue:
    * sostituisce i riquadri pieni tra superfici sorelle. */
   --nxa-hairline: var(--nxa-border-soft);
@@ -3249,4 +3249,86 @@ hr.nxa-hairline {
 
 .nxa-ban-banner a {
   text-decoration: underline;
+}
+
+/* ============================================================
+ * UI polish completo (branch feat/nexus-v1132-ui-polish)
+ * - bordi più visibili su card/box/sezioni/tabelle/campi
+ * - hover/focus coerenti, spaziature uniformi
+ * ============================================================ */
+
+/* Card e sezioni: bordo netto + ombra leggera per staccarle dallo sfondo. */
+.nxa-card,
+.nxa-section,
+.nxa-acc-panel,
+.nxa-stat-card,
+.nxa-ux-panel,
+.nxa-prose,
+.nxa-queue-item,
+.nxa-activity-feed,
+.nxa-health-card,
+.nxa-tools-card,
+.nxa-wizard-panel {
+  border-color: var(--nxa-border) !important;
+}
+
+/* Tabelle: bordo di riga più visibile. */
+.nxa-acc-panel .form-table th,
+.nxa-acc-panel .form-table td,
+.wrap.nexus-admin table.widefat th,
+.wrap.nexus-admin table.widefat td,
+.nxa-table th,
+.nxa-table td {
+  border-color: var(--nxa-border) !important;
+}
+
+/* Campi form: bordo più netto + focus chiaro. */
+.nxa-acc-panel input[type="text"],
+.nxa-acc-panel input[type="url"],
+.nxa-acc-panel input[type="password"],
+.nxa-acc-panel input[type="email"],
+.nxa-acc-panel input[type="number"],
+.nxa-acc-panel select,
+.nxa-acc-panel textarea,
+.wrap.nexus-admin input[type="text"],
+.wrap.nexus-admin input[type="url"],
+.wrap.nexus-admin input[type="password"],
+.wrap.nexus-admin input[type="email"],
+.wrap.nexus-admin input[type="number"],
+.wrap.nexus-admin select,
+.wrap.nexus-admin textarea {
+  border-color: var(--nxa-border);
+}
+.nxa-acc-panel input:focus,
+.nxa-acc-panel select:focus,
+.nxa-acc-panel textarea:focus,
+.wrap.nexus-admin input:focus,
+.wrap.nexus-admin select:focus,
+.wrap.nexus-admin textarea:focus {
+  border-color: var(--nxa-accent-1);
+  box-shadow: 0 0 0 1px var(--nxa-accent-1);
+  outline: none;
+}
+
+/* Accordion: separazione più netta tra head e contenuto. */
+.nxa-acc-toggle {
+  border-bottom: 1px solid var(--nxa-border);
+}
+.nxa-acc-panel {
+  padding: var(--nxa-space-4) var(--nxa-space-4) var(--nxa-space-5);
+}
+
+/* Gerarchia tipografica: titoli di sezione leggermente più respiro. */
+.nxa-section__title,
+.nxa-ux-panel__title,
+.nxa-stat-group__title {
+  letter-spacing: -0.01em;
+  margin-bottom: var(--nxa-space-3);
+}
+
+/* Hover su righe e card cliccabili. */
+.nxa-queue-item:hover,
+.nxa-ux-panel:hover,
+.nxa-card:hover {
+  border-color: var(--nxa-line-strong);
 }
