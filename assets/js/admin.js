@@ -1137,6 +1137,112 @@
         }
 
         /** Modal di dettaglio: GET /articles/{id} → titolo, meta, contenuto, log. */
+        /**
+         * v1.1.31 (gap #1): blocco immagine di anteprima nel dettaglio articolo.
+         * Mostra l'immagine corrente (a.image_url / a.thumbnail), permette di
+         * rigenerarla o caricarne una manualmente via URL. Endpoint disaccoppiato
+         * (POST /media/regenerate e POST /media/set): se assenti → fallback pulito.
+         */
+        function mediaBlockHtml( a ) {
+                var id = num( pick( a, 'id' ) );
+                var img = pick( a, 'image_url', 'imageUrl', 'thumbnail' ) || '';
+                var imgHtml = img
+                        ? '<img src="' + esc( img ) + '" alt="" style="max-width:100%;max-height:180px;border-radius:6px;display:block;margin-bottom:8px" />'
+                        : '<p style="font-size:12px;color:var(--nxa-muted);margin:0 0 8px">Nessuna immagine assegnata.</p>';
+                return '<div class="nxa-media-block" data-article-id="' + id + '" style="margin:0 0 14px;padding:12px;background:var(--nxa-surface-soft,#f7faf9);border-radius:8px">' +
+                        '<h4 style="margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--nxa-muted)">Immagine anteprima</h4>' +
+                        '<div class="nxa-media-preview">' + imgHtml + '</div>' +
+                        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                                '<input type="url" class="nxa-media-url regular-text" placeholder="https://… (URL immagine)" style="flex:1;min-width:180px" /> ' +
+                                '<button type="button" class="button nxa-media-set">Carica</button> ' +
+                                '<button type="button" class="button nxa-media-regenerate">Rigenera</button> ' +
+                                '<span class="nxa-media-status" role="status" style="font-size:12px"></span>' +
+                        '</div>' +
+                '</div>';
+        }
+
+        function bindMediaBlock( container, id ) {
+                if ( ! container ) {
+                        return;
+                }
+                var target = container.querySelector( '.nxa-media-block' );
+                if ( ! target ) {
+                        return;
+                }
+                var status = target.querySelector( '.nxa-media-status' );
+                var preview = target.querySelector( '.nxa-media-preview' );
+                var urlInput = target.querySelector( '.nxa-media-url' );
+                var base = String( ( window.NexusAdminData || {} ).restUrl || '' ).replace( /\/+$/, '' );
+                var nonce = ( window.NexusAdminData || {} ).nonce || '';
+
+                function setStatus( text, ok ) {
+                        if ( ! status ) { return; }
+                        status.textContent = text;
+                        status.style.color = ok ? '#2e7d32' : '#c62828';
+                }
+                function notify( payload ) {
+                        var img = payload && ( pick( payload, 'image_url', 'imageUrl', 'thumbnail' ) || '' );
+                        if ( img && preview ) {
+                                preview.innerHTML = '<img src="' + esc( img ) + '" alt="" style="max-width:100%;max-height:180px;border-radius:6px;display:block;margin-bottom:8px" />';
+                        }
+                }
+
+                var setBtn = target.querySelector( '.nxa-media-set' );
+                if ( setBtn ) {
+                        setBtn.addEventListener( 'click', function () {
+                                var url = urlInput ? String( urlInput.value || '' ).trim() : '';
+                                if ( ! url || ! base || ! nonce ) {
+                                        setStatus( 'Inserisci un URL valido.', false );
+                                        return;
+                                }
+                                setBtn.disabled = true;
+                                window.fetch( base + '/media/set', {
+                                        method: 'POST',
+                                        headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' },
+                                        credentials: 'same-origin',
+                                        body: JSON.stringify( { article_id: id, image_url: url } )
+                                } ).then( function ( res ) {
+                                        setBtn.disabled = false;
+                                        if ( ! res.ok ) { throw new Error( 'HTTP ' + res.status ); }
+                                        return res.json();
+                                } ).then( function ( payload ) {
+                                        notify( payload );
+                                        setStatus( '✓ Immagine aggiornata.', true );
+                                } ).catch( function () {
+                                        setBtn.disabled = false;
+                                        setStatus( '✗ Endpoint /media/set non disponibile.', false );
+                                } );
+                        } );
+                }
+
+                var regenBtn = target.querySelector( '.nxa-media-regenerate' );
+                if ( regenBtn ) {
+                        regenBtn.addEventListener( 'click', function () {
+                                if ( ! base || ! nonce ) {
+                                        setStatus( 'Endpoint non disponibile.', false );
+                                        return;
+                                }
+                                regenBtn.disabled = true;
+                                window.fetch( base + '/media/regenerate', {
+                                        method: 'POST',
+                                        headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' },
+                                        credentials: 'same-origin',
+                                        body: JSON.stringify( { article_id: id } )
+                                } ).then( function ( res ) {
+                                        regenBtn.disabled = false;
+                                        if ( ! res.ok ) { throw new Error( 'HTTP ' + res.status ); }
+                                        return res.json();
+                                } ).then( function ( payload ) {
+                                        notify( payload );
+                                        setStatus( '✓ Immagine rigenerata.', true );
+                                } ).catch( function () {
+                                        regenBtn.disabled = false;
+                                        setStatus( '✗ Endpoint /media/regenerate non disponibile.', false );
+                                } );
+                        } );
+                }
+        }
+
         function openArticleModal( id ) {
                 openModalBody( '<div class="nxa-skeleton" style="width:70%"></div><div class="nxa-skeleton"></div><div class="nxa-skeleton" style="width:40%"></div>' );
                 api( 'articles/' + num( id ) ).then( function ( payload ) {
@@ -1162,6 +1268,9 @@
                                         ' · ' + scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
                                         ( sourceUrl ? ' · ' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) : '' ) +
                                 '</p>';
+
+                        // v1.1.31 (gap #1): selettore immagine anteprima.
+                        html += mediaBlockHtml( a );
 
                         var content = String( pick( a, 'content' ) || '' );
                         if ( content ) {
@@ -1222,6 +1331,7 @@
                                 '</div>';
 
                         openModalBody( html );
+                        bindMediaBlock( qs( '.nxa-modal-body' ), num( pick( a, 'id' ) ) || num( id ) );
                         bindTranslateButtons( qs( '#nxa-translate-row' ), num( pick( a, 'id' ) ) || num( id ) );
                         // v1.1.2: bottoni "Pubblica come post" + lista di stato
                         // delle traduzioni come post nativi (una fetch per apertura).
@@ -6964,6 +7074,140 @@
                 return gm ? 'vuoto = modello globale (' + gm + ')' : 'vuoto = modello globale';
         }
 
+        /**
+         * v1.1.31 (gap #4): builder visuale a regole (condizione→azione).
+         * Salva via POST /workflow/rules — disaccoppiato: se l'endpoint manca
+         * mostra un avviso, senza errori fatali.
+         */
+        function initWorkflowBuilder() {
+                var wrap = qs( '#nxa-workflow-builder' );
+                if ( ! wrap ) {
+                        return;
+                }
+                var rulesEl = qs( '#nxa-workflow-rules', wrap );
+                var addBtn = qs( '#nxa-workflow-add', wrap );
+                var saveBtn = qs( '#nxa-workflow-save', wrap );
+                var status = qs( '#nxa-workflow-status', wrap );
+                var base = String( ( window.NexusAdminData || {} ).restUrl || '' ).replace( /\/+$/, '' );
+                var nonce = ( window.NexusAdminData || {} ).nonce || '';
+                var CONDITIONS = [ 'source', 'category', 'score', 'status' ];
+                var ACTIONS = [ 'approve', 'schedule', 'publish', 'notify' ];
+                var COND_LABELS = { source: 'Fonte', category: 'Categoria', score: 'Punteggio AI', status: 'Stato' };
+                var ACT_LABELS = { approve: 'Approva', schedule: 'Programma', publish: 'Pubblica', notify: 'Notifica' };
+
+                function ruleCard( rule ) {
+                        rule = rule || {};
+                        var cond = CONDITIONS.indexOf( rule.condition ) !== -1 ? rule.condition : 'source';
+                        var action = ACTIONS.indexOf( rule.action ) !== -1 ? rule.action : 'approve';
+                        var value = String( rule.value || '' );
+                        return '<div class="nxa-workflow-rule" style="background:var(--nxa-surface-soft,#f7faf9);border:1px solid var(--nxa-border,#e4e4e4);border-radius:8px;padding:12px;margin-bottom:10px">' +
+                                '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+                                        '<select class="nxa-wf-cond" aria-label="Condizione">' +
+                                                CONDITIONS.map( function ( c ) {
+                                                        return '<option value="' + c + '"' + ( c === cond ? ' selected' : '' ) + '>' + esc( COND_LABELS[ c ] ) + '</option>';
+                                                } ).join( '' ) +
+                                        '</select>' +
+                                        '<input type="text" class="nxa-wf-value regular-text" placeholder="valore (es. tecnologia, >=70)" value="' + esc( value ) + '" style="flex:1;min-width:140px" />' +
+                                        '<span style="color:var(--nxa-muted)">→</span>' +
+                                        '<select class="nxa-wf-action" aria-label="Azione">' +
+                                                ACTIONS.map( function ( a ) {
+                                                        return '<option value="' + a + '"' + ( a === action ? ' selected' : '' ) + '>' + esc( ACT_LABELS[ a ] ) + '</option>';
+                                                } ).join( '' ) +
+                                        '</select>' +
+                                        '<button type="button" class="button nxa-wf-del">✕</button>' +
+                                '</div>' +
+                        '</div>';
+                }
+
+                function renderRules( rules ) {
+                        if ( ! rulesEl ) { return; }
+                        if ( ! rules.length ) {
+                                rulesEl.innerHTML = '<p style="font-size:13px;color:var(--nxa-muted)">Nessuna regola configurata.</p>';
+                                return;
+                        }
+                        rulesEl.innerHTML = rules.map( ruleCard ).join( '' );
+                }
+
+                function readRules() {
+                        var rules = [];
+                        if ( ! rulesEl ) { return rules; }
+                        rulesEl.querySelectorAll( '.nxa-workflow-rule' ).forEach( function ( card ) {
+                                var cond = card.querySelector( '.nxa-wf-cond' );
+                                var action = card.querySelector( '.nxa-wf-action' );
+                                var value = card.querySelector( '.nxa-wf-value' );
+                                rules.push( {
+                                        condition: cond ? cond.value : 'source',
+                                        action: action ? action.value : 'approve',
+                                        value: value ? String( value.value || '' ).trim() : ''
+                                } );
+                        } );
+                        return rules;
+                }
+
+                function setStatus( text, ok ) {
+                        if ( ! status ) { return; }
+                        status.textContent = text;
+                        status.style.color = ok ? '#2e7d32' : '#c62828';
+                }
+
+                // Carica le regole esistenti (GET /workflow/rules, fallback vuoto).
+                if ( base && nonce ) {
+                        window.fetch( base + '/workflow/rules', {
+                                headers: { 'X-WP-Nonce': nonce },
+                                credentials: 'same-origin'
+                        } ).then( function ( res ) {
+                                if ( ! res.ok ) { throw new Error( 'HTTP ' + res.status ); }
+                                return res.json();
+                        } ).then( function ( payload ) {
+                                var rules = payload && Array.isArray( payload.rules ) ? payload.rules : ( Array.isArray( payload ) ? payload : [] );
+                                renderRules( rules );
+                        } ).catch( function () {
+                                /* endpoint assente: si parte vuoti */
+                        } );
+                }
+
+                if ( addBtn ) {
+                        addBtn.addEventListener( 'click', function () {
+                                var rules = readRules();
+                                rules.push( {} );
+                                renderRules( rules );
+                        } );
+                }
+                if ( rulesEl ) {
+                        rulesEl.addEventListener( 'click', function ( e ) {
+                                var del = e.target.closest ? e.target.closest( '.nxa-wf-del' ) : null;
+                                if ( ! del ) { return; }
+                                var card = del.closest( '.nxa-workflow-rule' );
+                                if ( card && card.parentNode ) {
+                                        card.parentNode.removeChild( card );
+                                }
+                        } );
+                }
+                if ( saveBtn ) {
+                        saveBtn.addEventListener( 'click', function () {
+                                if ( ! base || ! nonce ) {
+                                        setStatus( 'Endpoint non disponibile.', false );
+                                        return;
+                                }
+                                var rules = readRules();
+                                saveBtn.disabled = true;
+                                window.fetch( base + '/workflow/rules', {
+                                        method: 'POST',
+                                        headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' },
+                                        credentials: 'same-origin',
+                                        body: JSON.stringify( { rules: rules } )
+                                } ).then( function ( res ) {
+                                        saveBtn.disabled = false;
+                                        if ( ! res.ok ) { throw new Error( 'HTTP ' + res.status ); }
+                                        setStatus( '✓ Regole salvate (il backend le valuterà).', true );
+                                } ).catch( function () {
+                                        saveBtn.disabled = false;
+                                        setStatus( '✗ Endpoint /workflow/rules non disponibile.', false );
+                                } );
+                        } );
+                }
+        }
+
         function boot() {
                 // v1.1.6 ("dashboard doppia"): il boot può girare UNA sola volta
                 // per pagina (dominio di esecuzione singolo, nessun doppio loader).
@@ -6975,6 +7219,8 @@
                 ensureToastStack();
                 // v1.1.16 (WE5): delega unica per i bottoni "Riprova" degli stati d'errore.
                 bindRetryButtons();
+                // v1.1.31 (gap #4): builder workflow a regole (no-op se assente).
+                initWorkflowBuilder();
 
                 var pageEl = qs( '.wrap.nexus-admin[data-page]' ) || qs( '[data-page]' );
                 var page = pageEl ? String( pageEl.getAttribute( 'data-page' ) || '' ).trim() : '';

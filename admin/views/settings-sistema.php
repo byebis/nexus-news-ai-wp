@@ -294,6 +294,29 @@ if ( ! $nxa_status_ai_active ) {
                         </div>
                 </section>
 
+                <section class="nxa-acc" data-nxa-acc="workflow">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-workflow">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Workflow a regole (automazione)', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-workflow" hidden>
+                                <?php /* v1.1.31 (gap #4): builder visuale a regole. L'editor è JS
+                                 * (admin.js) e salva via POST /workflow/rules (disaccoppiato:
+                                 * se assente mostra avviso, senza errori fatali). */ ?>
+                                <p class="description"><?php esc_html_e( 'Definisci regole: quando una condizione è vera (fonte, categoria, punteggio AI, stato), esegui un\'azione (approva, programma, pubblica, notifica).', 'nexus-news-ai' ); ?></p>
+                                <div id="nxa-workflow-builder">
+                                        <div class="nxa-workflow-rules" id="nxa-workflow-rules">
+                                                <p style="font-size:13px;color:var(--nxa-muted)"><?php esc_html_e( 'Nessuna regola configurata. Aggiungi la prima.', 'nexus-news-ai' ); ?></p>
+                                        </div>
+                                        <p>
+                                                <button type="button" class="button" id="nxa-workflow-add"><?php esc_html_e( '+ Aggiungi regola', 'nexus-news-ai' ); ?></button>
+                                                <button type="button" class="button button-primary" id="nxa-workflow-save"><?php esc_html_e( 'Salva regole', 'nexus-news-ai' ); ?></button>
+                                                <span id="nxa-workflow-status" role="status" style="margin-left:8px"></span>
+                                        </p>
+                                </div>
+                        </div>
+                </section>
+
                 <section class="nxa-acc" data-nxa-acc="google-feedback">
                         <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-google-feedback">
                                 <span class="nxa-acc-label"><?php esc_html_e( 'Feedback performance (Google)', 'nexus-news-ai' ); ?></span>
