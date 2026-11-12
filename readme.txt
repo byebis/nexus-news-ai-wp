@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.29
+Stable tag: 1.1.30
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,12 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.30 =
+* New: auto-pubblicazione a soglia — toggle che approva e pubblica automaticamente gli articoli la cui valutazione AI supera la soglia, anche in modalità semi-autonoma.
+* New: notifiche — canale email (wp_mail) e Telegram (chat OPS), configurabili via endpoint admin /nexus/v1/notify/channels.
+* New: gestione fonti RSS migliorata — test feed con validazione e conteggio (endpoint /sources/test-feed), dedup per hash titolo, filtri per categoria (inclusione/esclusione).
+* UI: azioni Annulla/Riprogramma sugli articoli pianificati, stato canali notifiche, toggle dedup e filtro categoria per fonte, editor visuale dei prompt AI (rewrite/collect/fact-check).
 
 = 1.1.29 =
 * New: programmazione della pubblicazione — pianifica un articolo in data/ora futura (coda), via endpoint /nexus/v1/schedule e WP-Cron.
