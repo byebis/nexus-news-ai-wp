@@ -468,6 +468,26 @@ $social_platforms = array(
                                 <?php /* Sezione v1.1.12 (S8) "Notifiche": webhook Slack-compatibile (modulo S7), name = chiavi esatte default_settings v1.1.12. */ ?>
                                 <table class="form-table" role="presentation">
                                         <tbody>
+                                                <?php
+                                                /* v1.1.30 (frontend): stato canali di notifica — badge configurato/non. */
+                                                $nxa_nfy_wh = '' !== trim( (string) $settings['notify_webhook_url'] );
+                                                $nxa_nfy_tg = ( '' !== trim( (string) $settings['telegram_bot_token'] ) && '' !== trim( (string) $settings['telegram_chat_id'] ) );
+                                                $nxa_nfy_em = '' !== trim( (string) $settings['daily_email'] );
+                                                $nxa_nfy_badge = static function ( $ok ) {
+                                                        return $ok
+                                                                ? '<span class="nxa-badge nxa-badge--primary">' . esc_html__( 'configurato', 'nexus-news-ai' ) . '</span>'
+                                                                : '<span class="nxa-badge">' . esc_html__( 'non configurato', 'nexus-news-ai' ) . '</span>';
+                                                };
+                                                ?>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Stato canali', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <p class="description" style="margin-top:0"><?php esc_html_e( 'Canali disponibili per le notifiche della pipeline.', 'nexus-news-ai' ); ?></p>
+                                                                <p><strong><?php esc_html_e( 'Webhook', 'nexus-news-ai' ); ?></strong> <?php echo $nxa_nfy_badge( $nxa_nfy_wh ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- badge già escapato. ?></p>
+                                                                <p><strong><?php esc_html_e( 'Telegram', 'nexus-news-ai' ); ?></strong> <?php echo $nxa_nfy_badge( $nxa_nfy_tg ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- badge già escapato. ?></p>
+                                                                <p><strong><?php esc_html_e( 'Email', 'nexus-news-ai' ); ?></strong> <?php echo $nxa_nfy_badge( $nxa_nfy_em ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- badge già escapato. ?></p>
+                                                        </td>
+                                                </tr>
                                                 <tr>
                                                         <th scope="row"><label for="nxa-notify-webhook-url"><?php esc_html_e( 'Webhook notifiche', 'nexus-news-ai' ); ?></label></th>
                                                         <td>

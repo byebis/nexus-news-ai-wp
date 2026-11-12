@@ -758,6 +758,51 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                         </div>
                 </section>
 
+                <section class="nxa-acc" data-nxa-acc="prompts">
+                        <button type="button" class="nxa-acc-toggle" aria-expanded="false" aria-controls="nxa-acc-panel-prompts">
+                                <span class="nxa-acc-label"><?php esc_html_e( 'Prompt AI (editor visuale)', 'nexus-news-ai' ); ?></span>
+                                <span class="nxa-acc-chevron" aria-hidden="true"></span>
+                        </button>
+                        <div class="nxa-acc-panel" id="nxa-acc-panel-prompts" hidden>
+                                <?php /* v1.1.30 (frontend): editor visuale dei prompt rewrite/collect/fact-check.
+                                 * Disaccoppiato: salva su opzione nexus_prompt_overrides via POST /prompts;
+                                 * se l'endpoint manca mostra un avviso, senza errori fatali. */ ?>
+                                <p class="description"><?php esc_html_e( 'Personalizza i prompt usati dalla redazione. Lascia vuoto un campo per usare il default del plugin.', 'nexus-news-ai' ); ?></p>
+                                <table class="form-table" role="presentation">
+                                        <tbody>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-prompt-rewrite"><?php esc_html_e( 'Prompt rewrite', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <textarea name="prompt_rewrite" id="nxa-prompt-rewrite" rows="6" class="large-text code" placeholder="<?php esc_attr_e( 'Default di sistema (rewrite).', 'nexus-news-ai' ); ?>"></textarea>
+                                                                <p class="description"><?php esc_html_e( 'Usato per riscrivere gli articoli in stile editoriale.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-prompt-collect"><?php esc_html_e( 'Prompt collect', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <textarea name="prompt_collect" id="nxa-prompt-collect" rows="6" class="large-text code" placeholder="<?php esc_attr_e( 'Default di sistema (collect).', 'nexus-news-ai' ); ?>"></textarea>
+                                                                <p class="description"><?php esc_html_e( 'Usato per selezionare i candidati dalle fonti RSS.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-prompt-factcheck"><?php esc_html_e( 'Prompt fact-check', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <textarea name="prompt_factcheck" id="nxa-prompt-factcheck" rows="6" class="large-text code" placeholder="<?php esc_attr_e( 'Default di sistema (fact-check).', 'nexus-news-ai' ); ?>"></textarea>
+                                                                <p class="description"><?php esc_html_e( 'Usato per verificare i fatti di un articolo.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"></th>
+                                                        <td>
+                                                                <button type="button" class="button button-primary" id="nxa-prompts-save"><?php esc_html_e( 'Salva prompt', 'nexus-news-ai' ); ?></button>
+                                                                <span id="nxa-prompts-status" role="status" style="margin-left:8px"></span>
+                                                        </td>
+                                                </tr>
+                                        </tbody>
+                                </table>
+                        </div>
+                </section>
+
                         </div>
                 </div>
 
@@ -906,5 +951,49 @@ $mcp_servers_text      = isset( $settings['mcp_servers_text'] ) ? (string) $sett
                         applySub( slug );
                 }
         } );
+
+        /* v1.1.30 (frontend): salvataggio prompt visuali (endpoint /prompts,
+         * disaccoppiato — se assente mostra un avviso, senza errori fatali). */
+        var promptsSave = document.getElementById( 'nxa-prompts-save' );
+        if ( promptsSave ) {
+                promptsSave.addEventListener( 'click', function () {
+                        var data = window.NexusAdminData || {};
+                        if ( ! data.restUrl || ! data.nonce ) {
+                                return;
+                        }
+                        var body = {
+                                prompt_rewrite: ( document.getElementById( 'nxa-prompt-rewrite' ) || {} ).value || '',
+                                prompt_collect: ( document.getElementById( 'nxa-prompt-collect' ) || {} ).value || '',
+                                prompt_factcheck: ( document.getElementById( 'nxa-prompt-factcheck' ) || {} ).value || ''
+                        };
+                        var status = document.getElementById( 'nxa-prompts-status' );
+                        var base = String( data.restUrl ).replace( /\/+$/, '' );
+                        promptsSave.disabled = true;
+                        if ( status ) {
+                                status.textContent = 'Salvataggio…';
+                        }
+                        window.fetch( base + '/prompts', {
+                                method: 'POST',
+                                headers: { 'X-WP-Nonce': data.nonce, 'Content-Type': 'application/json' },
+                                credentials: 'same-origin',
+                                body: JSON.stringify( body )
+                        } ).then( function ( res ) {
+                                promptsSave.disabled = false;
+                                if ( ! res.ok ) {
+                                        throw new Error( 'HTTP ' + res.status );
+                                }
+                                if ( status ) {
+                                        status.textContent = '✓ Prompt salvati (verranno applicati dal backend).';
+                                        status.style.color = '#2e7d32';
+                                }
+                        } ).catch( function () {
+                                promptsSave.disabled = false;
+                                if ( status ) {
+                                        status.textContent = '✗ Salvataggio non disponibile (endpoint /prompts assente).';
+                                        status.style.color = '#c62828';
+                                }
+                        } );
+                } );
+        }
 } )();
 </script>
