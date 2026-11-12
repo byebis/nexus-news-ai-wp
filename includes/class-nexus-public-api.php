@@ -245,6 +245,38 @@ class Nexus_Public_API {
                                 ),
                         )
                 );
+
+                /* ---------------- PUBBLICO: FONTI (v1.1.32) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/sources',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_sources' ),
+                                        'permission_callback' => array( __CLASS__, 'auth' ),
+                                ),
+                        )
+                );
+
+                /* ---------------- PUBBLICO: SCHEDULAZIONE (v1.1.32, Pro) ---------------- */
+
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/schedule',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_schedule' ),
+                                        'permission_callback' => array( __CLASS__, 'auth_pro' ),
+                                        'args'                => array(
+                                                'id'          => array( 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ),
+                                                'scheduled_at' => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ),
+                                        ),
+                                ),
+                        )
+                );
         }
 
         /* =========================================================================
@@ -312,8 +344,12 @@ class Nexus_Public_API {
                         return new WP_Error( 'nexus_api_disabled', 'API pubblica disattivata.', array( 'status' => 503 ) );
                 }
 
-                // 2. Chiave dall'header X-Api-Key, con fallback sul parametro api_key.
+                // 2. Chiave dall'header X-Api-Key (o alias X-Nexus-Key), con
+                //    fallback sul parametro api_key.
                 $key = $request->get_header( 'X-Api-Key' );
+                if ( ! $key ) {
+                        $key = $request->get_header( 'X-Nexus-Key' );
+                }
                 if ( ! $key ) {
                         $key = $request->get_param( 'api_key' );
                 }
@@ -426,6 +462,29 @@ class Nexus_Public_API {
                         return new WP_Error( 'nexus_rate_limited', 'Troppe richieste: limite 120 al minuto.', array( 'status' => 429 ) );
                 }
 
+                return true;
+        }
+
+        /**
+         * Permission callback per le rotte di SCRITTURA/PAGAMENTO (Pro).
+         * Riusa auth() (chiave + rate limit + CORS) e aggiunge il gate Pro:
+         * senza licenza Pro → 403 nexus_pro_required (payload chiaro).
+         *
+         * @param WP_REST_Request $request Richiesta corrente.
+         * @return true|WP_Error
+         */
+        public static function auth_pro( $request ) {
+                $auth = self::auth( $request );
+                if ( is_wp_error( $auth ) ) {
+                        return $auth;
+                }
+                if ( class_exists( 'Nexus_License' ) && method_exists( 'Nexus_License', 'is_pro' ) && ! Nexus_License::is_pro() ) {
+                        return new WP_Error(
+                                'nexus_pro_required',
+                                'Questa operazione richiede il piano Pro.',
+                                array( 'status' => 403, 'details' => array( 'scope' => 'write', 'resource' => 'schedule' ) )
+                        );
+                }
                 return true;
         }
 
@@ -659,6 +718,87 @@ class Nexus_Public_API {
                                 'published'      => (int) ( $stats['published'] ?? 0 ),
                                 'agents_active'  => (int) ( $stats['agents_active'] ?? 0 ),
                                 'views'          => (int) ( $stats['views'] ?? 0 ),
+                        )
+                );
+        }
+
+        /**
+         * GET /sources — fonti configurate (RSS globali + ingest multi-formato).
+         * Sola lettura: non espone segreti.
+         *
+         * @return WP_REST_Response
+         */
+        public static function rest_sources() {
+                $settings = Nexus_DB::get_settings();
+
+                $rss = array();
+                $raw = trim( (string) ( $settings['global_rss_sources'] ?? '' ) );
+                if ( '' !== $raw ) {
+                        foreach ( preg_split( '/\r\n|\r|\n/', $raw ) as $line ) {
+                                $line = trim( $line );
+                                if ( '' !== $line && 0 !== strpos( $line, '#' ) ) {
+                                        $rss[] = $line;
+                                }
+                        }
+                }
+
+                $ingest = array();
+                if ( class_exists( 'Nexus_Ingest' ) && method_exists( 'Nexus_Ingest', 'sources' ) ) {
+                        $ingest = Nexus_Ingest::sources();
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'rss'    => $rss,
+                                'ingest' => $ingest,
+                        )
+                );
+        }
+
+        /**
+         * POST /schedule — programma la pubblicazione di un articolo (Pro).
+         * Stessa logica di POST /nexus/v1/schedule (admin), ma autenticata
+         * con chiave API.
+         *
+         * @param WP_REST_Request $request Richiesta corrente.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_schedule( $request ) {
+                $id = absint( $request->get_param( 'id' ) );
+                $scheduled_at = trim( (string) $request->get_param( 'scheduled_at' ) );
+
+                $article = Nexus_DB::get_article( $id );
+                if ( ! $article ) {
+                        return new WP_Error( 'nexus_public_article_not_found', 'Articolo non trovato.', array( 'status' => 404 ) );
+                }
+
+                $ts = strtotime( $scheduled_at );
+                if ( false === $ts ) {
+                        return new WP_Error( 'nexus_public_invalid_date', 'Data/ora non valida.', array( 'status' => 400 ) );
+                }
+                if ( $ts <= (int) current_time( 'timestamp' ) ) {
+                        return new WP_Error( 'nexus_public_past_date', 'La data di pubblicazione deve essere futura.', array( 'status' => 400 ) );
+                }
+
+                $allowed_from = array( 'draft', 'pending_approval', 'approved' );
+                if ( ! in_array( (string) $article->status, $allowed_from, true ) ) {
+                        return new WP_Error( 'nexus_public_cannot_schedule', 'L\'articolo non può essere programmato nello stato attuale.', array( 'status' => 409 ) );
+                }
+
+                $mysql = date( 'Y-m-d H:i:s', $ts ); // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date
+                Nexus_DB::update_article( $id, array( 'status' => 'scheduled', 'scheduled_at' => $mysql ) );
+                if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+                        wp_clear_scheduled_hook( 'nexus_publish_scheduled', array( $id ) );
+                }
+                if ( function_exists( 'wp_schedule_single_event' ) ) {
+                        wp_schedule_single_event( $ts, 'nexus_publish_scheduled', array( $id ) );
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'ok'           => true,
+                                'article_id'   => $id,
+                                'scheduled_at' => $mysql,
                         )
                 );
         }
