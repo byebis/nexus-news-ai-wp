@@ -135,6 +135,8 @@ function nexus_bootstrap() {
                 'Nexus_News_Sitemap', 'Nexus_Evergreen', 'Nexus_Notify', 'Nexus_Google_Wizard',
                 'Nexus_Health', 'Nexus_Opportunities', 'Nexus_Calendar', 'Nexus_Shortcodes',
                 'Nexus_License',
+                'Nexus_Ingest',
+                'Nexus_MCP',
         ) as $nxa_class ) {
                 class_exists( $nxa_class );
         }

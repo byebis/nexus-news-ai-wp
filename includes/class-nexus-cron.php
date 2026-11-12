@@ -209,6 +209,11 @@ class Nexus_Cron {
                         // eventi WP-Cron mancati). Idempotente (publish() è protetto).
                         self::process_due_scheduled();
 
+                        // v1.1.31 (gap #2): ingest multi-formato (no-op senza fonti).
+                        if ( class_exists( 'Nexus_Ingest' ) && method_exists( 'Nexus_Ingest', 'collect' ) ) {
+                                Nexus_Ingest::collect();
+                        }
+
                         Nexus_Pipeline::cron_tick();
                 } catch ( Exception $e ) {
                         self::debug_log( 'Errore durante cron tick: ' . $e->getMessage() );

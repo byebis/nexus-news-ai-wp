@@ -861,6 +861,14 @@ final class Nexus_News_Sitemap {
                 echo '</news:publication>' . "\n";
                 echo '<news:publication_date>' . esc_html( self::publication_date_iso( $post ) ) . '</news:publication_date>' . "\n";
                 echo '<news:title>' . esc_html( $post->post_title ) . '</news:title>' . "\n";
+                // v1.1.31 (gap #3): <news:keywords> (categoria) se abilitato.
+                $sitemap_settings = Nexus_DB::get_settings();
+                if ( ! empty( $sitemap_settings['news_sitemap_keywords_enabled'] ) ) {
+                        $sitemap_cats = get_the_category( $post->ID );
+                        if ( is_array( $sitemap_cats ) && isset( $sitemap_cats[0]->name ) ) {
+                                echo '<news:keywords>' . esc_html( $sitemap_cats[0]->name ) . '</news:keywords>' . "\n";
+                        }
+                }
                 echo '</news:news>' . "\n";
                 echo '</url>' . "\n";
         }

@@ -74,6 +74,60 @@ class Nexus_SEO {
         public static function init() {
                 add_action( 'wp_head', array( __CLASS__, 'print_head_meta' ), 1 );
                 add_filter( 'pre_get_document_title', array( __CLASS__, 'filter_title' ), 20 );
+                // v1.1.31 (gap #3): TOC opzionale (configurabile, non tocca l'editor).
+                add_filter( 'the_content', array( __CLASS__, 'maybe_add_toc' ), 20 );
+        }
+
+        /**
+         * v1.1.31 (gap #3): TOC opzionale. Se abilitato e in pagina singola,
+         * estrae i titoli h2/h3 dal contenuto e antepone un indice. Solo
+         * front-end (the_content), nessuna modifica all'editor/Gutenberg.
+         *
+         * @param string $content Contenuto del post.
+         * @return string
+         */
+        public static function maybe_add_toc( $content ) {
+                if ( ! is_singular() || ! in_the_loop() || ! is_main_query() ) {
+                        return $content;
+                }
+                $settings = Nexus_DB::get_settings();
+                if ( empty( $settings['seo_toc_enabled'] ) ) {
+                        return $content;
+                }
+
+                $matches = array();
+                if ( ! preg_match_all( '/<h([23])[^>]*>(.*?)<\/h\1>/is', $content, $matches, PREG_SET_ORDER ) || empty( $matches ) ) {
+                        return $content;
+                }
+
+                $items = array();
+                foreach ( $matches as $i => $m ) {
+                        $text = trim( wp_strip_all_tags( $m[2] ) );
+                        if ( '' === $text ) {
+                                continue;
+                        }
+                        $id = 'nexus-toc-' . ( (int) get_the_ID() ) . '-' . $i;
+                        // Aggiunge l'id all'heading se non presente.
+                        if ( false === strpos( $m[0], 'id=' ) ) {
+                                $content = str_replace( $m[0], '<h' . $m[1] . ' id="' . esc_attr( $id ) . '">' . $m[2] . '</h' . $m[1] . '>', $content );
+                        } else {
+                                $id = $m[0];
+                        }
+                        $items[] = array( 'level' => (int) $m[1], 'text' => $text, 'id' => $id );
+                }
+
+                if ( ! $items ) {
+                        return $content;
+                }
+
+                $html = '<nav class="nexus-toc" aria-label="' . esc_attr__( 'Indice', 'nexus-news-ai' ) . '"><p class="nexus-toc__title"><strong>' . esc_html__( 'Indice', 'nexus-news-ai' ) . '</strong></p><ul>';
+                foreach ( $items as $item ) {
+                        $class = 3 === $item['level'] ? ' class="nexus-toc__sub"' : '';
+                        $html .= '<li' . $class . '><a href="#' . esc_attr( $item['id'] ) . '">' . esc_html( $item['text'] ) . '</a></li>';
+                }
+                $html .= '</ul></nav>';
+
+                return $html . $content;
         }
 
         /**
@@ -342,6 +396,25 @@ class Nexus_SEO {
                         $ld_section = self::clean_text( self::field( $article, 'category' ), 0 );
                 }
 
+                // v1.1.31 (gap #3): keywords SEO (se abilitate) = categoria + tag del post.
+                $keywords = array();
+                $settings_kw = Nexus_DB::get_settings();
+                if ( ! empty( $settings_kw['seo_keywords_enabled'] ) ) {
+                        if ( '' !== $ld_section ) {
+                                $keywords[] = $ld_section;
+                        }
+                        $wp_tags = get_the_tags( $post_id );
+                        if ( is_array( $wp_tags ) ) {
+                                foreach ( $wp_tags as $t ) {
+                                        $kw = self::clean_text( $t->name, 0 );
+                                        if ( '' !== $kw ) {
+                                                $keywords[] = $kw;
+                                        }
+                                }
+                        }
+                        $keywords = array_values( array_unique( array_filter( $keywords ) ) );
+                }
+
                 // Uscita anticipata se non c'è proprio nulla di utile da stampare.
                 if ( '' === $seo_title && '' === $seo_description && '' === $permalink ) {
                         return;
@@ -372,6 +445,10 @@ class Nexus_SEO {
                         echo '<meta property="og:type" content="article">' . "\n";
                         if ( '' !== $permalink ) {
                                 echo '<meta property="og:url" content="' . esc_url( $permalink ) . '">' . "\n";
+                        }
+                        // v1.1.31 (gap #3): meta keywords (categoria + tag).
+                        if ( $keywords ) {
+                                echo '<meta name="keywords" content="' . esc_attr( implode( ', ', $keywords ) ) . '">' . "\n";
                         }
                         if ( '' !== $image_url ) {
                                 echo '<meta property="og:image" content="' . esc_url( $image_url ) . '">' . "\n";
@@ -540,12 +617,22 @@ class Nexus_SEO {
                 if ( '' !== $ld_section ) {
                         $schema['articleSection'] = $ld_section;
                 }
+                // v1.1.31 (gap #3): keywords nello schema (se abilitate).
+                if ( $keywords ) {
+                        $schema['keywords'] = implode( ', ', $keywords );
+                }
                 // "image" viene incluso solo se disponibile (valori vuoti non ammessi da schema.org).
                 if ( '' !== $image_url ) {
                         $schema['image'] = $image_url;
                 }
 
-                $json = wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                // v1.1.31 (gap #3): lo schema JSON-LD è configurabile (on/off).
+                $schema_settings = Nexus_DB::get_settings();
+                if ( empty( $schema_settings['seo_schema_enabled'] ) ) {
+                        $json = '';
+                } else {
+                        $json = wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                }
                 if ( is_string( $json ) && '' !== $json ) {
                         // Previene l'interruzione del tag <script> se il testo contiene '</'.
                         $json = str_replace( '</', '<\\/', $json );

@@ -205,6 +205,36 @@ $social_platforms = array(
                                                                 <p class="description"><?php esc_html_e( "Se attivo, title e description SEO vengono generati con l'AI; in caso contrario usano titolo e riassunto dell'articolo.", 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Schema markup', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-seo-schema">
+                                                                        <input type="checkbox" name="seo_schema_enabled" id="nxa-seo-schema" value="1" <?php checked( (int) $settings['seo_schema_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Emetti JSON-LD NewsArticle/Article', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'v1.1.31: schema.org Article/NewsArticle per i post pubblicati.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Keywords', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-seo-keywords">
+                                                                        <input type="checkbox" name="seo_keywords_enabled" id="nxa-seo-keywords" value="1" <?php checked( (int) $settings['seo_keywords_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Meta keywords (categoria + tag)', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'v1.1.31: aggiunge keywords alla meta e allo schema.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><?php esc_html_e( 'Indice (TOC)', 'nexus-news-ai' ); ?></th>
+                                                        <td>
+                                                                <label for="nxa-seo-toc">
+                                                                        <input type="checkbox" name="seo_toc_enabled" id="nxa-seo-toc" value="1" <?php checked( (int) $settings['seo_toc_enabled'], 1 ); ?> />
+                                                                        <?php esc_html_e( 'Indice automatico nel contenuto', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                                <p class="description"><?php esc_html_e( 'v1.1.31: TOC opzionale da h2/h3, solo front-end.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
                                         </tbody>
                                 </table>
                         </div>
