@@ -137,6 +137,7 @@ function nexus_bootstrap() {
                 'Nexus_License',
                 'Nexus_Ingest',
                 'Nexus_MCP',
+                'Nexus_Workflow',
         ) as $nxa_class ) {
                 class_exists( $nxa_class );
         }
