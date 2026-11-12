@@ -492,6 +492,22 @@ $social_platforms = array(
                                                                 <p class="description"><?php esc_html_e( 'Chat Telegram ops per le notifiche interne (vuoto = canale social attuale).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-notify-email"><?php esc_html_e( 'Email notifiche', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="notify_email" id="nxa-notify-email" value="<?php echo esc_attr( isset( $settings['notify_email'] ) ? $settings['notify_email'] : '' ); ?>" placeholder="ops@esempio.it, altro@esempio.it" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Indirizzi email (separati da virgola) per gli stessi eventi. Inviate via wp_mail.', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-rss-include"><?php esc_html_e( 'Filtri categoria feed RSS', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <input type="text" name="rss_include_categories" id="nxa-rss-include" value="<?php echo esc_attr( isset( $settings['rss_include_categories'] ) ? $settings['rss_include_categories'] : '' ); ?>" placeholder="Tecnologia, Economia" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Include: mantieni solo gli item di questi feed in ALMENO UNA di queste categorie (CSV).', 'nexus-news-ai' ); ?></p>
+                                                                <input type="text" name="rss_exclude_categories" id="nxa-rss-exclude" value="<?php echo esc_attr( isset( $settings['rss_exclude_categories'] ) ? $settings['rss_exclude_categories'] : '' ); ?>" placeholder="Politica, Gossip" class="regular-text code" />
+                                                                <p class="description"><?php esc_html_e( 'Exclude: scarta gli item di questi feed in UNA di queste categorie (CSV).', 'nexus-news-ai' ); ?></p>
+                                                        </td>
+                                                </tr>
                                         </tbody>
                                 </table>
                         </div>

@@ -189,6 +189,15 @@ $global_rss_sources = isset( $settings['global_rss_sources'] ) ? (string) $setti
                                                                 <p class="description"><?php esc_html_e( 'In modalitÃ  autonoma, approva e pubblica oltre questa soglia (0-100).', 'nexus-news-ai' ); ?></p>
                                                         </td>
                                                 </tr>
+                                                <tr>
+                                                        <th scope="row"><label for="nxa-auto-publish-enabled"><?php esc_html_e( 'Auto-pubblicazione a soglia', 'nexus-news-ai' ); ?></label></th>
+                                                        <td>
+                                                                <label>
+                                                                        <input type="checkbox" name="auto_publish_enabled" id="nxa-auto-publish-enabled" value="1" <?php checked( 1, isset( $settings['auto_publish_enabled'] ) ? $settings['auto_publish_enabled'] : 0 ); ?> />
+                                                                        <?php esc_html_e( 'Approva e pubblica automaticamente gli articoli sopra la soglia (anche in modalità semi-autonoma). Il flusso manuale resta invariato.', 'nexus-news-ai' ); ?>
+                                                                </label>
+                                                        </td>
+                                                </tr>
                                         </tbody>
                                 </table>
                         </div>

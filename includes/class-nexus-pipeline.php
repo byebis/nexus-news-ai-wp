@@ -1605,7 +1605,13 @@ class Nexus_Pipeline {
                                 continue;
                         }
 
-                        if ( $rewritten_now && $is_full_auto && $score_parsed && $score >= $threshold && ! $chief_gate ) {
+                        // v1.1.30 — auto-pubblicazione a soglia: in modalità
+                        // fully_autonomous resta il comportamento storico (solo se
+                        // riscritto ora). In semi_autonomous la pubblica automatica
+                        // sopra soglia è ABILITATA dal toggle auto_publish_enabled.
+                        $auto_publish = ( ! $is_full_auto && ! empty( $settings['auto_publish_enabled'] ) );
+
+                        if ( $score_parsed && $score >= $threshold && ! $chief_gate && ( ( $rewritten_now && $is_full_auto ) || $auto_publish ) ) {
                                 // Siamo già a pending_approval (promozione sopra) oppure a
                                 // un altro stato valido per approve().
                                 $approval = self::approve(
