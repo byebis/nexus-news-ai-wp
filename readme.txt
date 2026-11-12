@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.30
+Stable tag: 1.1.31
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,13 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.31 =
+* New: ingest multi-formato — supporto XML, JSON, CSV e HTML oltre RSS (parser Nexus_Ingest, SSRF guard, dedup, endpoint test /sources/test-ingest).
+* New: MCP server — integrazione con agenti esterni (Claude/ChatGPT) via discovery /mcp/tools e /mcp/call; strumenti status/articoli/programmazione/impostazioni (gated Pro, docs/MCP.md).
+* New: SEO avanzato — meta keywords da categoria+tag, schema JSON-LD configurabile, TOC opzionale, <news:keywords> in sitemap news.
+* Media: selettore immagine anteprima negli articoli (carica/rigenera).
+* Automazione: workflow visuali a regole (condizione Fonte/Categoria/Punteggio/Stato → azione Approva/Programma/Pubblica/Notifica).
 
 = 1.1.30 =
 * New: auto-pubblicazione a soglia — toggle che approva e pubblica automaticamente gli articoli la cui valutazione AI supera la soglia, anche in modalità semi-autonoma.
