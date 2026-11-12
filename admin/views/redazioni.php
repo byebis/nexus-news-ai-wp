@@ -456,7 +456,9 @@ defined( 'ABSPATH' ) || exit;
                                         url: String( raw.url || '' ),
                                         query: raw.query ? String( raw.query ) : '',
                                         full: raw.full ? 1 : 0,
-                                        profile: raw.profile ? String( raw.profile ) : ''
+                                        profile: raw.profile ? String( raw.profile ) : '',
+                                        dedup: raw.dedup ? 1 : 0,
+                                        category_filter: raw.category_filter ? String( raw.category_filter ) : ''
                                 };
                         }
                         var line = String( raw == null ? '' : raw ).trim();
@@ -470,10 +472,12 @@ defined( 'ABSPATH' ) || exit;
                                         url: parts.slice( 1 ).join( '|' ).trim(),
                                         query: '',
                                         full: 0,
-                                        profile: ''
+                                        profile: '',
+                                        dedup: 0,
+                                        category_filter: ''
                                 };
                         }
-                        return { type: 'rss', url: line, query: '', full: 0, profile: '' };
+                        return { type: 'rss', url: line, query: '', full: 0, profile: '', dedup: 0, category_filter: '' };
                 }
 
                 function applyTypeUI( row ) {
@@ -523,6 +527,15 @@ defined( 'ABSPATH' ) || exit;
                                 var full = qs( '.nxa-src-full', row );
                                 if ( full && full.checked && FULL_TYPES.indexOf( type.value ) !== -1 ) {
                                         item.full = 1;
+                                }
+                                var dedup = qs( '.nxa-src-dedup', row );
+                                if ( dedup && dedup.checked ) {
+                                        item.dedup = 1;
+                                }
+                                var catFilter = qs( '.nxa-src-category', row );
+                                var catValue = catFilter ? String( catFilter.value || '' ).trim() : '';
+                                if ( catValue ) {
+                                        item.category_filter = catValue;
                                 }
                                 var profile = row.getAttribute( 'data-profile' );
                                 if ( profile ) {
@@ -612,6 +625,28 @@ defined( 'ABSPATH' ) || exit;
                         fullWrap.appendChild( full );
                         fullWrap.appendChild( document.createTextNode( ' Testo completo' ) );
 
+                        // v1.1.30: toggle dedup per questa fonte.
+                        var dedupWrap = document.createElement( 'label' );
+                        dedupWrap.className = 'nxa-src-dedup-wrap';
+                        dedupWrap.title = 'Escludi gli articoli simili già pubblicati (dedup semantico).';
+                        var dedup = document.createElement( 'input' );
+                        dedup.type = 'checkbox';
+                        dedup.className = 'nxa-src-dedup';
+                        if ( it.dedup ) {
+                                dedup.checked = true;
+                        }
+                        dedupWrap.appendChild( dedup );
+                        dedupWrap.appendChild( document.createTextNode( ' Dedup' ) );
+
+                        // v1.1.30: filtro categoria (inclusione/esclusione, sintassi libera).
+                        var catInput = document.createElement( 'input' );
+                        catInput.type = 'text';
+                        catInput.className = 'nxa-src-category regular-text';
+                        catInput.value = it.category_filter || '';
+                        catInput.setAttribute( 'aria-label', 'Filtro categoria (inclusione/esclusione)' );
+                        catInput.placeholder = 'Categoria (+tech,-politica)';
+                        catInput.autocomplete = 'off';
+
                         var test = document.createElement( 'button' );
                         test.type = 'button';
                         test.className = 'button button-small nxa-src-test';
@@ -631,6 +666,8 @@ defined( 'ABSPATH' ) || exit;
                         row.appendChild( value );
                         row.appendChild( query );
                         row.appendChild( fullWrap );
+                        row.appendChild( dedupWrap );
+                        row.appendChild( catInput );
                         row.appendChild( test );
                         row.appendChild( status );
                         row.appendChild( del );

@@ -4539,6 +4539,9 @@
                         // L'endpoint /schedule sarà aggiunto dal backend; se assente il
                         // submit fallisce con toast chiaro, senza rompere la pagina.
                         ( status === 'approved' ? '<button type="button" class="button nxa-schedule-open" data-id="' + id + '">Programma</button>' : '' ) +
+                        // v1.1.30: articoli già pianificati → annulla / riprogramma.
+                        ( status === 'scheduled' ? '<button type="button" class="button nxa-schedule-unschedule" data-id="' + id + '">Annulla</button>' : '' ) +
+                        ( status === 'scheduled' ? '<button type="button" class="button nxa-schedule-open" data-id="' + id + '">Riprogramma</button>' : '' ) +
                         // v1.1.4: revisione capo redattore forzata (solo pending_approval);
                         // data-chief-status alimenta la conferma extra se già verificato.
                         ( status === 'pending_approval' ? chiefRunButtonHtml( chiefStatusOf( a ), 'data-id="' + id + '"' ) : '' ) +
@@ -4762,6 +4765,27 @@
                                         } ).catch( function ( err ) {
                                                 setBtnLoading( schedSet, false );
                                                 apiErrorToast( err, 'Programmazione non disponibile' );
+                                        } );
+                                        return;
+                                }
+
+                                // v1.1.30: annulla la programmazione (stato scheduled → di nuovo
+                                // approvato). Endpoint /schedule (DELETE o POST cancel). Se il
+                                // backend non lo espone, fallback pulito con toast.
+                                var unsched = target.closest ? target.closest( '.nxa-schedule-unschedule' ) : null;
+                                if ( unsched ) {
+                                        var uId = num( unsched.getAttribute( 'data-id' ) );
+                                        if ( ! window.confirm( 'Annullare la pubblicazione programmata di questo articolo?' ) ) {
+                                                return;
+                                        }
+                                        setBtnLoading( unsched, true, 'Annullo…' );
+                                        api( 'schedule/' + uId, { method: 'DELETE' } ).then( function () {
+                                                setBtnLoading( unsched, false );
+                                                toast( 'Programmazione annullata.', 'success', 'Programmazione' );
+                                                return loadQueueList();
+                                        } ).catch( function ( err ) {
+                                                setBtnLoading( unsched, false );
+                                                apiErrorToast( err, 'Annullamento non disponibile' );
                                         } );
                                         return;
                                 }
