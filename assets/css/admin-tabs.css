@@ -35,8 +35,13 @@
  * 1. Barra tab
  * ---------------------------------------------------------------------- */
 .nxa-settab-bar {
-  margin: var(--nxa-space-2) 0 0;
-  border-bottom: 1px solid var(--nxa-hairline);
+  margin: var(--nxa-space-5) 0 0;
+  border-bottom: 1px solid var(--nxa-border);
+  position: sticky;
+  top: 32px;
+  z-index: 5;
+  background: var(--nxa-bg, #f7f7f5);
+  padding-top: var(--nxa-space-1);
 }
 
 .nxa-settab-list {
@@ -102,7 +107,7 @@
  * 2. Pannelli — solo UNO visibile (render server-side di tutti)
  * ---------------------------------------------------------------------- */
 .nxa-settab-panel {
-  padding-top: var(--nxa-space-4);
+  padding-top: var(--nxa-space-5);
 }
 
 /* OBBLIGATORIA: il pannello inattivo esce dal layout anche se la lettura UA
