@@ -209,46 +209,13 @@ $nxa_gw_token_label = isset( $nxa_gw_token_labels[ $nxa_gw_state['token_state'] 
 
         var busy = false;
 
-        /* Escape di ogni valore dinamico prima di innerHTML (contratto T-05). */
-        function esc( value ) {
-                return String( value === null || value === undefined ? '' : value )
-                        .replace( /&/g, '&amp;' )
-                        .replace( /</g, '&lt;' )
-                        .replace( />/g, '&gt;' )
-                        .replace( /\x22/g, '&quot;' )
-                        .replace( /\x27/g, '&#039;' );
-        }
-
-        /* Wrapper fetch: nonce X-WP-Nonce + JSON; errore HTTP → Error col messaggio. */
-        function api( path, opts ) {
-                opts = opts || {};
-                var init = {
-                        method: opts.method || 'GET',
-                        headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' },
-                        credentials: 'same-origin'
-                };
-                if ( opts.body ) {
-                        init.body = opts.body;
-                }
-                return fetch( base + path, init ).then( function ( response ) {
-                        return response.text().then( function ( text ) {
-                                var data = null;
-                                try {
-                                        data = text ? JSON.parse( text ) : null;
-                                } catch ( parseError ) {
-                                        data = null;
-                                }
-                                if ( ! response.ok ) {
-                                        var message = 'Errore HTTP ' + response.status;
-                                        if ( data && data.message ) {
-                                                message = String( data.message );
-                                        }
-                                        throw new Error( message );
-                                }
-                                return data;
-                        } );
-                } );
-        }
+        /* Helper condivisi (assets/js/nexus-helpers.js): le implementazioni
+         * locali di esc/api sono state centralizzate nel namespace
+         * window.NexusHelpers per eliminare il rischio di collisione QA
+         * (LOW-MEDIUM). Il namespace è enqueuato nel head, quindi è già
+         * disponibile a questo punto (la IIFE gira durante il parsing). */
+        var esc = window.NexusHelpers.esc;
+        var api = window.NexusHelpers.api;
 
         /* Blocco di esito con severità fissa (ok / warn / err / info). */
         function alertBox( box, severity, message ) {
