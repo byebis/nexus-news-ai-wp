@@ -36,7 +36,6 @@
  * ---------------------------------------------------------------------- */
 .nxa-settab-bar {
   margin: var(--nxa-space-5) 0 0;
-  border-bottom: 1px solid var(--nxa-border);
   position: sticky;
   top: 32px;
   z-index: 5;
@@ -44,6 +43,18 @@
   /* Retrofondo minimale per lo sticky: nessuna banda grigia piena. */
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
+  /* Evita che residui visivi (kebab/frecce/frecce/pseudo-elementi) possano
+   * apparire nella fascia delle tab. */
+  overflow: hidden;
+}
+.nxa-settab-bar::before,
+.nxa-settab-bar::after,
+.nxa-settab-list::before,
+.nxa-settab-list::after,
+.nxa-settab-mode::before,
+.nxa-settab-mode::after {
+  content: none !important;
+  display: none !important;
 }
 
 .nxa-settab-list {
