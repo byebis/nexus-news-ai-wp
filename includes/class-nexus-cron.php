@@ -215,6 +215,11 @@ class Nexus_Cron {
                         }
 
                         Nexus_Pipeline::cron_tick();
+
+                        // v1.1.34 (B4): registra lo stato del tick per il cruscotto.
+                        if ( class_exists( 'Nexus_Automation' ) && method_exists( 'Nexus_Automation', 'record_tick' ) ) {
+                                Nexus_Automation::record_tick();
+                        }
                 } catch ( Exception $e ) {
                         self::debug_log( 'Errore durante cron tick: ' . $e->getMessage() );
                 } catch ( Throwable $e ) {
