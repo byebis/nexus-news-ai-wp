@@ -1,0 +1,71 @@
+/* ==========================================================================
+ * Nexus UI Tokens — design tokens condivisi della suite ai4wp.
+ *
+ * Fonte di verità per colori, spaziature, radius, ombre e focus.
+ * Riusabile dagli altri plugin della suite (keeper-ai, 1shot-Visibility,
+ * ai-commerce-agent-wp): ogni plugin può importare questo file come base.
+ *
+ * Convenzione: prefisso `--nxa-`. I valori qui sotto sono gli stessi usati
+ * da nexus-admin.css (v1.0.6+): questo file li espone come base condivisa.
+ * ========================================================================== */
+
+:root {
+  /* Superfici (light) */
+  --nxa-bg: #f7f7f5;
+  --nxa-surface: #ffffff;
+  --nxa-surface-2: #f4f4f2;
+  --nxa-surface-3: #ebebe7;
+
+  /* Bordi e linee */
+  --nxa-border: #cfd4da;
+  --nxa-border-soft: rgba(20, 24, 31, 0.14);
+  --nxa-hairline: var(--nxa-border-soft);
+  --nxa-line-strong: #d5d8dd;
+
+  /* Scala di spaziatura */
+  --nxa-space-1: 4px;
+  --nxa-space-2: 8px;
+  --nxa-space-3: 12px;
+  --nxa-space-4: 16px;
+  --nxa-space-5: 24px;
+  --nxa-space-6: 32px;
+  --nxa-space-7: 48px;
+  --nxa-space-8: 64px;
+
+  /* Testo */
+  --nxa-text: #14181f;
+  --nxa-text-body: #333b47;
+  --nxa-muted: #5b6572;
+  --nxa-text-muted: #5b6572;
+  --nxa-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Accenti brand */
+  --nxa-accent-1: #1d4ed8;
+  --nxa-accent-2: #0284c7;
+  --nxa-accent-grad: #1d4ed8;
+  --nxa-focus: #0284c7;
+
+  /* Raggi */
+  --nxa-radius: 6px;
+  --nxa-radius-sm: 4px;
+  --nxa-radius-lg: 8px;
+
+  /* Ombre */
+  --nxa-shadow-sm: 0 1px 2px rgba(20, 24, 31, 0.06);
+  --nxa-shadow-md: 0 4px 12px rgba(20, 24, 31, 0.08);
+  --nxa-shadow-lg: 0 8px 24px rgba(20, 24, 31, 0.12);
+
+  /* Stati semanticamente */
+  --nxa-ok-text: #1d7a3d;
+  --nxa-ok-bg: #e8f5ec;
+  --nxa-ok-line: #b7e0c4;
+  --nxa-warn-text: #9a6b00;
+  --nxa-warn-bg: #fdf6e3;
+  --nxa-warn-line: #ecd9a8;
+  --nxa-err-text: #b3261e;
+  --nxa-err-bg: #fdeceb;
+  --nxa-err-line: #f0c4c0;
+  --nxa-info-text: #0b5394;
+  --nxa-info-bg: #e8f2fb;
+  --nxa-info-line: #bad3ea;
+}

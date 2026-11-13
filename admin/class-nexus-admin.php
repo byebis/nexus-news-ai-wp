@@ -457,10 +457,22 @@ class Nexus_Admin {
                         \Shot_UI::enqueue();
                 }
 
+                // v1.1.33: design tokens condivisi della suite (fonte di verità).
+                // In queue per primo: nexus-admin.css e le viste li riusano.
+                $tokens_css = NEXUS_PLUGIN_DIR . 'assets/css/nexus-tokens.css';
+                if ( file_exists( $tokens_css ) ) {
+                        wp_enqueue_style(
+                                'nexus-tokens-css',
+                                NEXUS_PLUGIN_URL . 'assets/css/nexus-tokens.css',
+                                array(),
+                                NEXUS_VERSION
+                        );
+                }
+
                 wp_enqueue_style(
                         'nexus-admin-css',
                         NEXUS_PLUGIN_URL . 'admin/css/nexus-admin.css',
-                        array(),
+                        array( 'nexus-tokens-css' ),
                         NEXUS_VERSION
                 );
 
@@ -472,6 +484,17 @@ class Nexus_Admin {
                         array( 'nexus-admin-css' ),
                         NEXUS_VERSION
                 );
+
+                // v1.1.33: pattern UI condivisi (stati, accessibilità, responsive).
+                $ux_css = NEXUS_PLUGIN_DIR . 'assets/css/nexus-ux.css';
+                if ( file_exists( $ux_css ) ) {
+                        wp_enqueue_style(
+                                'nexus-ux-css',
+                                NEXUS_PLUGIN_URL . 'assets/css/nexus-ux.css',
+                                array( 'nexus-admin-css', 'nexus-admin-tabs-css' ),
+                                NEXUS_VERSION
+                        );
+                }
 
                 // v1.1.x (UX): rifiniture di leggibilità della pagina Impostazioni
                 // unica (tab AI in evidenza, introduzioni, accordion, badge).
