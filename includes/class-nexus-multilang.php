@@ -994,4 +994,189 @@ class Nexus_Multilang {
                         'fixed'  => $fixed,
                 );
         }
+
+        /* ========================= B7: HREFLANG COERENTI E GESTIONE APPROFONDITA ========================= */
+
+        /**
+         * Insieme di link hreflang COERENTI per un post: mappa codice lingua → URL
+         * pubblicato (sempre inclusa la pagina stessa) + URL per x-default (lingua
+         * predefinita se pubblicata). Unico punto di verità per SEO class, così
+         * l'output in head non può divergere da ciò che le traduzioni realmente
+         * pubblicate espongono. Mai fatale: struttura vuota se non risolvibile.
+         *
+         * @param int $post_id Post ID.
+         * @return array{links:array<string,string>,x_default:string}
+         */
+        public static function link_set( $post_id ) {
+                $post_id = absint( $post_id );
+                $out     = array( 'links' => array(), 'x_default' => '' );
+
+                if ( $post_id < 1 ) {
+                        return $out;
+                }
+
+                $translations = self::translations_of( $post_id );
+                $default_lang = self::default_lang();
+
+                foreach ( (array) $translations as $lang => $pid ) {
+                        $lang = sanitize_key( (string) $lang );
+                        $pid  = absint( $pid );
+
+                        if ( '' === $lang || $pid < 1 || 'publish' !== get_post_status( $pid ) ) {
+                                continue;
+                        }
+
+                        $url = get_permalink( $pid );
+                        if ( ! is_string( $url ) || '' === $url ) {
+                                continue;
+                        }
+
+                        $out['links'][ $lang ] = $url;
+                }
+
+                if ( '' !== $default_lang && isset( $out['links'][ $default_lang ] ) ) {
+                        $out['x_default'] = $out['links'][ $default_lang ];
+                }
+
+                return $out;
+        }
+
+        /**
+         * Lingue del sito che NON hanno ancora una traduzione pubblicata per un post.
+         *
+         * @param int $post_id Post ID.
+         * @return array Elenco codici lingua mancanti.
+         */
+        public static function missing_translations( $post_id ) {
+                $post_id = absint( $post_id );
+                if ( $post_id < 1 ) {
+                        return array();
+                }
+
+                $present = self::translations_of( $post_id );
+                $missing = array();
+
+                foreach ( self::site_langs() as $lang ) {
+                        if ( ! isset( $present[ $lang ] ) ) {
+                                $missing[] = $lang;
+                        }
+                }
+
+                return $missing;
+        }
+
+        /**
+         * Panoramica globale dei gruppi di traduzione (B7 "gestione più profonda"):
+         * per ogni gruppo la copertura per lingua (solo traduzioni pubblicate), le
+         * lingue mancanti e lo stato "completo" (almeno due lingue pubblicate),
+         * più totali aggregati. Sola lettura, mai fatale.
+         *
+         * @return array
+         */
+        public static function coverage() {
+                global $wpdb;
+                $out = array(
+                        'driver'  => self::driver(),
+                        'groups'  => array(),
+                        'totals'  => array(
+                                'groups'        => 0,
+                                'members'       => 0,
+                                'published'     => 0,
+                                'complete'      => 0,
+                                'missing_total' => 0,
+                        ),
+                );
+
+                $langs_all = self::site_langs();
+
+                if ( ! function_exists( 'get_posts' ) ) {
+                        return $out;
+                }
+
+                $group_ids = get_posts( array(
+                        'post_type'        => 'post',
+                        'post_status'      => 'any',
+                        'meta_key'         => self::META_GROUP,
+                        'numberposts'      => 1000,
+                        'orderby'          => 'ID',
+                        'order'            => 'ASC',
+                        'fields'           => 'ids',
+                        'suppress_filters' => false,
+                ) );
+
+                $groups = array();
+                foreach ( (array) $group_ids as $pid ) {
+                        $g = self::group_of_post( absint( $pid ) );
+                        if ( '' !== $g ) {
+                                $groups[ $g ][] = absint( $pid );
+                        }
+                }
+
+                foreach ( $groups as $g => $members ) {
+                        $members = array_values( array_unique( array_map( 'absint', $members ) ) );
+                        $published_langs = array();
+                        foreach ( $members as $m ) {
+                                if ( 'publish' !== get_post_status( $m ) ) {
+                                        continue;
+                                }
+                                $lang = self::raw_lang_of_post( $m );
+                                if ( '' !== $lang && ! isset( $published_langs[ $lang ] ) ) {
+                                        $published_langs[ $lang ] = $m;
+                                }
+                        }
+
+                        $missing = array_values( array_diff( $langs_all, array_keys( $published_langs ) ) );
+                        $complete = count( $published_langs ) >= 2;
+
+                        $out['groups'][] = array(
+                                'group'     => $g,
+                                'members'   => count( $members ),
+                                'published' => count( $published_langs ),
+                                'languages' => $published_langs,
+                                'missing'   => $missing,
+                                'complete'  => $complete,
+                        );
+
+                        $out['totals']['groups']++;
+                        $out['totals']['members']    += count( $members );
+                        $out['totals']['published']   += count( $published_langs );
+                        $out['totals']['missing_total'] += count( $missing );
+                        if ( $complete ) {
+                                $out['totals']['complete']++;
+                        }
+                }
+
+                return $out;
+        }
+
+        /**
+         * Metadati SEO per lingua di un post (B7): titolo e descrizione dalla
+         * lingua specifica (meta _nexus_seo_title / _nexus_seo_description), con
+         * fallback a titolo post / excerpt. La lingua è quella effettiva del post.
+         *
+         * @param int $post_id Post ID.
+         * @return array{lang:string,title:string,description:string}
+         */
+        public static function seo_meta( $post_id ) {
+                $post_id = absint( $post_id );
+                if ( $post_id < 1 ) {
+                        return array( 'lang' => '', 'title' => '', 'description' => '' );
+                }
+
+                $title = get_post_meta( $post_id, '_nexus_seo_title', true );
+                if ( ! is_string( $title ) || '' === trim( $title ) ) {
+                        $title = get_the_title( $post_id );
+                }
+
+                $description = get_post_meta( $post_id, '_nexus_seo_description', true );
+                if ( ! is_string( $description ) || '' === trim( $description ) ) {
+                        $description = get_post_field( 'post_excerpt', $post_id );
+                }
+
+                return array(
+                        'lang'        => self::lang_of_post( $post_id ),
+                        'title'       => trim( (string) $title ),
+                        'description' => trim( (string) $description ),
+                );
+        }
 }

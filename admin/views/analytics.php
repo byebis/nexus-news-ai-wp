@@ -87,6 +87,7 @@ defined( 'ABSPATH' ) || exit;
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-published">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></span></div>
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-calls">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Chiamate AI', 'nexus-news-ai' ); ?></span></div>
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-cost">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Costo AI', 'nexus-news-ai' ); ?></span></div>
+                <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-cost-per-article">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Costo medio AI/articolo', 'nexus-news-ai' ); ?></span></div>
         </div>
 
         <?php
@@ -701,6 +702,42 @@ defined( 'ABSPATH' ) || exit;
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-sub-pending">—</span><span class="nxa-an-label"><?php echo esc_html__( 'In attesa', 'nexus-news-ai' ); ?></span></div>
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-sub-unsubscribed">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Disiscritti', 'nexus-news-ai' ); ?></span></div>
                 <div class="nxa-an-card"><span class="nxa-an-value" id="nxa-an-sub-new">—</span><span class="nxa-an-label"><?php echo esc_html__( 'Nuovi nel periodo', 'nexus-news-ai' ); ?></span></div>
+        </div>
+
+        <?php
+        /*
+         * 1.1.34 (B6) — Sezioni nuove, renderizzate client-side da
+         * assets/js/nexus-analytics.js (stesse convenzioni del resto della vista:
+         * payload GET /analytics, esc() su ogni valore dinamico, empty state "Nessun
+         * dato nel periodo"). Contenitori FISSI: il JS li riempie se presenti.
+         */
+        ?>
+
+        <h2><?php echo esc_html__( 'Produttività per fonte', 'nexus-news-ai' ); ?></h2>
+        <div class="nxa-an-panel">
+                <p class="nxa-an-ins-meta"><?php echo esc_html__( 'Confronto per fonte d\'origine degli articoli nel periodo: creati, pubblicati, qualità media e tasso di pubblicazione.', 'nexus-news-ai' ); ?></p>
+                <div class="nxa-table-wrap">
+                        <table class="widefat striped nxa-an-table" id="nxa-an-sources">
+                                <thead>
+                                        <tr>
+                                                <th scope="col"><?php echo esc_html__( 'Fonte', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Creati', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Pubblicati', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></th>
+                                                <th scope="col"><?php echo esc_html__( 'Tasso pubblicazione', 'nexus-news-ai' ); ?></th>
+                                        </tr>
+                                </thead>
+                                <tbody></tbody>
+                        </table>
+                </div>
+        </div>
+
+        <h2><?php echo esc_html__( 'Andamento qualità', 'nexus-news-ai' ); ?></h2>
+        <div class="nxa-an-panel nxa-an-chart-panel">
+                <ul class="nxa-an-legend">
+                        <li><span class="nxa-an-dot nxa-an-dot-quality"></span><?php echo esc_html__( 'Qualità media', 'nexus-news-ai' ); ?></li>
+                </ul>
+                <div id="nxa-an-quality-chart" class="nxa-an-chart"></div>
         </div>
 
         <?php

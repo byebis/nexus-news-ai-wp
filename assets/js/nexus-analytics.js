@@ -39,8 +39,11 @@
                 published: document.getElementById( 'nxa-an-published' ),
                 calls: document.getElementById( 'nxa-an-calls' ),
                 cost: document.getElementById( 'nxa-an-cost' ),
+                costPerArticle: document.getElementById( 'nxa-an-cost-per-article' ),
                 platform: document.getElementById( 'nxa-an-platform' ),
                 agents: document.getElementById( 'nxa-an-agents' ),
+                sources: document.getElementById( 'nxa-an-sources' ),
+                qualityChart: document.getElementById( 'nxa-an-quality-chart' ),
                 top: document.getElementById( 'nxa-an-top' ),
                 subConfirmed: document.getElementById( 'nxa-an-sub-confirmed' ),
                 subPending: document.getElementById( 'nxa-an-sub-pending' ),
@@ -78,6 +81,12 @@
                 var v = parseFloat( n );
                 if ( isNaN( v ) ) { v = 0; }
                 return v.toLocaleString( 'it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 } );
+        }
+
+        function fmtPct( n ) {
+                var v = parseFloat( n );
+                if ( isNaN( v ) ) { v = 0; }
+                return v.toLocaleString( 'it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 } ) + '%';
         }
 
         /* '2026-10-12' → '12/10'. */
@@ -177,6 +186,49 @@
                 body.innerHTML = html;
         }
 
+        function renderFonti( righe ) {
+                var body = corpoTabella( EL.sources );
+                if ( ! body ) { return; }
+                if ( ! righe.length ) { body.innerHTML = rigaVuota( 5 ); return; }
+                var html = '';
+                for ( var i = 0; i < righe.length; i++ ) {
+                        var r = righe[i];
+                        html += '<tr><td>' + esc( r.source || '—' ) + '</td>'
+                                + '<td>' + fmtInt( r.created ) + '</td>'
+                                + '<td>' + fmtInt( r.published ) + '</td>'
+                                + '<td>' + fmtQual( r.avg_quality ) + '</td>'
+                                + '<td>' + fmtPct( r.publish_rate ) + '</td></tr>';
+                }
+                body.innerHTML = html;
+        }
+
+        function tooltipQualita( ymd, q ) {
+                var parts = String( ymd || '' ).split( '-' );
+                var label = dataIt( ymd );
+                if ( 3 === parts.length ) {
+                        var m = parseInt( parts[1], 10 );
+                        label = parseInt( parts[2], 10 ) + ' ' + ( MESI[ m - 1 ] || parts[1] );
+                }
+                return label + ' — qualità ' + fmtQual( q );
+        }
+
+        function renderQualita( series ) {
+                if ( ! EL.qualityChart ) { return; }
+                EL.qualityChart.innerHTML = '';
+                if ( ! series.length ) {
+                        EL.qualityChart.innerHTML = '<p class="nxa-an-empty">Nessun dato nel periodo</p>';
+                        return;
+                }
+                for ( var i = 0; i < series.length; i++ ) {
+                        var giorno = document.createElement( 'div' );
+                        giorno.className = 'nxa-an-day';
+                        var q = parseFloat( series[i].avg_quality ) || 0;
+                        giorno.setAttribute( 'title', tooltipQualita( series[i].date, q ) );
+                        giorno.appendChild( barra( q, 100, 'nxa-an-bar-quality', tooltipQualita( series[i].date, q ) ) );
+                        EL.qualityChart.appendChild( giorno );
+                }
+        }
+
         function etichettaStato( status ) {
                 return STATI[ status ] ? STATI[ status ] : String( status || '' );
         }
@@ -213,7 +265,10 @@
                 if ( EL.published ) { EL.published.textContent = fmtInt( totals.published ); }
                 if ( EL.calls ) { EL.calls.textContent = fmtInt( totals.ai_calls ); }
                 if ( EL.cost ) { EL.cost.textContent = fmtCost( totals.ai_cost ); }
+                if ( EL.costPerArticle ) { EL.costPerArticle.textContent = fmtCost( totals.avg_cost_per_article ); }
                 renderGrafico( series );
+                renderFonti( data.per_source || [] );
+                renderQualita( series );
                 renderPiattaforme( data.per_platform || [] );
                 renderAgenti( data.per_agent || [] );
                 renderTop( data.top_articles || [] );

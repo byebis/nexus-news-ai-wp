@@ -512,15 +512,15 @@ class Nexus_SEO {
 
                         // Almeno due lingue pubblicate: emette hreflang e og:locale.
                         if ( count( $published_translations ) > 1 ) {
-                                // Un link hreflang per ciascuna lingua pubblicata.
-                                foreach ( $published_translations as $lang => $translation_url ) {
+                                // v1.1.34 (B7): set hreflang COERENTE da
+                                // Nexus_Multilang::link_set() — include sempre la pagina
+                                // stessa, ordine deterministico e x-default robusto.
+                                $link_set = Nexus_Multilang::link_set( $post_id );
+                                foreach ( (array) $link_set['links'] as $lang => $translation_url ) {
                                         echo '<link rel="alternate" hreflang="' . esc_attr( $lang ) . '" href="' . esc_url( $translation_url ) . '" />' . "\n";
                                 }
-
-                                // x-default: permalink della lingua predefinita, se tra le pubblicate.
-                                $default_lang = sanitize_key( (string) Nexus_Multilang::default_lang() );
-                                if ( '' !== $default_lang && isset( $published_translations[ $default_lang ] ) ) {
-                                        echo '<link rel="alternate" hreflang="x-default" href="' . esc_url( $published_translations[ $default_lang ] ) . '" />' . "\n";
+                                if ( ! empty( $link_set['x_default'] ) ) {
+                                        echo '<link rel="alternate" hreflang="x-default" href="' . esc_url( $link_set['x_default'] ) . '" />' . "\n";
                                 }
 
                                 // Mappa codice lingua: locale Open Graph (fuori mappa: codice così com'è).

@@ -148,6 +148,9 @@
   .nxa-an-dot-published {
     background: var(--nxa-accent-2);
   }
+  .nxa-an-dot-quality {
+    background: var(--nxa-accent-3, #7c6cff);
+  }
   /* v1.1.6 "respira": pannello piatto — solo il fondo superficie separa i
    * dati dal resto della pagina; niente bordo, raggio o ombra. */
   .nxa-an-panel {
@@ -224,6 +227,10 @@
   }
   .nxa-an-bar-published {
     background: var(--nxa-accent-2);
+  }
+  /* v1.1.34 (B6): barra "Andamento qualità" (0-100). */
+  .nxa-an-bar-quality {
+    background: var(--nxa-accent-3, #7c6cff);
   }
   .nxa-an-day:hover .nxa-an-bar {
     transform: translateY(-2px);

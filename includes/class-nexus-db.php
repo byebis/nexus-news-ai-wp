@@ -1284,6 +1284,12 @@ class Nexus_DB {
                         $where[]  = 'category = %s';
                         $params[] = sanitize_text_field( $args['category'] );
                 }
+                // v1.1.34 (B3): filtro per fonte (colonna source_name) — usato dal
+                // selettore "Fonte" della coda di approvazione.
+                if ( ! empty( $args['source'] ) ) {
+                        $where[]  = 'source_name = %s';
+                        $params[] = sanitize_text_field( $args['source'] );
+                }
                 if ( ! empty( $args['agent_id'] ) ) {
                         $where[]  = 'agent_id = %d';
                         $params[] = absint( $args['agent_id'] );
@@ -1348,6 +1354,12 @@ class Nexus_DB {
                         $where[]  = 'category = %s';
                         $params[] = sanitize_text_field( $args['category'] );
                 }
+                // v1.1.34 (B3): filtro per fonte (colonna source_name) — stessa
+                // condizione di articles() per un conteggio coerente.
+                if ( ! empty( $args['source'] ) ) {
+                        $where[]  = 'source_name = %s';
+                        $params[] = sanitize_text_field( $args['source'] );
+                }
                 if ( ! empty( $args['agent_id'] ) ) {
                         $where[]  = 'agent_id = %d';
                         $params[] = absint( $args['agent_id'] );
@@ -1365,6 +1377,23 @@ class Nexus_DB {
                         $sql = $wpdb->prepare( $sql, ...$params );
                 }
                 return (int) $wpdb->get_var( $sql );
+        }
+
+        /**
+         * Elenco delle fonti distinte presenti negli articoli (colonna source_name),
+         * per popolare il selettore "Fonte" della coda di approvazione (B3).
+         * Sola lettura, cap 200, ordinate alfabeticamente. Mai fatale.
+         *
+         * @return array Lista di stringhe.
+         */
+        public static function article_sources() {
+                global $wpdb;
+                $table = self::tables()['articles'];
+                try {
+                        return (array) $wpdb->get_col( "SELECT DISTINCT source_name FROM {$table} WHERE source_name <> '' ORDER BY source_name ASC LIMIT 200" );
+                } catch ( Throwable $e ) {
+                        return array();
+                }
         }
 
         /* ============ SEARCH ARTICOLI (v1.1.18, AL-9/C) ============ */
