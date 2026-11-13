@@ -138,6 +138,7 @@ function nexus_bootstrap() {
                 'Nexus_Ingest',
                 'Nexus_MCP',
                 'Nexus_Workflow',
+                'Nexus_Automation',
         ) as $nxa_class ) {
                 class_exists( $nxa_class );
         }

@@ -399,6 +399,8 @@ class Nexus_DB {
                         // diretto, mai nel canale pubblico) ed email (elenco indirizzi).
                         'nexus_notify_telegram_chat' => '',
                         'notify_email'             => '',
+                        // v1.1.34 (B4): ore senza nuovi articoli prima dell'alert redazione ferma.
+                        'automation_stall_hours'   => 12,
                         // v1.1.30 — filtri categoria sui feed RSS globali (CSV).
                         'rss_include_categories'   => '',
                         'rss_exclude_categories'   => '',

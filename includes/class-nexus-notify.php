@@ -327,6 +327,7 @@ final class Nexus_Notify {
                 self::send_webhook( $message, $settings );
                 self::send_telegram( $message, $settings );
                 self::send_email( $message, $settings );
+                self::send_discord( $message, $settings );
         }
 
         /**
@@ -358,6 +359,12 @@ final class Nexus_Notify {
                 // v1.1.30: canale email (elenco destinatari).
                 if ( isset( $settings['notify_email'] )
                         && '' !== trim( (string) $settings['notify_email'] ) ) {
+                        return true;
+                }
+
+                // v1.1.34 (B5): canale Discord (riusa discord_webhook_url).
+                if ( isset( $settings['discord_webhook_url'] )
+                        && '' !== trim( (string) $settings['discord_webhook_url'] ) ) {
                         return true;
                 }
 
@@ -661,6 +668,58 @@ final class Nexus_Notify {
                         if ( ! $sent ) {
                                 self::log_failure( 'Notifica email non inviata (wp_mail fallito).' );
                         }
+                }
+        }
+
+        /**
+         * v1.1.34 (B5): canale Discord (webhook) per le notifiche pipeline.
+         * Riusa il setting discord_webhook_url. Corpo JSON {content, username}.
+         * Fallimenti → log generico senza URL/token.
+         *
+         * @param string $message  Messaggio già costruito.
+         * @param array  $settings Impostazioni plugin.
+         * @return void
+         */
+        private static function send_discord( $message, $settings ) {
+                $url = ( is_array( $settings ) && isset( $settings['discord_webhook_url'] ) )
+                        ? trim( (string) $settings['discord_webhook_url'] )
+                        : '';
+                if ( '' === $url ) {
+                        return;
+                }
+                if ( ! preg_match( '#^https?://#i', $url ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) {
+                        self::log_failure( 'Notifica Discord non inviata (URL webhook non valido).' );
+                        return;
+                }
+
+                $payload = wp_json_encode(
+                        array(
+                                'content' => (string) $message,
+                                'username' => 'Nexus News AI',
+                        ),
+                        JSON_UNESCAPED_UNICODE
+                );
+                if ( ! is_string( $payload ) || '' === $payload ) {
+                        return;
+                }
+
+                $response = wp_remote_post(
+                        $url,
+                        array(
+                                'timeout' => 3,
+                                'headers' => array( 'Content-Type' => 'application/json' ),
+                                'body'    => $payload,
+                        )
+                );
+
+                if ( is_wp_error( $response ) ) {
+                        self::log_failure( 'Notifica Discord fallita (errore di connessione): ' . self::brief_error( $response, 120 ) );
+                        return;
+                }
+
+                $code = (int) wp_remote_retrieve_response_code( $response );
+                if ( $code < 200 || $code >= 300 ) {
+                        self::log_failure( sprintf( 'Notifica Discord fallita (HTTP %d).', $code ) );
                 }
         }
 
