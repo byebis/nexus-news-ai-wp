@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.32
+Stable tag: 1.1.33
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,9 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.33 =
+* UI: barra dei tab in Impostazioni ripulita — rimossa la banda grigia piena e la linea orizzontale a tutta larghezza; neutralizzati pseudo-elementi spurii (menu kebab/frecce) nella fascia tab; nascosto il badge "non salvato" dentro le tab (resta il banner funzionale nel pannello); eliminata la scrollbar verticale spurie nella tablist (overflow-y hidden, scrollbar orizzontale sottile e trasparente). Solo CSS, nessun dato toccato.
 
 = 1.1.32 =
 * New: API pubblica esterna nexus-public/v1 — endpoint sources (fonti configurate) e schedule (programmazione, gated Pro); autenticazione con chiave API (hash SHA-256), header X-Nexus-Key, rate limit 120/min; documentazione docs/API-PUBLIC.md.
