@@ -201,9 +201,6 @@ defined( 'ABSPATH' ) || exit;
                         return;
                 }
 
-                var base = String(window.NexusAdminData.restUrl).replace(/\/+$/, '');
-                var nonce = window.NexusAdminData.nonce;
-
                 /* Riferimenti DOM (selettori fissi del markup sopra). */
                 var statusSelect = document.getElementById('nxa-jb-status');
                 var processBtn = document.getElementById('nxa-jb-process');
@@ -238,15 +235,13 @@ defined( 'ABSPATH' ) || exit;
                 };
                 var STATUS_KEYS = ['pending', 'running', 'complete', 'failed', 'cancelled', 'dead'];
 
-                /* Escape di ogni valore dinamico prima di innerHTML (contratto §2 T-05). */
-                function esc(value) {
-                        return String(value === null || value === undefined ? '' : value)
-                                .replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;')
-                                .replace(/\x22/g, '&quot;')
-                                .replace(/\x27/g, '&#039;');
-                }
+                /* Helper condivisi (assets/js/nexus-helpers.js): le implementazioni
+                 * locali di esc/api sono state centralizzate nel namespace
+                 * window.NexusHelpers per eliminare il rischio di collisione QA
+                 * (LOW-MEDIUM). Il namespace è enqueuato nel head, quindi è già
+                 * disponibile quando avvia() gira (a DOM ready o subito). */
+                var esc = window.NexusHelpers.esc;
+                var api = window.NexusHelpers.api;
 
                 /* Troncamento difensivo: errore in tabella a 60 caratteri, completo nel title. */
                 function clip(value, max) {
@@ -269,41 +264,8 @@ defined( 'ABSPATH' ) || exit;
                         return parts[3] + '/' + parts[2] + '/' + parts[1].slice(2) + ' ' + parts[4] + ':' + parts[5];
                 }
 
-                /* Wrapper fetch: nonce + JSON; su errore HTTP lancia Error col messaggio del body. */
-                function api(path, opts) {
-                        opts = opts || {};
-                        var headers = { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' };
-                        var init = { method: opts.method || 'GET', headers: headers, credentials: 'same-origin' };
-                        var key;
-                        if (opts.headers) {
-                                for (key in opts.headers) {
-                                        if (Object.prototype.hasOwnProperty.call(opts.headers, key)) {
-                                                headers[key] = opts.headers[key];
-                                        }
-                                }
-                        }
-                        if (opts.body) {
-                                init.body = opts.body;
-                        }
-                        return fetch(base + path, init).then(function (response) {
-                                return response.text().then(function (text) {
-                                        var data = null;
-                                        try {
-                                                data = text ? JSON.parse(text) : null;
-                                        } catch (parseError) {
-                                                data = null;
-                                        }
-                                        if (!response.ok) {
-                                                var message = 'Errore HTTP ' + response.status;
-                                                if (data && data.message) {
-                                                        message = String(data.message);
-                                                }
-                                                throw new Error(message);
-                                        }
-                                        return data;
-                                });
-                        });
-                }
+                /* Wrapper fetch: fornito dal namespace condiviso window.NexusHelpers
+                 * (nonce + JSON; errore HTTP → Error col messaggio del body). */
 
                 /* Toast flottante in basso a destra; si rimuove da solo dopo 4 secondi. */
                 function toast(message, tipo) {

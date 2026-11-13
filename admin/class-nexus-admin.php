@@ -618,10 +618,31 @@ class Nexus_Admin {
                         );
                 }
 
+                /*
+                 * Helper JavaScript condivisi (esc/api/qs) — eliminano
+                 * le implementazioni duplicate inline nelle viste (rischio
+                 * collisione QA LOW-MEDIUM). Enqueue nel HEAD (in_footer=false)
+                 * così che il namespace window.NexusHelpers sia disponibile
+                 * PRIMA di ogni <script> inline delle viste, che girano durante
+                 * il parsing del body (prima dei footer). api() legge restUrl/
+                 * nonce da window.NexusAdminData al momento della chiamata, quindi
+                 * non dipende dal localize (che sta su admin.js, in footer).
+                 */
+                $helpers_js = NEXUS_PLUGIN_DIR . 'assets/js/nexus-helpers.js';
+                if ( file_exists( $helpers_js ) ) {
+                        wp_enqueue_script(
+                                'nexus-helpers-js',
+                                NEXUS_PLUGIN_URL . 'assets/js/nexus-helpers.js',
+                                array(),
+                                NEXUS_VERSION,
+                                false
+                        );
+                }
+
                 wp_enqueue_script(
                         'nexus-admin',
                         NEXUS_PLUGIN_URL . 'assets/js/admin.js',
-                        array(),
+                        array( 'nexus-helpers-js' ),
                         NEXUS_VERSION,
                         true
                 );
