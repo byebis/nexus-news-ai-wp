@@ -40,8 +40,10 @@
   position: sticky;
   top: 32px;
   z-index: 5;
-  background: var(--nxa-bg, #f7f7f5);
-  padding-top: var(--nxa-space-1);
+  background: transparent;
+  /* Retrofondo minimale per lo sticky: nessuna banda grigia piena. */
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .nxa-settab-list {
