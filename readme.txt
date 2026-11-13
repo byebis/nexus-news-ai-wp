@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.33
+Stable tag: 1.1.34
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,17 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.34 =
+* UI: sistema di design tokens condivisi (assets/css/nexus-tokens.css, prefisso --nxa-), stati vuoti/error/loading coerenti (nexus-ux.css con skeleton shimmer e CTA), focus-visible globale WCAG AA, miglioramento contrasto e responsive admin (griglie 2→1 colonna).
+* Onboarding: nuovo endpoint POST /pipeline/test-article per generare un primo articolo di prova reale + bottone "Genera il primo articolo" nel wizard.
+* Diagnostica agenti: nuovi verdict ai_key_missing e pending_in_queue con messaggi azionabili.
+* Coda Approvazioni: filtro multiplo (stato/fonte/agente), azioni batch, anteprima inline per riga.
+* Analytics: costo medio AI per articolo, produttività per fonte, andamento qualità nel tempo.
+* Multilingua: hreflang coerente (link_set, x-default), endpoint /multilang/coverage, metodi copertura/traduzioni mancanti.
+* Automazione: nuova classe Nexus_Automation con cruscotto tick (ultimo/prossimo/ritardo), retry con backoff esponenziale, alert redazione ferma (default 12h).
+* Notifiche: canale Discord aggiunto e digest giornaliero di attività.
+* Sicurezza: verifica cifratura at-rest chiavi, route nuove con capability check e nonce, segreti sempre mascherati nelle risposte REST.
 
 = 1.1.33 =
 * UI: barra dei tab in Impostazioni ripulita — rimossa la banda grigia piena e la linea orizzontale a tutta larghezza; neutralizzati pseudo-elementi spurii (menu kebab/frecce) nella fascia tab; nascosto il badge "non salvato" dentro le tab (resta il banner funzionale nel pannello); eliminata la scrollbar verticale spurie nella tablist (overflow-y hidden, scrollbar orizzontale sottile e trasparente). Solo CSS, nessun dato toccato.
