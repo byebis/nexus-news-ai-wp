@@ -656,6 +656,30 @@ class Nexus_Rest {
                         )
                 );
 
+                // v1.1.33 (B1): onboarding end-to-end — genera un PRIMO articolo di
+                // prova reale per l'agente indicato (o il primo attivo) e ritorna un
+                // esito strutturato (ok + articolo, oppure errore specifico azionabile:
+                // chiave mancante, nessuna fonte, cap raggiunto, generazione fallita).
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/pipeline/test-article',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_pipeline_test_article' ),
+                                        'permission_callback' => $admin_permission,
+                                        'args'                => array(
+                                                'agent_id' => array(
+                                                        'type'              => 'integer',
+                                                        'required'          => false,
+                                                        'default'           => 0,
+                                                        'sanitize_callback' => 'absint',
+                                                ),
+                                        ),
+                                ),
+                        )
+                );
+
                 register_rest_route(
                         self::NAMESPACE_URI,
                         '/pipeline/publish',
@@ -2627,6 +2651,46 @@ class Nexus_Rest {
                 }
                 if ( $search_key_missing ) {
                         $verdict_warn[] = array( 'level' => 'warn', 'code' => 'search_key_missing', 'params' => array( 'provider' => $search_provider ) );
+                }
+
+                // v1.1.33 (B2): verifica che l'agente abbia una chiave AI effettivamente
+                // utilizzabile: provider dedicato risolto con chiave, oppure canale
+                // globale legacy con ai_api_key impostata. Se manca/è errata l'utente
+                // NON può produrre: verdict err esplicito, azionabile.
+                $agent_key_ok     = true;
+                $agent_key_provider = 'globale';
+                if ( class_exists( 'Nexus_Providers' ) && method_exists( 'Nexus_Providers', 'resolve_for_agent' ) ) {
+                        try {
+                                $resolved = Nexus_Providers::resolve_for_agent( $agent );
+                                if ( ! empty( $resolved['legacy'] ) ) {
+                                        $agent_key_ok = '' !== trim( (string) ( isset( $settings['ai_api_key'] ) ? $settings['ai_api_key'] : '' ) );
+                                        $agent_key_provider = 'globale';
+                                } else {
+                                        $agent_key_ok = ! empty( $resolved['ok'] )
+                                                && ( ! empty( $resolved['api_key'] ) || 'none' === (string) ( isset( $resolved['auth'] ) ? $resolved['auth'] : '' ) );
+                                        $agent_key_provider = (string) ( isset( $resolved['provider'] ) ? $resolved['provider'] : ( isset( $agent->ai_provider ) ? $agent->ai_provider : '' ) );
+                                }
+                        } catch ( Throwable $e ) {
+                                $agent_key_ok = true; // guard: mai bloccante.
+                        }
+                }
+                if ( ! $agent_key_ok ) {
+                        $verdict_err[] = array( 'level' => 'err', 'code' => 'ai_key_missing', 'params' => array( 'provider' => $agent_key_provider ) );
+                }
+
+                // v1.1.33 (B2): articoli fermi in coda di approvazione (pending_approval)
+                // per questo agente: non sono un errore, ma spiegano perché "non si vede
+                // nulla di nuovo" — la redazione ha prodotto ma attende l'umano.
+                $pending_in_queue = 0;
+                if ( ! empty( $tables['articles'] ) ) {
+                        $pending_in_queue = (int) $wpdb->get_var( $wpdb->prepare(
+                                "SELECT COUNT(*) FROM {$tables['articles']} WHERE agent_id = %d AND status = %s",
+                                absint( $agent->id ),
+                                'pending_approval'
+                        ) );
+                }
+                if ( $pending_in_queue > 0 ) {
+                        $verdict_warn[] = array( 'level' => 'warn', 'code' => 'pending_in_queue', 'params' => array( 'count' => $pending_in_queue ) );
                 }
 
                 // Cron: hook VOLUTAMENTE spento (auto_collect off) NON è un problema
@@ -4700,6 +4764,188 @@ class Nexus_Rest {
                         }
                 }
                 return $out;
+        }
+
+        /**
+         * POST /pipeline/test-article — onboarding end-to-end (B1).
+         *
+         * Genera un PRIMO articolo di prova reale per l'agente indicato (o per il
+         * primo agente attivo) e ritorna un esito strutturato e azionabile:
+         *  - ok=true  → { article_id, title, status, source_type } (articolo creato);
+         *  - ok=false → errore SPECIFICO con codice (missing_api_key, no_agent,
+         *    no_sources, cap_reached, generation_failed, not_active) e messaggio.
+         *
+         * Usa la pipeline esistente (Nexus_Pipeline::run_full) e i suoi messaggi;
+         * nessuna scrittura extra. È il flusso "dalla chiave al primo articolo".
+         *
+         * @param WP_REST_Request $request Request (agent_id opzionale, 0 = primo attivo).
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_pipeline_test_article( $request ) {
+                if ( ! class_exists( 'Nexus_DB' ) || ! method_exists( 'Nexus_DB', 'get_settings' ) ) {
+                        return self::err( 'nexus_rest_db_missing', __( 'Il modulo database non è disponibile.', 'nexus-news-ai' ), 502 );
+                }
+
+                $settings = Nexus_DB::get_settings();
+                $settings = is_array( $settings ) ? $settings : array();
+
+                // Chiave AI: senza chiave il primo articolo non può nascere.
+                $api_key = isset( $settings['ai_api_key'] ) ? trim( (string) $settings['ai_api_key'] ) : '';
+                if ( '' === $api_key && ! self::any_provider_key( $settings ) ) {
+                        return rest_ensure_response( array(
+                                'ok'    => false,
+                                'code'  => 'missing_api_key',
+                                'message' => __( 'Configura una chiave API AI (Impostazioni → AI) prima di generare il primo articolo.', 'nexus-news-ai' ),
+                        ) );
+                }
+
+                $agent_id = absint( $request->get_param( 'agent_id' ) );
+
+                // Nessun agent_id esplicito → primo agente attivo.
+                if ( $agent_id <= 0 ) {
+                        foreach ( Nexus_DB::agents() as $agent ) {
+                                if ( isset( $agent->status ) && 'active' === (string) $agent->status ) {
+                                        $agent_id = (int) $agent->id;
+                                        break;
+                                }
+                        }
+                }
+
+                if ( $agent_id <= 0 ) {
+                        return rest_ensure_response( array(
+                                'ok'    => false,
+                                'code'  => 'no_agent',
+                                'message' => __( 'Nessun agente attivo: crea un agente prima di generare il primo articolo.', 'nexus-news-ai' ),
+                        ) );
+                }
+
+                $agent = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'get_agent' ) ) ? Nexus_DB::get_agent( $agent_id ) : null;
+                if ( ! $agent ) {
+                        return self::err( 'nexus_rest_agent_not_found', __( 'Agente non trovato.', 'nexus-news-ai' ), 404 );
+                }
+
+                if ( isset( $agent->status ) && 'active' !== (string) $agent->status ) {
+                        return rest_ensure_response( array(
+                                'ok'    => false,
+                                'code'  => 'not_active',
+                                'message' => sprintf( __( 'L\'agente "%s" non è attivo: attivalo prima di generare il primo articolo.', 'nexus-news-ai' ), (string) $agent->name ),
+                        ) );
+                }
+
+                if ( ! class_exists( 'Nexus_Pipeline' ) || ! method_exists( 'Nexus_Pipeline', 'run_full' ) ) {
+                        return self::err( 'nexus_rest_pipeline_missing', __( 'Modulo pipeline non disponibile.', 'nexus-news-ai' ), 500 );
+                }
+
+                try {
+                        $res = Nexus_Pipeline::run_full( $agent_id, 'manual' );
+                } catch ( Throwable $e ) {
+                        $msg = self::diagnostics_clip( $e->getMessage(), 200 );
+                        return rest_ensure_response( array(
+                                'ok'    => false,
+                                'code'  => 'generation_failed',
+                                'message' => '' !== $msg ? $msg : __( 'Errore sconosciuto durante la generazione.', 'nexus-news-ai' ),
+                        ) );
+                }
+
+                if ( ! is_array( $res ) ) {
+                        return rest_ensure_response( array(
+                                'ok'    => false,
+                                'code'  => 'generation_failed',
+                                'message' => __( 'La pipeline non ha restituito un risultato valido.', 'nexus-news-ai' ),
+                        ) );
+                }
+
+                $messages = array_values( array_map( 'strval', (array) ( isset( $res['messages'] ) ? $res['messages'] : array() ) ) );
+                $created  = (int) ( isset( $res['collected'] ) ? $res['collected'] : 0 )
+                        + (int) ( isset( $res['evaluated'] ) ? $res['evaluated'] : 0 )
+                        + (int) ( isset( $res['rewritten'] ) ? $res['rewritten'] : 0 );
+
+                if ( $created > 0 ) {
+                        // Articolo creato → recupera l'ultimo per darne un riferimento.
+                        global $wpdb;
+                        $article = null;
+                        $tables = ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'tables' ) ) ? Nexus_DB::tables() : array();
+                        if ( ! empty( $tables['articles'] ) ) {
+                                $article = $wpdb->get_row( $wpdb->prepare(
+                                        "SELECT id, title, status, source_type FROM {$tables['articles']} WHERE agent_id = %d ORDER BY id DESC LIMIT 1",
+                                        $agent_id
+                                ) );
+                        }
+                        return rest_ensure_response( array(
+                                'ok'        => true,
+                                'code'      => 'article_created',
+                                'agent_id'  => $agent_id,
+                                'article'    => $article ? array(
+                                        'id'          => (int) $article->id,
+                                        'title'       => (string) $article->title,
+                                        'status'      => (string) $article->status,
+                                        'source_type' => (string) $article->source_type,
+                                ) : null,
+                                'created'   => $created,
+                                'messages'  => $messages,
+                        ) );
+                }
+
+                // Nessun articolo creato: mappa le cause in un errore specifico.
+                $code    = 'no_articles';
+                $message = __( 'Nessun articolo è stato creato in questo giro.', 'nexus-news-ai' );
+                foreach ( $messages as $m ) {
+                        $m = (string) $m;
+                        if ( false !== stripos( $m, 'chiave' ) || false !== stripos( $m, 'api key' ) ) {
+                                $code = 'missing_api_key';
+                                $message = __( 'La chiave API AI sembra mancante o non valida: controllala in Impostazioni → AI.', 'nexus-news-ai' );
+                                break;
+                        }
+                        if ( false !== stripos( $m, 'fonte' ) || false !== stripos( $m, 'source' ) || false !== stripos( $m, 'rss' ) ) {
+                                $code = 'no_sources';
+                                $message = __( 'Nessuna fonte configurata per questo agente: aggiungi fonti RSS o abilita i contenuti evergreen.', 'nexus-news-ai' );
+                                break;
+                        }
+                        if ( false !== stripos( $m, 'limite giornaliero' ) || false !== stripos( $m, 'max_articles' ) ) {
+                                $code = 'cap_reached';
+                                $message = __( 'Il limite giornaliero di articoli è già stato raggiunto: riprova domani o aumenta il limite nelle impostazioni.', 'nexus-news-ai' );
+                                break;
+                        }
+                        if ( false !== stripos( $m, 'non attivo' ) ) {
+                                $code = 'not_active';
+                                $message = $m;
+                                break;
+                        }
+                }
+
+                return rest_ensure_response( array(
+                        'ok'      => false,
+                        'code'    => $code,
+                        'message' => $message,
+                        'agent_id' => $agent_id,
+                        'messages' => $messages,
+                ) );
+        }
+
+        /**
+         * True se almeno un provider del registry ha una chiave configurata
+         * (usata per non bloccare il primo articolo quando l'utente usa un
+         * provider dedicato per agente invece del canale globale legacy).
+         *
+         * @param array $settings Settings.
+         * @return bool
+         */
+        private static function any_provider_key( array $settings ) {
+                if ( ! class_exists( 'Nexus_Providers' ) || ! method_exists( 'Nexus_Providers', 'catalog' ) ) {
+                        return false;
+                }
+                foreach ( Nexus_Providers::catalog() as $id => $entry ) {
+                        $id = is_array( $entry ) && isset( $entry['id'] ) && '' !== trim( (string) $entry['id'] )
+                                ? sanitize_key( (string) $entry['id'] )
+                                : sanitize_key( (string) $id );
+                        if ( '' === $id || 'custom' === $id || 'ollama' === $id || 0 === strpos( $id, 'cust_' ) ) {
+                                continue;
+                        }
+                        if ( isset( $settings[ 'prov_key_' . $id ] ) && '' !== trim( (string) $settings[ 'prov_key_' . $id ] ) ) {
+                                return true;
+                        }
+                }
+                return false;
         }
 
         /**

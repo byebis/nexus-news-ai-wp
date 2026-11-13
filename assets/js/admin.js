@@ -2346,6 +2346,8 @@
                 mode_semi_autonomous: 'Modalità semi-autonoma: gli articoli aspettano la tua approvazione nella Coda Approvazioni.',
                 auto_publish_off:     'Auto-pubblicazione disattivata: gli articoli restano in coda finché non li approvi tu.',
                 search_key_missing:   'Ci sono fonti di ricerca ma manca la chiave search: per ora vengono ignorate.',
+                ai_key_missing:       'Manca o è errata la chiave API AI ({provider}): configurala in Impostazioni → AI (o sul provider dedicato dell\'agente) per sbloccare la generazione.',
+                pending_in_queue:      '{count} articoli di questo agente sono in coda di approvazione: aprili dalla pagina Articoli e approvali o scartali per vedere uscire contenuti nuovi.',
                 generation_failing:   'La generazione AI sta fallendo: {error}',
                 last_run_failed:      'L\'ultimo run è fallito: {error}',
                 ok_ready:             'Tutto ok: la redazione è operativa e pronta a produrre.'
@@ -7695,7 +7697,77 @@
                 }
                 html += '</ul>';
                 html += '<p style="margin:10px 0 0"><a class="nxa-btn nxa-btn-primary" href="admin.php?page=nexus-agents">' + esc( nxaT( 'Apri la pagina Agenti' ) ) + '</a></p>';
+
+                // v1.1.33 (B1): "Genera il primo articolo di prova" — flusso guidato
+                // end-to-end. Chiama POST /pipeline/test-article (primo agente attivo)
+                // e mostra il risultato reale o l'errore specifico azionabile.
+                html += '<hr style="border:none;border-top:1px solid var(--nxa-border,#e2e2e2);margin:14px 0" />';
+                html += '<p class="nxa-obs-step-title" style="margin:0 0 6px">' + esc( nxaT( 'Genera il primo articolo di prova' ) ) + '</p>';
+                html += '<p style="font-size:0.85rem;margin:0 0 10px;color:var(--nxa-muted)">' + esc( nxaT( 'Verifica subito che il collegamento AI e la redazione funzionino: produci un primo articolo reale.' ) ) + '</p>';
+                html += '<button type="button" class="nxa-btn nxa-btn-primary" id="nxa-obs-test-article">' + esc( nxaT( '▶ Genera il primo articolo' ) ) + '</button>';
+                html += ' <span id="nxa-obs-test-article-status" role="status" style="margin-left:6px;font-size:0.85rem" aria-live="polite"></span>';
+                html += '<div id="nxa-obs-test-article-result" style="margin-top:10px;font-size:0.85rem;line-height:1.6"></div>';
                 box.innerHTML = html;
+
+                var testBtn = qs( '#nxa-obs-test-article', box );
+                if ( testBtn ) {
+                        testBtn.addEventListener( 'click', nxaObsRunTestArticle );
+                }
+        }
+
+        /**
+         * v1.1.33 (B1): esegue "Genera il primo articolo di prova" (POST
+         * /pipeline/test-article) e mostra il risultato reale o l'errore
+         * specifico azionabile. Nessuna scrittura diretta qui: tutto passa
+         * dall'endpoint REST che usa la pipeline esistente.
+         */
+        function nxaObsRunTestArticle() {
+                var modal = nxaOnboardingModal();
+                var statusEl = qs( '#nxa-obs-test-article-status', modal );
+                var resultEl = qs( '#nxa-obs-test-article-result', modal );
+                if ( ! resultEl ) {
+                        return;
+                }
+                resultEl.innerHTML = '';
+                if ( statusEl ) {
+                        statusEl.textContent = nxaT( 'Generazione in corso… (può richiedere fino a un minuto)' );
+                }
+                api( 'pipeline/test-article', { method: 'POST', body: {} } ).then( function ( payload ) {
+                        var d = payload || {};
+                        if ( statusEl ) {
+                                statusEl.textContent = '';
+                        }
+                        if ( d.ok ) {
+                                var article = d.article || {};
+                                var parts = [ '<p style="color:var(--nxa-ok-text,#1e8e3e);margin:0 0 6px"><strong>✓ ' + esc( nxaT( 'Primo articolo creato!' ) ) + '</strong></p>' ];
+                                if ( article.title ) {
+                                        parts.push( '<p style="margin:0 0 4px"><strong>' + esc( article.title ) + '</strong></p>' );
+                                }
+                                var extra = [];
+                                if ( article.status ) {
+                                        extra.push( nxaT( 'Stato: ' ) + esc( article.status ) );
+                                }
+                                if ( article.source_type ) {
+                                        extra.push( nxaT( 'Fonte: ' ) + esc( article.source_type ) );
+                                }
+                                if ( extra.length ) {
+                                        parts.push( '<p style="margin:0">' + extra.join( ' · ' ) + '</p>' );
+                                }
+                                resultEl.innerHTML = parts.join( '' );
+                        } else {
+                                var code = String( d.code || '' );
+                                var msg = String( d.message || nxaT( 'Errore sconosciuto' ) );
+                                resultEl.innerHTML = '<p style="color:var(--nxa-err-text,#c0392b);margin:0 0 6px"><strong>✕ ' + esc( nxaT( 'Nessun articolo creato' ) ) + '</strong></p>'
+                                        + '<p style="margin:0 0 4px">' + esc( msg ) + '</p>'
+                                        + '<p style="margin:0;font-size:0.8rem;color:var(--nxa-muted)">' + esc( nxaT( 'Codice: ' ) + code ) + '</p>';
+                        }
+                } ).catch( function ( err ) {
+                        if ( statusEl ) {
+                                statusEl.textContent = '';
+                        }
+                        var message = ( err && err.message ) ? err.message : nxaT( 'Errore di rete nella generazione del primo articolo.' );
+                        resultEl.innerHTML = '<p style="color:var(--nxa-err-text,#c0392b);margin:0">✕ ' + esc( message ) + '</p>';
+                } );
         }
 
         /**
