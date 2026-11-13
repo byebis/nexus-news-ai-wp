@@ -1,0 +1,122 @@
+/* ==========================================================================
+ * Nexus UI base — pattern condivisi di stato, accessibilità e responsive.
+ *
+ * v1.1.33 (specchio UI suite). Dipende da nexus-tokens.css.
+ * Include: stati vuoti/error/loading coerenti con azione chiara, focus
+ * visibili (WCAG AA), navigazione tastiera delle tab, e regole responsive.
+ * ========================================================================== */
+
+/* -------------------------------------------------------------------------
+ * 1. Stati vuoti / error con azione chiara
+ * ---------------------------------------------------------------------- */
+
+/* .nxa-empty già esistente: qui lo consolidiamo con azione opzionale. */
+.nxa-empty .nxa-empty__action {
+  margin-top: var(--nxa-space-2);
+}
+
+/* Stato di errore: stesso layout di empty ma con colore errore. */
+.nxa-error,
+.nxa-empty.nxa-empty--error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nxa-space-2);
+  padding: var(--nxa-space-6) var(--nxa-space-4);
+  margin: var(--nxa-space-4) 0;
+  text-align: center;
+  border: 1px dashed var(--nxa-err-line);
+  border-radius: var(--nxa-radius);
+  background: var(--nxa-err-bg);
+  color: var(--nxa-err-text);
+}
+.nxa-error .dashicons {
+  width: 32px;
+  height: 32px;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--nxa-err-text);
+}
+.nxa-error p {
+  margin: 0;
+  color: inherit;
+}
+.nxa-error strong {
+  color: var(--nxa-err-text);
+}
+
+/* Skeleton di caricamento: ritmo uniforme. */
+.nxa-skeleton {
+  border-radius: var(--nxa-radius-sm);
+  background: linear-gradient(90deg, var(--nxa-surface-3) 25%, var(--nxa-surface-2) 50%, var(--nxa-surface-3) 75%);
+  background-size: 200% 100%;
+  animation: nxa-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes nxa-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Accessibilità — focus visibili (WCAG AA)
+ * ---------------------------------------------------------------------- */
+
+/* Focus globale: contorno visibile su tutti gli elementi interattivi. */
+.wrap.nexus-admin a:focus-visible,
+.wrap.nexus-admin button:focus-visible,
+.wrap.nexus-admin input:focus-visible,
+.wrap.nexus-admin select:focus-visible,
+.wrap.nexus-admin textarea:focus-visible,
+.wrap.nexus-admin [tabindex]:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: 2px;
+}
+
+/* Tab delle Impostazioni: focus visibile e contrasto. */
+.nxa-settab-tab {
+  color: var(--nxa-text-body);
+}
+.nxa-settab-tab.is-active {
+  color: var(--nxa-accent-1);
+  font-weight: 700;
+}
+.nxa-settab-tab:focus-visible {
+  outline: 2px solid var(--nxa-focus);
+  outline-offset: -2px;
+}
+
+/* Contrasto AA: testo muted leggermente più scuro. */
+.wrap.nexus-admin .nxa-muted,
+.wrap.nexus-admin .description {
+  color: var(--nxa-text-muted);
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Responsive — tablet e telefono
+ * ---------------------------------------------------------------------- */
+
+@media (max-width: 782px) {
+  .wrap.nexus-admin .nxa-kpi-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wrap.nexus-admin .nxa-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wrap.nexus-admin .nxa-row,
+  .wrap.nexus-admin .nxa-red-row {
+    flex-direction: column;
+  }
+  .wrap.nexus-admin .nxa-btn-row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .wrap.nexus-admin .nxa-kpi-row,
+  .wrap.nexus-admin .nxa-stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .wrap.nexus-admin .nxa-toolbar {
+    flex-wrap: wrap;
+  }
+}
