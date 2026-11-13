@@ -4,7 +4,7 @@ Tags: ai, news, magazine, rss, agents
 Requires at least: 6.0
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.1.34
+Stable tag: 1.1.35
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -97,6 +97,9 @@ Il plugin usa WP-Cron con l'evento nexus_cron_tick. WP-Cron è «pigro»: scatta
 La disattivazione conserva tabelle, articoli, agenti e impostazioni. La disinstallazione rimuove le tabelle wp_nexus_*, i dati del plugin, gli utenti bot e gli eventi cron; restano nel sito i contenuti nativi (post pubblicati, redazioni e traduzioni), per design.
 
 == Changelog ==
+
+= 1.1.35 =
+* Refactor (QA): consolidati gli helper JavaScript duplicati tra le viste admin in un unico file condiviso assets/js/nexus-helpers.js (namespace window.NexusHelpers con esc/api/qs). rimosse le definizioni locali di esc()/api() in google-wizard.php e jobs.php; enqueue nell'head con dipendenza su admin.js. Elimina il rischio di collisione tra viste caricate insieme.
 
 = 1.1.34 =
 * UI: sistema di design tokens condivisi (assets/css/nexus-tokens.css, prefisso --nxa-), stati vuoti/error/loading coerenti (nexus-ux.css con skeleton shimmer e CTA), focus-visible globale WCAG AA, miglioramento contrasto e responsive admin (griglie 2→1 colonna).
