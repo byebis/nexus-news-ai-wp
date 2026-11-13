@@ -12,11 +12,13 @@
  *   GET    /nexus/v1/agents
  *   GET    /nexus/v1/agents/{id}/diagnostics        diagnostica per-agente "Perché non vedo articoli?" {agent, gates, cron, runs, last_errors, verdict a CODICI strutturati} (v1.1.16, WC2)
  *   POST   /nexus/v1/agents/{id}/status            body {status: active|paused|error}
- *   GET    /nexus/v1/articles                      args: status, category, agent_id, search, page, per_page
+ *   GET    /nexus/v1/articles                      args: status, category, source, agent_id, search, page, per_page
  *   GET    /nexus/v1/articles/{id}
  *   DELETE /nexus/v1/articles/{id}
  *   POST   /nexus/v1/articles/{id}/approve         body {note}
  *   POST   /nexus/v1/articles/{id}/reject          body {note}
+ *   POST   /nexus/v1/articles/batch                body {action, ids[], note}: approve|reject|publish (B3)
+ *   GET    /nexus/v1/articles/filter-options        fonti distinte + agenti attivi (B3)
  *   POST   /nexus/v1/pipeline/collect              body {agent_id: 0=tutti}
  *   POST   /nexus/v1/pipeline/run                  body {agent_id, redazione_id, agent_ids[]} (v1.1.5: avvii mirati, scope agent_ids > redazione_id > agent_id, risposta {ok, scope, results[], summary} + chiavi BC al top-level per run di un agente singolo)
  *   POST   /nexus/v1/pipeline/publish              body {article_id}
@@ -44,6 +46,7 @@
  *   GET    /nexus/v1/multilang/info                 driver attivo e lingue del sito {driver, default, current, langs} (v1.1.2)
  *   POST   /nexus/v1/multilang/translate-post       body {article_id, lang}: pubblica la traduzione come post WP {ok, already, lang, post_id, edit_url, permalink} (v1.1.2)
  *   GET    /nexus/v1/multilang/translations-posts   args: article_id. Traduzioni native {article_id, source_post_id, source_lang, note, translations} (v1.1.2)
+ *   GET    /nexus/v1/multilang/coverage             copertura gruppi traduzione per lingua (B7)
  *   GET    /nexus/v1/tools/catalog                  catalogo strumenti di ricerca e provider AI per agente (v1.1.4)
  *   POST   /nexus/v1/tools/test                     body {tool: search|read|feeds|mcp, query|url|server|tool_name|args}: test strumento dalla UI impostazioni (v1.1.4)
  *   POST   /nexus/v1/sources/test                   body {type, url, query?, redazione_id?}: test UNA fonte della redazione (8 tipi) invocando l'adapter Nexus_Sources::fetch_{type} (via ReflectionMethod, v1.1.10 WP8); risposta SEMPRE 200 {ok, items_found, sample[], source_type, redazione_id?, error?} con ok:false sull'errore (stesso pattern /tools/test e /ai/test)
@@ -513,6 +516,11 @@ class Nexus_Rest {
                                                         'required'          => false,
                                                         'sanitize_callback' => 'sanitize_text_field',
                                                 ),
+                                                'source'            => array(
+                                                        'type'              => 'string',
+                                                        'required'          => false,
+                                                        'sanitize_callback' => 'sanitize_text_field',
+                                                ),
                                                 'agent_id'          => array(
                                                         'type'              => 'integer',
                                                         'required'          => false,
@@ -537,6 +545,34 @@ class Nexus_Rest {
                                                         'sanitize_callback' => 'absint',
                                                 ),
                                         ),
+                                ),
+                        )
+                );
+
+                // v1.1.34 (B3): azioni batch sulla coda (approva/rifiuta/pubblica su
+                // selezione multipla). Body { action, ids[], note }.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/articles/batch',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::CREATABLE,
+                                        'callback'            => array( __CLASS__, 'rest_articles_batch' ),
+                                        'permission_callback' => $admin_permission,
+                                ),
+                        )
+                );
+
+                // v1.1.34 (B3): opzioni per i filtri della coda (fonti distinte e
+                // agenti attivi), per popolare i selettori senza duplicare la logica.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/articles/filter-options',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_articles_filter_options' ),
+                                        'permission_callback' => $admin_permission,
                                 ),
                         )
                 );
@@ -1654,6 +1690,19 @@ class Nexus_Rest {
                                                         'sanitize_callback' => 'absint',
                                                 ),
                                         ),
+                                ),
+                        )
+                );
+
+                // v1.1.34 (B7): panoramica globale dei gruppi di traduzione.
+                register_rest_route(
+                        self::NAMESPACE_URI,
+                        '/multilang/coverage',
+                        array(
+                                array(
+                                        'methods'             => WP_REST_Server::READABLE,
+                                        'callback'            => array( __CLASS__, 'rest_multilang_coverage' ),
+                                        'permission_callback' => $admin_permission,
                                 ),
                         )
                 );
@@ -4420,6 +4469,7 @@ class Nexus_Rest {
                 $args = array(
                         'status'   => (string) $request->get_param( 'status' ),
                         'category' => (string) $request->get_param( 'category' ),
+                        'source'   => (string) $request->get_param( 'source' ),
                         'agent_id' => absint( $request->get_param( 'agent_id' ) ),
                         'search'   => (string) $request->get_param( 'search' ),
                         'page'     => max( 1, absint( $request->get_param( 'page' ) ) ),
@@ -4445,6 +4495,133 @@ class Nexus_Rest {
                                 'page'         => (int) $args['page'],
                                 'per_page'     => (int) $args['per_page'],
                                 'total_pages'  => (int) ceil( $total / $args['per_page'] ),
+                        )
+                );
+        }
+
+        /**
+         * GET /articles/filter-options — opzioni per i filtri della coda (B3):
+         * fonti distinte dagli articoli e agenti attivi. Sola lettura.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response
+         */
+        public static function rest_articles_filter_options( $request ) {
+                unset( $request );
+
+                $sources = array();
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'article_sources' ) ) {
+                        foreach ( (array) Nexus_DB::article_sources() as $src ) {
+                                $src = (string) $src;
+                                if ( '' !== $src ) {
+                                        $sources[] = $src;
+                                }
+                        }
+                }
+                $sources = array_values( array_unique( $sources ) );
+
+                $agents = array();
+                if ( class_exists( 'Nexus_DB' ) && method_exists( 'Nexus_DB', 'agents' ) ) {
+                        foreach ( (array) Nexus_DB::agents() as $agent ) {
+                                $active = isset( $agent->status ) && 'active' === (string) $agent->status;
+                                $agents[] = array(
+                                        'id'   => isset( $agent->id ) ? absint( $agent->id ) : 0,
+                                        'name' => isset( $agent->name ) ? (string) $agent->name : '',
+                                        'active' => $active,
+                                );
+                        }
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'sources' => $sources,
+                                'agents'   => $agents,
+                        )
+                );
+        }
+
+        /**
+         * POST /articles/batch — azioni batch sulla coda (approva/rifiuta/pubblica)
+         * su un insieme di articoli selezionati. Body {action, ids[], note}.
+         * Ogni articolo è gestito indipendentemente: gli errori singoli non
+         * interrompono il resto; l'esito per singolo è riportato in `results`.
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_articles_batch( $request ) {
+                $body = $request->get_json_params();
+                if ( ! is_array( $body ) || empty( $body ) ) {
+                        $body = (array) $request->get_body_params();
+                }
+
+                $action = isset( $body['action'] ) ? sanitize_key( (string) $body['action'] ) : '';
+                $note   = isset( $body['note'] ) ? sanitize_textarea_field( (string) $body['note'] ) : '';
+                $ids    = isset( $body['ids'] ) && is_array( $body['ids'] ) ? array_map( 'absint', $body['ids'] ) : array();
+
+                $allowed = array( 'approve', 'reject', 'publish' );
+                if ( ! in_array( $action, $allowed, true ) ) {
+                        return self::err( 'nexus_rest_invalid_batch_action', __( 'Azione batch non valida.', 'nexus-news-ai' ), 400 );
+                }
+
+                $ids = array_values( array_filter( $ids, static function ( $id ) {
+                        return $id > 0;
+                } ) );
+
+                if ( empty( $ids ) ) {
+                        return self::err( 'nexus_rest_batch_ids_empty', __( 'Nessun articolo selezionato.', 'nexus-news-ai' ), 400 );
+                }
+
+                if ( count( $ids ) > 100 ) {
+                        $ids = array_slice( $ids, 0, 100 );
+                }
+
+                $processed = 0;
+                $failed    = 0;
+                $results   = array();
+
+                foreach ( $ids as $id ) {
+                        try {
+                                if ( 'publish' === $action ) {
+                                        if ( ! is_callable( array( 'Nexus_Pipeline', 'publish' ) ) ) {
+                                                throw new RuntimeException( 'Modulo pipeline non disponibile.' );
+                                        }
+                                        $res = Nexus_Pipeline::publish( $id );
+                                        if ( is_wp_error( $res ) ) {
+                                                $results[] = array( 'id' => $id, 'ok' => false, 'error' => $res->get_error_message() );
+                                                $failed++;
+                                                continue;
+                                        }
+                                        $results[] = array( 'id' => $id, 'ok' => ! empty( $res['ok'] ), 'already' => ! empty( $res['already'] ) );
+                                } else {
+                                        if ( ! is_callable( array( 'Nexus_Pipeline', $action ) ) ) {
+                                                throw new RuntimeException( 'Modulo pipeline non disponibile.' );
+                                        }
+                                        $res = 'approve' === $action
+                                                ? Nexus_Pipeline::approve( $id, $note )
+                                                : Nexus_Pipeline::reject( $id, $note );
+                                        if ( is_wp_error( $res ) || ! is_array( $res ) || empty( $res['ok'] ) ) {
+                                                $error = ( is_array( $res ) && ! empty( $res['error'] ) ) ? $res['error'] : __( 'Operazione non riuscita.', 'nexus-news-ai' );
+                                                $results[] = array( 'id' => $id, 'ok' => false, 'error' => (string) $error );
+                                                $failed++;
+                                                continue;
+                                        }
+                                        $results[] = array( 'id' => $id, 'ok' => true );
+                                }
+                                $processed++;
+                        } catch ( Throwable $e ) {
+                                $results[] = array( 'id' => $id, 'ok' => false, 'error' => $e->getMessage() );
+                                $failed++;
+                        }
+                }
+
+                return rest_ensure_response(
+                        array(
+                                'action'    => $action,
+                                'processed' => $processed,
+                                'failed'    => $failed,
+                                'total'     => count( $ids ),
+                                'results'   => $results,
                         )
                 );
         }
@@ -8464,6 +8641,34 @@ class Nexus_Rest {
                                 'langs'   => $langs,
                         )
                 );
+        }
+
+        /**
+         * GET /multilang/coverage — panoramica globale dei gruppi di traduzione
+         * (B7): copertura per lingua, lingue mancanti e totali. Delega a
+         * Nexus_Multilang::coverage() (sola lettura, mai fatale).
+         *
+         * @param WP_REST_Request $request Request.
+         * @return WP_REST_Response|WP_Error
+         */
+        public static function rest_multilang_coverage( $request ) {
+                unset( $request );
+
+                if ( ! class_exists( 'Nexus_Multilang' ) ) {
+                        return self::err(
+                                'nexus_rest_multilang_missing',
+                                __( 'Il modulo multilingua non è disponibile: verifica che il plugin sia aggiornato.', 'nexus-news-ai' ),
+                                500
+                        );
+                }
+
+                try {
+                        $coverage = Nexus_Multilang::coverage();
+                } catch ( Throwable $e ) {
+                        return self::err( 'nexus_rest_multilang_coverage_failed', __( 'Impossibile calcolare la copertura delle traduzioni.', 'nexus-news-ai' ), 500 );
+                }
+
+                return rest_ensure_response( $coverage );
         }
 
         /**

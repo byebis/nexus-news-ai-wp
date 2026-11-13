@@ -111,6 +111,27 @@ defined( 'ABSPATH' ) || exit;
                         </select>
                 </div>
 
+                <!-- v1.1.34 (B3): filtro multiplo per fonte — popolato da admin.js
+                     via GET /articles/filter-options. -->
+                <div class="nxa-ux-filter-group">
+                        <label class="screen-reader-text" for="nxa-queue-source">
+                                <?php esc_html_e( 'Filtra per fonte', 'nexus-news-ai' ); ?>
+                        </label>
+                        <select id="nxa-queue-source" class="nxa-queue-source nxa-ux-filter">
+                                <option value=""><?php esc_html_e( 'Tutte le fonti', 'nexus-news-ai' ); ?></option>
+                        </select>
+                </div>
+
+                <!-- v1.1.34 (B3): filtro multiplo per agente. -->
+                <div class="nxa-ux-filter-group">
+                        <label class="screen-reader-text" for="nxa-queue-agent">
+                                <?php esc_html_e( 'Filtra per agente', 'nexus-news-ai' ); ?>
+                        </label>
+                        <select id="nxa-queue-agent" class="nxa-queue-agent nxa-ux-filter">
+                                <option value=""><?php esc_html_e( 'Tutti gli agenti', 'nexus-news-ai' ); ?></option>
+                        </select>
+                </div>
+
                 <button type="button" class="nxa-btn nxa-queue-refresh nxa-ux-refresh">
                         <?php esc_html_e( 'Aggiorna', 'nexus-news-ai' ); ?>
                 </button>
@@ -118,6 +139,19 @@ defined( 'ABSPATH' ) || exit;
                 <!-- Hook fisso per il conteggio ("N articoli"), aria-live: è CONSUMATO
                      da admin.js (loadQueueList, v1.1.7 T-C2 — vedi punto 4 del docblock). -->
                 <span id="nxa-queue-count" class="nxa-queue-count nxa-ux-count" aria-live="polite"></span>
+        </div>
+
+        <!-- v1.1.34 (B3): barra azioni batch — nascosta finché non c'è una
+             selezione. Popolata/gestita da admin.js. -->
+        <div id="nxa-queue-batch" class="nxa-batch-bar nxa-ux-batch" hidden>
+                <label class="nxa-batch-select-all">
+                        <input type="checkbox" id="nxa-queue-select-all" />
+                        <?php esc_html_e( 'Seleziona tutti', 'nexus-news-ai' ); ?>
+                </label>
+                <button type="button" class="button button-primary nxa-batch-act" data-batch-action="approve"><?php esc_html_e( 'Approva selezionati', 'nexus-news-ai' ); ?></button>
+                <button type="button" class="button nxa-batch-act" data-batch-action="reject"><?php esc_html_e( 'Rifiuta selezionati', 'nexus-news-ai' ); ?></button>
+                <button type="button" class="button nxa-batch-act" data-batch-action="publish"><?php esc_html_e( 'Pubblica selezionati', 'nexus-news-ai' ); ?></button>
+                <span id="nxa-batch-count" class="nxa-batch-count" aria-live="polite"></span>
         </div>
 
         <!-- LISTA CODA: riempita da admin.js (GET /articles?status=...). Contratto nel docblock di testa.

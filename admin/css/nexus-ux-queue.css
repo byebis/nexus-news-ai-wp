@@ -253,7 +253,60 @@
 @media print {
   .nxa-ux-queue-toolbar,
   .nxa-queue-item .nxa-btn-row,
-  .nxa-queue-item .nxa-note-row {
+  .nxa-queue-item .nxa-note-row,
+  .nxa-ux-batch {
     display: none !important;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * v1.1.34 (B3): barra azioni batch (selezione multipla).
+ * ------------------------------------------------------------------------- */
+.nxa-ux-batch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--nxa-space-2);
+  margin: 0 0 var(--nxa-space-3);
+  padding: var(--nxa-space-2) var(--nxa-space-3);
+  border: 1px solid var(--nxa-border);
+  border-radius: var(--nxa-radius-sm);
+  background: var(--nxa-surface-2);
+}
+.nxa-ux-batch[hidden] {
+  display: none;
+}
+.nxa-batch-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--nxa-text-body);
+  margin-right: var(--nxa-space-2);
+}
+.nxa-batch-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--nxa-text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Anteprima inline per riga. */
+.nxa-queue-item .nxa-inline-preview {
+  margin-top: var(--nxa-space-3);
+  padding: var(--nxa-space-3) var(--nxa-space-4);
+  border-left: 3px solid var(--nxa-accent-1);
+  background: var(--nxa-surface-soft, var(--nxa-surface-2));
+  border-radius: 0 var(--nxa-radius-sm) var(--nxa-radius-sm) 0;
+}
+.nxa-queue-item .nxa-inline-preview[hidden] {
+  display: none;
+}
+.nxa-inline-preview-head {
+  font-size: 0.8rem;
+}
+.nxa-inline-preview p {
+  line-height: 1.7;
+  font-size: 0.9rem;
 }

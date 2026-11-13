@@ -4633,6 +4633,23 @@
                 return ( value && value !== 'all' && value !== 'any' ) ? value : '';
         }
 
+        /* v1.1.34 (B3): filtro multiplo per fonte/agente. */
+        function currentQueueSource() {
+                var select = qs( '#nxa-queue-source' );
+                if ( ! select ) {
+                        return '';
+                }
+                return String( select.value || '' ).trim();
+        }
+
+        function currentQueueAgent() {
+                var select = qs( '#nxa-queue-agent' );
+                if ( ! select ) {
+                        return '';
+                }
+                return String( select.value || '' ).trim();
+        }
+
         function queueItemHtml( a ) {
                 var id = num( pick( a, 'id' ) );
                 var status = String( pick( a, 'status' ) || 'draft' );
@@ -4657,11 +4674,17 @@
                         // v1.1.4: revisione capo redattore forzata (solo pending_approval);
                         // data-chief-status alimenta la conferma extra se già verificato.
                         ( status === 'pending_approval' ? chiefRunButtonHtml( chiefStatusOf( a ), 'data-id="' + id + '"' ) : '' ) +
+                        // v1.1.34 (B3): anteprima inline senza uscire dalla pagina.
+                        '<button type="button" class="button-link nxa-preview-toggle" data-id="' + id + '">Anteprima</button>' +
                         '<button type="button" class="button-link nxa-detail" data-id="' + id + '">Dettagli</button>' +
                 '</div>';
 
                 return '<article class="nxa-queue-item" data-article-id="' + id + '">' +
                         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+                                // v1.1.34 (B3): checkbox di selezione per le azioni batch.
+                                '<label class="nxa-queue-check" style="display:inline-flex;align-items:center">' +
+                                        '<input type="checkbox" data-check-id="' + id + '" aria-label="Seleziona articolo" />' +
+                                '</label>' +
                                 categoryChip( pick( a, 'category' ) ) +
                                 badge( status ) +
                                 chiefBadge( a ) +
@@ -4688,6 +4711,8 @@
                                 '<button type="button" class="button nxa-schedule-set" data-id="' + id + '">Pianifica</button> ' +
                                 '<button type="button" class="button-link nxa-schedule-cancel" data-id="' + id + '">Annulla</button>' +
                         '</div>' +
+                        // v1.1.34 (B3): contenitore anteprima inline (riempito on-demand).
+                        '<div class="nxa-inline-preview" data-preview-for="' + id + '" hidden></div>' +
                 '</article>';
         }
 
@@ -4699,7 +4724,12 @@
                 showSkeleton( list, 4 );
                 list.setAttribute( 'aria-busy', 'true' );
                 var status = currentQueueFilter();
-                var query = '?per_page=20&page=1' + ( status ? '&status=' + encodeURIComponent( status ) : '' );
+                var source = currentQueueSource();
+                var agent = currentQueueAgent();
+                var query = '?per_page=20&page=1' +
+                        ( status ? '&status=' + encodeURIComponent( status ) : '' ) +
+                        ( source ? '&source=' + encodeURIComponent( source ) : '' ) +
+                        ( agent ? '&agent_id=' + encodeURIComponent( agent ) : '' );
                 return api( 'articles' + query ).then( function ( payload ) {
                         var items = getList( payload, [ 'articles', 'items' ] );
                         list.innerHTML = items.length
@@ -4729,6 +4759,161 @@
                         '<button type="button" class="button button-primary nxa-reject-confirm" data-id="' + id + '">Conferma rifiuto</button>' +
                         '<button type="button" class="button-link nxa-reject-cancel">Annulla</button>' +
                 '</div>';
+        }
+
+        /* ==================================================================
+         * 13b. CODA — FILTRI MULTIPLI, BATCH E ANTEPRIMA INLINE (B3)
+         * ================================================================== */
+
+        function inlinePreviewHtml( a ) {
+                var content = String( pick( a, 'content' ) || '' );
+                var body = '';
+                if ( content ) {
+                        if ( /<p[\s>]|<br/i.test( content ) ) {
+                                body = '<div class="nxa-article-content">' + content + '</div>';
+                        } else {
+                                body = content.split( /\n{2,}/ ).map( function ( par ) {
+                                        return '<p>' + esc( par ) + '</p>';
+                                } ).join( '' );
+                        }
+                } else if ( pick( a, 'summary' ) ) {
+                        body = '<p>' + esc( pick( a, 'summary' ) ) + '</p>';
+                }
+
+                var sourceUrl = pick( a, 'source_url', 'sourceUrl' ) || '';
+                var sourceName = pick( a, 'source_name', 'sourceName' ) || '';
+
+                return '<div class="nxa-inline-preview-head">' +
+                        categoryChip( pick( a, 'category' ) ) + ' ' +
+                        badge( pick( a, 'status' ) ) + ' ' +
+                        scoreBadge( pick( a, 'quality_score', 'qualityScore' ) ) +
+                        '<span style="margin-left:8px;color:var(--nxa-muted)">' + esc( articleAgentName( a ) ) + '</span>' +
+                        ( sourceUrl ? ' <span style="margin-left:8px">' + safeLinkHtml( sourceUrl, esc( sourceName || sourceUrl ) + ' ↗' ) + '</span>' : '' ) +
+                        '</div>' +
+                        '<h4 style="margin:8px 0 4px">' + esc( pick( a, 'title' ) ) + '</h4>' +
+                        body;
+        }
+
+        function toggleInlinePreview( id, itemEl ) {
+                var target = itemEl.querySelector( '[data-preview-for="' + id + '"]' );
+                if ( ! target ) {
+                        return;
+                }
+                if ( ! target.hidden ) {
+                        target.hidden = true;
+                        target.innerHTML = '';
+                        return;
+                }
+                target.hidden = false;
+                target.innerHTML = '<div class="nxa-skeleton" style="width:70%"></div><div class="nxa-skeleton"></div>';
+                api( 'articles/' + num( id ) ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        var a = ( data.article && typeof data.article === 'object' ) ? data.article : data;
+                        if ( ! a || ! pick( a, 'title' ) ) {
+                                target.innerHTML = '<p class="nxa-empty">Articolo non trovato</p>';
+                                return;
+                        }
+                        target.innerHTML = inlinePreviewHtml( a );
+                } ).catch( function () {
+                        target.innerHTML = '<p class="nxa-empty">Impossibile caricare l’anteprima</p>';
+                } );
+        }
+
+        var queueSelectedIds = {};
+
+        function collectQueueSelection() {
+                queueSelectedIds = {};
+                qsa( '#nxa-queue-list input[type="checkbox"][data-check-id]' ).forEach( function ( cb ) {
+                        if ( cb.checked ) {
+                                queueSelectedIds[ cb.getAttribute( 'data-check-id' ) ] = true;
+                        }
+                } );
+        }
+
+        function updateQueueBatchBar() {
+                var bar = qs( '#nxa-queue-batch' );
+                if ( ! bar ) {
+                        return;
+                }
+                var ids = Object.keys( queueSelectedIds );
+                var count = qs( '#nxa-batch-count', bar );
+                if ( count ) {
+                        count.textContent = ids.length ? ids.length + ' selezionati' : '';
+                }
+                bar.hidden = ids.length === 0;
+        }
+
+        function runQueueBatch( action ) {
+                var ids = Object.keys( queueSelectedIds ).map( Number ).filter( function ( n ) {
+                        return n > 0;
+                } );
+                if ( ! ids.length ) {
+                        return;
+                }
+                var btn = null;
+                qsa( '#nxa-queue-batch .nxa-batch-act' ).forEach( function ( b ) {
+                        if ( b.getAttribute( 'data-batch-action' ) === action ) {
+                                btn = b;
+                        }
+                } );
+                if ( btn ) {
+                        setBtnLoading( btn, true, '…' );
+                }
+                api( 'articles/batch', { method: 'POST', body: { action: action, ids: ids, note: '' } } ).then( function () {
+                        toast( 'Azione batch completata.', 'success', 'Coda aggiornata' );
+                        return loadQueueList();
+                } ).catch( function ( err ) {
+                        apiErrorToast( err, 'Azione batch non riuscita' );
+                        if ( btn ) {
+                                setBtnLoading( btn, false );
+                        }
+                } ).then( function () {
+                        if ( btn ) {
+                                setBtnLoading( btn, false );
+                        }
+                } );
+        }
+
+        function populateQueueFilters() {
+                var srcSelect = qs( '#nxa-queue-source' );
+                var agentSelect = qs( '#nxa-queue-agent' );
+                if ( ! srcSelect && ! agentSelect ) {
+                        return;
+                }
+                api( 'articles/filter-options' ).then( function ( payload ) {
+                        var data = unwrap( payload ) || {};
+                        if ( srcSelect && Array.isArray( data.sources ) ) {
+                                var firstOpt = srcSelect.options[0] || null;
+                                srcSelect.innerHTML = '';
+                                if ( firstOpt ) {
+                                        srcSelect.appendChild( firstOpt );
+                                }
+                                data.sources.forEach( function ( s ) {
+                                        var o = document.createElement( 'option' );
+                                        o.value = s;
+                                        o.textContent = s;
+                                        srcSelect.appendChild( o );
+                                } );
+                        }
+                        if ( agentSelect && Array.isArray( data.agents ) ) {
+                                var firstAgent = agentSelect.options[0] || null;
+                                agentSelect.innerHTML = '';
+                                if ( firstAgent ) {
+                                        agentSelect.appendChild( firstAgent );
+                                }
+                                data.agents.forEach( function ( ag ) {
+                                        if ( ag.active === false ) {
+                                                return;
+                                        }
+                                        var o = document.createElement( 'option' );
+                                        o.value = String( ag.id );
+                                        o.textContent = ag.name || ( 'Agente #' + ag.id );
+                                        agentSelect.appendChild( o );
+                                } );
+                        }
+                } ).catch( function () {
+                        // I filtri restano con la sola opzione vuota.
+                } );
         }
 
         function bindQueue() {
@@ -4917,6 +5102,61 @@
                                 } );
                         } );
                 } );
+
+                // v1.1.34 (B3): filtri multipli per fonte/agente ricaricano la lista.
+                qsa( '#nxa-queue-source, #nxa-queue-agent' ).forEach( function ( sel ) {
+                        sel.addEventListener( 'change', loadQueueList );
+                } );
+
+                // Selezione righe: aggiorna la barra batch.
+                if ( list ) {
+                        list.addEventListener( 'change', function ( ev ) {
+                                var cb = ev.target;
+                                if ( cb && cb.matches && cb.matches( 'input[type="checkbox"][data-check-id]' ) ) {
+                                        collectQueueSelection();
+                                        updateQueueBatchBar();
+                                }
+                        } );
+                }
+
+                // Seleziona tutti / deseleziona tutti.
+                var selectAll = qs( '#nxa-queue-select-all' );
+                if ( selectAll ) {
+                        selectAll.addEventListener( 'change', function () {
+                                var checked = selectAll.checked;
+                                qsa( '#nxa-queue-list input[type="checkbox"][data-check-id]' ).forEach( function ( cb ) {
+                                        cb.checked = checked;
+                                } );
+                                collectQueueSelection();
+                                updateQueueBatchBar();
+                        } );
+                }
+
+                // Anteprima inline.
+                if ( list ) {
+                        list.addEventListener( 'click', function ( ev ) {
+                                var toggle = ev.target.closest ? ev.target.closest( '.nxa-preview-toggle' ) : null;
+                                if ( ! toggle ) {
+                                        return;
+                                }
+                                ev.preventDefault();
+                                var id = num( toggle.getAttribute( 'data-id' ) );
+                                var item = toggle.closest( '.nxa-queue-item' );
+                                if ( item ) {
+                                        toggleInlinePreview( id, item );
+                                }
+                        } );
+                }
+
+                // Azioni batch.
+                qsa( '#nxa-queue-batch .nxa-batch-act' ).forEach( function ( btn ) {
+                        btn.addEventListener( 'click', function () {
+                                runQueueBatch( btn.getAttribute( 'data-batch-action' ) );
+                        } );
+                } );
+
+                // Popola fonti/agenti per i filtri.
+                populateQueueFilters();
         }
 
         /* ==================================================================

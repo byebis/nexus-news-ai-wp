@@ -35,6 +35,14 @@
  *                                  'created' => int, 'published' => int,
  *                                  'avg_quality' => float ), ... ),
  *
+ *     // B6 (v1.1.34): confronto produttività per fonte (articles.source_name
+ *     // nel periodo), ordinato per created DESC. La serie giornaliera porta
+ *     // anche 'avg_quality' (qualità media degli articoli creati in quel giorno)
+ *     // e i totali 'avg_cost_per_article' / 'avg_quality' complessivi.
+ *     'per_source' => array( array( 'source' => string, 'created' => int,
+ *                                  'published' => int, 'avg_quality' => float,
+ *                                  'publish_rate' => float ), ... ),
+ *
  *     // Top 10 articoli per views (globale, coerente col contatore cumulativo);
  *     // reactions_count = numero di chiavi del JSON reactions; title troncato a 80.
  *     'top_articles' => array( array( 'id' => int, 'title' => string,
@@ -166,6 +174,17 @@ class Nexus_Analytics {
                         }
                 }
 
+                // Qualità media degli articoli creati per giorno (B6: andamento qualità nel tempo).
+                $map_quality = array();
+                $rows = (array) $wpdb->get_results( $wpdb->prepare(
+                        "SELECT DATE(created_at) AS d, AVG(quality_score) AS q FROM {$t['articles']} WHERE created_at >= %s GROUP BY DATE(created_at)",
+                        $start
+                ) );
+                foreach ( $rows as $r ) {
+                        $q = (float) $r->q;
+                        $map_quality[ (string) $r->d ] = $q > 0 ? $q : 0.0;
+                }
+
                 // Riempimento serie in PHP: una riga per giorno, ordine cronologico, zeri dove mancano dati.
                 $series = array();
                 for ( $i = $days - 1; $i >= 0; $i-- ) {
@@ -178,6 +197,7 @@ class Nexus_Analytics {
                                 'ai_cost'     => round( isset( $map_cost[ $key ] ) ? $map_cost[ $key ] : 0.0, 4 ),
                                 'jobs_done'   => isset( $map_jobs_done[ $key ] ) ? $map_jobs_done[ $key ] : 0,
                                 'jobs_failed' => isset( $map_jobs_failed[ $key ] ) ? $map_jobs_failed[ $key ] : 0,
+                                'avg_quality' => isset( $map_quality[ $key ] ) ? round( $map_quality[ $key ], 1 ) : 0.0,
                         );
                 }
 
@@ -237,6 +257,38 @@ class Nexus_Analytics {
                         );
                 }
 
+                /* ============ PER FONTE (B6: confronto produttività) ============ */
+
+                $per_source = array();
+                $rows = (array) $wpdb->get_results( $wpdb->prepare(
+                        "SELECT COALESCE(source_name, '') AS src,
+                                COUNT(*) AS created,
+                                SUM( CASE WHEN published_at IS NOT NULL THEN 1 ELSE 0 END ) AS published,
+                                AVG(quality_score) AS avg_quality
+                        FROM {$t['articles']}
+                        WHERE created_at >= %s
+                        GROUP BY src
+                        ORDER BY created DESC",
+                        $start
+                ) );
+                foreach ( $rows as $r ) {
+                        $created = (int) $r->created;
+                        $per_source[] = array(
+                                'source'       => (string) $r->src,
+                                'created'      => $created,
+                                'published'    => (int) $r->published,
+                                'avg_quality'  => round( (float) $r->avg_quality, 1 ),
+                                'publish_rate' => $created > 0 ? round( ( (int) $r->published / $created ) * 100, 1 ) : 0.0,
+                        );
+                }
+
+                /* ============ QUALITÀ MEDIA COMPLESSIVA (B6) ============ */
+
+                $overall_quality = (float) $wpdb->get_var( $wpdb->prepare(
+                        "SELECT AVG(quality_score) FROM {$t['articles']} WHERE created_at >= %s",
+                        $start
+                ) );
+
                 /* ============ TOP ARTICOLI (top 10 per views, globale cumulativo) ============ */
 
                 $top_articles = array();
@@ -288,9 +340,12 @@ class Nexus_Analytics {
                                 'ai_cost'       => round( $tot_cost, 4 ),
                                 'jobs_complete' => $tot_jobs_done,
                                 'jobs_failed'   => $tot_jobs_fail,
+                                'avg_cost_per_article' => round( $tot_created > 0 ? $tot_cost / $tot_created : 0.0, 4 ),
+                                'avg_quality'   => round( $overall_quality, 1 ),
                         ),
                         'per_platform' => $per_platform,
                         'per_agent'    => $per_agent,
+                        'per_source'   => $per_source,
                         'top_articles' => $top_articles,
                         'subscribers'  => $subscribers,
                 );
@@ -320,6 +375,7 @@ class Nexus_Analytics {
                                 'ai_cost'     => 0.0,
                                 'jobs_done'   => 0,
                                 'jobs_failed' => 0,
+                                'avg_quality' => 0.0,
                         );
                 }
 
@@ -335,9 +391,12 @@ class Nexus_Analytics {
                                 'ai_cost'       => 0.0,
                                 'jobs_complete' => 0,
                                 'jobs_failed'   => 0,
+                                'avg_cost_per_article' => 0.0,
+                                'avg_quality'   => 0.0,
                         ),
                         'per_platform' => array(),
                         'per_agent'    => array(),
+                        'per_source'   => array(),
                         'top_articles' => array(),
                         'subscribers'  => array(
                                 'confirmed'     => 0,
