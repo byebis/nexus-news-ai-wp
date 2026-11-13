@@ -157,38 +157,17 @@
  * ---------------------------------------------------------------------- */
 .nxa-settab-dirty {
   display: none;
-  vertical-align: middle;
-  margin-left: 6px;
-  padding: 1px 8px;
-  border: 1px solid var(--nxa-warn-line);
-  border-radius: 999px;
-  background: var(--nxa-warn-bg);
-  color: var(--nxa-warn-text);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-  white-space: nowrap;
 }
 
+/* Il segno "non salvato" dentro i tab è rimosso (v1.1.32 follow-up): il
+ * banner "modifiche non salvate" nel pannello resta la sola segnalazione. */
 .nxa-settab-tab.is-dirty .nxa-settab-dirty {
-  display: inline-block;
+  display: none;
 }
 
-/* Mobile stretto: solo il pallino, il testo "non salvato" esce. */
+/* Mobile stretto: nessun indicatore dentro i tab (rimosso come su desktop). */
 @media (max-width: 600px) {
   .nxa-settab-dirty {
-    width: 8px;
-    height: 8px;
-    min-width: 8px;
-    margin-left: 4px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: var(--nxa-warn-text);
-  }
-
-  .nxa-settab-dirty .nxa-settab-dirty-text {
     display: none;
   }
 }
